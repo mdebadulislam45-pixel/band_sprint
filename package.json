@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && node scripts/postBuild.js",
-    "postbuild": "node scripts/postBuild.js",
     "start": "node server.ts",
     "lint": "tsc --noEmit",
     "preview": "vite preview"

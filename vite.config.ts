@@ -11,14 +11,31 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 2500,
+    chunkSizeWarningLimit: 3500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          lucide: ['lucide-react']
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('framer-motion') || id.includes('motion')) {
+              return 'vendor';
+            }
+            if (id.includes('lucide-react')) {
+              return 'lucide';
+            }
+            return 'deps';
+          }
+          if (id.includes('masterVocabDatabase')) {
+            return 'vocab-master';
+          }
+          if (id.includes('vocabularyData')) {
+            return 'vocab-general';
+          }
+          if (id.includes('cambridgeLibraryData') || id.includes('cambridgeTestGenerator')) {
+            return 'cambridge-data';
+          }
         }
       }
     }
   }
 });
+
