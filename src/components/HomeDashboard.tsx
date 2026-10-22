@@ -98,30 +98,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   const sanitizedFirstName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
   const streakDays = user?.progress?.streakDays || 1;
   const targetBand = user?.progress?.targetBand || 7.5;
-  const testDate = user?.progress?.examDate || 'Sep 20, 2025';
+  const testDate = user?.progress?.examDate || '';
   const completedModules = user?.progress?.completedModules || [];
   // examHistory is stored newest-first via unshift()
   const examHistory = user?.progress?.examHistory || [];
   const recentHistory = examHistory.slice(0, 3);
   const activeSession = user?.progress?.activeSession;
 
-  // Compute realistic readiness metrics from user's actual full-mock history & completed modules
-  const { estimatedBand, overallPercentage } = useMemo(() => {
+  // Readiness is based only on completed full mock exams. Never fabricate a baseline.
+  const { estimatedBand, overallPercentage, hasFullMockAssessment } = useMemo(() => {
     const fullMockHistory = examHistory.filter(
       (rec) => isFullMockExamRecord(rec) && typeof rec.overallBand === 'number' && rec.overallBand > 0
     );
-    if (fullMockHistory.length > 0) {
-      const avg =
-        fullMockHistory.reduce((acc, rec) => acc + (rec.overallBand || 6.5), 0) /
-        fullMockHistory.length;
-      const rounded = Math.round(avg * 2) / 2;
-      const pct = Math.min(98, Math.max(25, Math.round((rounded / targetBand) * 85)));
-      return { estimatedBand: rounded, overallPercentage: pct };
+    if (fullMockHistory.length === 0) {
+      return { estimatedBand: 0, overallPercentage: 0, hasFullMockAssessment: false };
     }
-    const baseBand = Math.min(targetBand, +(6.5 + Math.min(completedModules.length * 0.1, 1.0)).toFixed(1));
-    const basePct = Math.min(95, Math.max(42, 58 + completedModules.length * 6));
-    return { estimatedBand: baseBand, overallPercentage: basePct };
-  }, [examHistory, completedModules.length, targetBand]);
+    const avg = fullMockHistory.reduce((acc, rec) => acc + rec.overallBand, 0) / fullMockHistory.length;
+    const rounded = Math.round(avg * 2) / 2;
+    const pct = Math.min(100, Math.max(0, Math.round((rounded / targetBand) * 100)));
+    return { estimatedBand: rounded, overallPercentage: pct, hasFullMockAssessment: true };
+  }, [examHistory, targetBand]);
 
   const toggleExamTrack = useCallback(() => {
     setExamMode((prevMode) => {
@@ -191,7 +187,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
                 Band Trajectory
               </div>
               <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate font-mono">
-                {estimatedBand.toFixed(1)} <span className="text-slate-400 font-normal">→</span>{' '}
+                {hasFullMockAssessment ? estimatedBand.toFixed(1) : 'Not assessed'} {hasFullMockAssessment && <span className="text-slate-400 font-normal">→</span>} {' '}
                 <span className="text-blue-600 dark:text-blue-400">{targetBand.toFixed(1)}</span>
               </div>
             </div>
