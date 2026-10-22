@@ -15,34 +15,43 @@ interface ProgressDonutCardProps {
 }
 
 export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
-  overallPercentage = 68,
-  estimatedBand = 7.0,
+  overallPercentage = 0,
+  estimatedBand = 0,
   targetBand = 7.5,
   completedCount = 0,
   examHistory = [],
   onViewAnalytics,
   onNavigate
 }) => {
-  const safePercent = Math.max(8, Math.min(100, Math.round(overallPercentage)));
+  const fullMockHistory = examHistory.filter(
+    (record) => isFullMockExamRecord(record) && typeof record.overallBand === 'number' && record.overallBand > 0
+  );
+  const hasFullMockAssessment = fullMockHistory.length > 0;
+  const safePercent = hasFullMockAssessment ? Math.max(0, Math.min(100, Math.round(overallPercentage))) : 0;
   const radius = 38;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (safePercent / 100) * circumference;
 
-  // examHistory is stored newest-first (unshift)
+  // Show actual module scores when recorded; never manufacture skill scores.
   const latestListeningAttempt =
     examHistory.find((h) => typeof h.listeningBand === 'number' && h.listeningBand > 0) || null;
   const latestReadingAttempt =
     examHistory.find(
       (h) => isFullMockExamRecord(h) && typeof h.readingBand === 'number' && h.readingBand > 0
     ) || null;
-  const listeningScore = latestListeningAttempt?.listeningBand
+  const latestFullMock = fullMockHistory[0];
+  const listeningScore = typeof latestListeningAttempt?.listeningBand === 'number'
     ? latestListeningAttempt.listeningBand.toFixed(1)
-    : estimatedBand.toFixed(1);
-  const readingScore = latestReadingAttempt?.readingBand
+    : '—';
+  const readingScore = typeof latestReadingAttempt?.readingBand === 'number'
     ? latestReadingAttempt.readingBand.toFixed(1)
-    : estimatedBand.toFixed(1);
-  const writingScore = Math.max(5.5, estimatedBand - 0.5).toFixed(1);
-  const speakingScore = estimatedBand.toFixed(1);
+    : '—';
+  const writingScore = typeof latestFullMock?.writingBand === 'number'
+    ? latestFullMock.writingBand.toFixed(1)
+    : '—';
+  const speakingScore = typeof latestFullMock?.speakingBand === 'number'
+    ? latestFullMock.speakingBand.toFixed(1)
+    : '—';
 
   const skillPills = [
     {
@@ -94,12 +103,12 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-            Band Readiness Index
+            Target Band Progress
           </h3>
           <p className="text-[10px] text-slate-500 dark:text-slate-400">
-            {examHistory.length > 0
-              ? `Based on ${examHistory.length} recorded assessment${examHistory.length > 1 ? 's' : ''}`
-              : 'Estimated baseline · Take a mock test to calibrate'}
+            {hasFullMockAssessment
+              ? `Based on ${fullMockHistory.length} full mock assessment${fullMockHistory.length > 1 ? 's' : ''}`
+               : 'Take a full mock test to establish a baseline'}
           </p>
         </div>
         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60">
@@ -140,9 +149,9 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Readiness</span>
+            <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Goal progress</span>
             <span className="text-base font-black text-slate-900 dark:text-white font-mono leading-none mt-0.5">
-              {safePercent}%
+              {hasFullMockAssessment ? `${safePercent}%` : '—'}
             </span>
           </div>
         </div>
@@ -151,43 +160,25 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
         <div className="flex-1 space-y-2 min-w-0">
           <div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              Current Trajectory
+              Average full-mock band
             </div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                Band {estimatedBand.toFixed(1)}
+                {hasFullMockAssessment ? `Band ${estimatedBand.toFixed(1)}` : 'Not assessed'}
               </span>
             </div>
             <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-              {bandGap > 0
-                ? `+${bandGap.toFixed(1)} band needed to reach ${targetBand.toFixed(1)}`
-                : `On track for Target Band ${targetBand.toFixed(1)}`}
+              {!hasFullMockAssessment
+                ? 'Complete a full mock to see your score trajectory'
+                : bandGap > 0
+                  ? `+${bandGap.toFixed(1)} band needed to reach ${targetBand.toFixed(1)}`
+                  : `On track for Target Band ${targetBand.toFixed(1)}`}
             </div>
           </div>
 
-          {/* Mini Sparkline Chart */}
-          <div className="w-full h-7 relative">
-            <svg viewBox="0 0 120 28" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-              <defs>
-                <linearGradient id="sparklineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.28" />
-                  <stop offset="100%" stopColor="#3B82F6" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M0,23 Q25,21 48,16 T88,11 T120,4 L120,28 L0,28 Z"
-                fill="url(#sparklineGrad)"
-              />
-              <path
-                d="M0,23 Q25,21 48,16 T88,11 T120,4"
-                fill="none"
-                stroke="#3B82F6"
-                strokeWidth="2.25"
-                strokeLinecap="round"
-              />
-              <circle cx="120" cy="4" r="3" fill="#3B82F6" />
-            </svg>
-          </div>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400">
+            Goal progress is a comparison with your target, not a predicted official IELTS result.
+          </p>
         </div>
       </div>
 

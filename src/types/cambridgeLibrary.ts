@@ -130,7 +130,7 @@ export interface CambridgeVolumeCatalogueEntry {
   difficultyRating: string; // e.g. "Band 6.0 – 9.0"
   testsCount: number; // 4
   description: string;
-  verifiedTests: Record<CambridgeEdition, number[]>; // e.g. { Academic: [1, 2], 'General Training': [1] }
+  availableTests: Record<CambridgeEdition, number[]>; // e.g. { Academic: [1, 2], 'General Training': [1] }
 }
 
 export interface CambridgePracticeSession {

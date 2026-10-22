@@ -96,32 +96,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   }, []);
 
   const sanitizedFirstName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
-  const streakDays = user?.progress?.streakDays || 1;
+  const streakDays = user?.progress?.streakDays ?? 0;
   const targetBand = user?.progress?.targetBand || 7.5;
-  const testDate = user?.progress?.examDate || 'Sep 20, 2025';
+  const testDate = user?.progress?.examDate || '';
   const completedModules = user?.progress?.completedModules || [];
   // examHistory is stored newest-first via unshift()
   const examHistory = user?.progress?.examHistory || [];
   const recentHistory = examHistory.slice(0, 3);
   const activeSession = user?.progress?.activeSession;
 
-  // Compute realistic readiness metrics from user's actual full-mock history & completed modules
-  const { estimatedBand, overallPercentage } = useMemo(() => {
+  // Readiness is based only on completed full mock exams. Never fabricate a baseline.
+  const { estimatedBand, overallPercentage, hasFullMockAssessment } = useMemo(() => {
     const fullMockHistory = examHistory.filter(
       (rec) => isFullMockExamRecord(rec) && typeof rec.overallBand === 'number' && rec.overallBand > 0
     );
-    if (fullMockHistory.length > 0) {
-      const avg =
-        fullMockHistory.reduce((acc, rec) => acc + (rec.overallBand || 6.5), 0) /
-        fullMockHistory.length;
-      const rounded = Math.round(avg * 2) / 2;
-      const pct = Math.min(98, Math.max(25, Math.round((rounded / targetBand) * 85)));
-      return { estimatedBand: rounded, overallPercentage: pct };
+    if (fullMockHistory.length === 0) {
+      return { estimatedBand: 0, overallPercentage: 0, hasFullMockAssessment: false };
     }
-    const baseBand = Math.min(targetBand, +(6.5 + Math.min(completedModules.length * 0.1, 1.0)).toFixed(1));
-    const basePct = Math.min(95, Math.max(42, 58 + completedModules.length * 6));
-    return { estimatedBand: baseBand, overallPercentage: basePct };
-  }, [examHistory, completedModules.length, targetBand]);
+    const avg = fullMockHistory.reduce((acc, rec) => acc + (rec.overallBand ?? 0), 0) / fullMockHistory.length;
+    const rounded = Math.round(avg * 2) / 2;
+    const pct = Math.min(100, Math.max(0, Math.round((rounded / targetBand) * 100)));
+    return { estimatedBand: rounded, overallPercentage: pct, hasFullMockAssessment: true };
+  }, [examHistory, targetBand]);
 
   const toggleExamTrack = useCallback(() => {
     setExamMode((prevMode) => {
@@ -149,12 +145,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
         onOpenBandModal={onOpenBandModal}
       />
 
-      {/* Commercial Trust & 100% Free Launch Announcement Strip */}
+      {/* Independent product status and trust notice */}
       <div className="flex items-center justify-between gap-3 p-3 px-4 rounded-2xl bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-emerald-900/10 border border-blue-500/20 text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
-            IELTS Sprint™ Community Beta — All AI Examiners & Cambridge Mock Tests are 100% Free!
+            Independent IELTS practice · Original practice content · AI feedback for learning
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -188,10 +184,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             </div>
             <div className="min-w-0">
               <div className="text-[10px] font-mono uppercase font-bold text-slate-400 dark:text-slate-500">
-                Band Trajectory
+                Latest full mock → target
               </div>
               <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate font-mono">
-                {estimatedBand.toFixed(1)} <span className="text-slate-400 font-normal">→</span>{' '}
+                {hasFullMockAssessment ? estimatedBand.toFixed(1) : 'Not assessed'} {hasFullMockAssessment && <span className="text-slate-400 font-normal">→</span>} {' '}
                 <span className="text-blue-600 dark:text-blue-400">{targetBand.toFixed(1)}</span>
               </div>
             </div>

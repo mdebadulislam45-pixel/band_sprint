@@ -1,7 +1,7 @@
 /**
  * IELTS Sprint — Cambridge IELTS 11–21 Complete Exam Engine & Test Generator
  *
- * Provides authentic, high-yield, fully populated 4-module test content for
+ * Provides original IELTS-style practice content for
  * all Cambridge volumes 11 to 21 across Academic and General Training tracks.
  * Every test includes 40 Listening questions, 40 Reading questions,
  * Tasks 1 & 2 Writing with live word counters, and 3-part Speaking interviews.
@@ -19,7 +19,7 @@ import {
   CambridgeSpeakingContent
 } from '../types/cambridgeLibrary';
 
-// Volume metadata topics for authentic domain context
+// Volume metadata topics for original practice context
 const VOLUME_THEMES: Record<
   number,
   {
@@ -158,7 +158,7 @@ const VOLUME_THEMES: Record<
 };
 
 /**
- * Generates an authentic 4-part Listening module (40 questions)
+ * Generates an IELTS-style 4-part Listening practice module
  */
 export function generateListeningModule(
   volume: CambridgeVolumeNumber,
@@ -170,7 +170,7 @@ export function generateListeningModule(
 
   return {
     title: `Cambridge ${volume} · ${edition} Test ${testNumber} Listening Examination`,
-    contextDescription: `Official 4-part CD IELTS Listening test with 40 questions: Section 1 (enquiry/registration), Section 2 (monologue/facility), Section 3 (academic seminar), Section 4 (university lecture).`,
+    contextDescription: `Original IELTS-style 4-part Listening practice: Section 1 (enquiry/registration), Section 2 (monologue/facility), Section 3 (academic discussion), Section 4 (lecture).`,
     parts: [
       // Part 1: Conversational Enquiry / Registration (Q1-Q10)
       {
@@ -330,7 +330,7 @@ export function generateListeningModule(
 }
 
 /**
- * Generates an authentic 3-passage Reading module (40 questions)
+ * Generates an IELTS-style 3-passage Reading practice module
  */
 export function generateReadingModule(
   volume: CambridgeVolumeNumber,
@@ -464,7 +464,7 @@ export function generateReadingModule(
 }
 
 /**
- * Generates an authentic Writing module (Tasks 1 & 2)
+ * Generates original IELTS-style Writing tasks
  */
 export function generateWritingModule(
   volume: CambridgeVolumeNumber,
@@ -523,7 +523,7 @@ export function generateWritingModule(
 }
 
 /**
- * Generates an authentic Speaking module (Parts 1, 2, 3)
+ * Generates an IELTS-style Speaking practice interview
  */
 export function generateSpeakingModule(
   volume: CambridgeVolumeNumber,
@@ -593,7 +593,7 @@ export function generateSpeakingModule(
 }
 
 /**
- * Primary helper: Returns an authentic CambridgeTestSet for ANY volume, edition, and test number.
+ * Primary helper: Returns an original IELTS-style practice set for any catalogue volume, edition, and test number.
  */
 export function getOrCreateCambridgeTest(
   volume: CambridgeVolumeNumber,
@@ -609,9 +609,9 @@ export function getOrCreateCambridgeTest(
     edition,
     testNumber,
     title: `Cambridge ${volume} · ${edition} Test ${testNumber}`,
-    description: `Official authentic Cambridge ${edition} practice exam. Includes 40-question Listening with British Council examiner audio, 3-passage Reading, Tasks 1 & 2 Writing with live word count, and 3-part Speaking interview.`,
-    provenance: 'authentic_calibrated',
-    provenanceNote: `Authentic Cambridge volume calibration for Volume ${volume} (${meta.theme}).`,
+    description: `Original IELTS-style ${edition} practice set with Listening, Reading, Writing Tasks 1 & 2, and a three-part Speaking interview.`,
+    provenance: 'original_practice',
+    provenanceNote: `Original practice material inspired by broad IELTS task formats for catalogue Volume ${volume} (${meta.theme}); not official Cambridge content.`,
     version: 1,
     updatedAt: Date.now(),
     availableModules: ['listening', 'reading', 'writing', 'speaking'],

@@ -197,7 +197,7 @@ export const LondonSunsetHeroBanner: React.FC<LondonSunsetHeroBannerProps> = ({
   };
 
   const formattedTestDate = useMemo(() => {
-    if (!testDate) return 'Sep 20, 2025';
+    if (!testDate) return 'Set exam date';
     try {
       const d = new Date(testDate);
       if (!isNaN(d.getTime())) {

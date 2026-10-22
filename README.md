@@ -1,11 +1,11 @@
 # IELTS Sprint Masterguide
 
-An all-in-one, interactive web dashboard providing AI-driven IELTS exam preparation, authentic multi-accent native audio practice, diagnostics, speaking turn evaluations, and Cambridge-calibrated scoring tools.
+An independent IELTS preparation web app with original IELTS-style practice activities, AI-assisted feedback, diagnostic tools, vocabulary support, and progress tracking. IELTS Sprint is not affiliated with or endorsed by IELTS, Cambridge University Press & Assessment, the British Council, or IDP.
 
 ## Features
-- **Authentic Multi-Accent Audio**: 16 native characters across British RP, Australian, American, Canadian, New Zealand, and Irish accents using 24kHz neural audio.
-- **AI Speaking & Writing Evaluator**: Real-time diagnostic assessment powered by Gemini 2.5 Flash according to official Cambridge IELTS scoring descriptors.
-- **Full-Stack Architecture**: Express backend with streaming audio endpoints, secure session authentication, and Stripe webhook integration.
+- **Listening & Speaking Practice**: audio-supported practice and speaking activities, with voice availability depending on the configured service.
+- **AI-Assisted Feedback**: practice-oriented feedback for speaking and writing; estimates are not official IELTS scores.
+- **Full-stack architecture**: React, TypeScript, Vite, Express, Firebase integrations, and optional billing integrations, depending on deployment configuration.
 
 ## Getting Started
 ```bash

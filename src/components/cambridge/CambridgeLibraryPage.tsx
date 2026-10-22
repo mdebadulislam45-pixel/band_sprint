@@ -213,11 +213,6 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
     );
   }, [selectedVolume]);
 
-  // Verified tests (all 4 are verified in our complete engine)
-  const verifiedTestsForVolume = useMemo(() => {
-    return activeVolumeCatalogue.verifiedTests[selectedEdition] || [1, 2, 3, 4];
-  }, [activeVolumeCatalogue, selectedEdition]);
-
   // Filtered Catalogue
   const filteredCatalogue = useMemo(() => {
     return CAMBRIDGE_VOLUMES_CATALOGUE.filter((item) => {
@@ -248,14 +243,14 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
           return 0;
         }
 
-        // Official British Council 10-Minute Warning
+        // 10-minute exam timer warning
         if (prev === 600 && !hasShown10mWarning) {
           setHasShown10mWarning(true);
           soundManager.playBeep(520, 0.2);
           setActiveWarningBanner('10-MINUTE WARNING: You have 10 minutes remaining in this test section.');
         }
 
-        // Official British Council 5-Minute Warning
+        // 5-minute exam timer warning
         if (prev === 300 && !hasShown5mWarning) {
           setHasShown5mWarning(true);
           soundManager.playBeep(580, 0.25);
@@ -598,10 +593,10 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
             <div>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
                 <BookOpen className="w-6 h-6 text-blue-600" />
-                Cambridge IELTS 11–21 Library
+                IELTS Practice Library · Volumes 11–21
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Official authentic volumes with CD IELTS simulation, British audio & 4-skill testing.
+                Independent IELTS-style practice inspired by volume themes. Questions are original, not official Cambridge content.
               </p>
             </div>
           </div>
@@ -699,7 +694,6 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
         {/* Volume Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCatalogue.map((vol) => {
-            const isVerified = (vol.verifiedTests[selectedEdition] || []).length > 0;
             return (
               <div
                 key={vol.volume}
@@ -717,13 +711,13 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
                       Vol {vol.volume} · {vol.publicationYear}
                     </span>
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 border border-emerald-200 dark:border-emerald-800">
-                      Full 4 Modules Ready
+                      4 Skills
                     </span>
                   </div>
 
                   <div>
                     <h3 className="text-lg font-black text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors">
-                      {vol.title}
+                      Volume {vol.volume} · IELTS-style practice
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                       {vol.description}
@@ -733,7 +727,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
 
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
                   <span className="text-slate-400 font-mono text-[11px]">
-                    4 Complete Tests (L, R, W, S)
+                    4 practice sets · Listening, Reading, Writing & Speaking
                   </span>
                   <div className="flex items-center gap-1 text-blue-600 font-bold group-hover:translate-x-1 transition-transform">
                     <span>Open Tests</span>
@@ -771,7 +765,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <span className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-                Cambridge Official Practice Compilation
+                IELTS-Style Practice Library
               </span>
               <h2 className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">
                 {activeVolumeCatalogue.title} · {selectedEdition} Track
@@ -841,7 +835,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
               Test {selectedTestNum} Modules
             </h3>
             <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold font-mono">
-              Authentic CD IELTS Questions Loaded
+              Original IELTS-Style Questions Loaded
             </span>
           </div>
 
@@ -884,7 +878,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
                 </div>
                 <h4 className="font-bold text-slate-900 dark:text-white text-sm">Reading</h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Three authentic research passages with True/False/NG and matching questions.
+                  Three original practice passages with True/False/Not Given and matching questions.
                 </p>
               </div>
               <button
@@ -996,7 +990,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
-              <strong className="text-slate-900 dark:text-white block">Official CD IELTS Exam Rules:</strong>
+              <strong className="text-slate-900 dark:text-white block">IELTS-style practice test instructions:</strong>
               <ul className="list-disc list-inside space-y-1.5 text-slate-600 dark:text-slate-400">
                 <li>Answer all 40 questions. There is no penalty for incorrect answers.</li>
                 <li>In Listening, audio is played in real-time. Follow the screen closely.</li>
@@ -1196,7 +1190,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
                       {isAudioPlaying ? 'Playing Audio Stream...' : 'Audio Stream Ready'}
                     </div>
                     <div className="text-[11px] text-slate-400 font-mono">
-                      Official British Cambridge Examination Voice
+                      British-English practice voice
                     </div>
                   </div>
                 </div>
@@ -1563,7 +1557,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
                     else setWritingDraftTask2(e.target.value);
                   }}
                   rows={14}
-                  placeholder="Type your official IELTS examination response here. Autosaved in real-time..."
+                  placeholder="Type your practice response here. Autosaved in real time..."
                   className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-sans leading-relaxed"
                 />
               </div>
@@ -1576,7 +1570,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-mono font-bold text-rose-600 uppercase">
-                    Official Cambridge Speaking Test
+                    IELTS-style Speaking Practice
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1884,7 +1878,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
                   </p>
                 )}
                 <p>
-                  Once submitted, your responses will be evaluated against official Cambridge answer keys and saved to your progress profile.
+                  Once submitted, your responses will be checked against the answer keys supplied with this original practice set and saved to your progress profile.
                 </p>
               </div>
 
