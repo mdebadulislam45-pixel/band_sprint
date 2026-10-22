@@ -766,24 +766,20 @@ export function getAllCambridgeTests(): CambridgeTestSet[] {
     }
   }
 
-  // Merge built-in initial tests with any user-imported custom tests (custom overrides by ID)
+  // Generate complete original-practice sets first. Older seed objects contain incomplete
+  // module data and must not shadow the complete generator output.
   const map = new Map<string, CambridgeTestSet>();
-  INITIAL_CAMBRIDGE_TESTS.forEach((t) => map.set(t.id, t));
-  customTests.forEach((t) => map.set(t.id, t));
-
-  // Generate original IELTS-style practice sets for each catalogue volume, edition and test number
   for (let v = 11; v <= 21; v++) {
     for (let t = 1; t <= 4; t++) {
-      const acadId = `cambridge-${v}-academic-test-${t}`;
-      if (!map.has(acadId)) {
-        map.set(acadId, getOrCreateCambridgeTest(v as CambridgeVolumeNumber, 'Academic', t as CambridgeTestNumber));
-      }
-      const gtId = `cambridge-${v}-general-training-test-${t}`;
-      if (!map.has(gtId)) {
-        map.set(gtId, getOrCreateCambridgeTest(v as CambridgeVolumeNumber, 'General Training', t as CambridgeTestNumber));
-      }
+      const academic = getOrCreateCambridgeTest(v as CambridgeVolumeNumber, 'Academic', t as CambridgeTestNumber);
+      const generalTraining = getOrCreateCambridgeTest(v as CambridgeVolumeNumber, 'General Training', t as CambridgeTestNumber);
+      map.set(academic.id, academic);
+      map.set(generalTraining.id, generalTraining);
     }
   }
+
+  // Explicit user imports may override a generated set with the same ID.
+  customTests.forEach((test) => map.set(test.id, test));
 
   return Array.from(map.values());
 }
