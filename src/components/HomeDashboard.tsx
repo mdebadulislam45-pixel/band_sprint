@@ -113,7 +113,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
     if (fullMockHistory.length === 0) {
       return { estimatedBand: 0, overallPercentage: 0, hasFullMockAssessment: false };
     }
-    const avg = fullMockHistory.reduce((acc, rec) => acc + rec.overallBand, 0) / fullMockHistory.length;
+    const avg = fullMockHistory.reduce((acc, rec) => acc + (rec.overallBand ?? 0), 0) / fullMockHistory.length;
     const rounded = Math.round(avg * 2) / 2;
     const pct = Math.min(100, Math.max(0, Math.round((rounded / targetBand) * 100)));
     return { estimatedBand: rounded, overallPercentage: pct, hasFullMockAssessment: true };
