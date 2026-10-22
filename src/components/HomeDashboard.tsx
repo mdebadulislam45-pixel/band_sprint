@@ -96,7 +96,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   }, []);
 
   const sanitizedFirstName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
-  const streakDays = user?.progress?.streakDays || 1;
+  const streakDays = user?.progress?.streakDays ?? 0;
   const targetBand = user?.progress?.targetBand || 7.5;
   const testDate = user?.progress?.examDate || '';
   const completedModules = user?.progress?.completedModules || [];
@@ -145,12 +145,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
         onOpenBandModal={onOpenBandModal}
       />
 
-      {/* Commercial Trust & 100% Free Launch Announcement Strip */}
+      {/* Independent product status and trust notice */}
       <div className="flex items-center justify-between gap-3 p-3 px-4 rounded-2xl bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-emerald-900/10 border border-blue-500/20 text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
-            IELTS Sprint™ Community Beta — All AI Examiners & Cambridge Mock Tests are 100% Free!
+            Independent IELTS practice · Original practice content · AI feedback for learning
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -184,7 +184,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             </div>
             <div className="min-w-0">
               <div className="text-[10px] font-mono uppercase font-bold text-slate-400 dark:text-slate-500">
-                Band Trajectory
+                Latest full mock → target
               </div>
               <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate font-mono">
                 {hasFullMockAssessment ? estimatedBand.toFixed(1) : 'Not assessed'} {hasFullMockAssessment && <span className="text-slate-400 font-normal">→</span>} {' '}
