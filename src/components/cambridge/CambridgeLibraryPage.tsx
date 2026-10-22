@@ -213,11 +213,6 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
     );
   }, [selectedVolume]);
 
-  // Available test numbers; generated content is original IELTS-style practice.
-  const availableTestsForVolume = useMemo(() => {
-    return activeVolumeCatalogue.availableTests[selectedEdition] || [1, 2, 3, 4];
-  }, [activeVolumeCatalogue, selectedEdition]);
-
   // Filtered Catalogue
   const filteredCatalogue = useMemo(() => {
     return CAMBRIDGE_VOLUMES_CATALOGUE.filter((item) => {
