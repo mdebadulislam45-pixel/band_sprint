@@ -215,7 +215,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
 
   // Available test numbers; generated content is original IELTS-style practice.
   const availableTestsForVolume = useMemo(() => {
-    return activeVolumeCatalogue.verifiedTests[selectedEdition] || [1, 2, 3, 4];
+    return activeVolumeCatalogue.availableTests[selectedEdition] || [1, 2, 3, 4];
   }, [activeVolumeCatalogue, selectedEdition]);
 
   // Filtered Catalogue
@@ -699,7 +699,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
         {/* Volume Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCatalogue.map((vol) => {
-            const isVerified = (vol.verifiedTests[selectedEdition] || []).length > 0;
+            const isVerified = (vol.availableTests[selectedEdition] || []).length > 0;
             return (
               <div
                 key={vol.volume}
@@ -996,7 +996,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
-              <strong className="text-slate-900 dark:text-white block">Official CD IELTS Exam Rules:</strong>
+              <strong className="text-slate-900 dark:text-white block">IELTS-style practice test instructions:</strong>
               <ul className="list-disc list-inside space-y-1.5 text-slate-600 dark:text-slate-400">
                 <li>Answer all 40 questions. There is no penalty for incorrect answers.</li>
                 <li>In Listening, audio is played in real-time. Follow the screen closely.</li>
@@ -1563,7 +1563,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
                     else setWritingDraftTask2(e.target.value);
                   }}
                   rows={14}
-                  placeholder="Type your official IELTS examination response here. Autosaved in real-time..."
+                  placeholder="Type your practice response here. Autosaved in real time..."
                   className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-sans leading-relaxed"
                 />
               </div>
