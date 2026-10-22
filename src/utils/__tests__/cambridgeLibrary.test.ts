@@ -37,7 +37,7 @@ describe('Phase 6A: Cambridge IELTS 11–21 Practice Library', () => {
     assert.strictEqual(gtVolumes.length, 11, 'All 11 volumes should support General Training edition');
   });
 
-  it('should verify populated authentic-calibrated tests', () => {
+  it('should expose populated original IELTS-style practice sets', () => {
     const allTests = getAllCambridgeTests();
     assert.ok(allTests.length >= 3, 'Should have at least 3 pre-populated calibrated tests');
 
@@ -46,7 +46,7 @@ describe('Phase 6A: Cambridge IELTS 11–21 Practice Library', () => {
     assert.strictEqual(c18Test1.volume, 18);
     assert.strictEqual(c18Test1.edition, 'Academic');
     assert.strictEqual(c18Test1.testNumber, 1);
-    assert.strictEqual(c18Test1.provenance, 'authentic_calibrated');
+    assert.strictEqual(c18Test1.provenance, 'original_practice');
 
     const c17Test1 = getCambridgeTestById('cambridge-17-academic-test-1');
     assert.ok(c17Test1, 'Cambridge 17 Academic Test 1 must exist');
