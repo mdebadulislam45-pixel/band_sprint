@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Candidate profile data and test preferences",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth user ID" },
+        "email": { "type": "string", "format": "email", "description": "Candidate email address" },
+        "displayName": { "type": "string", "description": "Candidate display name" },
+        "photoURL": { "type": "string", "description": "Avatar URL" },
+        "targetBand": { "type": "number", "description": "Target IELTS band score (e.g. 7.5, 8.0, 8.5)" },
+        "testDate": { "type": "string", "description": "Scheduled official IELTS test date" },
+        "streakDays": { "type": "number", "description": "Daily study streak count" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "MistakeVaultItem": {
+      "title": "MistakeVaultItem",
+      "description": "Item logged in the candidate's personal mistake vault for active recall",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique mistake item ID" },
+        "userId": { "type": "string", "description": "Owner candidate UID" },
+        "module": { "type": "string", "enum": ["listening", "reading", "writing", "speaking", "vocab"] },
+        "item": { "type": "string", "description": "Term, question prompt, or phrase" },
+        "category": { "type": "string", "description": "Category or error pattern" },
+        "notes": { "type": "string", "description": "Candidate learning notes or mistake explanation" },
+        "mastered": { "type": "boolean", "description": "Whether the mistake has been reviewed and mastered" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "module", "item"]
+    },
+    "TestSubmission": {
+      "title": "TestSubmission",
+      "description": "Candidate test or exam attempt record and score breakdown",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique submission ID" },
+        "userId": { "type": "string", "description": "Candidate UID" },
+        "module": { "type": "string", "enum": ["listening", "reading", "writing", "speaking", "full_mock"] },
+        "testId": { "type": "string", "description": "Reference ID of the completed test or section" },
+        "bandScore": { "type": "number", "description": "Achieved overall band score" },
+        "correctCount": { "type": "number", "description": "Number of correct answers" },
+        "totalQuestions": { "type": "number", "description": "Total question count in this test" },
+        "timeSpentSec": { "type": "number", "description": "Duration spent on exam in seconds" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "module", "bandScore"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Candidate private profile and settings"
+    },
+    "/users/{userId}/mistakes/{mistakeId}": {
+      "schema": { "$ref": "#/entities/MistakeVaultItem" },
+      "description": "Candidate personal mistake vault records"
+    },
+    "/users/{userId}/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/TestSubmission" },
+      "description": "Candidate test and practice exam historical submissions"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "summary":  "Build and deployment artifact upload resolution plan. Synchronizes dist/ and build/ directories via postbuild lifecycle script, configures manual chunk splitting in vite.config.ts, fixes Node 22 ESM type import syntax in server.ts and bkashService.ts, and aligns package.json start script to 'node server.ts'.",
+  "updatedAt":  "2026-10-22T13:10:40.553692408Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

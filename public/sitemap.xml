@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+
+  <!-- 1. Home Dashboard & Command Hub -->
+  <url>
+    <loc>https://ieltssprint.com/</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.00</priority>
+  </url>
+
+  <!-- 2. Primary Pedagogical Hub: Practice Suite -->
+  <url>
+    <loc>https://ieltssprint.com/practice</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 3. Primary Pedagogical Hub: Authentic Listening Lab -->
+  <url>
+    <loc>https://ieltssprint.com/listening</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 4. Primary Pedagogical Hub: AI Cambridge Speaking Examiner -->
+  <url>
+    <loc>https://ieltssprint.com/speaking</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 5. Primary Pedagogical Hub: Band 9 Writing Diagnostic Evaluator -->
+  <url>
+    <loc>https://ieltssprint.com/writing</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 6. Primary Pedagogical Hub: Academic Reading Lab -->
+  <url>
+    <loc>https://ieltssprint.com/reading</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 7. Primary Pedagogical Hub: Cambridge Vocabulary Vault (with Bangla) -->
+  <url>
+    <loc>https://ieltssprint.com/vocab</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 8. Pedagogical Hub: High-Yield IELTS Idioms & Phrasal Verbs -->
+  <url>
+    <loc>https://ieltssprint.com/idioms</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 9. Pedagogical Hub: Useful Academic Phrases & Collocations -->
+  <url>
+    <loc>https://ieltssprint.com/phrases</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 10. Pedagogical Hub: C1/C2 Advanced Lexical Resource -->
+  <url>
+    <loc>https://ieltssprint.com/c1idioms</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 11. Pedagogical Hub: CD-IELTS Timed 40-Question Mock Exam -->
+  <url>
+    <loc>https://ieltssprint.com/cdielts</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 12. Pedagogical Hub: Cambridge AI Study Tutor Suite -->
+  <url>
+    <loc>https://ieltssprint.com/aitools</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 13. Pedagogical Hub: Speed Reading & Eye Pacing Trainer -->
+  <url>
+    <loc>https://ieltssprint.com/speedreading</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- 14. Performance Hub: Candidate Band Progress & Analytics -->
+  <url>
+    <loc>https://ieltssprint.com/analytics</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- 15. Study Planning Hub: 30-Day IELTS Sprint Calendar -->
+  <url>
+    <loc>https://ieltssprint.com/calendar</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
+  </url>
+
+  <!-- 16. Error Triage Hub: Mistake Vault -->
+  <url>
+    <loc>https://ieltssprint.com/mistakes</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
+  </url>
+
+  <!-- 17. Candidate Profile & Target Band Configuration -->
+  <url>
+    <loc>https://ieltssprint.com/profile</loc>
+    <lastmod>2026-10-21</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.70</priority>
+  </url>
+
+</urlset>

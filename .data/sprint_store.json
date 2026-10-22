@@ -1,0 +1,451 @@
+{
+  "users": {
+    "usr_test_verification_01": {
+      "id": "usr_test_verification_01",
+      "email": "verified.candidate@ieltssprint.com",
+      "name": "Candidate Test Lead",
+      "createdAt": 1792579865413,
+      "updatedAt": 1792579865413
+    },
+    "usr_1792568605312_d9937ccf": {
+      "id": "usr_1792568605312_d9937ccf",
+      "email": "google.auth.verified@gmail.com",
+      "name": "Google Verified Candidate",
+      "avatarUrl": "https://lh3.googleusercontent.com/avatar_test",
+      "googleId": "google_oauth_sub_998877",
+      "targetBand": 7.5,
+      "intendedFormat": "Academic",
+      "targetCountry": "United Kingdom / Canada / Australia",
+      "createdAt": 1792568605312,
+      "updatedAt": 1792568605312
+    },
+    "usr_free_candidate_99": {
+      "id": "usr_free_candidate_99",
+      "email": "free.student@ieltssprint.com",
+      "name": "Free Student",
+      "createdAt": 1792579865415,
+      "updatedAt": 1792579865415
+    },
+    "usr_sec_test_user_1": {
+      "id": "usr_sec_test_user_1",
+      "email": "user1@example.com",
+      "name": "Security Test User 1",
+      "targetBand": 7.5,
+      "intendedFormat": "Academic",
+      "createdAt": 1792579866279,
+      "updatedAt": 1792579866279
+    }
+  },
+  "sessions": {
+    "62770a031a5a90397b8b6049bee329dc217912350ad2f27c1f1840ded2414528": {
+      "token": "62770a031a5a90397b8b6049bee329dc217912350ad2f27c1f1840ded2414528",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792568605312,
+      "expiresAt": 1795160605312,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "6218e71c496bf157df3dd6e3eda1573ff0bbe9509fe2d544a793921e6c5fc451": {
+      "token": "6218e71c496bf157df3dd6e3eda1573ff0bbe9509fe2d544a793921e6c5fc451",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792568605964,
+      "expiresAt": 1795160605964,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "9e6ee084fa33f2343f38e25be26b2bf90e97d60de8e11804473bf7fb30debfaa": {
+      "token": "9e6ee084fa33f2343f38e25be26b2bf90e97d60de8e11804473bf7fb30debfaa",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792568932925,
+      "expiresAt": 1795160932925,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "1b937056b8c047e12db267cf8358a97cab1b62383cb2eb2a8adae747a03f66cc": {
+      "token": "1b937056b8c047e12db267cf8358a97cab1b62383cb2eb2a8adae747a03f66cc",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792568933598,
+      "expiresAt": 1795160933598,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "94a51f4f195f34d6c3dbadbac667e9413f38328cdc1e7de0a5d3a53a0dd2406f": {
+      "token": "94a51f4f195f34d6c3dbadbac667e9413f38328cdc1e7de0a5d3a53a0dd2406f",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792569384378,
+      "expiresAt": 1795161384378,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "0428748947a69d07824f398e2606d4e462529ad0617afb1056661ff4e35a0dd8": {
+      "token": "0428748947a69d07824f398e2606d4e462529ad0617afb1056661ff4e35a0dd8",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792569385332,
+      "expiresAt": 1795161385332,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "b38c4d0be9d7f299e381084c0594fa8f90581c4ef78ba694c164a35f9bd9218a": {
+      "token": "b38c4d0be9d7f299e381084c0594fa8f90581c4ef78ba694c164a35f9bd9218a",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792570152172,
+      "expiresAt": 1795162152172,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "8b181f8807ed43005b0f3dc212f507ec6c877d95b0979578c2e1108cf20c9f97": {
+      "token": "8b181f8807ed43005b0f3dc212f507ec6c877d95b0979578c2e1108cf20c9f97",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792570153023,
+      "expiresAt": 1795162153023,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "3a1509c82630f53b2d9f055100bf60cbbfe503bdf901c6b8dcb62f4cb3cce23c": {
+      "token": "3a1509c82630f53b2d9f055100bf60cbbfe503bdf901c6b8dcb62f4cb3cce23c",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792570192855,
+      "expiresAt": 1795162192855,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "28b7663294f838aa9a28233e7133feeeff06eca94f61e990897d0ee92d8a65d9": {
+      "token": "28b7663294f838aa9a28233e7133feeeff06eca94f61e990897d0ee92d8a65d9",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792570193922,
+      "expiresAt": 1795162193922,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "8655e604f1642f567a34ab184a068061eba47a1ec86ca85cd5f41025bcd4518f": {
+      "token": "8655e604f1642f567a34ab184a068061eba47a1ec86ca85cd5f41025bcd4518f",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792571032189,
+      "expiresAt": 1795163032189,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "62dae9c1e49126a7ab64ee3392ece47375d8ec4cb1122b4ab68eed2adfb9470a": {
+      "token": "62dae9c1e49126a7ab64ee3392ece47375d8ec4cb1122b4ab68eed2adfb9470a",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792571033070,
+      "expiresAt": 1795163033070,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "8937c8a3052d1db98e2b6ebc2954008d3fa94a573d95e78b76ec827f29c2554d": {
+      "token": "8937c8a3052d1db98e2b6ebc2954008d3fa94a573d95e78b76ec827f29c2554d",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792571347347,
+      "expiresAt": 1795163347347,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "5042cc36b80ec1d9518224c119731f6fee5c44fde59feb2744803d495e4aa2fc": {
+      "token": "5042cc36b80ec1d9518224c119731f6fee5c44fde59feb2744803d495e4aa2fc",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792571348102,
+      "expiresAt": 1795163348102,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "1fe54fb4ee43b48439d175b9b9d6bb4e97a259657d7ff0f4b613772fbda7f727": {
+      "token": "1fe54fb4ee43b48439d175b9b9d6bb4e97a259657d7ff0f4b613772fbda7f727",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792571769369,
+      "expiresAt": 1795163769369,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "43d6e6c05ac3a26e92f6c7812248c1e8c730b5b557ae21f9090151280224a5c6": {
+      "token": "43d6e6c05ac3a26e92f6c7812248c1e8c730b5b557ae21f9090151280224a5c6",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792571770133,
+      "expiresAt": 1795163770133,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "574e34c36b99d830c05c25b5b0557efb0c7c1f8d1386b0e9043aa70b28009357": {
+      "token": "574e34c36b99d830c05c25b5b0557efb0c7c1f8d1386b0e9043aa70b28009357",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792572178019,
+      "expiresAt": 1795164178019,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "30ef26bc39d3df02037675442768ea1650dd7a2ca0ec237b97b1b9d37b816ef5": {
+      "token": "30ef26bc39d3df02037675442768ea1650dd7a2ca0ec237b97b1b9d37b816ef5",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792572178847,
+      "expiresAt": 1795164178847,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "215c076ff447f8e7cd66813c98032db62958c580fc7df810881ab0f6aea4848c": {
+      "token": "215c076ff447f8e7cd66813c98032db62958c580fc7df810881ab0f6aea4848c",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792572493533,
+      "expiresAt": 1795164493533,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "cff77ad4f3520ffdddc248f3874859bd0b5e21abd4936a451065f83d189aba46": {
+      "token": "cff77ad4f3520ffdddc248f3874859bd0b5e21abd4936a451065f83d189aba46",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792572494328,
+      "expiresAt": 1795164494328,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "61e8c34afa5c67427254c000113055126378130c687ea2bf073f5410d325d61d": {
+      "token": "61e8c34afa5c67427254c000113055126378130c687ea2bf073f5410d325d61d",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792573444603,
+      "expiresAt": 1795165444603,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "eaa7fa0dd10119741808513e307db7c191c7f7865f259ce3f114ea3944fa871c": {
+      "token": "eaa7fa0dd10119741808513e307db7c191c7f7865f259ce3f114ea3944fa871c",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792573445472,
+      "expiresAt": 1795165445472,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "ef4141aa15e535cf7a2999fd5808e6f2b65b7ed6da732908bf376271b7a2f19a": {
+      "token": "ef4141aa15e535cf7a2999fd5808e6f2b65b7ed6da732908bf376271b7a2f19a",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792573669923,
+      "expiresAt": 1795165669923,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "e1a9cead271fdf3e2abba05f233e522e281d0605c9fc7b723f71ddbde57d7dfb": {
+      "token": "e1a9cead271fdf3e2abba05f233e522e281d0605c9fc7b723f71ddbde57d7dfb",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792573670738,
+      "expiresAt": 1795165670738,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "b2766011ed52d4c483b28bf09b505e73f5388e85848dbf6a5f7343f19602362e": {
+      "token": "b2766011ed52d4c483b28bf09b505e73f5388e85848dbf6a5f7343f19602362e",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792575174374,
+      "expiresAt": 1795167174374,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "0b375b7695f18195a730e976c8a515713b9b8bd9948246bfcff878f6244ff6e2": {
+      "token": "0b375b7695f18195a730e976c8a515713b9b8bd9948246bfcff878f6244ff6e2",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792575175200,
+      "expiresAt": 1795167175200,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "f5341d7f3a33d36dce527152676c095b53607241208e0767b0328dcd5eccfd8e": {
+      "token": "f5341d7f3a33d36dce527152676c095b53607241208e0767b0328dcd5eccfd8e",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792575978681,
+      "expiresAt": 1795167978681,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "b5fc50f0677e999a4a4ec188953779f7462f79f681245dc57c427b3ee51ecf5d": {
+      "token": "b5fc50f0677e999a4a4ec188953779f7462f79f681245dc57c427b3ee51ecf5d",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792575979567,
+      "expiresAt": 1795167979567,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "928d28f1a0dc05b3599e8891ecc132725ed2d25b1253e49d17869170e6a24fab": {
+      "token": "928d28f1a0dc05b3599e8891ecc132725ed2d25b1253e49d17869170e6a24fab",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792576479811,
+      "expiresAt": 1795168479811,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "e5edba244e5c715b83d27e82e15cb50d86cf5d71e4bb952769292960eb9a1818": {
+      "token": "e5edba244e5c715b83d27e82e15cb50d86cf5d71e4bb952769292960eb9a1818",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792576480753,
+      "expiresAt": 1795168480753,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "ee36a3621171b8d483677ceb6bd1f912de8d84792e8b8293b8523603777a9cd7": {
+      "token": "ee36a3621171b8d483677ceb6bd1f912de8d84792e8b8293b8523603777a9cd7",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792578499262,
+      "expiresAt": 1795170499262,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "c64994c96b6bd948326138f105f3e1da5004aee842ab7e5469e0f09612d14f4b": {
+      "token": "c64994c96b6bd948326138f105f3e1da5004aee842ab7e5469e0f09612d14f4b",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792578500075,
+      "expiresAt": 1795170500075,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "b67b2a136be22d0a2a1e0d01479dd4f3102724e8b69694a40ae6e2e3bf1a9bde": {
+      "token": "b67b2a136be22d0a2a1e0d01479dd4f3102724e8b69694a40ae6e2e3bf1a9bde",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792578533901,
+      "expiresAt": 1795170533901,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "28f8a1bf28c74345e2a6388f0a3aa14f8192bb02830cbf9eef5d183f17c0942a": {
+      "token": "28f8a1bf28c74345e2a6388f0a3aa14f8192bb02830cbf9eef5d183f17c0942a",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792578534771,
+      "expiresAt": 1795170534771,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "4ad427336ec6222978c758dfd4184962ea8f902f44c80fd66eb5e44e8ebbc9cd": {
+      "token": "4ad427336ec6222978c758dfd4184962ea8f902f44c80fd66eb5e44e8ebbc9cd",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792579309084,
+      "expiresAt": 1795171309084,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "22bea1088336e8796558ba26f836004e1f15281d5f7977845f4557331a2ea6ed": {
+      "token": "22bea1088336e8796558ba26f836004e1f15281d5f7977845f4557331a2ea6ed",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792579309859,
+      "expiresAt": 1795171309859,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    },
+    "280bed04412c1d64c91b2f76d35302d06abe1259014c27034ae6eac2e2f474cd": {
+      "token": "280bed04412c1d64c91b2f76d35302d06abe1259014c27034ae6eac2e2f474cd",
+      "userId": "usr_test_verification_01",
+      "createdAt": 1792579865413,
+      "expiresAt": 1795171865413,
+      "userAgent": "Test-Agent",
+      "ip": "127.0.0.1"
+    },
+    "d69dab0be4c28f5f767c28672ed8c0beca0c7ef8fb54bfb70752650f45184a90": {
+      "token": "d69dab0be4c28f5f767c28672ed8c0beca0c7ef8fb54bfb70752650f45184a90",
+      "userId": "usr_sec_test_user_1",
+      "createdAt": 1792579866279,
+      "expiresAt": 1795171866279,
+      "userAgent": "TestSuite",
+      "ip": "127.0.0.1"
+    }
+  },
+  "subscriptions": {
+    "usr_test_verification_01": {
+      "userId": "usr_test_verification_01",
+      "planId": "pro",
+      "status": "active",
+      "stripeCustomerId": "cus_test_123",
+      "stripeSubscriptionId": "sub_test_pro_456",
+      "currentPeriodStart": 1792568605313,
+      "currentPeriodEnd": 1795333405313,
+      "cancelAtPeriodEnd": false,
+      "updatedAt": 1792568605313
+    },
+    "usr_1792568605312_d9937ccf": {
+      "userId": "usr_1792568605312_d9937ccf",
+      "planId": "free",
+      "status": "active",
+      "currentPeriodStart": 1792568605312,
+      "currentPeriodEnd": 1824104605312,
+      "cancelAtPeriodEnd": false,
+      "updatedAt": 1792568605312
+    },
+    "usr_free_candidate_99": {
+      "userId": "usr_free_candidate_99",
+      "planId": "free",
+      "status": "active",
+      "currentPeriodStart": 1792568605313,
+      "currentPeriodEnd": 1824104605313,
+      "cancelAtPeriodEnd": false,
+      "updatedAt": 1792568605313
+    },
+    "usr_sec_test_user_1": {
+      "userId": "usr_sec_test_user_1",
+      "planId": "pro",
+      "status": "active",
+      "paymentMethod": "stripe",
+      "currentPeriodStart": 1792579866279,
+      "currentPeriodEnd": 1795171866279,
+      "cancelAtPeriodEnd": false,
+      "updatedAt": 1792579866279
+    }
+  },
+  "processedWebhookEvents": {
+    "evt_test_checkout_completed_001": 1792568605313
+  },
+  "dailyUsage": {
+    "usr_sec_test_user_1": {
+      "2026-10-21": {
+        "speakingEvaluations": 0,
+        "writingEvaluations": 13
+      }
+    }
+  },
+  "promoCodes": {
+    "SPRINT7": {
+      "code": "SPRINT7",
+      "description": "7-Day Sprint Premium Complimentary Access Pass",
+      "planId": "pro",
+      "durationDays": 7,
+      "maxRedemptions": 500,
+      "currentRedemptions": 0,
+      "expiresAt": null,
+      "isActive": true
+    },
+    "BAND8PLUS": {
+      "code": "BAND8PLUS",
+      "description": "14-Day IELTS Band 8.0+ Advanced Intensive Pass",
+      "planId": "pro",
+      "durationDays": 14,
+      "maxRedemptions": 250,
+      "currentRedemptions": 0,
+      "expiresAt": null,
+      "isActive": true
+    },
+    "IELTS2026": {
+      "code": "IELTS2026",
+      "description": "30-Day IELTS Sprint 2026 Launch Special Voucher",
+      "planId": "pro",
+      "durationDays": 30,
+      "maxRedemptions": 100,
+      "currentRedemptions": 0,
+      "expiresAt": null,
+      "isActive": true
+    },
+    "CAMBRIDGE": {
+      "code": "CAMBRIDGE",
+      "description": "7-Day Cambridge Master Exam Simulation & VIP Diagnostic Pass",
+      "planId": "master",
+      "durationDays": 7,
+      "maxRedemptions": 100,
+      "currentRedemptions": 0,
+      "expiresAt": null,
+      "isActive": true
+    },
+    "FREEPASS": {
+      "code": "FREEPASS",
+      "description": "3-Day Extended Sprint Premium Access",
+      "planId": "pro",
+      "durationDays": 3,
+      "maxRedemptions": 1000,
+      "currentRedemptions": 0,
+      "expiresAt": null,
+      "isActive": true
+    }
+  },
+  "promoRedemptions": {},
+  "paymentOrders": {}
+}

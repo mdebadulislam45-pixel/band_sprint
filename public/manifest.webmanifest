@@ -1,0 +1,22 @@
+{
+  "name": "IELTS SPRINT",
+  "short_name": "IELTS SPRINT",
+  "description": "IELTS SPRINT - Premier IELTS Preparation Suite with Cambridge Rubrics, Live Mock Tests, and AI Scoring.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1120",
+  "theme_color": "#101B32",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "education",
+    "productivity"
+  ]
+}

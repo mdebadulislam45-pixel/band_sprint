@@ -1,11 +1,17 @@
-<div align="center">
+# IELTS Sprint Masterguide
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+An all-in-one, interactive web dashboard providing AI-driven IELTS exam preparation, authentic multi-accent native audio practice, diagnostics, speaking turn evaluations, and Cambridge-calibrated scoring tools.
 
-  <h1>Built with AI Studio</h2>
+## Features
+- **Authentic Multi-Accent Audio**: 16 native characters across British RP, Australian, American, Canadian, New Zealand, and Irish accents using 24kHz neural audio.
+- **AI Speaking & Writing Evaluator**: Real-time diagnostic assessment powered by Gemini 2.5 Flash according to official Cambridge IELTS scoring descriptors.
+- **Full-Stack Architecture**: Express backend with streaming audio endpoints, secure session authentication, and Stripe webhook integration.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Getting Started
+```bash
+# Install dependencies
+npm install
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
-
-</div>
+# Start local development server (runs full-stack Express + Vite on port 3000)
+npm run dev
+```

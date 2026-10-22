@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="crestBg" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E40AF" />
+      <stop offset="50%" stop-color="#1D4ED8" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="wingPrimary" x1="16" y1="16" x2="46" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#DBEAFE" />
+    </linearGradient>
+    <linearGradient id="goldApex" x1="38" y1="10" x2="50" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047" />
+      <stop offset="100%" stop-color="#F59E0B" />
+    </linearGradient>
+  </defs>
+  <!-- Squircle Academic Shield Base -->
+  <rect x="3" y="3" width="58" height="58" rx="16" fill="url(#crestBg)" />
+  <rect x="4.5" y="4.5" width="55" height="55" rx="14.5" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="1.5" />
+  <!-- Architectural Cambridge Book & Ascending Sprint Pillar -->
+  <path d="M15 45L26.5 19H33.5L22 45H15Z" fill="#93C5FD" fill-opacity="0.65" />
+  <path d="M26.5 45L38 19H45L33.5 45H26.5Z" fill="url(#wingPrimary)" />
+  <!-- Precision Band 9 Golden Four-Point Star Apex -->
+  <path d="M44 10L45.6 14.4L50 16L45.6 17.6L44 22L42.4 17.6L38 16L42.4 14.4L44 10Z" fill="url(#goldApex)" />
+</svg>
