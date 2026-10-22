@@ -30,8 +30,8 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     accentColor: '#F59E0B',
     difficultyRating: 'Band 6.5 – 9.0 (Contemporary)',
     testsCount: 4,
-    description: 'The newest flagship Cambridge compilation featuring contemporary sociolinguistic listening dialogues, modern scientific research readings, and updated Task 1 visual infographics.',
-    verifiedTests: {
+    description: 'A volume-themed collection of original IELTS-style practice activities and writing prompts.',
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -45,8 +45,8 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     accentColor: '#8B5CF6',
     difficultyRating: 'Band 6.5 – 9.0',
     testsCount: 4,
-    description: 'Includes cutting-edge academic passages on artificial intelligence ethics, climate migration, and marine biodiversity conservation.',
-    verifiedTests: {
+    description: 'Original IELTS-style practice themes include technology, climate, and marine biodiversity.',
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -60,8 +60,8 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     accentColor: '#10B981',
     difficultyRating: 'Band 6.0 – 9.0',
     testsCount: 4,
-    description: 'High-yield practice tests reflecting standard international computer-delivered IELTS exam formatting and British Council question styles.',
-    verifiedTests: {
+    description: 'Original practice tests using a computer-delivered IELTS-style format.',
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -75,8 +75,8 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     accentColor: '#2563EB',
     difficultyRating: 'Band 6.0 – 9.0',
     testsCount: 4,
-    description: 'Widely recognized benchmark volume with authentic multi-accent audio scripts, full 40-question academic reading passages, and calibrated writing tasks.',
-    verifiedTests: {
+    description: 'Original practice content designed to exercise IELTS-style Listening, Reading, Writing and Speaking skills.',
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -90,8 +90,8 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     accentColor: '#E11D48',
     difficultyRating: 'Band 6.0 – 8.5',
     testsCount: 4,
-    description: 'Comprehensive test sets featuring urban planning listening scenarios, neurobiology reading texts, and balanced Task 2 argumentative writing essays.',
-    verifiedTests: {
+    description: 'Original practice themes include urban planning, science, and argumentative writing.',
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -105,8 +105,8 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     accentColor: '#06B6D4',
     difficultyRating: 'Band 6.0 – 8.5',
     testsCount: 4,
-    description: 'Essential practice volume incorporating post-pandemic test formats, university accommodation dialogues, and archaeology research papers.',
-    verifiedTests: {
+    description: 'Original IELTS-style practice covering accommodation, research, and academic reading.',
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -120,8 +120,8 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     accentColor: '#0D9488',
     difficultyRating: 'Band 6.0 – 8.5',
     testsCount: 4,
-    description: 'Classic Cambridge test compilation focusing on community services, renewable geothermal energy, and environmental biology.',
-    verifiedTests: {
+    description: 'Original practice themes include community services, energy, and environmental science.',
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -136,7 +136,7 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     difficultyRating: 'Band 5.5 – 8.5',
     testsCount: 4,
     description: 'Foundational 4-skill testing series with high frequency Academic Vocabulary List (AVL) coverage and structured speaking cue cards.',
-    verifiedTests: {
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -151,7 +151,7 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     difficultyRating: 'Band 5.5 – 8.5',
     testsCount: 4,
     description: 'Rigorous academic reading passages on cognitive psychology, aviation safety, and global urbanization trends.',
-    verifiedTests: {
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -166,7 +166,7 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     difficultyRating: 'Band 5.5 – 8.0',
     testsCount: 4,
     description: 'Historical Cambridge edition featuring traditional British RP speakers, heritage conservation readings, and civic policy discussions.',
-    verifiedTests: {
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -181,7 +181,7 @@ export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
     difficultyRating: 'Band 5.5 – 8.0',
     testsCount: 4,
     description: 'The inaugural modern volume establishing the separate Academic and General Training 4-test annual publication standard.',
-    verifiedTests: {
+    availableTests: {
       Academic: [1, 2, 3, 4],
       'General Training': [1, 2, 3, 4]
     }
@@ -203,8 +203,8 @@ export const INITIAL_CAMBRIDGE_TESTS: CambridgeTestSet[] = [
     testNumber: 1,
     title: 'Cambridge 18 · Academic Test 1',
     description: 'Full 4-skill Cambridge Academic practice examination: university admissions interview, biodiversity passage, and economic impact essay.',
-    provenance: 'authentic_calibrated',
-    provenanceNote: 'Calibrated to Cambridge 18 Academic standard with original audio dialogues and verified answer keys.',
+    provenance: 'original_practice',
+    provenanceNote: 'Original IELTS-style practice material; not official Cambridge test content.',
     version: 1,
     updatedAt: 1711200000000,
     availableModules: ['listening', 'reading', 'writing', 'speaking'],
@@ -517,8 +517,8 @@ export const INITIAL_CAMBRIDGE_TESTS: CambridgeTestSet[] = [
     testNumber: 1,
     title: 'Cambridge 17 · Academic Test 1',
     description: 'Autonomous logistics inspection, thermodynamics of renewable energy storage, and secondary education curricula.',
-    provenance: 'authentic_calibrated',
-    provenanceNote: 'Calibrated to Cambridge 17 Academic standard with multi-accent technical dialogue scripts.',
+    provenance: 'original_practice',
+    provenanceNote: 'Original IELTS-style practice material; not official Cambridge test content.',
     version: 1,
     updatedAt: 1711200000000,
     availableModules: ['listening', 'reading', 'writing', 'speaking'],
@@ -652,8 +652,8 @@ export const INITIAL_CAMBRIDGE_TESTS: CambridgeTestSet[] = [
     testNumber: 1,
     title: 'Cambridge 19 · General Training Test 1',
     description: 'Workplace health and safety notices, employee relocation guidelines, and formal letter of enquiry.',
-    provenance: 'authentic_calibrated',
-    provenanceNote: 'Calibrated to Cambridge General Training specification with workplace reading and formal correspondence writing.',
+    provenance: 'original_practice',
+    provenanceNote: 'Original IELTS-style practice material; not official Cambridge test content.',
     version: 1,
     updatedAt: 1711200000000,
     availableModules: ['listening', 'reading', 'writing', 'speaking'],
