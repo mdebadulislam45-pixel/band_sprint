@@ -1,7 +1,7 @@
 /**
  * IELTS Sprint — Cambridge IELTS 11–21 Practice Library Database
  *
- * Provides the verified catalogue of Cambridge Volumes 11 through 21,
+ * Provides a catalogue of volume-themed IELTS-style practice collections for volumes 11 through 21,
  * populated practice test sets across Listening, Reading, Writing, Speaking,
  * and a validated import pipeline for authorized test content JSON.
  */
@@ -17,7 +17,7 @@ import {
 import { getOrCreateCambridgeTest } from './cambridgeTestGenerator';
 
 // ============================================================================
-// 1. VERIFIED VOLUMES 11–21 CATALOGUE
+// 1. VOLUME-THEMED IELTS-STYLE PRACTICE CATALOGUE
 // ============================================================================
 
 export const CAMBRIDGE_VOLUMES_CATALOGUE: CambridgeVolumeCatalogueEntry[] = [
@@ -771,7 +771,7 @@ export function getAllCambridgeTests(): CambridgeTestSet[] {
   INITIAL_CAMBRIDGE_TESTS.forEach((t) => map.set(t.id, t));
   customTests.forEach((t) => map.set(t.id, t));
 
-  // Ensure all Cambridge 11 to 21 tests (1 to 4) are populated and available in the library map
+  // Generate original IELTS-style practice sets for each catalogue volume, edition and test number
   for (let v = 11; v <= 21; v++) {
     for (let t = 1; t <= 4; t++) {
       const acadId = `cambridge-${v}-academic-test-${t}`;
