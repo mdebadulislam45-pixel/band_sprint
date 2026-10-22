@@ -86,6 +86,37 @@ describe('Phase 6A: Cambridge IELTS 11–21 Practice Library', () => {
     assert.ok(test.speaking.part3.questions.length > 0, 'Speaking Part 3 must have questions');
   });
 
+  it('should provide complete 40-question Listening and Reading sets across the generated catalogue', () => {
+    const allTests = getAllCambridgeTests();
+    assert.strictEqual(allTests.length, 11 * 2 * 4, 'Expected one generated set for each volume, edition and test number');
+
+    for (const test of allTests) {
+      assert.strictEqual(test.provenance, 'original_practice', `${test.id} must be labelled as original practice`);
+      assert.deepStrictEqual(
+        test.availableModules.slice().sort(),
+        ['listening', 'reading', 'speaking', 'writing'],
+        `${test.id} must advertise all four practice modules`
+      );
+
+      assert.ok(test.listening, `${test.id} must include Listening`);
+      assert.strictEqual(test.listening.parts.length, 4, `${test.id} must contain four Listening parts`);
+      const listeningQuestions = test.listening.parts.flatMap((part) => part.questions);
+      assert.strictEqual(listeningQuestions.length, 40, `${test.id} must contain 40 Listening questions`);
+      assert.strictEqual(new Set(listeningQuestions.map((question) => question.id)).size, 40, `${test.id} Listening question IDs must be unique`);
+
+      assert.ok(test.reading, `${test.id} must include Reading`);
+      assert.strictEqual(test.reading.passages.length, 3, `${test.id} must contain three Reading passages`);
+      const readingQuestions = test.reading.passages.flatMap((passage) => passage.questions);
+      assert.strictEqual(readingQuestions.length, 40, `${test.id} must contain 40 Reading questions`);
+      assert.strictEqual(new Set(readingQuestions.map((question) => question.id)).size, 40, `${test.id} Reading question IDs must be unique`);
+
+      assert.ok(test.writing?.task1?.prompt && test.writing?.task2?.prompt, `${test.id} must include both Writing tasks`);
+      assert.ok(test.speaking?.part1?.questions?.length, `${test.id} must include Speaking Part 1`);
+      assert.ok(test.speaking?.part2?.cueCardTopic, `${test.id} must include a Speaking Part 2 cue card`);
+      assert.ok(test.speaking?.part3?.questions?.length, `${test.id} must include Speaking Part 3`);
+    }
+  });
+
   it('should validate valid Cambridge test imports correctly', () => {
     const sampleValidTest = {
       volume: 15,
