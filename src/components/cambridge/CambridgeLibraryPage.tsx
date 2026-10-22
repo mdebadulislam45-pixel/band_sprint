@@ -598,10 +598,10 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
             <div>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
                 <BookOpen className="w-6 h-6 text-blue-600" />
-                Cambridge IELTS 11–21 Library
+                IELTS Practice Library · Volumes 11–21
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Explore volume-themed IELTS-style practice with all four skills and computer-delivered test controls.
+                Independent IELTS-style practice inspired by volume themes. Questions are original, not official Cambridge content.
               </p>
             </div>
           </div>
@@ -699,7 +699,6 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
         {/* Volume Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCatalogue.map((vol) => {
-            const isVerified = (vol.availableTests[selectedEdition] || []).length > 0;
             return (
               <div
                 key={vol.volume}
@@ -717,13 +716,13 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
                       Vol {vol.volume} · {vol.publicationYear}
                     </span>
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 border border-emerald-200 dark:border-emerald-800">
-                      Full 4 Modules Ready
+                      4 Skills
                     </span>
                   </div>
 
                   <div>
                     <h3 className="text-lg font-black text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors">
-                      {vol.title}
+                      Volume {vol.volume} · IELTS-style practice
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                       {vol.description}
@@ -733,7 +732,7 @@ export const CambridgeLibraryPage: React.FC<CambridgeLibraryPageProps> = ({
 
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
                   <span className="text-slate-400 font-mono text-[11px]">
-                    4 Complete Tests (L, R, W, S)
+                    4 practice sets · Listening, Reading, Writing & Speaking
                   </span>
                   <div className="flex items-center gap-1 text-blue-600 font-bold group-hover:translate-x-1 transition-transform">
                     <span>Open Tests</span>
