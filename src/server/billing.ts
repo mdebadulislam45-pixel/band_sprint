@@ -49,7 +49,7 @@ export const SUBSCRIPTION_PLANS: Record<'free' | 'pro' | 'master', SubscriptionP
   pro: {
     id: 'pro',
     name: 'Sprint Premium',
-    tagline: 'Interactive 1-on-1 AI voice examiner & unlimited Cambridge evaluations',
+    tagline: 'Interactive AI voice practice and expanded evaluation limits',
     priceMonthly: 150,
     priceYearly: 1500,
     currency: 'BDT',
@@ -58,7 +58,7 @@ export const SUBSCRIPTION_PLANS: Record<'free' | 'pro' | 'master', SubscriptionP
       'Interactive 1-on-1 Voice Examiner (British Male Voices)',
       'Unlimited Speaking Fluency & Grammar Diagnostics',
       'Task 1 & Task 2 Writing Band Evaluator',
-      'Band 9 Official Cambridge Model Answers',
+      'High-quality model answers for IELTS-style practice',
       'Comprehensive Mistake Vault with Spaced Repetition',
       'Advanced Academic Collocation & C1 Idiom Labs'
     ],
@@ -74,7 +74,7 @@ export const SUBSCRIPTION_PLANS: Record<'free' | 'pro' | 'master', SubscriptionP
   master: {
     id: 'master',
     name: 'Sprint Master & Intensive',
-    tagline: 'Guaranteed Band 8.0+ preparation with live mock exams',
+    tagline: 'Structured advanced preparation with live mock exams',
     priceMonthly: 300,
     priceYearly: 3000,
     currency: 'BDT',
@@ -85,7 +85,7 @@ export const SUBSCRIPTION_PLANS: Record<'free' | 'pro' | 'master', SubscriptionP
       'Deep AI Examiner Diagnostic Breakdown across all 4 Criteria',
       'Priority High-Fidelity Audio Streaming',
       'Customized 30-Day Band 8.5 Study Plan',
-      'Verified Cambridge Band Certificate of Completion'
+      'IELTS Sprint practice-completion certificate (not an official IELTS result)'
     ],
     limits: {
       speakingEvaluationsPerDay: 9999,
