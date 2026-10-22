@@ -15,34 +15,43 @@ interface ProgressDonutCardProps {
 }
 
 export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
-  overallPercentage = 68,
-  estimatedBand = 7.0,
+  overallPercentage = 0,
+  estimatedBand = 0,
   targetBand = 7.5,
   completedCount = 0,
   examHistory = [],
   onViewAnalytics,
   onNavigate
 }) => {
-  const fullMockHistory = examHistory.filter(\n    (record) => isFullMockExamRecord(record) && typeof record.overallBand === 'number' && record.overallBand > 0\n  );\n  const hasFullMockAssessment = fullMockHistory.length > 0;\n  const safePercent = hasFullMockAssessment ? Math.max(0, Math.min(100, Math.round(overallPercentage))) : 0;
+  const fullMockHistory = examHistory.filter(
+    (record) => isFullMockExamRecord(record) && typeof record.overallBand === 'number' && record.overallBand > 0
+  );
+  const hasFullMockAssessment = fullMockHistory.length > 0;
+  const safePercent = hasFullMockAssessment ? Math.max(0, Math.min(100, Math.round(overallPercentage))) : 0;
   const radius = 38;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (safePercent / 100) * circumference;
 
-  // examHistory is stored newest-first (unshift)
+  // Show actual module scores when recorded; never manufacture skill scores.
   const latestListeningAttempt =
     examHistory.find((h) => typeof h.listeningBand === 'number' && h.listeningBand > 0) || null;
   const latestReadingAttempt =
     examHistory.find(
       (h) => isFullMockExamRecord(h) && typeof h.readingBand === 'number' && h.readingBand > 0
     ) || null;
-  const listeningScore = latestListeningAttempt?.listeningBand
+  const latestFullMock = fullMockHistory[0];
+  const listeningScore = typeof latestListeningAttempt?.listeningBand === 'number'
     ? latestListeningAttempt.listeningBand.toFixed(1)
-    : estimatedBand.toFixed(1);
-  const readingScore = latestReadingAttempt?.readingBand
+    : '—';
+  const readingScore = typeof latestReadingAttempt?.readingBand === 'number'
     ? latestReadingAttempt.readingBand.toFixed(1)
-    : estimatedBand.toFixed(1);
-  const writingScore = Math.max(5.5, estimatedBand - 0.5).toFixed(1);
-  const speakingScore = estimatedBand.toFixed(1);
+    : '—';
+  const writingScore = typeof latestFullMock?.writingBand === 'number'
+    ? latestFullMock.writingBand.toFixed(1)
+    : '—';
+  const speakingScore = typeof latestFullMock?.speakingBand === 'number'
+    ? latestFullMock.speakingBand.toFixed(1)
+    : '—';
 
   const skillPills = [
     {
@@ -142,7 +151,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
             <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Readiness</span>
             <span className="text-base font-black text-slate-900 dark:text-white font-mono leading-none mt-0.5">
-              {hasFullMockAssessment ? `${safePercent}%` : '—'}
+              {hasFullMockAssessment ? `${hasFullMockAssessment ? `${safePercent}%` : '—'}` : '—'}
             </span>
           </div>
         </div>
@@ -159,9 +168,11 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
               </span>
             </div>
             <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-              {bandGap > 0
-                ? `+${bandGap.toFixed(1)} band needed to reach ${targetBand.toFixed(1)}`
-                : `On track for Target Band ${targetBand.toFixed(1)}`}
+              {!hasFullMockAssessment
+                ? 'Complete a full mock to see your score trajectory'
+                : bandGap > 0
+                  ? `+${bandGap.toFixed(1)} band needed to reach ${targetBand.toFixed(1)}`
+                  : `On track for Target Band ${targetBand.toFixed(1)}`}
             </div>
           </div>
 
