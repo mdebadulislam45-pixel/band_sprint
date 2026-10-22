@@ -106,7 +106,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
             Target Band Progress
           </h3>
           <p className="text-[10px] text-slate-500 dark:text-slate-400">
-            {examHistory.length > 0
+            {hasFullMockAssessment
               ? `Based on ${fullMockHistory.length} full mock assessment${fullMockHistory.length > 1 ? 's' : ''}`
                : 'Take a full mock test to establish a baseline'}
           </p>
@@ -160,7 +160,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
         <div className="flex-1 space-y-2 min-w-0">
           <div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              Current Trajectory
+              Average full-mock band
             </div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
