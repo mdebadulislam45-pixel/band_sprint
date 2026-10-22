@@ -103,11 +103,11 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-            Band Readiness Index
+            Target Band Progress
           </h3>
           <p className="text-[10px] text-slate-500 dark:text-slate-400">
             {examHistory.length > 0
-              ? `Based on ${examHistory.length} recorded assessment${examHistory.length > 1 ? 's' : ''}`
+              ? `Based on ${fullMockHistory.length} full mock assessment${fullMockHistory.length > 1 ? 's' : ''}`
                : 'Take a full mock test to establish a baseline'}
           </p>
         </div>
@@ -149,7 +149,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Readiness</span>
+            <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Goal progress</span>
             <span className="text-base font-black text-slate-900 dark:text-white font-mono leading-none mt-0.5">
               {hasFullMockAssessment ? `${safePercent}%` : '—'}
             </span>
@@ -176,29 +176,9 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
             </div>
           </div>
 
-          {/* Mini Sparkline Chart */}
-          <div className="w-full h-7 relative">
-            <svg viewBox="0 0 120 28" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-              <defs>
-                <linearGradient id="sparklineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.28" />
-                  <stop offset="100%" stopColor="#3B82F6" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M0,23 Q25,21 48,16 T88,11 T120,4 L120,28 L0,28 Z"
-                fill="url(#sparklineGrad)"
-              />
-              <path
-                d="M0,23 Q25,21 48,16 T88,11 T120,4"
-                fill="none"
-                stroke="#3B82F6"
-                strokeWidth="2.25"
-                strokeLinecap="round"
-              />
-              <circle cx="120" cy="4" r="3" fill="#3B82F6" />
-            </svg>
-          </div>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400">
+            Goal progress is a comparison with your target, not a predicted official IELTS result.
+          </p>
         </div>
       </div>
 
