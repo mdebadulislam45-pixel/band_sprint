@@ -1,4 +1,5 @@
 import { UserProfile, UserProgress } from '../types';
+import { auth } from '../lib/firebase';
 import { getAllUsers, saveUser, ACTIVE_USER_KEY, createDefaultProgress, checkAndUpdateStreak } from './userStorage';
 
 export interface GoogleAuthProfile {
@@ -41,8 +42,20 @@ export function handleGoogleSignInAction(candidateInfo?: Partial<GoogleAuthProfi
   user?: UserProfile;
   message: string;
 } {
+  // Never treat a typed email as proof of Google identity. A real Firebase-authenticated
+  // Google provider session must exist and match the profile supplied by the caller.
+  const firebaseUser = auth.currentUser;
+  const hasGoogleProvider = Boolean(firebaseUser?.providerData.some((provider) => provider.providerId === 'google.com'));
+  const authenticatedEmail = (firebaseUser?.email || '').trim().toLowerCase();
   const rawEmail = (candidateInfo?.email || '').trim().toLowerCase();
-  
+
+  if (!firebaseUser || !hasGoogleProvider || !authenticatedEmail || authenticatedEmail !== rawEmail) {
+    return {
+      success: false,
+      message: 'Google sign-in could not be verified. Please use the Continue with Google button and complete Google authentication.'
+    };
+  }
+
   if (!rawEmail) {
     return {
       success: false,

@@ -6,15 +6,12 @@ import {
   AlertCircle,
   ExternalLink,
   Loader2,
-  Mail,
   Flame,
-  CheckCircle2,
   Copy,
   Check
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { firebaseSyncService } from '../../services/firebaseSyncService';
-import { validateGmailAddress } from '../../utils/googleAuth';
 import firebaseConfig from '../../../firebase-applet-config.json';
 
 interface GoogleSignInModalProps {
@@ -31,9 +28,6 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-  const [gmailInput, setGmailInput] = useState('');
-  const [gmailName, setGmailName] = useState('');
-  const [showManualGmail, setShowManualGmail] = useState(false);
   const [copiedDomain, setCopiedDomain] = useState(false);
 
   if (!isOpen) return null;
@@ -70,48 +64,21 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
 
       if (code === 'auth/popup-blocked') {
         setErrorMsg('The sign-in popup was blocked by your browser.');
-        setErrorDetails('Please allow popups for this site, or use the direct Gmail sign-in below.');
-        setShowManualGmail(true);
+        setErrorDetails('Allow popups for this site and try again. If you are using an embedded browser, open IELTS Sprint in Chrome and retry.');
       } else if (code === 'auth/unauthorized-domain') {
         setErrorMsg('Firebase domain authorization needed.');
         setErrorDetails(
           `Domain "${currentHostname}" needs to be added to Authorized Domains in Firebase Console (Authentication > Settings > Authorized domains). You can also sign in below using your Gmail directly.`
         );
-        setShowManualGmail(true);
       } else if (code === 'auth/popup-closed-by-user') {
         setErrorMsg('Sign-in cancelled. Popup was closed before completion.');
       } else if (code === 'auth/operation-not-allowed') {
         setErrorMsg('Google Sign-In provider is disabled in Firebase Console.');
         setErrorDetails('Enable Google under Authentication > Sign-in method in Firebase Console.');
-        setShowManualGmail(true);
       } else {
         setErrorMsg(msg.includes('Unexpected token') ? 'Authentication service connection reset.' : (err?.message || 'Unable to connect to Google sign-in.'));
-        setShowManualGmail(true);
       }
     }
-  };
-
-  const handleManualGmailSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    soundManager.playBeep(520, 0.04);
-
-    const validation = validateGmailAddress(gmailInput);
-    if (!validation.isValid) {
-      soundManager.playBeep(350, 0.08);
-      setErrorMsg(validation.error || 'Please enter a valid @gmail.com address.');
-      return;
-    }
-
-    soundManager.playSuccess();
-    const derivedName = gmailName.trim() || gmailInput.split('@')[0]
-      .replace(/[._]/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-
-    onSuccess({
-      email: gmailInput.trim().toLowerCase(),
-      name: derivedName
-    });
-    onClose();
   };
 
   const handleCopyDomain = () => {
@@ -260,55 +227,6 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
                 )}
               </button>
 
-              {/* Divider / Toggle for Direct Gmail */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowManualGmail(!showManualGmail)}
-                  className="w-full text-center text-[11px] text-slate-400 hover:text-blue-400 transition cursor-pointer py-1"
-                >
-                  {showManualGmail ? 'Hide direct Gmail login' : 'Or sign in directly using your Gmail address →'}
-                </button>
-              </div>
-
-              {/* Direct Gmail Input Section */}
-              {showManualGmail && (
-                <form
-                  onSubmit={handleManualGmailSubmit}
-                  className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-2.5 animate-fadeIn"
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
-                    <Mail className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Quick Gmail Candidate Access</span>
-                  </div>
-                  <div>
-                    <input
-                      type="email"
-                      value={gmailInput}
-                      onChange={(e) => setGmailInput(e.target.value)}
-                      placeholder="e.g. mdebadulislam45@gmail.com"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      value={gmailName}
-                      onChange={(e) => setGmailName(e.target.value)}
-                      placeholder="Candidate name (optional)"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Sign In with Gmail</span>
-                  </button>
-                </form>
-              )}
             </div>
 
             {/* Footer Trust Indicator */}
