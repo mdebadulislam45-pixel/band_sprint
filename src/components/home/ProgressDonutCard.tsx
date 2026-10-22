@@ -23,7 +23,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
   onViewAnalytics,
   onNavigate
 }) => {
-  const safePercent = Math.max(8, Math.min(100, Math.round(overallPercentage)));
+  const fullMockHistory = examHistory.filter(\n    (record) => isFullMockExamRecord(record) && typeof record.overallBand === 'number' && record.overallBand > 0\n  );\n  const hasFullMockAssessment = fullMockHistory.length > 0;\n  const safePercent = hasFullMockAssessment ? Math.max(0, Math.min(100, Math.round(overallPercentage))) : 0;
   const radius = 38;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (safePercent / 100) * circumference;
@@ -99,7 +99,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
           <p className="text-[10px] text-slate-500 dark:text-slate-400">
             {examHistory.length > 0
               ? `Based on ${examHistory.length} recorded assessment${examHistory.length > 1 ? 's' : ''}`
-              : 'Estimated baseline · Take a mock test to calibrate'}
+               : 'Take a full mock test to establish a baseline'}
           </p>
         </div>
         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60">
@@ -142,7 +142,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
             <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Readiness</span>
             <span className="text-base font-black text-slate-900 dark:text-white font-mono leading-none mt-0.5">
-              {safePercent}%
+              {hasFullMockAssessment ? `${safePercent}%` : '—'}
             </span>
           </div>
         </div>
@@ -155,7 +155,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
             </div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                Band {estimatedBand.toFixed(1)}
+                {hasFullMockAssessment ? `Band ${estimatedBand.toFixed(1)}` : 'Not assessed'}
               </span>
             </div>
             <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
