@@ -151,7 +151,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
             <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Readiness</span>
             <span className="text-base font-black text-slate-900 dark:text-white font-mono leading-none mt-0.5">
-              {hasFullMockAssessment ? `${hasFullMockAssessment ? `${safePercent}%` : '—'}` : '—'}
+              {hasFullMockAssessment ? `${safePercent}%` : '—'}
             </span>
           </div>
         </div>
