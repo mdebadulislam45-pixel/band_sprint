@@ -89,14 +89,40 @@ export function speakDialogue(
   } = {}
 ): void {
   const preferredGender = getPreferredVoiceGender();
-  const lockedSpeakerId = preferredGender === 'female' ? 'speaker_05' : 'speaker_04';
 
-  const mappedLines: DialogueLine[] = lines.map((line) => ({
-    speakerId: lockedSpeakerId,
-    speakerName: line.speaker,
-    text: line.text,
-    pauseAfterMs: line.pauseAfterMs || 450
-  }));
+  // Keep explicit speaker identity/gender per turn. Locking every line to the
+  // user's preferred examiner voice collapses a multi-speaker dialogue into
+  // one voice, even when the caller supplied male/female turns.
+  const mappedLines: DialogueLine[] = lines.map((line) => {
+    const label = line.speaker.trim().toLowerCase();
+    const namedSpeaker = Object.values(IELTS_SPEAKERS).find((speaker) => {
+      const canonicalName = speaker.name.split(' (')[0].trim().toLowerCase();
+      const firstName = canonicalName.split(/\s+/)[0];
+      return label === canonicalName || label === firstName;
+    });
+
+    const resolvedSpeaker =
+      namedSpeaker && (!line.gender || namedSpeaker.gender === line.gender)
+        ? namedSpeaker
+        : undefined;
+    const speakerId =
+      resolvedSpeaker?.id ||
+      (line.gender === 'female'
+        ? 'speaker_05'
+        : line.gender === 'male'
+          ? 'speaker_04'
+          : undefined);
+
+    return {
+      ...(speakerId ? { speakerId } : {}),
+      speakerName: line.speaker,
+      ...(line.gender || resolvedSpeaker?.gender
+        ? { gender: line.gender || resolvedSpeaker?.gender }
+        : {}),
+      text: line.text,
+      pauseAfterMs: line.pauseAfterMs ?? 450
+    };
+  });
 
   audioService
     .playDialogueSequentially(mappedLines, {

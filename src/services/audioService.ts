@@ -863,7 +863,27 @@ class AudioService {
       .map((l) => l.trim())
       .filter(Boolean);
 
-    const hasSpeakerTags = rawLines.some((l) => /^([A-Za-z0-9\s().-]{2,38}):\s*(.+)$/.test(l));
+    // A colon alone does not make a speaker tag ("Note: ...", URLs, times,
+    // and ordinary prose can contain colons). Only parse recognized speaker labels.
+    const getSpeakerTag = (line: string): { label: string; content: string } | null => {
+      const match = line.match(/^([A-Za-z][A-Za-z0-9 .()'-]{1,37}):\s*(.+)$/);
+      if (!match) return null;
+
+      const label = match[1].trim();
+      const normalized = label.toLowerCase().replace(/\s+/g, ' ');
+      const genericLabel = /^(?:speaker|person|man|woman|male|female)(?:\s+(?:\d+|[a-z]))?$/.test(normalized);
+      const roleLabel = /^(?:student|interviewer|examiner|candidate|receptionist|librarian|nurse|officer|professor|director|lecturer|teacher|tutor|customer|staff|guide|host|guest|narrator|caller|operator|doctor|assistant|advisor|manager|passenger|tourist|clerk)(?:\s+\d+)?$/.test(normalized);
+      const titledName = /^(?:mr|mrs|ms|miss|dr)\.?\s+[a-z][a-z .'-]{0,25}$/i.test(label);
+      const knownName = Object.values(IELTS_SPEAKERS).some((speaker) => {
+        const canonicalName = speaker.name.split(' (')[0].trim().toLowerCase();
+        return normalized === canonicalName || normalized === canonicalName.split(/\s+/)[0];
+      });
+
+      if (!genericLabel && !roleLabel && !titledName && !knownName) return null;
+      return { label, content: match[2] };
+    };
+
+    const hasSpeakerTags = rawLines.some((line) => getSpeakerTag(line) !== null);
     if (!hasSpeakerTags && rawLines.length <= 1 && rawText.length <= 280) {
       return null;
     }
@@ -894,11 +914,12 @@ class AudioService {
     const parsed: DialogueLine[] = [];
 
     for (const line of rawLines) {
-      const match = line.match(/^([A-Za-z0-9\s().-]{2,38}):\s*(.+)$/);
+      const match = getSpeakerTag(line);
       if (match) {
-        const speakerLabel = match[1].trim();
-        const content = match[2].replace(/^["“”']+|["“”']+$/g, '').trim();
+        const speakerLabel = match.label;
+        const content = match.content.replace(/^[\"“”']+|[\"“”']+$/g, '').trim();
         if (!content) continue;
+
 
         if (!speakerMap.has(speakerLabel)) {
           const g = inferGender(speakerLabel);
