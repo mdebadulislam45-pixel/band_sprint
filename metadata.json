@@ -2,7 +2,8 @@
   "name": "IELTS Sprint Masterguide",
   "description": "An all-in-one, interactive web dashboard providing AI-driven exam prep, diagnostics, and tools in a single, portable file.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

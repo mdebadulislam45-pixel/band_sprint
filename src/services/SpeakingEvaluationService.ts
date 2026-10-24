@@ -1,76 +1,146 @@
+/**
+ * IELTS SPRINT — SPEAKING EVALUATION SERVICE
+ * Evaluates candidate responses across the 4 official IELTS Speaking criteria:
+ * 1. Fluency and Coherence (25%)
+ * 2. Lexical Resource (25%)
+ * 3. Grammatical Range and Accuracy (25%)
+ * 4. Pronunciation (25%)
+ *
+ * Strictly enforces the 5-word minimum input gate. Zero mock or hardcoded scores
+ * are generated when speech is missing, inaudible, or under 5 words.
+ */
+
 import {
   SpeakingAnswerRecord,
   SpeakingEvaluationReport,
   SpeakingTestAnalytics,
   CriterionFeedback,
-  GrammarObservation,
-  VocabUpgrade
+  InstantSpeakingFeedback,
+  DetailedGrammarError,
+  PronunciationWordTip,
+  SpeakingPart,
+  GrammarObservation
 } from '../types/speakingTypes';
 
+export interface SpeakingInputGateResult {
+  isValidAttempt: boolean;
+  wordCount: number;
+  overallBand: number;
+  criteria: { fc: number; lr: number; gra: number; pr: number };
+  feedbackTitle: string;
+  feedbackEn: string;
+  feedbackBn: string;
+}
+
 /**
- * Common conversational fillers and hesitation markers in spoken English
+ * Official Strict Input Gate for IELTS Speaking Evaluation.
+ * Rejects empty, unattempted, or sub-5-word transcripts with authentic 0.0 zero-state.
  */
+export function checkSpeakingInputGate(transcript: string): SpeakingInputGateResult {
+  const cleanWords = (transcript || '').trim().split(/\s+/).filter(Boolean);
+  if (cleanWords.length < 5) {
+    return {
+      isValidAttempt: false,
+      wordCount: cleanWords.length,
+      overallBand: 0.0,
+      criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+      feedbackTitle: "No Candidate Speech Detected",
+      feedbackEn: "You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.",
+      feedbackBn: "পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।"
+    };
+  }
+
+  return {
+    isValidAttempt: true,
+    wordCount: cleanWords.length,
+    overallBand: 0.0,
+    criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+    feedbackTitle: "Valid Speech Detected",
+    feedbackEn: "",
+    feedbackBn: ""
+  };
+}
+
 const COMMON_FILLERS = [
   'um',
   'uh',
-  'er',
-  'ah',
   'like',
   'you know',
-  'i mean',
-  'sort of',
-  'kind of',
-  'actually',
   'basically',
-  'literally'
+  'actually',
+  'literally',
+  'kind of',
+  'sort of',
+  'i mean',
+  'well'
 ];
 
-/**
- * Evaluates fluency metrics from candidate speaking answers
- */
-export function analyzeSpeakingFluency(answers: SpeakingAnswerRecord[]): SpeakingTestAnalytics {
+const ADVANCED_VOCAB_PATTERNS = [
+  /\b(furthermore|moreover|consequently|nevertheless|nonetheless|albeit|notwithstanding)\b/gi,
+  /\b(ubiquitous|proliferation|mitigate|exacerbate|indispensable|paramount|detrimental|catalyst)\b/gi,
+  /\b(perspective|implications|infrastructure|sustainability|socioeconomic|paradigm|juxtaposition)\b/gi,
+  /\b(substantially|predominantly|fundamentally|inevitably|exponentially|intrinsically)\b/gi,
+  /\b(crucial|significant|vital|essential|compelling|profound|nuanced|multifaceted)\b/gi
+];
+
+const COMPLEX_GRAMMAR_PATTERNS = [
+  /\b(although|even though|despite the fact that|whereas|while|provided that|unless)\b/gi,
+  /\b(which|who|whom|whose|whereby|in which)\b/gi,
+  /\b(had been|have been|has been|would have|could have|should have|might have)\b/gi,
+  /\b(not only .* but also|neither .* nor|either .* or)\b/gi,
+  /\b(if .* were|were .* to)\b/gi
+];
+
+function roundToHalfBand(score: number): number {
+  const clamped = Math.max(0.0, Math.min(9.0, score));
+  return Math.round(clamped * 2) / 2;
+}
+
+export function computeSpeakingAnalytics(answers: SpeakingAnswerRecord[]): SpeakingTestAnalytics {
   let totalSpeakingTimeSec = 0;
   let totalWordsSpoken = 0;
   let totalPauses = 0;
   let totalLongPauses = 0;
   let totalFillers = 0;
+
   const fillerCounts: Record<string, number> = {};
-  const uniqueWords = new Set<string>();
+  const allWords: string[] = [];
 
-  answers.forEach((ans) => {
-    totalSpeakingTimeSec += ans.durationSec;
-    totalWordsSpoken += ans.wordCount;
-    totalPauses += ans.pauseCount;
-    totalLongPauses += ans.longPauseCount;
+  for (const ans of answers) {
+    const cleanWords = (ans.transcript || '').trim().split(/\s+/).filter(Boolean);
+    totalSpeakingTimeSec += ans.durationSec || 0;
+    totalWordsSpoken += cleanWords.length;
+    totalPauses += ans.pauseCount || 0;
+    totalLongPauses += ans.longPauseCount || 0;
+    totalFillers += ans.fillerCount || 0;
 
-    // Detect fillers from transcript
-    const lower = ans.transcript.toLowerCase();
-    COMMON_FILLERS.forEach((f) => {
-      const regex = new RegExp(`\\b${f}\\b`, 'gi');
-      const matches = lower.match(regex);
-      if (matches) {
-        const count = matches.length;
-        totalFillers += count;
-        fillerCounts[f] = (fillerCounts[f] || 0) + count;
+    if (ans.detectedFillers) {
+      for (const f of ans.detectedFillers) {
+        const lower = f.toLowerCase();
+        fillerCounts[lower] = (fillerCounts[lower] || 0) + 1;
       }
-    });
+    }
 
-    // Tokenize unique vocabulary
-    const tokens: string[] = lower.match(/[a-z']+/g) || [];
-    tokens.forEach((t: string) => {
-      if (t.length > 2) uniqueWords.add(t);
-    });
-  });
+    const words = (ans.transcript || '')
+      .toLowerCase()
+      .replace(/[^a-z\s']/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 1);
+    allWords.push(...words);
+  }
 
-  const totalMinutes = Math.max(0.2, totalSpeakingTimeSec / 60);
-  const averageWpm = Math.round(totalWordsSpoken / totalMinutes);
+  const averageWpm =
+    totalSpeakingTimeSec > 5 ? Math.round((totalWordsSpoken / totalSpeakingTimeSec) * 60) : 0;
+
+  const uniqueSet = new Set(allWords);
+  const uniqueVocabularyCount = uniqueSet.size;
+  const lexicalDiversityRatio =
+    allWords.length > 0 ? Number((uniqueVocabularyCount / allWords.length).toFixed(2)) : 0;
 
   const mostFrequentFillers = Object.entries(fillerCounts)
     .map(([word, count]) => ({ word, count }))
-    .sort((a, b) => b.count - a.count);
-
-  const lexicalDiversityRatio =
-    totalWordsSpoken > 0 ? parseFloat((uniqueWords.size / totalWordsSpoken).toFixed(2)) : 0;
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
 
   return {
     totalSpeakingTimeSec,
@@ -80,458 +150,797 @@ export function analyzeSpeakingFluency(answers: SpeakingAnswerRecord[]): Speakin
     totalLongPauses,
     totalFillers,
     mostFrequentFillers,
-    uniqueVocabularyCount: uniqueWords.size,
+    uniqueVocabularyCount,
     lexicalDiversityRatio
   };
 }
 
-/**
- * Evaluates answers against the 4 official IELTS Speaking criteria:
- * 1. Fluency & Coherence
- * 2. Lexical Resource
- * 3. Grammatical Range & Accuracy
- * 4. Pronunciation
- */
+export const analyzeSpeakingFluency = computeSpeakingAnalytics;
+
+export function analyzeSingleTranscriptMetrics(
+  transcript: string,
+  durationSec: number
+): {
+  wordCount: number;
+  wordsPerMinute: number;
+  fillerCount: number;
+  detectedFillers: string[];
+} {
+  const clean = (transcript || '').trim();
+  const words = clean ? clean.split(/\s+/).filter(Boolean) : [];
+  const wordCount = words.length;
+  const safeDuration = Math.max(1, durationSec);
+  const wordsPerMinute = wordCount >= 5 ? Math.round((wordCount / safeDuration) * 60) : 0;
+
+  const lower = clean.toLowerCase();
+  const detectedFillers: string[] = [];
+  let fillerCount = 0;
+
+  for (const filler of COMMON_FILLERS) {
+    const regex = new RegExp(`\\b${filler}\\b`, 'gi');
+    const matches = lower.match(regex);
+    if (matches && matches.length > 0) {
+      fillerCount += matches.length;
+      for (let i = 0; i < matches.length; i++) {
+        detectedFillers.push(filler);
+      }
+    }
+  }
+
+  return {
+    wordCount,
+    wordsPerMinute,
+    fillerCount,
+    detectedFillers
+  };
+}
+
 export function evaluateSpeakingSession(
   answers: SpeakingAnswerRecord[],
-  targetBand: number = 7.5
+  analyticsOrTarget?: SpeakingTestAnalytics | number
 ): SpeakingEvaluationReport {
-  const analytics = analyzeSpeakingFluency(answers);
+  const analytics: SpeakingTestAnalytics =
+    typeof analyticsOrTarget === 'object' && analyticsOrTarget !== null
+      ? analyticsOrTarget
+      : computeSpeakingAnalytics(answers);
+  const combinedTranscript = answers
+    .map((a) => (a.transcript || '').trim())
+    .filter(Boolean)
+    .join(' ');
 
-  // 1. Fluency & Coherence Score Estimation
-  let fluencyBand = 6.0;
-  if (analytics.averageWpm >= 120 && analytics.totalLongPauses <= 2 && analytics.totalFillers <= 8) {
-    fluencyBand = 8.0;
-  } else if (analytics.averageWpm >= 100 && analytics.totalLongPauses <= 4) {
-    fluencyBand = 7.5;
-  } else if (analytics.averageWpm >= 85 && analytics.totalLongPauses <= 6) {
-    fluencyBand = 7.0;
-  } else if (analytics.averageWpm >= 70) {
-    fluencyBand = 6.5;
-  } else {
-    fluencyBand = 5.5;
+  // Strict 5-Word Input Gate for the session
+  const gate = checkSpeakingInputGate(combinedTranscript);
+  if (!gate.isValidAttempt) {
+    const emptyCriterion = (
+      name: 'Fluency & Coherence' | 'Lexical Resource' | 'Grammatical Range & Accuracy' | 'Pronunciation'
+    ): CriterionFeedback => ({
+      band: 0.0,
+      criterionName: name,
+      strengths: [],
+      improvements: [gate.feedbackEn],
+      evidenceQuotes: []
+    });
+
+    return {
+      isValidAttempt: false,
+      wordCount: gate.wordCount,
+      overallBand: 0.0,
+      fluencyBand: 0.0,
+      lexicalBand: 0.0,
+      grammarBand: 0.0,
+      pronunciationBand: 0.0,
+      feedbackTitle: gate.feedbackTitle,
+      feedbackEn: gate.feedbackEn,
+      feedbackBn: gate.feedbackBn,
+      criteria: {
+        fc: 0.0,
+        lr: 0.0,
+        gra: 0.0,
+        pr: 0.0,
+        fluency: emptyCriterion('Fluency & Coherence'),
+        lexical: emptyCriterion('Lexical Resource'),
+        grammar: emptyCriterion('Grammatical Range & Accuracy'),
+        pronunciation: emptyCriterion('Pronunciation')
+      },
+      keyStrengths: [],
+      holdingYouBack: [gate.feedbackEn, gate.feedbackBn],
+      topPriorities: [
+        'Ensure your microphone is enabled and speak clearly for at least 5 words per response.'
+      ],
+      recommendedModules: [],
+      grammarObservations: [],
+      vocabUpgrades: [],
+      overallSummary: `${gate.feedbackTitle}: ${gate.feedbackEn} (${gate.feedbackBn})`,
+      questionBreakdowns: []
+    };
   }
 
-  // 2. Lexical Resource Score Estimation
-  let lexicalBand = 6.0;
-  if (analytics.uniqueVocabularyCount >= 180 && analytics.lexicalDiversityRatio >= 0.55) {
-    lexicalBand = 8.0;
-  } else if (analytics.uniqueVocabularyCount >= 120 && analytics.lexicalDiversityRatio >= 0.45) {
-    lexicalBand = 7.5;
-  } else if (analytics.uniqueVocabularyCount >= 80) {
-    lexicalBand = 7.0;
-  } else if (analytics.uniqueVocabularyCount >= 50) {
-    lexicalBand = 6.5;
-  } else {
-    lexicalBand = 5.5;
+  let advancedVocabHits = 0;
+  for (const pattern of ADVANCED_VOCAB_PATTERNS) {
+    const matches = combinedTranscript.match(pattern);
+    if (matches) advancedVocabHits += matches.length;
   }
 
-  // 3. Grammar Range Score Estimation
-  let grammarBand = 6.5;
-  const combinedText = answers.map((a) => a.transcript).join(' ');
-  const complexMarkers = ['although', 'whereas', 'despite', 'furthermore', 'which', 'who', 'in order to', 'provided that'];
-  const markerCount = complexMarkers.filter((m) => combinedText.toLowerCase().includes(m)).length;
-
-  if (markerCount >= 5 && answers.length >= 4) {
-    grammarBand = 7.5;
-  } else if (markerCount >= 3) {
-    grammarBand = 7.0;
-  } else if (markerCount >= 1) {
-    grammarBand = 6.5;
-  } else {
-    grammarBand = 6.0;
+  let complexGrammarHits = 0;
+  for (const pattern of COMPLEX_GRAMMAR_PATTERNS) {
+    const matches = combinedTranscript.match(pattern);
+    if (matches) complexGrammarHits += matches.length;
   }
 
-  // 4. Pronunciation Estimation (Based on clarity, cadence and natural pacing)
-  let pronunciationBand = 7.0;
-  if (analytics.averageWpm >= 110 && analytics.totalLongPauses <= 3) {
-    pronunciationBand = 7.5;
-  } else if (analytics.averageWpm < 75) {
-    pronunciationBand = 6.0;
+  // Extract REAL grammatical errors from the candidate's spoken turns
+  const realGrammarObservations: GrammarObservation[] = [];
+  for (const ans of answers) {
+    const turnGate = checkSpeakingInputGate(ans.transcript);
+    if (!turnGate.isValidAttempt) continue;
+    const turnDiag = generateDiagnosticTurnFeedback(
+      ans.questionId,
+      ans.questionText,
+      ans.part,
+      ans.topic,
+      ans.transcript,
+      ans.durationSec,
+      ans.wordsPerMinute
+    );
+    for (const gErr of turnDiag.grammaticalErrors) {
+      if (!realGrammarObservations.some((o) => o.observed === gErr.observed)) {
+        realGrammarObservations.push({
+          observed: gErr.observed,
+          corrected: gErr.corrected,
+          explanation: gErr.explanation
+        });
+      }
+    }
   }
 
-  // Calculate Overall Band (average of 4 criteria rounded to nearest 0.5)
-  const rawOverall = (fluencyBand + lexicalBand + grammarBand + pronunciationBand) / 4;
-  const overallBand = Math.round(rawOverall * 2) / 2;
+  // 1. Fluency & Coherence Scoring based strictly on actual speech output
+  let rawFluency = 5.0;
+  if (analytics.totalWordsSpoken >= 250) rawFluency += 1.5;
+  else if (analytics.totalWordsSpoken >= 120) rawFluency += 1.0;
+  else if (analytics.totalWordsSpoken >= 50) rawFluency += 0.5;
+  else if (analytics.totalWordsSpoken < 20) rawFluency -= 1.0;
 
-  // Criteria Breakdowns
-  const fluencyCriteria: CriterionFeedback = {
+  if (analytics.averageWpm >= 110 && analytics.averageWpm <= 160) rawFluency += 0.5;
+  else if (analytics.averageWpm < 75) rawFluency -= 0.5;
+
+  const fillerRatio =
+    analytics.totalWordsSpoken > 0 ? analytics.totalFillers / analytics.totalWordsSpoken : 0;
+  if (fillerRatio > 0.08) rawFluency -= 0.5;
+  if (analytics.totalLongPauses > 4) rawFluency -= 0.5;
+
+  const fluencyBand = roundToHalfBand(rawFluency);
+
+  // 2. Lexical Resource Scoring
+  let rawLexical = 5.0;
+  if (analytics.uniqueVocabularyCount >= 110) rawLexical += 1.5;
+  else if (analytics.uniqueVocabularyCount >= 65) rawLexical += 1.0;
+  else if (analytics.uniqueVocabularyCount >= 30) rawLexical += 0.5;
+  else if (analytics.uniqueVocabularyCount < 15) rawLexical -= 0.5;
+
+  if (advancedVocabHits >= 5) rawLexical += 1.0;
+  else if (advancedVocabHits >= 2) rawLexical += 0.5;
+
+  const lexicalBand = roundToHalfBand(rawLexical);
+
+  // 3. Grammatical Range & Accuracy Scoring
+  let rawGrammar = 5.5;
+  if (complexGrammarHits >= 6) rawGrammar += 1.5;
+  else if (complexGrammarHits >= 3) rawGrammar += 1.0;
+  else if (complexGrammarHits >= 1) rawGrammar += 0.5;
+  else if (analytics.totalWordsSpoken < 25) rawGrammar -= 0.5;
+
+  if (realGrammarObservations.length >= 3) rawGrammar -= 1.0;
+  else if (realGrammarObservations.length >= 1) rawGrammar -= 0.5;
+
+  const grammarBand = roundToHalfBand(rawGrammar);
+
+  // 4. Pronunciation & Intelligibility Scoring
+  const avgClarity =
+    answers.length > 0
+      ? answers.reduce((acc, a) => acc + (a.clarityScore || 80), 0) / answers.length
+      : 80;
+
+  const avgExpressiveness =
+    answers.length > 0
+      ? answers.reduce((acc, a) => acc + (a.acousticMetrics?.expressivenessScore || 75), 0) / answers.length
+      : 75;
+
+  const totalEnergyDrops = answers.reduce(
+    (acc, a) => acc + (a.acousticMetrics?.energyDropOffs || 0),
+    0
+  );
+
+  let rawPronunciation = 5.5;
+  if (avgClarity >= 90) rawPronunciation += 1.0;
+  else if (avgClarity >= 82) rawPronunciation += 0.5;
+  else if (avgClarity < 70) rawPronunciation -= 0.5;
+
+  if (avgExpressiveness >= 82) rawPronunciation += 0.5;
+  else if (avgExpressiveness < 48) rawPronunciation -= 0.5;
+
+  if (totalEnergyDrops > 5) rawPronunciation -= 0.5;
+
+  const pronunciationBand = roundToHalfBand(rawPronunciation);
+
+  const overallBand = roundToHalfBand(
+    (fluencyBand + lexicalBand + grammarBand + pronunciationBand) / 4
+  );
+
+  const sampleQuotes = answers
+    .map((a) => (a.transcript || '').trim())
+    .filter((t) => t.split(/\s+/).filter(Boolean).length >= 5)
+    .slice(0, 3);
+
+  const fluencyFeedback: CriterionFeedback = {
     band: fluencyBand,
     criterionName: 'Fluency & Coherence',
     strengths: [
-      `Maintained a solid speaking cadence averaging ~${analytics.averageWpm} words per minute.`,
-      'Demonstrated logical idea continuity between introductory statements and personal anecdotes.',
-      answers.some((a) => a.durationSec >= 40)
-        ? 'Successfully sustained extended responses in Part 2 individual long turns.'
-        : 'Answered immediately with relevant situational discourse markers.'
+      analytics.averageWpm >= 105
+        ? `Maintained a natural conversational pace (${analytics.averageWpm} WPM).`
+        : `Produced ${analytics.totalWordsSpoken} spoken words across ${answers.length} recorded turn(s).`
     ],
     improvements: [
-      analytics.totalFillers > 5
-        ? `Observed ${analytics.totalFillers} vocal hesitation markers (${analytics.mostFrequentFillers.map((f) => `"${f.word}"`).slice(0, 3).join(', ')}). Work on replacing with silent pauses.`
-        : 'Continue expanding answers with clear consequence structures ("Consequently...", "As a result...").',
-      analytics.totalLongPauses > 2
-        ? `Recorded ${analytics.totalLongPauses} extended mid-sentence pauses while searching for vocabulary.`
-        : 'Vary sentence openings rather than beginning consecutive turns with similar phrases.'
+      analytics.totalFillers > 2
+        ? `Reduce vocal fillers (${analytics.totalFillers} detected) by using brief silent pauses.`
+        : 'Use cohesive discourse markers ("From my perspective", "Having said that") to extend ideas.',
+      analytics.totalLongPauses > 1
+        ? 'Avoid hesitations exceeding 2.5 seconds between clauses.'
+        : 'Develop Part 2 & Part 3 answers with concrete examples.'
     ],
-    evidenceQuotes: answers.map((a) => a.transcript.slice(0, 80) + '...').slice(0, 2)
+    evidenceQuotes: sampleQuotes
   };
 
-  const lexicalCriteria: CriterionFeedback = {
+  const lexicalFeedback: CriterionFeedback = {
     band: lexicalBand,
     criterionName: 'Lexical Resource',
     strengths: [
-      `Employed a varied active vocabulary pool of ${analytics.uniqueVocabularyCount} distinct lexical items.`,
-      'Incorporated authentic topic-specific collocations without awkward paraphrasing.'
+      `Used ${analytics.uniqueVocabularyCount} unique words (lexical diversity ratio: ${analytics.lexicalDiversityRatio}).`,
+      advancedVocabHits > 0
+        ? `Incorporated ${advancedVocabHits} academic/C1 lexical item(s).`
+        : 'Maintained relevant topic vocabulary.'
     ],
     improvements: [
-      'Upgrade common everyday adjectives ("good", "bad", "big") into precise C1 collocations ("paramount", "detrimental", "substantial").',
-      'Integrate natural idiomatic expressions with correct prepositional pairing.'
+      'Replace high-frequency adjectives ("good", "important", "big") with precise C1 collocations.',
+      'Paraphrase words from the examiner prompt instead of repeating them verbatim.'
     ],
-    evidenceQuotes: []
+    evidenceQuotes: sampleQuotes
   };
 
-  const grammarCriteria: CriterionFeedback = {
+  const grammarFeedback: CriterionFeedback = {
     band: grammarBand,
     criterionName: 'Grammatical Range & Accuracy',
     strengths: [
-      'Showed comfortable control over simple past and present perfect narrative timelines.',
-      'Constructed complex sentences utilizing subordinate clauses and conditional anchors.'
+      complexGrammarHits > 0
+        ? `Used ${complexGrammarHits} subordinate or relative clause structure(s).`
+        : 'Constructed comprehensible declarative sentences.'
     ],
     improvements: [
-      'Pay close attention to third-person singular agreements ("he discusses" vs "he discuss").',
-      'Incorporate speculative modal structures for Part 3 abstract hypotheses ("It could be argued that...", "One might anticipate...").'
+      realGrammarObservations.length > 0
+        ? `Review the ${realGrammarObservations.length} grammatical error(s) detected in your transcript below.`
+        : 'Introduce a wider mix of conditional clauses, passive constructions, and relative clauses.'
     ],
-    evidenceQuotes: []
+    evidenceQuotes: sampleQuotes
   };
 
-  const pronunciationCriteria: CriterionFeedback = {
+  const pronunciationFeedback: CriterionFeedback = {
     band: pronunciationBand,
     criterionName: 'Pronunciation',
     strengths: [
-      'Clear enunciation with reliable syllabic rhythm across multisyllabic terms.',
-      'Appropriate sentence-level stress highlighting focal information in responses.'
+      `Speech intelligibility index: ${Math.round(avgClarity)}%.`
     ],
     improvements: [
-      'Focus on connected speech linking consonants across word boundaries ("first of all", "tucked away").',
-      'Maintain intonational pitch variation to convey genuine speaker engagement.'
+      'Emphasize primary syllable stress on multisyllabic academic words.',
+      'Maintain vocal projection through the final words of each sentence.'
     ],
-    evidenceQuotes: []
+    evidenceQuotes: sampleQuotes
   };
 
-  // Extract realistic grammar observations from candidate speech
-  const grammarObservations: GrammarObservation[] = [
-    {
-      observed: 'I am living in my hometown since my childhood.',
-      corrected: 'I have lived in my hometown since childhood.',
-      explanation: 'Actions beginning in the past and continuing into the present require the Present Perfect tense.'
-    },
-    {
-      observed: 'It make me feel very relaxing.',
-      corrected: 'It makes me feel very relaxed.',
-      explanation: 'Subject-verb agreement requires "makes", and feelings experienced by people use the "-ed" participle "relaxed".'
-    }
-  ];
-
-  const vocabUpgrades: VocabUpgrade[] = [
-    {
-      original: 'very important thing',
-      upgraded: 'paramount consideration / pivotal factor',
-      reason: 'Band 8+ lexical resource requires high-utility academic collocations.'
-    },
-    {
-      original: 'a lot of people think',
-      upgraded: 'a widespread consensus suggests',
-      reason: 'Demonstrates sophisticated objective discourse framing in Part 3.'
-    }
-  ];
-
-  const questionBreakdowns = answers.map((ans) => {
-    if (ans.instantFeedback) return ans.instantFeedback;
-    return generateDiagnosticTurnFeedback(ans);
-  });
-
   return {
+    isValidAttempt: true,
+    wordCount: analytics.totalWordsSpoken,
     overallBand,
     fluencyBand,
     lexicalBand,
     grammarBand,
     pronunciationBand,
     criteria: {
-      fluency: fluencyCriteria,
-      lexical: lexicalCriteria,
-      grammar: grammarCriteria,
-      pronunciation: pronunciationCriteria
+      fc: fluencyBand,
+      lr: lexicalBand,
+      gra: grammarBand,
+      pr: pronunciationBand,
+      fluency: fluencyFeedback,
+      lexical: lexicalFeedback,
+      grammar: grammarFeedback,
+      pronunciation: pronunciationFeedback
     },
     keyStrengths: [
-      `Solid overall communicative pacing (${analytics.averageWpm} WPM)`,
-      'Spontaneous response formulation without robotic memorization',
-      'Relevant examples anchored in personal observation'
-    ],
+      ...fluencyFeedback.strengths,
+      ...lexicalFeedback.strengths
+    ].slice(0, 3),
     holdingYouBack: [
-      analytics.totalFillers > 6 ? 'Excessive conversational filler recurrence' : 'Occasional hesitation when structuring complex ideas',
-      'Over-reliance on repetitive sentence transition coordinators'
+      ...fluencyFeedback.improvements.slice(0, 1),
+      ...grammarFeedback.improvements.slice(0, 1),
+      ...lexicalFeedback.improvements.slice(0, 1)
     ],
     topPriorities: [
-      'Master 2-minute Part 2 cue card structural pacing with 4 clear story milestones',
-      'Internalize 25 C1 idiomatic collocations for topical fluency',
-      'Eliminate filler crutches by adopting measured 1-second silent pauses'
+      'Extend spoken responses with structured reasons and real-world examples.',
+      'Eliminate subject-verb agreement and tense slips during spontaneous speech.',
+      'Use C1 discourse markers to signpost transitions.'
     ],
     recommendedModules: [
       {
-        moduleId: 'collocations',
-        title: 'C1 Collocation Lab',
-        description: 'Targeted lexical upgrades for Band 7.5 to 8.5 precision.',
-        actionRoute: 'collocations'
+        moduleId: 'speaking',
+        title: 'Part 2 & 3 Fluency & Discourse Drills',
+        description: 'Practice structured 2-minute monologues and abstract follow-up questions.',
+        actionRoute: 'speaking'
       },
       {
-        moduleId: 'speakingvault',
-        title: 'Band 9 Speaking Vault',
-        description: 'Full British-accent model recordings with phonetic breakdown.',
-        actionRoute: 'speakingvault'
-      },
-      {
-        moduleId: 'arguments',
-        title: 'PESTLE Idea Matrix',
-        description: 'Brainstorm multifaceted Part 3 arguments across 6 societal angles.',
-        actionRoute: 'arguments'
+        moduleId: 'vocab',
+        title: 'C1 Academic Collocations & Idioms',
+        description: 'Upgrade everyday vocabulary to Band 8.0+ lexical precision.',
+        actionRoute: 'vocab'
       }
     ],
-    grammarObservations,
-    vocabUpgrades,
-    questionBreakdowns,
-    overallSummary: `You demonstrated a confident spoken performance placing you in the Band ${overallBand.toFixed(1)} range. Your speech is natural and clear with strong communicative intent.`
+    grammarObservations: realGrammarObservations,
+    vocabUpgrades: [
+      {
+        original: 'very important',
+        upgraded: 'of paramount importance / indispensable',
+        reason: 'Demonstrates C1 lexical resource in Part 3 discussions.'
+      },
+      {
+        original: 'many people think',
+        upgraded: 'a widespread consensus suggests',
+        reason: 'Elevates informal generalizations into formal academic discourse.'
+      }
+    ],
+    overallSummary: `Assessed across ${analytics.totalWordsSpoken} spoken words (${analytics.averageWpm} WPM): Overall Band ${overallBand.toFixed(1)} (FC ${fluencyBand.toFixed(1)} · LR ${lexicalBand.toFixed(1)} · GRA ${grammarBand.toFixed(1)} · PR ${pronunciationBand.toFixed(1)}).`
   };
 }
 
 /**
- * Evaluates a single speaking test turn in real time (instant feedback)
+ * Evaluates a single candidate speaking turn immediately after they finish speaking.
+ * Enforces the strict < 5 words input gate BEFORE making any API calls or scoring.
  */
 export async function evaluateSingleSpeakingTurn(
-  answer: SpeakingAnswerRecord,
-  cueCardBulletPoints: string[] = []
-): Promise<import('../types/speakingTypes').InstantSpeakingFeedback> {
+  params: {
+    questionId: string;
+    questionText: string;
+    part: SpeakingPart;
+    topic: string;
+    cueCardBulletPoints?: string[];
+    transcript: string;
+    durationSec: number;
+    wordsPerMinute: number;
+  },
+  optionalBulletPoints?: string[]
+): Promise<InstantSpeakingFeedback> {
+  const {
+    questionId,
+    questionText,
+    part,
+    topic,
+    transcript,
+    durationSec,
+    wordsPerMinute
+  } = params;
+  const cueCardBulletPoints = params.cueCardBulletPoints || optionalBulletPoints || [];
+
+  // STRICT INPUT GATE: < 5 words returns immediate 0.0 zero-state without calling API or fabricating scores
+  const gate = checkSpeakingInputGate(transcript);
+  if (!gate.isValidAttempt) {
+    return {
+      questionId,
+      questionText,
+      part,
+      topic,
+      candidateTranscript: (transcript || '').trim(),
+      isValidAttempt: false,
+      wordCount: gate.wordCount,
+      overallBand: 0.0,
+      criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+      feedbackTitle: gate.feedbackTitle,
+      feedbackEn: gate.feedbackEn,
+      feedbackBn: gate.feedbackBn,
+      durationSec,
+      wordsPerMinute: 0,
+      estimatedBand: 0.0,
+      estimatedBands: {
+        fluency: 0.0,
+        lexical: 0.0,
+        grammar: 0.0,
+        pronunciation: 0.0,
+        overall: 0.0
+      },
+      grammaticalErrors: [],
+      pronunciation: {
+        clarityBand: 0.0,
+        cadenceWpm: 0,
+        trickyWords: [],
+        connectedSpeechTips: [],
+        intonationPattern: 'No audible speech recorded.',
+        rhythmVerdict: 'Insufficient speech sample to assess pronunciation.'
+      },
+      band8Answer: {
+        bandScore: 8.5,
+        modelAnswer: '',
+        highlightedCollocations: [],
+        keyDiscourseMarkers: [],
+        examinerRationale: ''
+      },
+      actionableTips: [gate.feedbackEn, gate.feedbackBn]
+    };
+  }
+
   try {
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('ielts_session_token_v2') : null;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const res = await fetch('/api/evaluate-speaking-turn', {
+    const response = await fetch('/api/evaluate-speaking-turn', {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        transcript: answer.transcript,
-        question: answer.questionText,
-        part: answer.part,
-        topic: answer.topic,
+        questionId,
+        question: questionText,
+        part,
+        topic,
         cueCardBulletPoints,
-        durationSec: answer.durationSec,
-        wordsPerMinute: answer.wordsPerMinute
+        transcript: transcript.trim(),
+        durationSec,
+        wordsPerMinute
       })
     });
 
-    if (res.ok) {
-      const data = await res.json();
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.isValidAttempt === false) {
+        return {
+          ...data,
+          questionId,
+          questionText,
+          part,
+          topic,
+          candidateTranscript: transcript.trim(),
+          estimatedBand: 0.0,
+          estimatedBands: {
+            fluency: 0.0,
+            lexical: 0.0,
+            grammar: 0.0,
+            pronunciation: 0.0,
+            overall: 0.0
+          }
+        };
+      }
       if (data && data.estimatedBands && data.band8Answer) {
-        return data;
+        return {
+          ...data,
+          isValidAttempt: true,
+          questionId,
+          questionText,
+          part,
+          topic,
+          candidateTranscript: transcript.trim(),
+          wordCount: gate.wordCount,
+          overallBand: data.estimatedBands.overall,
+          criteria: {
+            fc: data.estimatedBands.fluency,
+            lr: data.estimatedBands.lexical,
+            gra: data.estimatedBands.grammar,
+            pr: data.estimatedBands.pronunciation
+          },
+          durationSec,
+          wordsPerMinute
+        };
       }
     }
-  } catch (err) {
-    console.warn('[SpeakingEvaluationService] Turn evaluation network notice, using local engine:', err);
+  } catch {
+    // Use deterministic rule-based linguistic evaluation on actual transcript (only when >= 5 words)
   }
 
-  // Fallback to local client diagnostic generator
-  return generateDiagnosticTurnFeedback(answer);
+  return generateDiagnosticTurnFeedback(
+    questionId,
+    questionText,
+    part,
+    topic,
+    transcript,
+    durationSec,
+    wordsPerMinute
+  );
 }
 
 /**
- * Local rule-based Cambridge speaking turn evaluator
+ * Deterministic Cambridge linguistic evaluator for candidate transcripts (>= 5 words).
+ * Strictly enforces the 5-word input gate and never injects fake grammar errors.
  */
 export function generateDiagnosticTurnFeedback(
-  answer: SpeakingAnswerRecord
-): import('../types/speakingTypes').InstantSpeakingFeedback {
-  const words = answer.transcript.trim().split(/\s+/).filter(Boolean);
+  questionIdOrRecord:
+    | string
+    | {
+        questionId: string;
+        questionText: string;
+        part: SpeakingPart;
+        topic: string;
+        transcript: string;
+        durationSec: number;
+        wordsPerMinute: number;
+      },
+  questionTextArg?: string,
+  partArg?: SpeakingPart,
+  topicArg?: string,
+  transcriptArg?: string,
+  durationSecArg?: number,
+  wordsPerMinuteArg?: number
+): InstantSpeakingFeedback {
+  const questionId: string =
+    typeof questionIdOrRecord === 'string'
+      ? questionIdOrRecord
+      : questionIdOrRecord.questionId;
+  const questionText: string =
+    typeof questionIdOrRecord === 'string'
+      ? questionTextArg || ''
+      : questionIdOrRecord.questionText;
+  const part: SpeakingPart =
+    typeof questionIdOrRecord === 'string'
+      ? partArg || 1
+      : questionIdOrRecord.part;
+  const topic: string =
+    typeof questionIdOrRecord === 'string'
+      ? topicArg || 'General'
+      : questionIdOrRecord.topic;
+  const transcript: string =
+    typeof questionIdOrRecord === 'string'
+      ? transcriptArg || ''
+      : questionIdOrRecord.transcript;
+  const durationSec: number =
+    typeof questionIdOrRecord === 'string'
+      ? durationSecArg || 15
+      : questionIdOrRecord.durationSec;
+  const wordsPerMinute: number =
+    typeof questionIdOrRecord === 'string'
+      ? wordsPerMinuteArg || 0
+      : questionIdOrRecord.wordsPerMinute;
+
+  const gate = checkSpeakingInputGate(transcript);
+  if (!gate.isValidAttempt) {
+    return {
+      questionId,
+      questionText,
+      part,
+      topic,
+      candidateTranscript: (transcript || '').trim(),
+      isValidAttempt: false,
+      wordCount: gate.wordCount,
+      overallBand: 0.0,
+      criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+      feedbackTitle: gate.feedbackTitle,
+      feedbackEn: gate.feedbackEn,
+      feedbackBn: gate.feedbackBn,
+      durationSec,
+      wordsPerMinute: 0,
+      estimatedBand: 0.0,
+      estimatedBands: {
+        fluency: 0.0,
+        lexical: 0.0,
+        grammar: 0.0,
+        pronunciation: 0.0,
+        overall: 0.0
+      },
+      grammaticalErrors: [],
+      pronunciation: {
+        clarityBand: 0.0,
+        cadenceWpm: 0,
+        trickyWords: [],
+        connectedSpeechTips: [],
+        intonationPattern: 'No audible speech recorded.',
+        rhythmVerdict: 'Insufficient speech sample to assess pronunciation.'
+      },
+      band8Answer: {
+        bandScore: 8.5,
+        modelAnswer: '',
+        highlightedCollocations: [],
+        keyDiscourseMarkers: [],
+        examinerRationale: ''
+      },
+      actionableTips: [gate.feedbackEn, gate.feedbackBn]
+    };
+  }
+
+  const cleanText = transcript.trim();
+  const words = cleanText.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
-  const lower = answer.transcript.toLowerCase();
+  const lower = cleanText.toLowerCase();
 
-  const grammaticalErrors: import('../types/speakingTypes').DetailedGrammarError[] = [];
+  // 1. Detect REAL grammatical errors present in the candidate's transcript
+  const grammaticalErrors: DetailedGrammarError[] = [];
 
-  // Subject-Verb Agreement checks
-  if (/\b(it|he|she)\s+(make|feel|sound|seem|cost|take|give|think|want|have)\b/i.test(lower)) {
-    const match = answer.transcript.match(/\b(it|he|she)\s+(make|feel|sound|seem|cost|take|give|think|want|have)\b/i);
-    if (match) {
-      const corrected = match[0].replace(/\bhave\b/i, 'has').replace(/\b(\w+)\b$/i, '$1s');
-      grammaticalErrors.push({
-        observed: match[0],
-        corrected,
-        explanation: 'Subject-verb concord requires singular third-person inflection (-s) in the Present Simple.',
-        ruleCategory: 'Subject-Verb Agreement',
-        severity: 'moderate'
-      });
-    }
-  }
-
-  if (/\b(they|we|people)\s+(is|was|has)\b/i.test(lower)) {
-    const match = answer.transcript.match(/\b(they|we|people)\s+(is|was|has)\b/i);
-    if (match) {
-      const corrected = match[0].replace(/\bis\b/i, 'are').replace(/\bwas\b/i, 'were').replace(/\bhas\b/i, 'have');
-      grammaticalErrors.push({
-        observed: match[0],
-        corrected,
-        explanation: 'Plural subject pronouns require plural verb agreement ("are/were/have").',
-        ruleCategory: 'Subject-Verb Agreement',
-        severity: 'moderate'
-      });
-    }
-  }
-
-  // Tense checks
-  if (/\b(i\s+am\s+living|i\s+am\s+staying)\s+.*since\b/i.test(lower)) {
+  if (/\b(it|he|she)\s+(make|feel|sound|seem|give|take|help|cost)\b/i.test(lower)) {
+    const match = cleanText.match(/\b(it|he|she)\s+(make|feel|sound|seem|give|take|help|cost)\b/i);
+    const obs = match ? match[0] : 'it make';
+    const parts = obs.split(/\s+/);
     grammaticalErrors.push({
-      observed: 'I am living here since...',
-      corrected: 'I have been living / have lived here since...',
-      explanation: 'Use the Present Perfect Continuous for actions starting in the past and continuing into the present.',
+      observed: obs,
+      corrected: `${parts[0]} ${parts[1]}s`,
+      explanation: 'Third-person singular subjects (he/she/it) require a singular verb ending in "-s" in the present simple tense.',
+      ruleCategory: 'Subject-Verb Agreement',
+      severity: 'moderate'
+    });
+  }
+
+  if (/\b(i\s+am\s+living|i\s+am\s+studying|i\s+am\s+working)\s+.*(since|for)\b/i.test(lower)) {
+    grammaticalErrors.push({
+      observed: 'I am living / working ... since/for',
+      corrected: 'I have been living / working ... since/for',
+      explanation: 'Use the Present Perfect Continuous ("have been + -ing") for actions that began in the past and continue up to the present.',
       ruleCategory: 'Tense & Aspect',
       severity: 'moderate'
     });
   }
 
-  // Prepositions
   if (/\bdiscuss\s+about\b/i.test(lower)) {
     grammaticalErrors.push({
       observed: 'discuss about',
       corrected: 'discuss',
-      explanation: '"Discuss" is a transitive verb that directly takes an object without the preposition "about".',
+      explanation: 'The transitive verb "discuss" takes a direct object without the preposition "about".',
       ruleCategory: 'Prepositions',
       severity: 'minor'
     });
   }
 
-  // If no error observed, deliver high-band syntactic enrichment
-  if (grammaticalErrors.length === 0) {
+  if (/\b(informations|advices|furnitures|equipments)\b/i.test(lower)) {
+    const match = cleanText.match(/\b(informations|advices|furnitures|equipments)\b/i);
+    const word = match ? match[0] : 'informations';
     grammaticalErrors.push({
-      observed: 'Spontaneous structure with generally accurate grammar.',
-      corrected: 'Introduce mixed conditional clauses: "Had I not experienced this, I would arguably not appreciate..."',
-      explanation: 'Inverted and mixed conditionals showcase Band 8+ Grammatical Range.',
-      ruleCategory: 'Modals & Conditionals',
-      severity: 'minor'
+      observed: word,
+      corrected: word.replace(/s$/i, ''),
+      explanation: `"${word.replace(/s$/i, '')}" is an uncountable noun in English and does not take a plural "-s".`,
+      ruleCategory: 'Word Form & Plurality',
+      severity: 'moderate'
     });
   }
 
-  // Pronunciation Tricky Words
-  const pronunciationWordList = [
-    { word: 'comfortable', ipa: '/ˈkʌmftəbl/', syllableStress: 'COM-for-ta-ble (3 syllables)', tip: 'Elide the middle "or" vowel; pronounce as 3 syllables instead of 4.' },
-    { word: 'particularly', ipa: '/pəˈtɪkjələli/', syllableStress: 'par-TIC-u-lar-ly', tip: 'Primary stress lands squarely on the second syllable "TIC".' },
-    { word: 'development', ipa: '/dɪˈveləpmənt/', syllableStress: 'de-VEL-op-ment', tip: 'Second syllable receives the vocal stress and pitch prominence.' },
-    { word: 'environment', ipa: '/ɪnˈvaɪrənmənt/', syllableStress: 'en-VI-ron-ment', tip: 'Keep the "on" reduced to a weak schwa /ə/.' }
-  ];
+  if (/\bpeople\s+is\b/i.test(lower)) {
+    grammaticalErrors.push({
+      observed: 'people is',
+      corrected: 'people are',
+      explanation: '"People" is a plural noun and requires the plural verb "are".',
+      ruleCategory: 'Subject-Verb Agreement',
+      severity: 'critical'
+    });
+  }
 
-  // Band 8.5+ Model Answer
+  // 2. Pronunciation analysis for words in transcript
+  const pronunciationLexicon: Record<string, PronunciationWordTip> = {
+    comfortable: {
+      word: 'comfortable',
+      ipa: '/ˈkʌmftəbl/',
+      syllableStress: 'COM-ftuh-buhl (3 syllables)',
+      tip: 'Drop the middle "-or-" syllable in natural British RP.'
+    },
+    particularly: {
+      word: 'particularly',
+      ipa: '/pəˈtɪkjələli/',
+      syllableStress: 'puh-TIK-yuh-luh-lee',
+      tip: 'Place primary stress on the second syllable "TIK".'
+    },
+    environment: {
+      word: 'environment',
+      ipa: '/ɪnˈvaɪrənmənt/',
+      syllableStress: 'in-VAI-ruhn-muhnt',
+      tip: 'Stress the diphthong /aɪ/ on the second syllable.'
+    },
+    development: {
+      word: 'development',
+      ipa: '/dɪˈveləpmənt/',
+      syllableStress: 'di-VEL-uhp-muhnt',
+      tip: 'Primary stress falls on "VEL", with weak schwa vowels in surrounding syllables.'
+    },
+    technology: {
+      word: 'technology',
+      ipa: '/tekˈnɒlədʒi/',
+      syllableStress: 'tek-NOL-uh-jee',
+      tip: 'Stress the second syllable "NOL" (/nɒl/), not the first syllable.'
+    },
+    opportunity: {
+      word: 'opportunity',
+      ipa: '/ˌɒpəˈtjuːnəti/',
+      syllableStress: 'op-uh-TYOO-nuh-tee',
+      tip: 'In British RP, pronounce "-tu-" with a clear /tjuː/ glide.'
+    }
+  };
+
+  const trickyWords: PronunciationWordTip[] = [];
+  for (const [key, val] of Object.entries(pronunciationLexicon)) {
+    if (lower.includes(key)) {
+      trickyWords.push(val);
+    }
+  }
+
+  // 3. Band 8.5+ Model Answer reference
   let modelAnswer = '';
   let examinerRationale = '';
-  const highlightedCollocations: Array<{ phrase: string; bandLevel: 'C1' | 'C2' | 'Band 8.5' | 'Band 9.0'; meaning: string }> = [];
+  const highlightedCollocations: Array<{
+    phrase: string;
+    bandLevel: 'C1' | 'C2' | 'Band 8.5' | 'Band 9.0';
+    meaning: string;
+  }> = [];
 
-  if (answer.part === 1) {
-    modelAnswer = `To be perfectly honest, what I appreciate most about this is the remarkable blend of convenience and authentic charm. Having modern facilities within arm's reach makes everyday life exceptionally streamlined, yet there remains a distinctive community warmth that prevents it from feeling impersonal. Taking everything into account, it strikes an almost ideal equilibrium for someone in my stage of life.`;
-    examinerRationale = 'Delivers an immediate, well-paced conversational answer avoiding robotic prompt echoing. Highlights descriptive sensory collocations.';
+  if (part === 1) {
+    modelAnswer = `To be perfectly frank, what appeals to me most about ${topic.toLowerCase()} is the remarkable sense of balance it brings to my daily routine. Having reliable amenities within arm's reach streamlines my schedule considerably, while still preserving a genuine sense of local community.`;
+    examinerRationale = 'Directly answers the Part 1 prompt with idiomatic British openers, zero repetition of the question stem, and natural C1 collocations.';
     highlightedCollocations.push(
-      { phrase: 'remarkable blend', bandLevel: 'C1', meaning: 'An impressive, harmonious combination of diverse elements.' },
-      { phrase: 'within arm\'s reach', bandLevel: 'Band 8.5', meaning: 'Extremely accessible and close nearby.' },
-      { phrase: 'strikes an ideal equilibrium', bandLevel: 'C2', meaning: 'Achieves a balanced harmony.' }
+      { phrase: 'within arm\'s reach', bandLevel: 'Band 8.5', meaning: 'Very close and easily accessible.' },
+      { phrase: 'streamlines my schedule', bandLevel: 'C1', meaning: 'Makes daily tasks much more efficient.' }
     );
-  } else if (answer.part === 2) {
-    modelAnswer = `If memory serves me correctly, the experience that immediately springs to mind occurred a couple of years ago during a pivotal juncture in my academic journey. What stood out vividly was the sheer unpredictability of the circumstances; we encountered initial setbacks that seemed almost insurmountable. However, by adopting a methodical approach and fostering open dialogue among our peers, we managed to navigate the complexities and deliver a result that exceeded everyone's initial expectations. Looking back retrospectively, it was an immensely formative milestone that taught me resilience under pressure.`;
-    examinerRationale = 'Structures a continuous 2-minute narrative flow with vivid emotional inflection and reflective C2 collocations.';
+  } else if (part === 2) {
+    modelAnswer = `If memory serves me right, a particularly memorable experience regarding ${topic.toLowerCase()} took place a couple of years ago at a pivotal juncture in my studies. Initially, the sheer scale of the challenge felt somewhat daunting; however, by adopting a methodical approach, I managed to turn the situation around. Looking back, it was an immensely formative milestone.`;
+    examinerRationale = 'Sustains a cohesive 2-minute narrative arc (past context -> turning point -> retrospective reflection) using C2 adverbial modifiers.';
     highlightedCollocations.push(
-      { phrase: 'pivotal juncture', bandLevel: 'C2', meaning: 'A decisive, critical turning point in time.' },
-      { phrase: 'initial setbacks', bandLevel: 'C1', meaning: 'Early unexpected difficulties.' },
-      { phrase: 'immensely formative milestone', bandLevel: 'C2', meaning: 'A deeply influential life experience that builds maturity.' }
+      { phrase: 'pivotal juncture', bandLevel: 'C2', meaning: 'A critical turning point.' },
+      { phrase: 'immensely formative milestone', bandLevel: 'Band 9.0', meaning: 'An experience that deeply shaped personal growth.' }
     );
   } else {
-    modelAnswer = `That is certainly a multifaceted issue that warrants nuanced consideration. On one hand, a widespread consensus suggests that rapid technological proliferation delivers unprecedented efficiency across modern infrastructure. Having said that, one cannot overlook the sociological ramifications—particularly regarding digital disparity and generational exclusion. Consequently, forward-thinking policy makers ought to institute robust public safeguards to ensure technological progress does not come at the expense of equitable human welfare.`;
-    examinerRationale = 'Exemplifies Band 9.0 abstract reasoning in Part 3 with multi-layered sociological perspectives and authoritative vocabulary.';
+    modelAnswer = `That is a multifaceted question that warrants careful consideration. On the one hand, widespread adoption has undeniably catalyzed economic efficiency. Having said that, policy makers must not overlook the broader societal ramifications—particularly the risk of widening socioeconomic disparities if left unregulated.`;
+    examinerRationale = 'Demonstrates Band 9.0 Part 3 analytical depth by weighing competing societal perspectives using impersonal academic structures.';
     highlightedCollocations.push(
-      { phrase: 'multifaceted issue', bandLevel: 'C1', meaning: 'A complex subject with diverse considerations.' },
-      { phrase: 'sociological ramifications', bandLevel: 'C2', meaning: 'Long-term societal consequences.' },
-      { phrase: 'equitable human welfare', bandLevel: 'C2', meaning: 'Fair, just societal well-being.' }
+      { phrase: 'multifaceted question', bandLevel: 'C1', meaning: 'An issue with many complex dimensions.' },
+      { phrase: 'societal ramifications', bandLevel: 'C2', meaning: 'Long-term consequences for society as a whole.' }
     );
   }
 
-  const fluencyBand = wordCount >= 30 ? 7.5 : wordCount >= 18 ? 7.0 : 6.0;
-  const lexicalBand = wordCount >= 25 ? 7.5 : 6.5;
-  const grammarBand = grammaticalErrors.filter((g) => g.severity === 'critical').length > 0 ? 6.0 : 7.0;
-  const pronunciationBand = 7.5;
-  const overallBand = Math.round(((fluencyBand + lexicalBand + grammarBand + pronunciationBand) / 4) * 2) / 2;
+  // 4. Calculate Band Scores proportional to actual word count, lexical richness, and grammar
+  let fluency = wordCount >= 35 ? 7.5 : wordCount >= 20 ? 6.5 : wordCount >= 10 ? 5.5 : 5.0;
+  let lexical = wordCount >= 30 ? 7.0 : wordCount >= 15 ? 6.0 : 5.0;
+  let grammar = grammaticalErrors.length === 0 ? (wordCount >= 20 ? 7.0 : 6.0) : 5.5;
+  let pronunciation = wordCount >= 15 ? 6.5 : 5.5;
+
+  const overall = roundToHalfBand((fluency + lexical + grammar + pronunciation) / 4);
 
   return {
-    questionId: answer.questionId,
-    questionText: answer.questionText,
-    part: answer.part,
-    topic: answer.topic,
-    candidateTranscript: answer.transcript,
+    questionId,
+    questionText,
+    part,
+    topic,
+    candidateTranscript: cleanText,
+    isValidAttempt: true,
     wordCount,
-    durationSec: answer.durationSec,
-    wordsPerMinute: answer.wordsPerMinute,
-    estimatedBand: overallBand,
+    overallBand: overall,
+    criteria: {
+      fc: fluency,
+      lr: lexical,
+      gra: grammar,
+      pr: pronunciation
+    },
+    durationSec,
+    wordsPerMinute: wordsPerMinute || 110,
+    estimatedBand: overall,
     estimatedBands: {
-      fluency: fluencyBand,
-      lexical: lexicalBand,
-      grammar: grammarBand,
-      pronunciation: pronunciationBand,
-      overall: overallBand
+      fluency,
+      lexical,
+      grammar,
+      pronunciation,
+      overall
     },
     grammaticalErrors,
     pronunciation: {
-      clarityBand: pronunciationBand,
-      cadenceWpm: answer.wordsPerMinute,
-      trickyWords: pronunciationWordList.slice(0, 2),
+      clarityBand: pronunciation,
+      cadenceWpm: wordsPerMinute || 110,
+      trickyWords,
       connectedSpeechTips: [
-        'Link terminal consonants to following initial vowels smoothly (e.g. "most of all" -> /məʊst‿əv‿ɔːl/).',
-        'Use weak vowel forms (/ə/) for unstressed structural prepositions ("to", "for", "at").'
+        'Link final consonant sounds smoothly into following vowel words (catenation).',
+        'Use weak schwa (/ə/) forms on unstressed prepositions ("to", "of", "for") to maintain British stress-timed rhythm.'
       ],
-      intonationPattern: 'Employ rising inflection on introductory subordinate clauses, followed by a steady falling tone on decisive conclusions.',
-      rhythmVerdict: 'Clear British cadence with consistent sentence-stress distribution.'
-    },
-    pronunciationAnalysis: {
-      clarityBand: pronunciationBand,
-      cadenceWpm: answer.wordsPerMinute,
-      problemWords: pronunciationWordList.map(pw => ({
-        word: pw.word,
-        phoneticIpa: pw.ipa,
-        stressedSyllable: pw.syllableStress,
-        advice: pw.tip
-      })),
-      trickyWords: pronunciationWordList.slice(0, 2),
-      connectedSpeechTips: [
-        'Link terminal consonants to following initial vowels smoothly.',
-        'Use weak vowel forms for unstressed structural prepositions.'
-      ],
-      intonationPattern: 'Employ rising inflection on introductory subordinate clauses.',
-      intonationGuidance: 'Rise slightly on dependent clauses; descend decisively on terminal periods.',
-      rhythmVerdict: 'Clear British cadence with consistent sentence-stress distribution.'
+      intonationPattern: 'Use rising-falling intonation across subordinate clauses to signal continuation before your final point.',
+      rhythmVerdict: 'Audible cadence; emphasize content words while reducing function words.'
     },
     band8Answer: {
       bandScore: 8.5,
       modelAnswer,
       highlightedCollocations,
-      keyDiscourseMarkers: ['To be perfectly frank', 'By and large', 'Having said that', 'If memory serves me right'],
+      keyDiscourseMarkers: ['To be perfectly frank', 'Having said that', 'On the one hand', 'Consequently'],
       examinerRationale,
       audioPromptText: modelAnswer
     },
-    betterAnswer: {
-      bandScore: 8.5,
-      modelAnswer,
-      modelResponse: modelAnswer,
-      highlightedPhrases: highlightedCollocations.map(c => c.phrase),
-      highlightedCollocations,
-      keyDiscourseMarkers: ['To be perfectly frank', 'By and large', 'Having said that', 'If memory serves me right'],
-      examinerRationale
-    },
     actionableTips: [
-      'Replace vocal hesitations ("um", "uh") with confident 1-second silent pauses.',
-      'Adopt C1 idiomatic discourse markers to frame contrasting viewpoints.',
-      'Maintain steady syllabic stress on multisyllabic academic terminology.'
+      wordCount < 15
+        ? 'Your response was brief. Expand your point with a concrete reason and a brief example.'
+        : 'Pause briefly at clause boundaries instead of using vocal fillers.',
+      'Integrate C1 collocations from the model answer into your next attempt.'
     ]
   };
 }
-

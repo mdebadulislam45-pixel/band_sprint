@@ -345,15 +345,39 @@ export class AudioManagerService {
   }
 
   /**
-   * Clears the current active audio and cancels any pending playback
+   * Universal Global Audio Killswitch:
+   * 1. Forces window.speechSynthesis.cancel() to kill any lingering TTS voices
+   * 2. Pauses and resets any active or passed HTMLAudioElement
+   * 3. Calls audioService.stop()
+   * 4. Aborts pending requests and unlocks playback state
    */
-  public reset(reason: string = 'manual_reset'): void {
+  public killAllAudio(elementToPause?: HTMLAudioElement | null): void {
     this.playbackGeneration++;
     if (this.activeAbortController) {
-      this.activeAbortController.abort();
+      try {
+        this.activeAbortController.abort();
+      } catch {}
       this.activeAbortController = null;
     }
-    audioService.stop();
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+
+    if (elementToPause) {
+      try {
+        elementToPause.pause();
+        elementToPause.currentTime = 0;
+        elementToPause.src = '';
+      } catch {}
+    }
+
+    try {
+      audioService.stop();
+    } catch {}
+
     this.isPlaybackLocked = false;
     this.activeAudioId = null;
     this.activeQuestionId = null;
@@ -361,10 +385,17 @@ export class AudioManagerService {
   }
 
   /**
+   * Clears the current active audio and cancels any pending playback
+   */
+  public reset(reason: string = 'manual_reset'): void {
+    this.killAllAudio();
+  }
+
+  /**
    * Stops all active audio and resets playback lock
    */
   public stopAll(): void {
-    this.reset('stop_all');
+    this.killAllAudio();
   }
 
   /**

@@ -41,7 +41,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-xl space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-400/25 text-blue-300 text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            <span>Official Cambridge Pacing</span>
+            <span>Cambridge Rubric-Aligned Practice</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-snug">
@@ -49,13 +49,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xs mx-auto">
-            Build stronger English. Practise smarter. Move closer to your target band.
+            Build stronger English, practise in a realistic computer-delivered exam layout, and track your estimated band progress.
           </p>
 
           <div className="pt-2 border-t border-slate-800/80 flex items-center justify-around text-[11px] text-slate-400 font-mono">
             <span>✓ 4 Core Modules</span>
-            <span>✓ Band 9 Models</span>
-            <span>✓ Vault Spaced SRS</span>
+            <span>✓ CD-IELTS Mode</span>
+            <span>✓ AI Band Estimates</span>
           </div>
         </div>
       </motion.div>

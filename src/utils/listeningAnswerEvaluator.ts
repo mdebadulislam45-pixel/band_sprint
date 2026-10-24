@@ -756,5 +756,56 @@ export function assignSectionDialogueSpeakers(
   });
 }
 
+/**
+ * Official Cambridge IELTS Listening Raw Score (out of 40) to Band Score Conversion Table.
+ * If totalQuestions != 40, scales the raw score proportionally to the 40-question Cambridge scale.
+ * Strictly returns 0.0 when correctCount <= 0 or totalQuestions <= 0.
+ */
+export function calculateOfficialListeningBand(correctCount: number, totalQuestions: number = 40): number {
+  if (correctCount <= 0 || totalQuestions <= 0) return 0.0;
+  const scaledRaw = totalQuestions === 40 ? correctCount : Math.round((correctCount / totalQuestions) * 40);
 
+  if (scaledRaw >= 39) return 9.0;
+  if (scaledRaw >= 37) return 8.5;
+  if (scaledRaw >= 35) return 8.0;
+  if (scaledRaw >= 32) return 7.5;
+  if (scaledRaw >= 30) return 7.0;
+  if (scaledRaw >= 26) return 6.5;
+  if (scaledRaw >= 23) return 6.0;
+  if (scaledRaw >= 18) return 5.5;
+  if (scaledRaw >= 16) return 5.0;
+  if (scaledRaw >= 13) return 4.5;
+  if (scaledRaw >= 10) return 4.0;
+  if (scaledRaw >= 7) return 3.5;
+  if (scaledRaw >= 4) return 3.0;
+  if (scaledRaw >= 2) return 2.5;
+  if (scaledRaw >= 1) return 2.0;
+  return 0.0;
+}
 
+/**
+ * Official Cambridge IELTS Academic Reading Raw Score (out of 40) to Band Score Conversion Table.
+ * Example benchmarks: 39-40 = 9.0, 37-38 = 8.5, 35-36 = 8.0, 33-34 = 7.5, 30-32 = 7.0,
+ * 27-29 = 6.5, 23-26 = 6.0, 16-22 = 5.5, 13-15 = 5.0, 10-12 = 4.5, 8-9 = 4.0, 6-7 = 3.5, 4-5 = 3.0, 0 = 0.0.
+ */
+export function calculateOfficialAcademicReadingBand(correctCount: number, totalQuestions: number = 40): number {
+  if (correctCount <= 0 || totalQuestions <= 0) return 0.0;
+  const scaledRaw = totalQuestions === 40 ? correctCount : Math.round((correctCount / totalQuestions) * 40);
+
+  if (scaledRaw >= 39) return 9.0;
+  if (scaledRaw >= 37) return 8.5;
+  if (scaledRaw >= 35) return 8.0;
+  if (scaledRaw >= 33) return 7.5;
+  if (scaledRaw >= 30) return 7.0;
+  if (scaledRaw >= 27) return 6.5;
+  if (scaledRaw >= 23) return 6.0;
+  if (scaledRaw >= 16) return 5.5;
+  if (scaledRaw >= 13) return 5.0;
+  if (scaledRaw >= 10) return 4.5;
+  if (scaledRaw >= 8) return 4.0;
+  if (scaledRaw >= 6) return 3.5;
+  if (scaledRaw >= 4) return 3.0;
+  if (scaledRaw >= 2) return 2.5;
+  if (scaledRaw >= 1) return 2.0;
+  return 0.0;
+}

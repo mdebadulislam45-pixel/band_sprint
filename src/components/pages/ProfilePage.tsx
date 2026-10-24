@@ -48,8 +48,9 @@ import {
   ACCENT_METADATA
 } from '../../config/voiceConfig';
 import { soundManager } from '../../utils/audioEffects';
-import { downloadStandaloneHtml } from '../../utils/exportSingleFileHtml';
 import { logoutCandidate } from '../../services/authService';
+import { firebaseSyncService } from '../../services/firebaseSyncService';
+import { AccentAuditionModal } from '../audio/AccentAuditionModal';
 
 interface ProfilePageProps {
   user?: UserProfile | null;
@@ -74,6 +75,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 }) => {
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isAccentModalOpen, setIsAccentModalOpen] = useState(false);
 
   const effectiveUser: UserProfile = user || {
     id: 'guest_candidate',
@@ -132,7 +134,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
     if (targetGender === 'female') {
       speakBritish(
-        "Good afternoon. I am Charlotte, your official Cambridge IELTS examiner. Natural British Received Pronunciation is active with zero robotic distortion.",
+        "Good afternoon. I am Charlotte, your AI IELTS speaking examiner. Natural British Received Pronunciation is active with zero robotic distortion.",
         {
           speakerId: 'speaker_05',
           gender: 'female',
@@ -148,7 +150,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       );
     } else {
       speakBritish(
-        "Good afternoon. I am Arthur, your Cambridge IELTS speaking examiner. Natural British English audio is active, featuring authentic Cambridge examination pacing.",
+        "Good afternoon. I am Arthur, your AI IELTS speaking examiner. Natural British English audio is active, featuring realistic examination pacing.",
         {
           speakerId: 'speaker_04',
           gender: 'male',
@@ -205,7 +207,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     stopSpeech();
     setActiveAccentPlaying('barnaby');
     speakBritish(
-      "Hello there! I am Barnaby, your cute Cambridge AI study buddy! Ready to achieve Band 8.5 today? Let's practice together!",
+      "Hello there! I am Barnaby, your cute AI study buddy! Ready to achieve Band 8.5 today? Let's practice together!",
       {
         speakerId: 'speaker_barnaby',
         gender: 'female',
@@ -237,12 +239,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       soundManager.playSuccess();
       setIsEditing(false);
       setNewPassword('');
-      onShowToast('Profile information successfully saved to local memory!');
+      onShowToast('Profile information successfully saved!');
     }
   };
 
   const handlePerformLogout = async () => {
     soundManager.playBeep(600, 0.04);
+    try {
+      await firebaseSyncService.signOut();
+    } catch {}
     await logoutCandidate();
     logoutUser();
     onShowToast('You have been logged out successfully. Sign in anytime to resume your progress.');
@@ -286,7 +291,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               Sign In or Register New Account
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              Access your personalized IELTS band score targets, live exam attempt history, mistake vault, and study progress across sessions. All Cambridge practice materials remain fully open.
+              Sign in with Google or Email to sync your IELTS band targets, mock exam scorecards, vocabulary deck, and Mistake Vault across devices.
             </p>
           </div>
 
@@ -296,7 +301,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               className="px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition shadow-md cursor-pointer"
             >
               <LogIn className="w-4 h-4" />
-              <span>Sign In / Log In</span>
+              <span>Sign In / Continue with Google</span>
             </button>
             <button
               onClick={onOpenAuthModal}
@@ -316,8 +321,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <Volume2 className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">Official Cambridge Examiner Voice & Accents</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Configure native British English pronunciation for speaking tests and listening labs</p>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">AI IELTS Examiner Voice & Native Accents</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Configure native British English pronunciation for speaking practice and listening labs</p>
               </div>
             </div>
           </div>
@@ -328,8 +333,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               Examiner Gender & Voice Profile
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
+              <div
                 onClick={() => handleSelectVoiceGender('female')}
                 className={`p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
                   voiceGender === 'female'
@@ -351,10 +355,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 >
                   {activeVoicePlaying === 'female' ? '⏹ Stop' : '🔊 Test'}
                 </button>
-              </button>
+              </div>
 
-              <button
-                type="button"
+              <div
                 onClick={() => handleSelectVoiceGender('male')}
                 className={`p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
                   voiceGender === 'male'
@@ -376,7 +379,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 >
                   {activeVoicePlaying === 'male' ? '⏹ Stop' : '🔊 Test'}
                 </button>
-              </button>
+              </div>
             </div>
           </div>
         </div>
@@ -800,7 +803,16 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
 
             {/* Multiple IELTS Accents Option */}
-            <div className="pt-4 pl-12 space-y-2 border-t border-slate-100 dark:border-slate-800/80 mt-3">
+            <div className="pt-4 pl-12 space-y-3 border-t border-slate-100 dark:border-slate-800/80 mt-3">
+              <button
+                type="button"
+                onClick={() => setIsAccentModalOpen(true)}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Globe className="w-4 h-4 text-amber-300" />
+                <span>🎙️ Open Official Accent Audition Studio (100% Studio-Recorded)</span>
+              </button>
+
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-xs font-bold text-slate-900 dark:text-white">Active Native English Accent</span>
@@ -876,28 +888,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </button>
           </div>
 
-          {/* Standalone HTML Export */}
-          <div className="py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-slate-900 text-amber-300 flex items-center justify-center">
-                <Download className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Offline Single-File HTML Export</div>
-                <div className="text-[11px] text-slate-500">Export complete app for offline mobile study</div>
-              </div>
-            </div>
 
-            <button
-              onClick={() => {
-                downloadStandaloneHtml();
-                onShowToast('Exporting standalone offline edition...');
-              }}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition"
-            >
-              Export HTML ↓
-            </button>
-          </div>
 
           {/* Log Out Button */}
           <div className="py-4 flex items-center justify-between gap-3">
@@ -923,6 +914,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         </div>
       </div>
 
+      <AccentAuditionModal
+        isOpen={isAccentModalOpen}
+        onClose={() => setIsAccentModalOpen(false)}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 };

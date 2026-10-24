@@ -15,14 +15,15 @@ interface ProgressDonutCardProps {
 }
 
 export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
-  overallPercentage = 68,
-  estimatedBand = 7.0,
+  overallPercentage = 0,
+  estimatedBand = 0,
   targetBand = 7.5,
   completedCount = 0,
   examHistory = [],
   onViewAnalytics,
   onNavigate
 }) => {
+  const hasScore = estimatedBand > 0;
   const safePercent = Math.max(8, Math.min(100, Math.round(overallPercentage)));
   const radius = 38;
   const circumference = 2 * Math.PI * radius;
@@ -33,16 +34,20 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
     examHistory.find((h) => typeof h.listeningBand === 'number' && h.listeningBand > 0) || null;
   const latestReadingAttempt =
     examHistory.find(
-      (h) => isFullMockExamRecord(h) && typeof h.readingBand === 'number' && h.readingBand > 0
+      (h) => (isFullMockExamRecord(h) || h.readingBand > 0) && typeof h.readingBand === 'number' && h.readingBand > 0
     ) || null;
   const listeningScore = latestListeningAttempt?.listeningBand
     ? latestListeningAttempt.listeningBand.toFixed(1)
-    : estimatedBand.toFixed(1);
+    : hasScore
+    ? estimatedBand.toFixed(1)
+    : '—';
   const readingScore = latestReadingAttempt?.readingBand
     ? latestReadingAttempt.readingBand.toFixed(1)
-    : estimatedBand.toFixed(1);
-  const writingScore = Math.max(5.5, estimatedBand - 0.5).toFixed(1);
-  const speakingScore = estimatedBand.toFixed(1);
+    : hasScore
+    ? estimatedBand.toFixed(1)
+    : '—';
+  const writingScore = hasScore ? Math.max(5.5, estimatedBand - 0.5).toFixed(1) : '—';
+  const speakingScore = hasScore ? estimatedBand.toFixed(1) : '—';
 
   const skillPills = [
     {
@@ -87,7 +92,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
     }
   ];
 
-  const bandGap = Math.max(0, +(targetBand - estimatedBand).toFixed(1));
+  const bandGap = hasScore ? Math.max(0, +(targetBand - estimatedBand).toFixed(1)) : 0;
 
   return (
     <div className="rounded-2xl sm:rounded-3xl bg-white dark:bg-[#0B1224] border border-slate-200/90 dark:border-slate-800 shadow-2xs p-4 sm:p-5 space-y-3.5">
@@ -99,7 +104,7 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
           <p className="text-[10px] text-slate-500 dark:text-slate-400">
             {examHistory.length > 0
               ? `Based on ${examHistory.length} recorded assessment${examHistory.length > 1 ? 's' : ''}`
-              : 'Estimated baseline · Take a mock test to calibrate'}
+              : 'No mock test recorded yet · Take a practice test'}
           </p>
         </div>
         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60">
@@ -140,7 +145,9 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">Readiness</span>
+            <span className="text-[9px] text-slate-400 font-bold uppercase font-mono">
+              {hasScore ? 'Readiness' : 'Syllabus'}
+            </span>
             <span className="text-base font-black text-slate-900 dark:text-white font-mono leading-none mt-0.5">
               {safePercent}%
             </span>
@@ -151,16 +158,18 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
         <div className="flex-1 space-y-2 min-w-0">
           <div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              Current Trajectory
+              {hasScore ? 'Current Estimated Band' : 'Baseline Uncalibrated'}
             </div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                Band {estimatedBand.toFixed(1)}
+              <span className="text-base sm:text-xl font-black text-slate-900 dark:text-white font-mono">
+                {hasScore ? `Band ${estimatedBand.toFixed(1)}` : 'Band: Not Yet Assessed'}
               </span>
             </div>
             <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-              {bandGap > 0
-                ? `+${bandGap.toFixed(1)} band needed to reach ${targetBand.toFixed(1)}`
+              {!hasScore
+                ? `Target Band: ${targetBand.toFixed(1)} · Take 15-Minute Diagnostic Mock to Reveal Your Band`
+                : bandGap > 0
+                ? `+${bandGap.toFixed(1)} band needed to reach Target ${targetBand.toFixed(1)}`
                 : `On track for Target Band ${targetBand.toFixed(1)}`}
             </div>
           </div>
@@ -214,17 +223,31 @@ export const ProgressDonutCard: React.FC<ProgressDonutCardProps> = ({
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          soundManager.playBeep(640, 0.04);
-          onViewAnalytics();
-        }}
-        className="w-full pt-2.5 border-t border-slate-100 dark:border-slate-800 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-between group cursor-pointer"
-      >
-        <span>Open Full Band Analytics & Heatmaps</span>
-        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition" />
-      </button>
+      {!hasScore ? (
+        <button
+          type="button"
+          onClick={() => {
+            soundManager.playBeep(640, 0.04);
+            onNavigate?.('mocktest');
+          }}
+          className="w-full pt-2.5 border-t border-slate-100 dark:border-slate-800 text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center justify-between group cursor-pointer"
+        >
+          <span>Take 15-Minute Diagnostic Mock to Reveal Your Band</span>
+          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition shrink-0" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            soundManager.playBeep(640, 0.04);
+            onViewAnalytics();
+          }}
+          className="w-full pt-2.5 border-t border-slate-100 dark:border-slate-800 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-between group cursor-pointer"
+        >
+          <span>Open Full Band Analytics &amp; Heatmaps</span>
+          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition" />
+        </button>
+      )}
     </div>
   );
 };

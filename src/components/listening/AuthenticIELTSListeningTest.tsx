@@ -84,6 +84,7 @@ export interface CDListeningState {
 }
 
 export function calculateListeningBandScore(correctCount: number): number {
+  if (correctCount <= 0) return 0.0;
   if (correctCount >= 39) return 9.0;
   if (correctCount >= 37) return 8.5;
   if (correctCount >= 35) return 8.0;
@@ -97,7 +98,8 @@ export function calculateListeningBandScore(correctCount: number): number {
   if (correctCount >= 10) return 4.0;
   if (correctCount >= 7) return 3.5;
   if (correctCount >= 4) return 3.0;
-  return 2.5;
+  if (correctCount >= 2) return 2.5;
+  return 2.0;
 }
 
 interface AuthenticIELTSListeningTestProps {

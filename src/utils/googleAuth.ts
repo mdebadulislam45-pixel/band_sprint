@@ -1,98 +1,98 @@
-import { UserProfile, UserProgress } from '../types';
+import { UserProfile } from '../types';
 import { getAllUsers, saveUser, ACTIVE_USER_KEY, createDefaultProgress, checkAndUpdateStreak } from './userStorage';
+import { auth } from '../lib/firebase';
 
 export interface GoogleAuthProfile {
   id?: string;
+  uid?: string;
   name?: string;
   email: string;
   avatarUrl?: string;
   targetBand?: number;
+  verifiedByFirebase?: boolean;
 }
 
-const GOOGLE_AUTH_STORAGE_KEY = 'ielts_google_candidate_profile_v1';
-
 /**
- * Validates that an email is a legitimate Gmail address (@gmail.com or Google Workspace)
+ * Validates that an email is a well-formed email address
  */
 export function validateGmailAddress(email: string): { isValid: boolean; error?: string } {
   const trimmed = email.trim().toLowerCase();
   if (!trimmed) {
-    return { isValid: false, error: 'Please enter your Gmail address.' };
+    return { isValid: false, error: 'Please enter your email address.' };
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
     return { isValid: false, error: 'Please enter a valid email format.' };
-  }
-  // Enforce Gmail requirement as requested: user have to login using Gmail in Google login
-  if (!trimmed.endsWith('@gmail.com') && !trimmed.endsWith('@googlemail.com')) {
-    return {
-      isValid: false,
-      error: 'Google sign-in requires a valid Gmail account (e.g., yourname@gmail.com).'
-    };
   }
   return { isValid: true };
 }
 
 /**
- * Handles authentic Google Account Authentication for IELTS Sprint.
- * Prevents account collisions, attaches full candidate profile schema, and logs in immediately.
+ * Handles verified Google Account Authentication for IELTS Sprint.
+ * Strictly requires a verified Firebase Auth session or UID; never creates a fake session from an unverified email string.
  */
 export function handleGoogleSignInAction(candidateInfo?: Partial<GoogleAuthProfile>): {
   success: boolean;
   user?: UserProfile;
   message: string;
 } {
-  const rawEmail = (candidateInfo?.email || '').trim().toLowerCase();
-  
-  if (!rawEmail) {
+  const fbCurrentUser = auth.currentUser;
+  const verifiedUid = candidateInfo?.uid || candidateInfo?.id || fbCurrentUser?.uid;
+  const isVerified = Boolean(candidateInfo?.verifiedByFirebase && verifiedUid) || Boolean(fbCurrentUser && fbCurrentUser.email);
+
+  if (!isVerified || !verifiedUid) {
     return {
       success: false,
-      message: 'Please provide a Gmail address to continue with Google sign-in.'
+      message: 'Google sign-in requires verified Google OAuth authentication. Entering an email address alone is not permitted.'
     };
   }
 
-  const validation = validateGmailAddress(rawEmail);
-  if (!validation.isValid) {
+  const rawEmail = (candidateInfo?.email || fbCurrentUser?.email || '').trim().toLowerCase();
+  if (!rawEmail) {
     return {
       success: false,
-      message: validation.error || 'Please enter a valid @gmail.com address.'
+      message: 'No verified email address was returned from Google Authentication.'
     };
   }
 
   const email = rawEmail;
-  // Derive natural human display name from email or input
   const defaultDerivedName = email.split('@')[0]
     .replace(/[._]/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const name = (candidateInfo?.name || defaultDerivedName || 'Google Candidate').trim();
+  const name = (candidateInfo?.name || fbCurrentUser?.displayName || defaultDerivedName || 'IELTS Candidate').trim();
   const targetBand = candidateInfo?.targetBand || 7.5;
 
   const users = getAllUsers();
-  // Check if an existing account with this Gmail already exists
-  let existingUser = users.find((u) => u.email.toLowerCase() === email);
+  const existingUser = users.find((u) => u.id === verifiedUid || u.email.toLowerCase() === email);
 
   if (existingUser) {
+    const updatedExisting: UserProfile = {
+      ...existingUser,
+      id: verifiedUid,
+      name: existingUser.name || name,
+      email
+    };
+    saveUser(updatedExisting);
     if (typeof localStorage !== 'undefined') {
       try {
-        localStorage.setItem(ACTIVE_USER_KEY, existingUser.id);
+        localStorage.setItem(ACTIVE_USER_KEY, updatedExisting.id);
       } catch {}
     }
     if (checkAndUpdateStreak) {
-      checkAndUpdateStreak(existingUser);
+      checkAndUpdateStreak(updatedExisting);
     }
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: existingUser }));
+      window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: updatedExisting }));
     }
     return {
       success: true,
-      user: existingUser,
-      message: `Signed in with Google as ${existingUser.name} (${existingUser.email})!`
+      user: updatedExisting,
+      message: `Signed in with Google as ${updatedExisting.name} (${updatedExisting.email})!`
     };
   }
 
-  // Create clean Google-authenticated IELTS Sprint profile
   const googleUser: UserProfile = {
-    id: `usr_g_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+    id: verifiedUid,
     name,
     email,
     createdAt: Date.now(),
@@ -119,6 +119,6 @@ export function handleGoogleSignInAction(candidateInfo?: Partial<GoogleAuthProfi
   return {
     success: true,
     user: googleUser,
-    message: `Account created with Google! Welcome, ${googleUser.name}.`
+    message: `Verified Google account connected! Welcome, ${googleUser.name}.`
   };
 }

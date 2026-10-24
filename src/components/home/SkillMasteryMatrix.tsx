@@ -114,15 +114,15 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
   const activeSkill = skills.find(s => s.id === selectedSkill) || skills[0];
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-3.5">
       {/* Section Header */}
       <div className="flex items-center justify-between px-1">
         <div>
-          <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-            IELTS Skills
+          <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900 dark:text-white tracking-tight">
+            Core IELTS Modules
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Four core exam components according to Cambridge standards
+            Four official Cambridge exam components with diagnostic scoring
           </p>
         </div>
         <button
@@ -131,15 +131,15 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
             soundManager.playBeep(520, 0.04);
             onNavigate('practice');
           }}
-          className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 transition cursor-pointer"
+          className="text-xs font-semibold text-blue-700 dark:text-blue-400 hover:underline flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
         >
           <span>All Drills</span>
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* 4 Consistent Skill Cards (No fabricated percentages, clean indicators) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+      {/* 4 Consistent Skill Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {skills.map((skill) => {
           const Icon = skill.icon;
           const isSelected = selectedSkill === skill.id;
@@ -152,10 +152,10 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
                 soundManager.playBeep(520, 0.04);
                 setSelectedSkill(skill.id);
               }}
-              className={`p-3 sm:p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer group min-h-[120px] ${
+              className={`p-4 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer group min-h-[128px] ${
                 isSelected
-                  ? 'bg-white dark:bg-[#13203D] border-blue-500 dark:border-blue-400 shadow-sm ring-1 ring-blue-500/20'
-                  : 'bg-white dark:bg-[#101B32] border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                  ? 'bg-white dark:bg-[#13203D] border-blue-600 dark:border-blue-400 shadow-xs ring-1 ring-blue-600/15'
+                  : 'bg-white dark:bg-[#0E1526] border-stone-200/90 dark:border-slate-800/90 hover:border-stone-300 dark:hover:border-slate-700'
               }`}
             >
               <div>
@@ -163,21 +163,13 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
                   <div className={`w-8 h-8 rounded-xl ${skill.bgColor} ${skill.color} flex items-center justify-center shrink-0`}>
                     <Icon className="w-4 h-4" />
                   </div>
-                  {/* Subtle Progress Status Indicator without numerical percentage */}
-                  <div className="flex items-center gap-1">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        isDone ? 'bg-emerald-500' : 'bg-blue-500'
-                      }`}
-                    />
-                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                      {isDone ? 'Completed' : 'Practice'}
-                    </span>
-                  </div>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    {isDone ? 'Completed' : 'Practice'}
+                  </span>
                 </div>
 
-                <div className="mt-2.5">
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                <div className="mt-3">
+                  <h3 className="font-display text-sm sm:text-base font-semibold text-slate-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors">
                     {skill.name}
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5 leading-snug">
@@ -194,7 +186,7 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
                   soundManager.playBeep(600, 0.04);
                   onNavigate(skill.route);
                 }}
-                className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors cursor-pointer"
+                className="mt-3 pt-2 border-t border-stone-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors cursor-pointer"
               >
                 <span>Launch Lab</span>
                 <ArrowUpRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
@@ -205,18 +197,18 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
       </div>
 
       {/* Selected Skill Sub-task Breakdown */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 dark:bg-[#0E1626] border border-slate-200/80 dark:border-slate-800/80 space-y-2.5">
-        <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-200/60 dark:border-slate-800">
-          <div className="flex items-center gap-2">
+      <div className="p-4 rounded-2xl bg-white dark:bg-[#0E1526] border border-stone-200/90 dark:border-slate-800/90 space-y-3 shadow-2xs">
+        <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-100 dark:border-slate-800">
+          <div className="flex items-center gap-2.5">
             <div className={`w-7 h-7 rounded-lg ${activeSkill.bgColor} ${activeSkill.color} flex items-center justify-center shrink-0`}>
               <activeSkill.icon className="w-3.5 h-3.5" />
             </div>
             <div>
-              <span className="text-xs font-bold text-slate-900 dark:text-white">
+              <span className="font-display text-xs sm:text-sm font-semibold text-slate-900 dark:text-white">
                 {activeSkill.name} Structure & Sections
               </span>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                Official Cambridge format & evaluation criteria
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Official Cambridge format · Evaluation criteria
               </p>
             </div>
           </div>
@@ -227,23 +219,23 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
               soundManager.playBeep(640, 0.04);
               onNavigate(activeSkill.route);
             }}
-            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-[11px] font-bold shadow-xs transition flex items-center gap-1 cursor-pointer shrink-0"
+            className="px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500 active:scale-95 text-white text-xs font-semibold shadow-2xs transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
           >
             <span>Start Practice</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {activeSkill.subskills.map((sub, i) => (
             <div
               key={i}
-              className="p-2.5 rounded-xl bg-white dark:bg-[#101B32] border border-slate-200/70 dark:border-slate-800/70 text-left"
+              className="p-3 rounded-xl bg-[#FAF8F5] dark:bg-slate-900/70 border border-stone-200/80 dark:border-slate-800/80 text-left"
             >
-              <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">
+              <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
                 {sub.name}
               </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                 {sub.focus}
               </div>
             </div>

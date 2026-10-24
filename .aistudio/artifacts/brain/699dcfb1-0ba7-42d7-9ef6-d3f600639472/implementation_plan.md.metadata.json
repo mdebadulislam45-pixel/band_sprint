@@ -1,6 +1,6 @@
 {
-  "summary":  "Comprehensive implementation plan benchmarking the IELTS Sprint dashboard against IELTSly.ai and premier IELTS platforms (IDP/Cambridge, IELTS Ready, E2Language). Outlines specific lagging features, diagnostic band scorecards, AI speaking partner quick-launch, weakness heatmaps, daily goal streaks, and modular dashboard architecture while guaranteeing 100% feature preservation.",
-  "updatedAt":  "2026-10-22T14:05:47.212850834Z",
+  "summary":  "Implementation plan for upgrading the IELTS Speaking Examiner Avatars to high-craft Humanoid & Studio Anime styles, adding a Free-Talk AI Live Speaking Partner mode, and integrating a WebRTC Candidate Camera Studio with Eye-Contact & Posture HUD across both the Speaking Partner and full 3-Part Voice Examiner simulator.",
+  "updatedAt":  "2026-10-23T18:02:29.653002663Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

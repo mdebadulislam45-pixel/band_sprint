@@ -195,7 +195,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthSuccess, onShowToast }
     setIsGoogleModalOpen(true);
   };
 
-  const handleGoogleAuthComplete = (candidateInfo: { email: string; name?: string; targetBand?: number }) => {
+  const handleGoogleAuthComplete = (candidateInfo: {
+    uid: string;
+    email: string;
+    name?: string;
+    targetBand?: number;
+    verifiedByFirebase: boolean;
+  }) => {
     const res = handleGoogleSignInAction(candidateInfo);
     if (res.success && res.user) {
       soundManager.playSuccess();

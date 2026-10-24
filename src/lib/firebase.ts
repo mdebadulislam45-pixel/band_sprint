@@ -1,10 +1,32 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
+  signOut as firebaseSignOut
+} from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+// Resolve dynamic auth domain if running under custom branded domain
+const resolvedAuthDomain =
+  typeof window !== 'undefined' && window.location.hostname.includes('ieltssprint.com')
+    ? 'auth.ieltssprint.com'
+    : firebaseConfig.authDomain;
+
+const resolvedConfig = {
+  ...firebaseConfig,
+  authDomain: resolvedAuthDomain
+};
+
 // Initialize Firebase App
-export const app = initializeApp(firebaseConfig);
+export const app = initializeApp(resolvedConfig);
 
 // Initialize Cloud Firestore using the configured database ID
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -12,6 +34,20 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 // Initialize Firebase Authentication
 export const auth = getAuth(app);
 export const googleAuthProvider = new GoogleAuthProvider();
+googleAuthProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+export {
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
+  firebaseSignOut
+};
 
 export enum OperationType {
   CREATE = 'create',

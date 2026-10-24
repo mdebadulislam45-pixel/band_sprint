@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -6,21 +6,24 @@ import {
   AlertCircle,
   ExternalLink,
   Loader2,
-  Mail,
   Flame,
-  CheckCircle2,
   Copy,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { firebaseSyncService } from '../../services/firebaseSyncService';
-import { validateGmailAddress } from '../../utils/googleAuth';
-import firebaseConfig from '../../../firebase-applet-config.json';
 
 interface GoogleSignInModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (candidateInfo: { email: string; name?: string; targetBand?: number }) => void;
+  onSuccess: (candidateInfo: {
+    uid: string;
+    email: string;
+    name?: string;
+    targetBand?: number;
+    verifiedByFirebase: boolean;
+  }) => void;
 }
 
 export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
@@ -29,12 +32,22 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
   onSuccess
 }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-  const [gmailInput, setGmailInput] = useState('');
-  const [gmailName, setGmailName] = useState('');
-  const [showManualGmail, setShowManualGmail] = useState(false);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [copiedDomain, setCopiedDomain] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isLoading, onClose]);
 
   if (!isOpen) return null;
 
@@ -45,6 +58,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
     setIsLoading(true);
     setErrorMsg(null);
     setErrorDetails(null);
+    setErrorCode(null);
 
     try {
       const fbUser = await firebaseSyncService.signInWithGoogle();
@@ -52,66 +66,54 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
         soundManager.playSuccess();
         setIsLoading(false);
         onSuccess({
+          uid: fbUser.uid,
           email: fbUser.email,
-          name: fbUser.displayName || undefined
+          name: fbUser.displayName || undefined,
+          verifiedByFirebase: true
         });
         onClose();
       } else {
         setIsLoading(false);
-        setErrorMsg('No account details received from Google.');
+        setErrorMsg('Google Authentication Incomplete');
+        setErrorDetails('No verified email address was returned by Google. Please try again or use Email & Password.');
       }
     } catch (err: any) {
       setIsLoading(false);
       soundManager.playBeep(350, 0.1);
-      console.error('[GoogleSignInModal] Firebase Google Sign-In error:', err);
-
       const code = err?.code || '';
-      const msg = err?.message || String(err);
+      setErrorCode(code);
 
-      if (code === 'auth/popup-blocked') {
-        setErrorMsg('The sign-in popup was blocked by your browser.');
-        setErrorDetails('Please allow popups for this site, or use the direct Gmail sign-in below.');
-        setShowManualGmail(true);
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setErrorMsg('Google Sign-In Window Closed');
+        setErrorDetails('The Google sign-in window was closed before completing verification. Click below to try again or use the Full-Page Redirect option on mobile.');
+      } else if (code === 'auth/popup-blocked') {
+        setErrorMsg('Browser Blocked the Sign-In Popup');
+        setErrorDetails('Your browser blocked the Google popup window. Please allow popups for this site or use the "Continue via Full-Page Redirect" button below.');
       } else if (code === 'auth/unauthorized-domain') {
-        setErrorMsg('Firebase domain authorization needed.');
+        setErrorMsg('Domain Authorization Required in Firebase Console');
         setErrorDetails(
-          `Domain "${currentHostname}" needs to be added to Authorized Domains in Firebase Console (Authentication > Settings > Authorized domains). You can also sign in below using your Gmail directly.`
+          `The domain "${currentHostname}" must be added to Firebase Console → Authentication → Settings → Authorized domains for project "fine-runner-5szp9". Until then, please sign in using Email & Password.`
         );
-        setShowManualGmail(true);
-      } else if (code === 'auth/popup-closed-by-user') {
-        setErrorMsg('Sign-in cancelled. Popup was closed before completion.');
-      } else if (code === 'auth/operation-not-allowed') {
-        setErrorMsg('Google Sign-In provider is disabled in Firebase Console.');
-        setErrorDetails('Enable Google under Authentication > Sign-in method in Firebase Console.');
-        setShowManualGmail(true);
       } else {
-        setErrorMsg(msg.includes('Unexpected token') ? 'Authentication service connection reset.' : (err?.message || 'Unable to connect to Google sign-in.'));
-        setShowManualGmail(true);
+        setErrorMsg('Google Sign-In Could Not Complete');
+        setErrorDetails(
+          err?.message || 'Unable to verify Google credentials at this moment. Please try again or use Email & Password sign-in.'
+        );
       }
     }
   };
 
-  const handleManualGmailSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    soundManager.playBeep(520, 0.04);
-
-    const validation = validateGmailAddress(gmailInput);
-    if (!validation.isValid) {
-      soundManager.playBeep(350, 0.08);
-      setErrorMsg(validation.error || 'Please enter a valid @gmail.com address.');
-      return;
+  const handleGoogleRedirectClick = async () => {
+    soundManager.playBeep(550, 0.05);
+    setIsRedirecting(true);
+    setErrorMsg(null);
+    try {
+      await firebaseSyncService.signInWithGoogleRedirect();
+    } catch (err: any) {
+      setIsRedirecting(false);
+      setErrorMsg('Redirect Sign-In Error');
+      setErrorDetails(err?.message || 'Could not initiate Google redirect flow.');
     }
-
-    soundManager.playSuccess();
-    const derivedName = gmailName.trim() || gmailInput.split('@')[0]
-      .replace(/[._]/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-
-    onSuccess({
-      email: gmailInput.trim().toLowerCase(),
-      name: derivedName
-    });
-    onClose();
   };
 
   const handleCopyDomain = () => {
@@ -124,7 +126,15 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+      <div
+        onClick={(e) => {
+          if (e.target === e.currentTarget && !isLoading) onClose();
+        }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="google-signin-title"
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.94, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -148,7 +158,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
           </button>
 
           <div className="p-6 sm:p-7 space-y-4 text-left max-h-[85vh] overflow-y-auto">
-            {/* Header with Google Logo & Firebase Status */}
+            {/* Header with Google Logo & IELTS Sprint Branding */}
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-white p-2.5 flex items-center justify-center shadow-md shrink-0">
                 <svg className="w-full h-full" viewBox="0 0 24 24">
@@ -171,19 +181,19 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
                 </svg>
               </div>
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-1.5">
-                  Sign in with Google
+                <h3 id="google-signin-title" className="text-lg font-black text-white flex items-center gap-1.5">
+                  Sign in to IELTS SPRINT
                 </h3>
                 <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
-                  <span>Firebase Authentication Live</span>
+                  <span>Verified Google OAuth 2.0 · Firebase Auth</span>
                 </p>
               </div>
             </div>
 
             {/* Error Message */}
             {errorMsg && (
-              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1.5">
+              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-2">
                 <div className="flex items-start gap-2 font-semibold">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
                   <span>{errorMsg}</span>
@@ -193,46 +203,46 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
                     {errorDetails}
                   </p>
                 )}
-                {errorDetails && errorDetails.includes('Authorized Domains') && (
-                  <div className="pl-6 pt-1 flex items-center gap-2">
+                {errorCode === 'auth/unauthorized-domain' && (
+                  <div className="pl-6 pt-1 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={handleCopyDomain}
-                      className="px-2.5 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-700/50 text-[10px] text-rose-200 flex items-center gap-1 font-mono transition cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-700/50 text-[10px] text-rose-200 flex items-center gap-1.5 font-mono transition cursor-pointer"
                     >
                       {copiedDomain ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedDomain ? 'Copied domain!' : `Copy: ${currentHostname}`}</span>
+                      <span>{copiedDomain ? 'Copied domain!' : `Copy Domain: ${currentHostname}`}</span>
                     </button>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Value Proposition Overview */}
+            {/* Security & Sync Assurance */}
             <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-2 text-xs">
               <div className="flex items-center gap-2 text-slate-200 font-semibold">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Cloud Firestore Data Persistence</span>
+                <span>Verified Candidate Cloud Sync</span>
               </div>
               <ul className="text-slate-400 space-y-1 text-[11px] list-disc list-inside">
-                <li>Automatic sync with project <code className="text-blue-300 font-mono text-[10px]">{firebaseConfig.projectId}</code></li>
-                <li>Preserves vocabulary flashcards, test scorecards & Mistake Vault</li>
-                <li>Protected under candidate security isolation rules</li>
+                <li>Authenticates strictly via official Google OAuth token verification</li>
+                <li>Syncs your test scorecards, vocabulary deck & Mistake Vault to Firestore</li>
+                <li>Merges any existing local practice progress into your cloud account</li>
               </ul>
             </div>
 
             {/* Primary Action Button: Firebase Google Popup */}
-            <div className="space-y-2 pt-1">
+            <div className="space-y-2.5 pt-1">
               <button
                 type="button"
                 onClick={handleGooglePopupClick}
-                disabled={isLoading}
+                disabled={isLoading || isRedirecting}
                 className="w-full min-h-[50px] py-3.5 px-6 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm shadow-xl flex items-center justify-center gap-3 transition active:scale-98 cursor-pointer disabled:opacity-60"
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                    <span>Connecting to Google Accounts...</span>
+                    <span>Verifying with Google Accounts...</span>
                   </>
                 ) : (
                   <>
@@ -260,63 +270,28 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
                 )}
               </button>
 
-              {/* Divider / Toggle for Direct Gmail */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowManualGmail(!showManualGmail)}
-                  className="w-full text-center text-[11px] text-slate-400 hover:text-blue-400 transition cursor-pointer py-1"
-                >
-                  {showManualGmail ? 'Hide direct Gmail login' : 'Or sign in directly using your Gmail address →'}
-                </button>
-              </div>
-
-              {/* Direct Gmail Input Section */}
-              {showManualGmail && (
-                <form
-                  onSubmit={handleManualGmailSubmit}
-                  className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-2.5 animate-fadeIn"
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
-                    <Mail className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Quick Gmail Candidate Access</span>
-                  </div>
-                  <div>
-                    <input
-                      type="email"
-                      value={gmailInput}
-                      onChange={(e) => setGmailInput(e.target.value)}
-                      placeholder="e.g. mdebadulislam45@gmail.com"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      value={gmailName}
-                      onChange={(e) => setGmailName(e.target.value)}
-                      placeholder="Candidate name (optional)"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Sign In with Gmail</span>
-                  </button>
-                </form>
-              )}
+              {/* Secondary Option: Full-page Redirect for Mobile Browsers / Popup Blockers */}
+              <button
+                type="button"
+                onClick={handleGoogleRedirectClick}
+                disabled={isLoading || isRedirecting}
+                className="w-full min-h-[44px] py-2.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700/90 text-slate-200 font-semibold text-xs border border-slate-700 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-blue-400 ${isRedirecting ? 'animate-spin' : ''}`} />
+                <span>
+                  {isRedirecting
+                    ? 'Redirecting to Google...'
+                    : 'Popup blocked on mobile? Use Full-Page Redirect'}
+                </span>
+              </button>
             </div>
 
             {/* Footer Trust Indicator */}
             <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
               <span className="flex items-center gap-1 text-slate-400">
-                <Flame className="w-3 h-3 text-amber-500" /> Firebase Auth
+                <Flame className="w-3 h-3 text-amber-500" /> Firebase OAuth 2.0
               </span>
-              <span className="text-[10px] text-slate-400">IELTS Sprint</span>
+              <span className="text-[10px] text-slate-400">IELTS SPRINT</span>
             </div>
           </div>
         </motion.div>

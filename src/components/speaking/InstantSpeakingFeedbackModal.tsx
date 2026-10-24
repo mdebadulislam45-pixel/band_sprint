@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Sparkles,
   Volume2,
@@ -8,18 +8,24 @@ import {
   ArrowRight,
   RotateCcw,
   Save,
-  BookOpen,
   Award,
-  Clock,
   X,
   Check,
-  ChevronDown,
-  ChevronUp,
   Headphones,
-  Flame,
-  ShieldCheck,
-  Zap
+  Zap,
+  Activity,
+  BookmarkPlus
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  Tooltip,
+  Legend
+} from 'recharts';
 import { InstantSpeakingFeedback, DetailedGrammarError } from '../../types/speakingTypes';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
@@ -43,13 +49,62 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
   onNextQuestion,
   onRetakeTurn,
   nextActionLabel = 'Next Question →',
-  isFinalTurn = false,
   onShowToast
 }) => {
-  const [activeTab, setActiveTab] = useState<'errors' | 'pronunciation' | 'model'>('model');
+  const [activeTab, setActiveTab] = useState<'radar' | 'model' | 'errors' | 'pronunciation'>('radar');
   const [isPlayingModelAudio, setIsPlayingModelAudio] = useState(false);
   const [playingWord, setPlayingWord] = useState<string | null>(null);
   const [savedErrors, setSavedErrors] = useState<Record<string, boolean>>({});
+  const [savedCollocations, setSavedCollocations] = useState<Record<string, boolean>>({});
+
+  const radarData = useMemo(() => {
+    if (!feedback) return [];
+    const bands = feedback.estimatedBands;
+    const wpm = feedback.wordsPerMinute || 120;
+    const rawFluency = bands.fluency;
+    const markerBonus = feedback.band8Answer.keyDiscourseMarkers.length >= 3 ? 0.4 : -0.3;
+    const coherenceScore = Math.min(9.0, Math.max(4.5, Number((bands.fluency * 0.65 + bands.lexical * 0.35 + markerBonus).toFixed(1))));
+    const pacingScore = wpm >= 110 && wpm <= 155 ? Math.min(9.0, rawFluency + 0.5) : Math.max(5.0, rawFluency - 0.5);
+
+    return [
+      {
+        subject: 'Fluency & Flow',
+        candidate: Number(rawFluency.toFixed(1)),
+        benchmark: 8.0,
+        fullMark: 9.0
+      },
+      {
+        subject: 'Coherence & Linkers',
+        candidate: coherenceScore,
+        benchmark: 8.0,
+        fullMark: 9.0
+      },
+      {
+        subject: 'Pace & Pause Control',
+        candidate: Number(pacingScore.toFixed(1)),
+        benchmark: 8.0,
+        fullMark: 9.0
+      },
+      {
+        subject: 'Lexical Precision',
+        candidate: Number(bands.lexical.toFixed(1)),
+        benchmark: 8.0,
+        fullMark: 9.0
+      },
+      {
+        subject: 'Grammar Range',
+        candidate: Number(bands.grammar.toFixed(1)),
+        benchmark: 8.0,
+        fullMark: 9.0
+      },
+      {
+        subject: 'Pronunciation',
+        candidate: Number(bands.pronunciation.toFixed(1)),
+        benchmark: 8.0,
+        fullMark: 9.0
+      }
+    ];
+  }, [feedback]);
 
   if (!isOpen || !feedback) return null;
 
@@ -65,7 +120,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
 
     const textToRead = feedback.band8Answer.modelAnswer;
     speakBritish(textToRead, {
-      speakerId: 'speaker_04', // Arthur (British Examiner Fenrir)
+      speakerId: 'speaker_04',
       rate: 0.96,
       onEnd: () => setIsPlayingModelAudio(false),
       onError: () => setIsPlayingModelAudio(false)
@@ -90,14 +145,37 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
     addMistake({
       module: 'speaking',
       title: `Speaking Grammar: ${err.ruleCategory}`,
+      prompt: feedback.questionText,
+      questionType: `Part ${feedback.part} · ${err.ruleCategory}`,
       userAnswer: err.observed,
       correctAnswer: err.corrected,
-      explanation: err.explanation
+      explanation: err.explanation,
+      sourceContext: `Speaking Lab · Part ${feedback.part} (${feedback.topic})`
     });
 
-    setSavedErrors(prev => ({ ...prev, [key]: true }));
+    setSavedErrors((prev) => ({ ...prev, [key]: true }));
     soundManager.playSuccess();
-    onShowToast(`Saved grammar rule to Mistake Vault!`);
+    onShowToast('Saved grammar rule to SuperMemo SM-2 Mistake Vault!');
+  };
+
+  const handleSaveCollocation = (phrase: string, meaning: string, bandLevel: string, idx: number) => {
+    const key = `col_${idx}_${phrase}`;
+    if (savedCollocations[key]) return;
+
+    addMistake({
+      module: 'speaking',
+      title: `Speaking ${bandLevel} Collocation: "${phrase}"`,
+      prompt: feedback.questionText,
+      questionType: `Part ${feedback.part} Lexical & Coherence Upgrade`,
+      userAnswer: feedback.candidateTranscript.slice(0, 90) || 'Basic spoken phrasing',
+      correctAnswer: phrase,
+      explanation: `${meaning} — Deploy in Part ${feedback.part} discussions on ${feedback.topic}.`,
+      sourceContext: `Speaking Band 8+ Coach · ${feedback.topic}`
+    });
+
+    setSavedCollocations((prev) => ({ ...prev, [key]: true }));
+    soundManager.playSuccess();
+    onShowToast(`Saved "${phrase}" to SM-2 Mistake Vault!`);
   };
 
   const handleModalClose = () => {
@@ -107,6 +185,111 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
   };
 
   const bands = feedback.estimatedBands;
+  const coherenceAxis = radarData[1]?.candidate ?? bands.fluency;
+  const fcDelta = Number((bands.fluency - coherenceAxis).toFixed(1));
+
+  const isValidAttempt =
+    feedback.isValidAttempt !== false &&
+    feedback.wordCount >= 5 &&
+    (bands?.overall ?? 0) > 0;
+
+  if (!isValidAttempt) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-fade-in">
+        <div
+          className="bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-800/80 shadow-2xl w-full max-w-xl overflow-hidden flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Warning Header */}
+          <div className="bg-gradient-to-r from-rose-950 via-rose-900 to-slate-900 text-white px-6 py-5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-rose-300" />
+              </div>
+              <div>
+                <span className="text-[11px] font-mono uppercase tracking-wider text-rose-300 font-bold block">
+                  Unattempted / Audio Inaudible
+                </span>
+                <h2 className="text-lg font-extrabold tracking-tight text-white">
+                  {feedback.feedbackTitle || 'No Candidate Speech Detected'}
+                </h2>
+              </div>
+            </div>
+            <button
+              onClick={handleModalClose}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+              title="Close Warning"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Warning Body */}
+          <div className="p-6 space-y-5">
+            <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 space-y-2.5">
+              <div className="flex items-center justify-between text-xs font-mono font-bold text-rose-800 dark:text-rose-300">
+                <span>STRICT INPUT GATE · MINIMUM 5 WORDS REQUIRED</span>
+                <span className="px-2 py-0.5 rounded bg-rose-200/80 dark:bg-rose-900 text-rose-950 dark:text-rose-100">
+                  {feedback.wordCount} word{feedback.wordCount === 1 ? '' : 's'} detected
+                </span>
+              </div>
+              <p className="text-sm font-semibold text-rose-950 dark:text-rose-100 leading-relaxed">
+                {feedback.feedbackEn ||
+                  'You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.'}
+              </p>
+              <p className="text-xs font-medium text-rose-800 dark:text-rose-300 leading-relaxed pt-1 border-t border-rose-200/60 dark:border-rose-800/60">
+                {feedback.feedbackBn ||
+                  'পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।'}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-bold">
+                Examiner Question Prompt (Part {feedback.part})
+              </div>
+              <p className="text-sm font-bold text-slate-900 dark:text-white">
+                &ldquo;{feedback.questionText}&rdquo;
+              </p>
+              <div className="text-xs text-slate-500 dark:text-slate-400 pt-1">
+                Captured Transcript:{' '}
+                <span className="font-mono italic text-slate-700 dark:text-slate-300">
+                  {feedback.candidateTranscript
+                    ? `"${feedback.candidateTranscript}"`
+                    : '(No audible speech captured)'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Immediate Try Again / Re-record Action */}
+          <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleModalClose}
+              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                stopSpeech();
+                if (onRetakeTurn) {
+                  onRetakeTurn();
+                } else {
+                  onClose();
+                }
+              }}
+              className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-black shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Try Again / Re-record</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in overflow-y-auto">
@@ -118,7 +301,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black uppercase tracking-wide">
                   <Zap className="w-3 h-3 fill-slate-950" />
-                  INSTANT FEEDBACK · BAND 8+ COACH
+                  INSTANT AI FEEDBACK · BAND 8+ COACH
                 </span>
                 <span className="text-xs text-indigo-200 font-mono">
                   Part {feedback.part} · {feedback.topic}
@@ -131,7 +314,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
 
             <button
               onClick={handleModalClose}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition shrink-0"
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition shrink-0 cursor-pointer"
               title="Close Feedback"
             >
               <X className="w-5 h-5" />
@@ -142,31 +325,31 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-4 mt-2 border-t border-white/10 text-center">
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Overall Band</div>
-              <div className="text-base sm:text-lg font-black text-amber-300 font-mono">
+              <div className="text-base sm:text-lg font-black text-amber-300 font-mono tabular-nums">
                 {bands.overall.toFixed(1)}
               </div>
             </div>
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Fluency & Coherence</div>
-              <div className="text-sm sm:text-base font-bold text-white font-mono">
+              <div className="text-sm sm:text-base font-bold text-white font-mono tabular-nums">
                 {bands.fluency.toFixed(1)}
               </div>
             </div>
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Lexical Resource</div>
-              <div className="text-sm sm:text-base font-bold text-white font-mono">
+              <div className="text-sm sm:text-base font-bold text-white font-mono tabular-nums">
                 {bands.lexical.toFixed(1)}
               </div>
             </div>
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Grammar Accuracy</div>
-              <div className="text-sm sm:text-base font-bold text-white font-mono">
+              <div className="text-sm sm:text-base font-bold text-white font-mono tabular-nums">
                 {bands.grammar.toFixed(1)}
               </div>
             </div>
             <div className="col-span-2 sm:col-span-1 p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Pronunciation</div>
-              <div className="text-sm sm:text-base font-bold text-emerald-300 font-mono">
+              <div className="text-sm sm:text-base font-bold text-emerald-300 font-mono tabular-nums">
                 {bands.pronunciation.toFixed(1)}
               </div>
             </div>
@@ -177,10 +360,25 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
         <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-3 shrink-0 gap-2 overflow-x-auto">
           <button
             onClick={() => {
+              setActiveTab('radar');
+              soundManager.playBeep(600, 0.04);
+            }}
+            className={`pb-2.5 px-3.5 text-xs font-extrabold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'radar'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Fluency vs. Coherence Spider Chart</span>
+          </button>
+
+          <button
+            onClick={() => {
               setActiveTab('model');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`pb-2.5 px-3.5 text-xs font-extrabold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+            className={`pb-2.5 px-3.5 text-xs font-extrabold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'model'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -195,17 +393,21 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
               setActiveTab('errors');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`pb-2.5 px-3.5 text-xs font-extrabold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+            className={`pb-2.5 px-3.5 text-xs font-extrabold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'errors'
                 ? 'border-rose-600 text-rose-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-            <span>Grammar Errors & Corrections</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-              feedback.grammaticalErrors.length > 0 ? 'bg-rose-100 text-rose-700 font-bold' : 'bg-slate-200 text-slate-600'
-            }`}>
+            <span>Grammar Corrections</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                feedback.grammaticalErrors.length > 0
+                  ? 'bg-rose-100 text-rose-700 font-bold'
+                  : 'bg-slate-200 text-slate-600'
+              }`}
+            >
               {feedback.grammaticalErrors.length}
             </span>
           </button>
@@ -215,7 +417,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
               setActiveTab('pronunciation');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`pb-2.5 px-3.5 text-xs font-extrabold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+            className={`pb-2.5 px-3.5 text-xs font-extrabold transition border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'pronunciation'
                 ? 'border-emerald-600 text-emerald-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -232,7 +434,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
           <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1">
             <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500">
               <span>Your Spoken Answer</span>
-              <span className="font-mono text-slate-600">
+              <span className="font-mono text-slate-600 tabular-nums">
                 {feedback.wordCount} words · {feedback.wordsPerMinute} WPM
               </span>
             </div>
@@ -240,6 +442,110 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
               "{feedback.candidateTranscript}"
             </p>
           </div>
+
+          {/* TAB 0: FLUENCY VS. COHERENCE SPIDER CHART */}
+          {activeTab === 'radar' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                <div className="md:col-span-7 p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wide">
+                      Fluency vs. Coherence Spider Chart
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Target: Band 8.0
+                    </span>
+                  </div>
+                  <div className="w-full h-[260px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart cx="50%" cy="50%" outerRadius="72%" data={radarData}>
+                        <PolarGrid stroke="#e2e8f0" />
+                        <PolarAngleAxis
+                          dataKey="subject"
+                          tick={{ fill: '#1e293b', fontSize: 10, fontWeight: 700 }}
+                        />
+                        <PolarRadiusAxis
+                          angle={30}
+                          domain={[0, 9]}
+                          tickCount={5}
+                          tick={{ fill: '#64748b', fontSize: 9 }}
+                        />
+                        <Radar
+                          name="Band 8.0 Benchmark"
+                          dataKey="benchmark"
+                          stroke="#10b981"
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                          fill="#10b981"
+                          fillOpacity={0.12}
+                        />
+                        <Radar
+                          name="Your Turn Score"
+                          dataKey="candidate"
+                          stroke="#4f46e5"
+                          strokeWidth={2.5}
+                          fill="#4f46e5"
+                          fillOpacity={0.35}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#0f172a',
+                            borderColor: '#334155',
+                            borderRadius: '10px',
+                            color: '#f8fafc',
+                            fontSize: '11px'
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 700 }} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Right 5 Cols: Fluency vs Coherence Diagnostic Breakdown */}
+                <div className="md:col-span-5 space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-slate-900 text-white space-y-2">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">
+                      Speech Equilibrium Diagnosis
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1 font-mono">
+                      <div className="p-2 rounded-xl bg-white/10">
+                        <div className="text-[10px] text-slate-300">Fluency Flow</div>
+                        <div className="text-base font-black text-amber-300 tabular-nums">
+                          {bands.fluency.toFixed(1)}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded-xl bg-white/10">
+                        <div className="text-[10px] text-slate-300">Coherence</div>
+                        <div className="text-base font-black text-emerald-300 tabular-nums">
+                          {coherenceAxis.toFixed(1)}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed pt-1">
+                      {Math.abs(fcDelta) <= 0.4
+                        ? 'Your acoustic delivery pace and logical discourse linking are well balanced.'
+                        : fcDelta > 0
+                        ? 'Your speech rate is faster than your logical structuring. Deploy more C1 discourse markers to boost Coherence.'
+                        : 'Your logical organization is strong, but mid-sentence hesitations slightly lowered raw Fluency.'}
+                    </p>
+                  </div>
+
+                  {/* Actionable Coaching Tips */}
+                  <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-1.5 text-xs">
+                    <div className="font-extrabold text-indigo-950 uppercase text-[11px]">
+                      Priority Adjustments for Next Turn:
+                    </div>
+                    <ul className="space-y-1 text-slate-700 list-disc list-inside text-[11px]">
+                      {feedback.actionableTips.slice(0, 3).map((tip, i) => (
+                        <li key={i}>{tip}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* TAB 1: BETTER ANSWER BAND 8+ */}
           {activeTab === 'model' && (
@@ -258,7 +564,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
 
                   <button
                     onClick={handlePlayModelAnswer}
-                    className={`min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-xs ${
+                    className={`min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer ${
                       isPlayingModelAudio
                         ? 'bg-rose-600 hover:bg-rose-700 text-white'
                         : 'bg-indigo-600 hover:bg-indigo-700 text-white'
@@ -291,33 +597,61 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                 </div>
               </div>
 
-              {/* Highlighted C1/C2 Collocations */}
+              {/* Highlighted C1/C2 Collocations with SM-2 Vault Save */}
               {feedback.band8Answer.highlightedCollocations.length > 0 && (
                 <div className="space-y-2.5">
                   <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    High-Yield Collocations in Model Answer
+                    High-Yield Collocations in Model Answer (Save to SM-2 Vault)
                   </h4>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {feedback.band8Answer.highlightedCollocations.map((col, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black text-indigo-950 font-serif">
-                            "{col.phrase}"
-                          </span>
-                          <span className="px-1.5 py-0.2 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-mono font-bold">
-                            {col.bandLevel}
-                          </span>
+                    {feedback.band8Answer.highlightedCollocations.map((col, idx) => {
+                      const colKey = `col_${idx}_${col.phrase}`;
+                      const isColSaved = savedCollocations[colKey];
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-2 flex flex-col justify-between"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black text-indigo-950 font-serif">
+                                "{col.phrase}"
+                              </span>
+                              <span className="px-1.5 py-0.2 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-mono font-bold">
+                                {col.bandLevel}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-snug">
+                              {col.meaning}
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => handleSaveCollocation(col.phrase, col.meaning, col.bandLevel, idx)}
+                            disabled={isColSaved}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                              isColSaved
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700'
+                            }`}
+                          >
+                            {isColSaved ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                <span>Saved in SM-2 Vault</span>
+                              </>
+                            ) : (
+                              <>
+                                <BookmarkPlus className="w-3 h-3" />
+                                <span>Save Collocation to Vault</span>
+                              </>
+                            )}
+                          </button>
                         </div>
-                        <p className="text-[11px] text-slate-600 leading-snug">
-                          {col.meaning}
-                        </p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -376,13 +710,15 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                           <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-mono text-[11px] font-bold">
                             {err.ruleCategory}
                           </span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            err.severity === 'critical'
-                              ? 'bg-rose-100 text-rose-800'
-                              : err.severity === 'moderate'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              err.severity === 'critical'
+                                ? 'bg-rose-100 text-rose-800'
+                                : err.severity === 'moderate'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
                             {err.severity} impact
                           </span>
                         </div>
@@ -417,14 +753,14 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                           <button
                             onClick={() => handleSaveGrammarError(err, idx)}
                             disabled={isSaved}
-                            className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 self-start sm:self-auto ${
+                            className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer ${
                               isSaved
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                             }`}
                           >
                             {isSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                            <span>{isSaved ? 'Saved to Vault' : 'Save to Mistake Vault'}</span>
+                            <span>{isSaved ? 'Saved to Vault' : 'Save to SM-2 Vault'}</span>
                           </button>
                         </div>
                       </div>
@@ -473,7 +809,11 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                             </span>
                             <button
                               onClick={() => handlePlayWordPronunciation(item.word)}
-                              className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition"
+                              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                                playingWord === item.word
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                              }`}
                               title="Listen to pronunciation"
                             >
                               <Volume2 className="w-3.5 h-3.5" />
@@ -533,7 +873,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                   stopSpeech();
                   onRetakeTurn();
                 }}
-                className="min-h-[42px] px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1.5"
+                className="min-h-[42px] px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Practice Turn Again</span>
@@ -544,7 +884,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
           <div className="flex items-center gap-2">
             <button
               onClick={handleModalClose}
-              className="min-h-[42px] px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition"
+              className="min-h-[42px] px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition cursor-pointer"
             >
               Close
             </button>
@@ -555,7 +895,7 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                   stopSpeech();
                   onNextQuestion();
                 }}
-                className="min-h-[42px] px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition flex items-center gap-1.5 active:scale-95"
+                className="min-h-[42px] px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <span>{nextActionLabel}</span>
                 <ArrowRight className="w-4 h-4" />

@@ -140,19 +140,7 @@ export const CommercialFooter: React.FC<CommercialFooterProps> = ({
                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold">New</span>
                 </button>
               </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundManager.playBeep(520, 0.03);
-                    onOpenSeoGuide();
-                  }}
-                  className="hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center gap-1"
-                >
-                  <Rocket className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Google Ranking & Launch Guide</span>
-                </button>
-              </li>
+
               <li>
                 <button
                   type="button"

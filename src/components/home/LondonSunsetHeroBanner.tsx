@@ -289,80 +289,74 @@ export const LondonSunsetHeroBanner: React.FC<LondonSunsetHeroBannerProps> = ({
       <div className={`absolute inset-0 bg-gradient-to-r ${theme.overlayGrad} pointer-events-none z-10`} />
 
       {/* Compact Foreground Content */}
-      <div className="relative z-20 px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-2">
+      <div className="relative z-20 px-4 py-3.5 sm:px-5 sm:py-4 space-y-2.5">
         {/* Top Row: Time Greeting + Inline Metrics + Compact Actions */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
-          {/* Left: Dynamic Time Badge & Greeting */}
-          <div className="min-w-0 space-y-0.5">
-            <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Left: Dynamic Time Kicker & Editorial Greeting */}
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
               <button
                 type="button"
                 onClick={handleCycleTimePreview}
                 title="Live time-of-day theme (click to preview Morning / Afternoon / Evening / Night)"
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-mono font-bold uppercase tracking-wider transition cursor-pointer ${theme.badgeStyle}`}
+                className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-amber-300 hover:text-amber-200 transition cursor-pointer"
               >
-                <TimeIcon className="w-3 h-3 shrink-0" />
+                <TimeIcon className="w-3.5 h-3.5 shrink-0" />
                 <span>{theme.phaseLabel}</span>
                 {formattedClock && (
                   <>
-                    <span className="opacity-50">·</span>
-                    <Clock className="w-2.5 h-2.5 opacity-75" />
-                    <span>{formattedClock}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="tabular-nums">{formattedClock}</span>
                   </>
                 )}
               </button>
-
-              <h1 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-1.5 truncate">
-                <span>
-                  {theme.greeting}, {userName}!
-                </span>
-                <span className="text-sm sm:text-base">{theme.emoji}</span>
-              </h1>
+              <span aria-hidden="true" className="text-slate-400">·</span>
+              <span className="text-[11px] text-slate-300 truncate">{theme.subtitle}</span>
             </div>
 
-            <p className="text-[11px] sm:text-xs text-slate-300 font-medium truncate">
-              {theme.subtitle}
-            </p>
+            <h1 className="font-display text-lg sm:text-xl lg:text-2xl font-semibold text-white tracking-tight truncate">
+              {theme.greeting}, {userName}
+            </h1>
           </div>
 
-          {/* Right: Compact Metrics Pills + Quick Action Buttons */}
+          {/* Right: Interactive Metric Controls + Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Target Band Pill */}
+            {/* Target Band Control */}
             <button
               type="button"
               onClick={() => {
                 soundManager.playBeep(520, 0.04);
                 onOpenBandModal();
               }}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-900/75 hover:bg-slate-900 border border-white/10 flex items-center gap-1.5 transition cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
               title="Click to adjust Target Band"
             >
-              <Target className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              <span className="text-[11px] font-mono font-bold text-white">
+              <Target className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+              <span className="text-xs font-mono font-semibold text-white tabular-nums">
                 Band {targetBand.toFixed(1)}
               </span>
             </button>
 
-            {/* Exam Date Pill */}
+            {/* Exam Date Control */}
             <button
               type="button"
               onClick={() => {
                 soundManager.playBeep(520, 0.04);
                 onOpenBandModal();
               }}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-900/75 hover:bg-slate-900 border border-white/10 flex items-center gap-1.5 transition cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
               title="Click to adjust Exam Date"
             >
-              <Calendar className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-              <span className="text-[11px] font-mono font-bold text-white">
+              <Calendar className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
+              <span className="text-xs font-mono font-semibold text-white tabular-nums">
                 {formattedTestDate}
               </span>
             </button>
 
-            {/* Streak Pill */}
-            <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/75 border border-white/10 flex items-center gap-1.5">
+            {/* Streak Indicator */}
+            <div className="px-2.5 py-1.5 rounded-lg bg-slate-950/60 border border-white/15 flex items-center gap-1.5 whitespace-nowrap">
               <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
-              <span className="text-[11px] font-mono font-bold text-amber-400">
+              <span className="text-xs font-mono font-semibold text-amber-300 tabular-nums">
                 {streakDays}d
               </span>
             </div>
@@ -374,10 +368,10 @@ export const LondonSunsetHeroBanner: React.FC<LondonSunsetHeroBannerProps> = ({
                 soundManager.playSuccess();
                 onContinueLearning();
               }}
-              className={`px-3 py-1.5 rounded-lg font-black text-xs shadow-sm transition flex items-center gap-1 cursor-pointer active:scale-95 ${theme.ctaStyle}`}
+              className={`px-3.5 py-1.5 rounded-lg font-semibold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap ${theme.ctaStyle}`}
             >
               <span>Continue</span>
-              <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
 
             {/* Diagnostic Button */}
@@ -387,7 +381,7 @@ export const LondonSunsetHeroBanner: React.FC<LondonSunsetHeroBannerProps> = ({
                 soundManager.playBeep(600, 0.04);
                 onTakeDiagnostic();
               }}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-900/70 hover:bg-slate-900 text-white font-bold text-xs border border-white/15 transition flex items-center gap-1 cursor-pointer active:scale-95"
+              className="px-3 py-1.5 rounded-lg bg-slate-950/60 hover:bg-slate-950/85 text-white font-semibold text-xs border border-white/20 transition flex items-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
             >
               <ClipboardCheck className="w-3.5 h-3.5 text-slate-300" />
               <span>Diagnostic</span>
@@ -395,15 +389,14 @@ export const LondonSunsetHeroBanner: React.FC<LondonSunsetHeroBannerProps> = ({
           </div>
         </div>
 
-        {/* Bottom Row: Compact Single-Line Collocation Strip */}
-        <div className="px-2.5 py-1.5 rounded-xl bg-slate-950/65 border border-white/10 flex items-center justify-between gap-2.5">
+        {/* Bottom Row: Compact Editorial Collocation Strip */}
+        <div className="px-3 py-2 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
-            <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-amber-300 font-bold shrink-0">
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              Collocation:
+            <span className="font-mono text-[11px] text-amber-300 font-semibold shrink-0">
+              Daily Collocation ·
             </span>
-            <span className="font-black text-white">"{dailyCollocation.phrase}"</span>
-            <span className="text-slate-300 text-[11px] truncate">
+            <span className="font-display italic font-medium text-white">“{dailyCollocation.phrase}”</span>
+            <span className="text-slate-300 text-xs truncate">
               — {dailyCollocation.definition || dailyCollocation.ieltsExample}
             </span>
           </div>
@@ -420,7 +413,7 @@ export const LondonSunsetHeroBanner: React.FC<LondonSunsetHeroBannerProps> = ({
             aria-label="Listen to collocation pronunciation"
           >
             {isPlayingAudio ? (
-              <VolumeX className="w-3.5 h-3.5 text-slate-950 animate-pulse" />
+              <VolumeX className="w-3.5 h-3.5 text-slate-950" />
             ) : (
               <Volume2 className="w-3.5 h-3.5 text-white" />
             )}

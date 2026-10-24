@@ -50,7 +50,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     <nav
       role="tablist"
       aria-label="Bottom Navigation Bar"
-      className="md:hidden fixed bottom-0 inset-x-0 z-30 backdrop-blur-xl bg-white/95 dark:bg-[#0B1224]/95 border-t border-slate-200/90 dark:border-slate-800/80 py-1.5 px-2 flex items-center justify-around shadow-[0_-4px_25px_rgba(11,18,36,0.18)] pb-[max(0.75rem,env(safe-area-inset-bottom))] select-none"
+      className="md:hidden fixed bottom-0 inset-x-0 z-40 backdrop-blur-lg bg-white/95 dark:bg-slate-900/95 border-t border-slate-200/90 dark:border-slate-800 py-1.5 px-2 flex items-center justify-around shadow-[0_-4px_25px_rgba(11,18,36,0.18)] pb-[max(0.75rem,env(safe-area-inset-bottom))] select-none"
     >
       {items.map((item) => {
         const Icon = item.icon;

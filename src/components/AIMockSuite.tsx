@@ -4,6 +4,8 @@ import { ExamEvaluation } from '../types';
 import { soundManager } from '../utils/audioEffects';
 import { addMistake } from '../utils/vaultStorage';
 import { speakBritish, stopSpeech } from '../utils/britishVoice';
+import { checkWritingWordThreshold } from '../services/WritingEvaluationService';
+import { checkSpeakingInputGate } from '../services/SpeakingEvaluationService';
 
 interface AIMockSuiteProps {
   initialPrompt?: string;
@@ -125,36 +127,60 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
 
   // Gemini AI Examiner with 3x Exponential Backoff + Diagnostic Fallback
   const handleEvaluate = async () => {
-    if (wordCount < 40) {
-      onShowToast('Please write at least 40 words before submitting for evaluation.');
-      return;
+    if (testType === 'speaking') {
+      const spkGate = checkSpeakingInputGate(essayText);
+      if (!spkGate.isValidAttempt) {
+        setEvaluation({
+          overallBand: 0.0,
+          proficiencyTitle: spkGate.feedbackTitle,
+          trScore: 0.0,
+          trComment: spkGate.feedbackEn,
+          ccScore: 0.0,
+          ccComment: spkGate.feedbackBn,
+          lrScore: 0.0,
+          lrComment: '',
+          graScore: 0.0,
+          graComment: '',
+          strengths: [],
+          weaknesses: [spkGate.feedbackEn, spkGate.feedbackBn],
+          vocabUpgrades: [],
+          grammaticalErrors: [],
+          betterAnswerBand8: '',
+          verdict: `${spkGate.feedbackEn} ${spkGate.feedbackBn}`
+        });
+        setActiveTab('evaluation');
+        soundManager.playBeep(360, 0.1);
+        return;
+      }
+    } else {
+      const wrtGate = checkWritingWordThreshold(essayText, testType === 'task1' ? 'task1' : 'task2');
+      if (!wrtGate.isValidAttempt) {
+        setEvaluation({
+          overallBand: 0.0,
+          proficiencyTitle: wrtGate.feedbackTitle,
+          trScore: 0.0,
+          trComment: wrtGate.feedbackEn,
+          ccScore: 0.0,
+          ccComment: wrtGate.feedbackBn,
+          lrScore: 0.0,
+          lrComment: '',
+          graScore: 0.0,
+          graComment: '',
+          strengths: [],
+          weaknesses: [wrtGate.feedbackEn, wrtGate.feedbackBn],
+          vocabUpgrades: [],
+          grammaticalErrors: [],
+          betterAnswerBand8: '',
+          verdict: `${wrtGate.feedbackEn} ${wrtGate.feedbackBn}`
+        });
+        setActiveTab('evaluation');
+        soundManager.playBeep(360, 0.1);
+        return;
+      }
     }
 
     setIsEvaluating(true);
     soundManager.playBeep(580, 0.1);
-
-    // Prompt payload
-    const systemPrompt = `You are a certified Cambridge IELTS Senior Examiner. Evaluate the following ${testType.toUpperCase()} response strictly based on the 4 official IELTS criteria: Task Response / Task Achievement (TR/TA), Coherence & Cohesion (CC), Lexical Resource (LR), and Grammatical Range & Accuracy (GRA).
-    Target Band scale is 1.0 to 9.0 in 0.5 increments.
-    You MUST output valid JSON matching this schema:
-    {
-      "overallBand": number (e.g. 7.5),
-      "proficiencyTitle": string (e.g. "Good User - Operational Command"),
-      "trScore": number,
-      "trComment": string,
-      "ccScore": number,
-      "ccComment": string,
-      "lrScore": number,
-      "lrComment": string,
-      "graScore": number,
-      "graComment": string,
-      "strengths": string[] (3 bullet points),
-      "weaknesses": string[] (3 priority bullet points),
-      "vocabUpgrades": [
-        { "original": string, "upgraded": string, "explanation": string }
-      ] (at least 3 upgrades),
-      "verdict": string (summary feedback)
-    }`;
 
     let result: ExamEvaluation | null = null;
 
@@ -274,22 +300,6 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
         explanation: 'Double comparative error: "better" is already comparative.',
         ruleCategory: 'Comparative Form'
       });
-    }
-    if (grammarErrors.length === 0) {
-      grammarErrors.push(
-        {
-          observed: 'Every citizens must contribute to their nation.',
-          corrected: 'Every citizen must contribute to their nation.',
-          explanation: 'The determiner "every" must be followed by a singular countable noun.',
-          ruleCategory: 'Noun-Quantifier Agreement'
-        },
-        {
-          observed: 'In the other hand, some people argue...',
-          corrected: 'On the other hand, some people argue...',
-          explanation: 'Fixed cohesive discourse marker requires the preposition "On".',
-          ruleCategory: 'Discourse Marker Precision'
-        }
-      );
     }
 
     const modelBand8 = testType === 'task2'
@@ -597,61 +607,92 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       {/* Evaluation Scorecard Tab */}
       {activeTab === 'evaluation' && evaluation && (
         <div className="space-y-6">
-          {/* Overall Band Banner */}
-          <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-widest text-amber-400 font-mono">Official Cambridge Scorecard</span>
-              <h3 className="text-2xl sm:text-3xl font-extrabold mt-1">{evaluation.proficiencyTitle}</h3>
-              <p className="text-xs sm:text-sm text-blue-200 mt-2 max-w-xl leading-relaxed">{evaluation.verdict}</p>
-            </div>
-
-            <div className="bg-white/10 backdrop-blur-md border border-white/20 p-5 rounded-3xl text-center shrink-0 w-36">
-              <span className="text-[11px] uppercase tracking-wider text-blue-200 font-bold block">Overall Band</span>
-              <span className="font-mono text-5xl font-black text-amber-300 my-1 block">
-                {evaluation.overallBand.toFixed(1)}
-              </span>
-              <span className="text-[10px] text-emerald-300 font-semibold">Scale: 1.0 - 9.0</span>
-            </div>
-          </div>
-
-          {/* 4 Criteria Sub-scores */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-slate-500">TR / TA</span>
-                <span className="font-mono text-lg font-black text-blue-700">{evaluation.trScore.toFixed(1)}</span>
+          {/* Overall Band Banner or Zero-State Warning Card */}
+          {evaluation.overallBand <= 0 ? (
+            <div className="bg-rose-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border-2 border-rose-500/40 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-300">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-widest text-rose-300 font-mono">
+                    Unattempted / Below Minimum Threshold · Overall Band 0.0
+                  </span>
+                  <h3 className="text-xl sm:text-2xl font-extrabold mt-0.5">{evaluation.proficiencyTitle}</h3>
+                </div>
               </div>
-              <h5 className="font-bold text-slate-900 text-sm">Task Response</h5>
-              <p className="text-xs text-slate-600 leading-relaxed">{evaluation.trComment}</p>
+              <p className="text-sm text-rose-100 leading-relaxed">{evaluation.trComment}</p>
+              {evaluation.ccComment && (
+                <p className="text-xs text-rose-200 leading-relaxed pt-2 border-t border-rose-800/60">
+                  {evaluation.ccComment}
+                </p>
+              )}
+              <button
+                onClick={() => setActiveTab('editor')}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Return to Editor &amp; Continue Writing</span>
+              </button>
             </div>
+          ) : (
+            <>
+              <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-widest text-amber-400 font-mono">Official Cambridge Scorecard</span>
+                  <h3 className="text-2xl sm:text-3xl font-extrabold mt-1">{evaluation.proficiencyTitle}</h3>
+                  <p className="text-xs sm:text-sm text-blue-200 mt-2 max-w-xl leading-relaxed">{evaluation.verdict}</p>
+                </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-slate-500">CC</span>
-                <span className="font-mono text-lg font-black text-blue-700">{evaluation.ccScore.toFixed(1)}</span>
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 p-5 rounded-3xl text-center shrink-0 w-36">
+                  <span className="text-[11px] uppercase tracking-wider text-blue-200 font-bold block">Overall Band</span>
+                  <span className="font-mono text-5xl font-black text-amber-300 my-1 block">
+                    {evaluation.overallBand.toFixed(1)}
+                  </span>
+                  <span className="text-[10px] text-emerald-300 font-semibold">Scale: 1.0 - 9.0</span>
+                </div>
               </div>
-              <h5 className="font-bold text-slate-900 text-sm">Coherence & Cohesion</h5>
-              <p className="text-xs text-slate-600 leading-relaxed">{evaluation.ccComment}</p>
-            </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-slate-500">LR</span>
-                <span className="font-mono text-lg font-black text-blue-700">{evaluation.lrScore.toFixed(1)}</span>
-              </div>
-              <h5 className="font-bold text-slate-900 text-sm">Lexical Resource</h5>
-              <p className="text-xs text-slate-600 leading-relaxed">{evaluation.lrComment}</p>
-            </div>
+              {/* 4 Criteria Sub-scores */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase text-slate-500">TR / TA</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.trScore.toFixed(1)}</span>
+                  </div>
+                  <h5 className="font-bold text-slate-900 text-sm">Task Response</h5>
+                  <p className="text-xs text-slate-600 leading-relaxed">{evaluation.trComment}</p>
+                </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-slate-500">GRA</span>
-                <span className="font-mono text-lg font-black text-blue-700">{evaluation.graScore.toFixed(1)}</span>
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase text-slate-500">CC</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.ccScore.toFixed(1)}</span>
+                  </div>
+                  <h5 className="font-bold text-slate-900 text-sm">Coherence &amp; Cohesion</h5>
+                  <p className="text-xs text-slate-600 leading-relaxed">{evaluation.ccComment}</p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase text-slate-500">LR</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.lrScore.toFixed(1)}</span>
+                  </div>
+                  <h5 className="font-bold text-slate-900 text-sm">Lexical Resource</h5>
+                  <p className="text-xs text-slate-600 leading-relaxed">{evaluation.lrComment}</p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase text-slate-500">GRA</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.graScore.toFixed(1)}</span>
+                  </div>
+                  <h5 className="font-bold text-slate-900 text-sm">Grammatical Accuracy</h5>
+                  <p className="text-xs text-slate-600 leading-relaxed">{evaluation.graComment}</p>
+                </div>
               </div>
-              <h5 className="font-bold text-slate-900 text-sm">Grammatical Accuracy</h5>
-              <p className="text-xs text-slate-600 leading-relaxed">{evaluation.graComment}</p>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* Strengths & Weaknesses */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

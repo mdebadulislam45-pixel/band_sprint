@@ -231,7 +231,7 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
  */
 export function isInterruptedPlaybackError(err: any): boolean {
   if (!err) return false;
-  if (err.name === 'AbortError' || err.name === 'NotAllowedError') return true;
+  if (err.name === 'AbortError' || err.name === 'NotAllowedError' || err.name === 'NotSupportedError') return true;
   const msg =
     typeof err === 'string'
       ? err
@@ -243,6 +243,9 @@ export function isInterruptedPlaybackError(err: any): boolean {
       lower.includes('load request') ||
       lower.includes('pause()') ||
       lower.includes('abort') ||
+      lower.includes('failed to load') ||
+      lower.includes('no supported source') ||
+      lower.includes('not supported') ||
       lower.includes('play() request was interrupted') ||
       lower.includes('user gesture')
     );

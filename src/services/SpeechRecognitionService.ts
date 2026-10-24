@@ -1,8 +1,11 @@
 /**
- * IELTS SPRINT — SPEECH RECOGNITION (STT) SERVICE
+ * IELTS SPRINT — SPEECH RECOGNITION (STT) & WEB AUDIO ACOUSTIC TELEMETRY SERVICE
  * Robust browser speech recognition with graceful silence handling,
- * auto-restart resilience, error recovery, and transcript collation.
+ * auto-restart resilience, error recovery, transcript collation, and
+ * real-time Web Audio API (AnalyserNode) pitch & volume envelope telemetry.
  */
+
+import { AcousticTelemetry } from '../types/speakingTypes';
 
 export interface SpeechRecognitionCallbacks {
   onInterimResult?: (transcript: string) => void;
@@ -10,6 +13,7 @@ export interface SpeechRecognitionCallbacks {
   onSilenceTimeout?: () => void;
   onError?: (error: string) => void;
   onStatusChange?: (status: 'listening' | 'paused' | 'stopped' | 'error') => void;
+  onAcousticMetrics?: (metrics: AcousticTelemetry) => void;
 }
 
 export class SpeechRecognitionService {
@@ -23,6 +27,23 @@ export class SpeechRecognitionService {
   private silenceThresholdMs: number = 3200; // 3.2s natural thinking pause allowed
   private speechStartTime: number = 0;
   private isSupported: boolean = false;
+
+  // Web Audio API Acoustic Telemetry State
+  private audioContext: AudioContext | null = null;
+  private mediaStream: MediaStream | null = null;
+  private analyserNode: AnalyserNode | null = null;
+  private acousticInterval: number | null = null;
+  private pitchSamples: number[] = [];
+  private volumeSamples: number[] = [];
+  private energyDropOffCount: number = 0;
+  private wasSpeakingLoudly: boolean = false;
+  private lastAcousticTelemetry: AcousticTelemetry = {
+    volumeRms: 0,
+    pitchHz: 0,
+    pitchVarianceHz: 0,
+    expressivenessScore: 68,
+    energyDropOffs: 0
+  };
 
   constructor() {
     this.checkSupport();
@@ -56,6 +77,158 @@ export class SpeechRecognitionService {
         }
       }, this.silenceThresholdMs);
     }
+  }
+
+  /**
+   * Starts non-blocking Web Audio API microphone analysis for real-time RMS volume
+   * and fundamental pitch variance (intonation expressiveness vs. monotone detection).
+   */
+  private async startAcousticTelemetry(): Promise<void> {
+    this.stopAcousticTelemetry();
+    this.pitchSamples = [];
+    this.volumeSamples = [];
+    this.energyDropOffCount = 0;
+    this.wasSpeakingLoudly = false;
+
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      if (this.isManuallyStopped) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      this.mediaStream = stream;
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx: AudioContext = new AudioCtx();
+      this.audioContext = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.75;
+      source.connect(analyser);
+      this.analyserNode = analyser;
+
+      const timeData = new Float32Array(analyser.fftSize);
+      const freqData = new Uint8Array(analyser.frequencyBinCount);
+
+      this.acousticInterval = window.setInterval(() => {
+        if (!this.analyserNode || !this.audioContext) return;
+
+        this.analyserNode.getFloatTimeDomainData(timeData);
+        this.analyserNode.getByteFrequencyData(freqData);
+
+        // 1. Calculate RMS Volume (0 - 100 normalized)
+        let sumSquares = 0;
+        for (let i = 0; i < timeData.length; i++) {
+          sumSquares += timeData[i] * timeData[i];
+        }
+        const rms = Math.sqrt(sumSquares / timeData.length);
+        const volumeRms = Math.min(100, Math.round(rms * 360));
+
+        // Track sudden energy drop-offs mid-utterance
+        if (volumeRms >= 28) {
+          this.wasSpeakingLoudly = true;
+          this.volumeSamples.push(volumeRms);
+        } else if (this.wasSpeakingLoudly && volumeRms < 8) {
+          this.energyDropOffCount += 1;
+          this.wasSpeakingLoudly = false;
+        }
+
+        // 2. Estimate Fundamental Vocal Frequency (85 Hz - 340 Hz human speech band)
+        let dominantPitchHz = 0;
+        if (volumeRms >= 12) {
+          const nyquist = this.audioContext.sampleRate / 2;
+          const binHz = nyquist / freqData.length;
+          const minBin = Math.max(1, Math.floor(85 / binHz));
+          const maxBin = Math.min(freqData.length - 1, Math.ceil(340 / binHz));
+
+          let maxAmp = 0;
+          let maxBinIdx = minBin;
+          for (let b = minBin; b <= maxBin; b++) {
+            if (freqData[b] > maxAmp) {
+              maxAmp = freqData[b];
+              maxBinIdx = b;
+            }
+          }
+
+          if (maxAmp > 45) {
+            dominantPitchHz = Math.round(maxBinIdx * binHz);
+            this.pitchSamples.push(dominantPitchHz);
+            if (this.pitchSamples.length > 150) {
+              this.pitchSamples.shift();
+            }
+          }
+        }
+
+        // 3. Calculate Pitch Variance (Standard Deviation of active speech frames)
+        let pitchVarianceHz = 0;
+        if (this.pitchSamples.length >= 4) {
+          const mean =
+            this.pitchSamples.reduce((acc, v) => acc + v, 0) / this.pitchSamples.length;
+          const variance =
+            this.pitchSamples.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) /
+            this.pitchSamples.length;
+          pitchVarianceHz = Math.round(Math.sqrt(variance));
+        }
+
+        // Optimal Cambridge intonation variance is ~22-55 Hz std dev
+        const expressivenessScore =
+          this.pitchSamples.length < 3
+            ? 68
+            : Math.min(
+                98,
+                Math.max(42, Math.round(50 + Math.min(48, pitchVarianceHz * 1.15)))
+              );
+
+        this.lastAcousticTelemetry = {
+          volumeRms,
+          pitchHz: dominantPitchHz,
+          pitchVarianceHz,
+          expressivenessScore,
+          energyDropOffs: this.energyDropOffCount
+        };
+
+        this.callbacks.onAcousticMetrics?.(this.lastAcousticTelemetry);
+      }, 120);
+    } catch {
+      // Gracefully continue with SpeechRecognition if raw audio stream is blocked
+    }
+  }
+
+  private stopAcousticTelemetry(): void {
+    if (this.acousticInterval !== null) {
+      clearInterval(this.acousticInterval);
+      this.acousticInterval = null;
+    }
+    if (this.mediaStream) {
+      try {
+        this.mediaStream.getTracks().forEach((track) => track.stop());
+      } catch {}
+      this.mediaStream = null;
+    }
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch {}
+      this.audioContext = null;
+    }
+    this.analyserNode = null;
+  }
+
+  public getLastAcousticTelemetry(): AcousticTelemetry {
+    return { ...this.lastAcousticTelemetry };
   }
 
   public startListening(callbacks: SpeechRecognitionCallbacks): boolean {
@@ -147,6 +320,7 @@ export class SpeechRecognitionService {
 
       this.recognition = recognition;
       recognition.start();
+      void this.startAcousticTelemetry();
       return true;
     } catch (err: any) {
       this.callbacks.onError?.(err?.message || 'Failed to start microphone speech engine.');
@@ -156,6 +330,7 @@ export class SpeechRecognitionService {
 
   public stopListening(preserveTranscript: boolean = false): string {
     this.isManuallyStopped = true;
+    this.stopAcousticTelemetry();
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
@@ -190,3 +365,4 @@ export class SpeechRecognitionService {
 }
 
 export const speechRecognitionService = new SpeechRecognitionService();
+

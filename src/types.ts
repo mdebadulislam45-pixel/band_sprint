@@ -3,10 +3,23 @@ export interface MistakeItem {
   timestamp: number;
   module: 'listening' | 'reading' | 'writing' | 'speaking' | 'vocab';
   title: string;
+  prompt?: string;
+  questionType?: string;
   userAnswer: string;
+  userWrongAnswer?: string;
   correctAnswer: string;
   explanation: string;
+  trapExplanationEn?: string;
+  trapExplanationBn?: string;
+  sourceContext?: string;
+  status?: 'unresolved' | 'mastered';
   mastered: boolean;
+  // SM-2 Spaced Repetition telemetry
+  repetition?: number;
+  intervalDays?: number;
+  easeFactor?: number;
+  nextReviewAt?: number;
+  lastReviewedAt?: number;
 }
 
 export interface VocabCard {
@@ -139,6 +152,9 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
+  avatar?: string;
+  phone?: string;
+  isPhoneVerified?: boolean;
   password?: string;
   createdAt: number;
   hasCompletedDiagnostic?: boolean;

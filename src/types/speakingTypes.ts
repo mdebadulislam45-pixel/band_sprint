@@ -39,6 +39,14 @@ export interface SpeakingQuestionItem {
   createdAt: number;
 }
 
+export interface AcousticTelemetry {
+  volumeRms: number; // 0 to 100 normalized microphone energy
+  pitchHz: number; // Estimated fundamental frequency in Hz
+  pitchVarianceHz: number; // Standard deviation / spread of vocal pitch (expressiveness vs monotone)
+  expressivenessScore: number; // 0 to 100 composite intonation score
+  energyDropOffs: number; // Count of sudden mid-utterance volume drops
+}
+
 export interface SpeakingAnswerRecord {
   questionId: string;
   part: SpeakingPart;
@@ -55,6 +63,7 @@ export interface SpeakingAnswerRecord {
   fillerCount: number;
   detectedFillers: string[];
   clarityScore?: number;
+  acousticMetrics?: AcousticTelemetry;
   strengths?: string[];
   improvements?: string[];
   sampleBandScore?: number;
@@ -115,7 +124,18 @@ export interface InstantSpeakingFeedback {
   part: SpeakingPart;
   topic: string;
   candidateTranscript: string;
+  isValidAttempt?: boolean;
   wordCount: number;
+  overallBand?: number;
+  criteria?: {
+    fc: number;
+    lr: number;
+    gra: number;
+    pr: number;
+  };
+  feedbackTitle?: string;
+  feedbackEn?: string;
+  feedbackBn?: string;
   durationSec: number;
   wordsPerMinute: number;
   estimatedBand?: number;
@@ -176,12 +196,21 @@ export interface VocabUpgrade {
 }
 
 export interface SpeakingEvaluationReport {
-  overallBand: number; // e.g. 7.0
+  isValidAttempt?: boolean;
+  wordCount?: number;
+  overallBand: number; // e.g. 7.0 or 0.0 if unattempted
   fluencyBand: number;
   lexicalBand: number;
   grammarBand: number;
   pronunciationBand: number;
+  feedbackTitle?: string;
+  feedbackEn?: string;
+  feedbackBn?: string;
   criteria: {
+    fc?: number;
+    lr?: number;
+    gra?: number;
+    pr?: number;
     fluency: CriterionFeedback;
     lexical: CriterionFeedback;
     grammar: CriterionFeedback;

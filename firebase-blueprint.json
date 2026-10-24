@@ -19,7 +19,7 @@
     },
     "MistakeVaultItem": {
       "title": "MistakeVaultItem",
-      "description": "Item logged in the candidate's personal mistake vault for active recall",
+      "description": "Item logged in the candidate's personal mistake vault for SuperMemo SM-2 active recall",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique mistake item ID" },
@@ -27,8 +27,18 @@
         "module": { "type": "string", "enum": ["listening", "reading", "writing", "speaking", "vocab"] },
         "item": { "type": "string", "description": "Term, question prompt, or phrase" },
         "category": { "type": "string", "description": "Category or error pattern" },
+        "questionType": { "type": "string", "description": "Specific IELTS question format" },
+        "userAnswer": { "type": "string", "description": "Candidate's original incorrect response" },
+        "correctAnswer": { "type": "string", "description": "Official Band 8.5+ or Cambridge answer" },
         "notes": { "type": "string", "description": "Candidate learning notes or mistake explanation" },
+        "trapExplanationBn": { "type": "string", "description": "Bilingual Bengali distractor trap note" },
+        "sourceContext": { "type": "string", "description": "Passage or transcript anchor context" },
         "mastered": { "type": "boolean", "description": "Whether the mistake has been reviewed and mastered" },
+        "repetition": { "type": "number", "description": "SM-2 consecutive successful recall count" },
+        "intervalDays": { "type": "number", "description": "SM-2 current review interval in days" },
+        "easeFactor": { "type": "number", "description": "SM-2 ease factor multiplier (>= 1.3)" },
+        "nextReviewAt": { "type": "number", "description": "Epoch ms timestamp for next scheduled review" },
+        "lastReviewedAt": { "type": "number", "description": "Epoch ms timestamp of last active recall review" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -50,6 +60,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "module", "bandScore"]
+    },
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "Candidate multi-turn AI tutor or Gemini Live Voice session history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique chat session or turn ID" },
+        "userId": { "type": "string", "description": "Owner candidate UID" },
+        "persona": { "type": "string", "description": "AI Tutor persona or examiner ID" },
+        "model": { "type": "string", "description": "Gemini model used (gemini-4-argon, gemini-3.8-flash, gemini-3.1-flash-lite, gemini-3.8-live)" },
+        "userMessage": { "type": "string", "description": "Candidate prompt or transcribed voice utterance" },
+        "aiReply": { "type": "string", "description": "AI tutor or examiner response" },
+        "module": { "type": "string", "description": "Active IELTS module context" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "userMessage", "aiReply"]
     }
   },
   "firestore": {
@@ -64,6 +90,10 @@
     "/users/{userId}/submissions/{submissionId}": {
       "schema": { "$ref": "#/entities/TestSubmission" },
       "description": "Candidate test and practice exam historical submissions"
+    },
+    "/users/{userId}/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/ChatSession" },
+      "description": "Candidate multi-turn AI chat and live voice transcripts"
     }
   }
 }

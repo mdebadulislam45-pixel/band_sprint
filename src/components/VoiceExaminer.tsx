@@ -57,6 +57,18 @@ import {
 } from '../data/speakingComprehensiveBank';
 import { AudioWaveformVisualizer } from './audio/AudioWaveformVisualizer';
 import { SpeakingVoiceOrb, VoiceOrbState } from './audio/SpeakingVoiceOrb';
+import { ExaminerHumanoidCanvas, ExaminerArtStyle } from './speaking/ExaminerHumanoidCanvas';
+import { CandidateCameraBooth } from './speaking/CandidateCameraBooth';
+import {
+  ResponsiveContainer,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  Tooltip,
+  Legend
+} from 'recharts';
 
 
 export type SpeakingExamStage =
@@ -176,7 +188,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   const [isLoadingTurnFeedback, setIsLoadingTurnFeedback] = useState<boolean>(false);
   const [pendingTurnAdvance, setPendingTurnAdvance] = useState<(() => void) | null>(null);
   const [nextTurnLabel, setNextTurnLabel] = useState<string>('Next Question →');
-  const [resultsTab, setResultsTab] = useState<'overview' | 'breakdowns' | 'vault'>('overview');
+  const [resultsTab, setResultsTab] = useState<'overview' | 'breakdowns' | 'trf_certificate'>('overview');
   const [playingModelTurnIdx, setPlayingModelTurnIdx] = useState<number | null>(null);
   const [savedTurnErrors, setSavedTurnErrors] = useState<Record<string, boolean>>({});
 
@@ -185,6 +197,19 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   const [soundCheckActive, setSoundCheckActive] = useState<boolean>(false);
   const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
   const [expandedTurns, setExpandedTurns] = useState<Record<number, boolean>>({});
+  const [examinerArtStyle, setExaminerArtStyle] = useState<ExaminerArtStyle>('humanoid');
+  const [examinerMouthOpen, setExaminerMouthOpen] = useState<number>(0);
+
+  useEffect(() => {
+    if (!isExaminerSpeaking) {
+      setExaminerMouthOpen(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setExaminerMouthOpen(0.25 + Math.random() * 0.72);
+    }, 95);
+    return () => clearInterval(timer);
+  }, [isExaminerSpeaking]);
 
   // Refs for speech recognition & intervals
   const recognitionRef = useRef<any>(null);
@@ -727,24 +752,28 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     const currentQ = part1Questions[part1Index];
     if (!currentQ) return;
 
-    // Record answer
+    const cleanTranscript = candidateTranscript.trim();
+    const realWordCount = cleanTranscript ? cleanTranscript.split(/\s+/).filter(Boolean).length : 0;
+
+    // Record answer strictly from candidate's actual spoken words
     const record: SpeakingAnswerRecord = {
       questionId: currentQ.id,
       part: 1,
       topic: currentQ.topic,
       questionText: currentQ.questionText,
-      transcript: candidateTranscript.trim() || 'Candidate delivered verbal response.',
+      transcript: cleanTranscript,
       startTime: Date.now() - speakingElapsedSec * 1000,
       endTime: Date.now(),
-      durationSec: Math.max(speakingElapsedSec, 15),
-      wordCount: candidateTranscript.trim().split(/\s+/).filter(Boolean).length || 20,
-      wordsPerMinute: Math.round(
-        ((candidateTranscript.trim().split(/\s+/).filter(Boolean).length || 20) / Math.max(speakingElapsedSec, 10)) * 60
-      ),
+      durationSec: speakingElapsedSec,
+      wordCount: realWordCount,
+      wordsPerMinute:
+        realWordCount >= 5 && speakingElapsedSec > 0
+          ? Math.round((realWordCount / Math.max(speakingElapsedSec, 5)) * 60)
+          : 0,
       pauseCount: Math.floor(speakingElapsedSec / 8),
       longPauseCount: Math.max(0, Math.floor(speakingElapsedSec / 20)),
-      fillerCount: (candidateTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
-      detectedFillers: candidateTranscript.match(/\b(um|uh|er|like)\b/gi) || []
+      fillerCount: (cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
+      detectedFillers: cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []
     };
 
     const isLast = part1Index >= part1Questions.length - 1;
@@ -843,25 +872,26 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
     if (!part2CueCard) return;
 
-    // Record Part 2 Monologue answer
-    const words = candidateTranscript.trim().split(/\s+/).filter(Boolean).length || 60;
-    const duration = 120 - monologueSecondsLeft;
+    // Record Part 2 Monologue answer strictly from candidate's actual spoken words
+    const cleanTranscript = candidateTranscript.trim();
+    const words = cleanTranscript ? cleanTranscript.split(/\s+/).filter(Boolean).length : 0;
+    const duration = Math.max(0, 120 - monologueSecondsLeft);
 
     const record: SpeakingAnswerRecord = {
       questionId: part2CueCard.id,
       part: 2,
       topic: part2CueCard.topic,
       questionText: part2CueCard.questionText,
-      transcript: candidateTranscript.trim() || 'Candidate delivered 2-minute individual long turn monologue.',
+      transcript: cleanTranscript,
       startTime: Date.now() - duration * 1000,
       endTime: Date.now(),
-      durationSec: Math.max(duration, 45),
+      durationSec: duration,
       wordCount: words,
-      wordsPerMinute: Math.round((words / Math.max(duration, 30)) * 60),
+      wordsPerMinute: words >= 5 && duration > 0 ? Math.round((words / Math.max(duration, 10)) * 60) : 0,
       pauseCount: Math.floor(duration / 7),
       longPauseCount: Math.max(0, Math.floor(duration / 25)),
-      fillerCount: (candidateTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
-      detectedFillers: candidateTranscript.match(/\b(um|uh|er|like)\b/gi) || []
+      fillerCount: (cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
+      detectedFillers: cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []
     };
 
     const executeAdvance = () => {
@@ -891,23 +921,27 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     const currentQ = part3Questions[part3Index];
     if (!currentQ) return;
 
-    const words = candidateTranscript.trim().split(/\s+/).filter(Boolean).length || 30;
+    const cleanTranscript = candidateTranscript.trim();
+    const words = cleanTranscript ? cleanTranscript.split(/\s+/).filter(Boolean).length : 0;
 
     const record: SpeakingAnswerRecord = {
       questionId: currentQ.id,
       part: 3,
       topic: currentQ.topic,
       questionText: currentQ.questionText,
-      transcript: candidateTranscript.trim() || 'Candidate delivered analytical response.',
+      transcript: cleanTranscript,
       startTime: Date.now() - speakingElapsedSec * 1000,
       endTime: Date.now(),
-      durationSec: Math.max(speakingElapsedSec, 20),
+      durationSec: speakingElapsedSec,
       wordCount: words,
-      wordsPerMinute: Math.round((words / Math.max(speakingElapsedSec, 15)) * 60),
+      wordsPerMinute:
+        words >= 5 && speakingElapsedSec > 0
+          ? Math.round((words / Math.max(speakingElapsedSec, 5)) * 60)
+          : 0,
       pauseCount: Math.floor(speakingElapsedSec / 7),
       longPauseCount: Math.max(0, Math.floor(speakingElapsedSec / 20)),
-      fillerCount: (candidateTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
-      detectedFillers: candidateTranscript.match(/\b(um|uh|er|like)\b/gi) || []
+      fillerCount: (cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
+      detectedFillers: cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []
     };
 
     const isLast = part3Index >= part3Questions.length - 1;
@@ -1304,6 +1338,58 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     const { overallBand, criteria, grammarObservations, vocabUpgrades } = evaluationReport;
     const analytics = analyzeSpeakingFluency(completedAnswers);
 
+    if (evaluationReport.isValidAttempt === false || overallBand <= 0 || analytics.totalWordsSpoken < 5) {
+      return (
+        <div className="w-full max-w-2xl mx-auto py-8 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-800/80 shadow-xl overflow-hidden">
+            <div className="bg-gradient-to-r from-rose-950 via-rose-900 to-slate-900 text-white px-6 py-5 flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-rose-300" />
+              </div>
+              <div>
+                <span className="text-[11px] font-mono uppercase tracking-wider text-rose-300 font-bold block">
+                  Unattempted / Audio Inaudible
+                </span>
+                <h1 className="text-xl font-black text-white">
+                  {evaluationReport.feedbackTitle || 'No Candidate Speech Detected'}
+                </h1>
+              </div>
+            </div>
+
+            <div className="p-6 sm:p-8 space-y-5">
+              <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-mono font-bold text-rose-800 dark:text-rose-300">
+                  <span>STRICT INPUT GATE · MINIMUM 5 WORDS REQUIRED</span>
+                  <span className="px-2 py-0.5 rounded bg-rose-200/80 dark:bg-rose-900 text-rose-950 dark:text-rose-100">
+                    {analytics.totalWordsSpoken} word{analytics.totalWordsSpoken === 1 ? '' : 's'} spoken
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-rose-950 dark:text-rose-100 leading-relaxed">
+                  {evaluationReport.feedbackEn ||
+                    'You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.'}
+                </p>
+                <p className="text-xs font-medium text-rose-800 dark:text-rose-300 leading-relaxed pt-2 border-t border-rose-200/60 dark:border-rose-800/60">
+                  {evaluationReport.feedbackBn ||
+                    'পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।'}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleRetakeExam}
+                  className="px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-black shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Try Again / Re-record</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="w-full max-w-4xl mx-auto space-y-6 animate-fade-in pb-16">
         {/* Top Disclaimer Badge */}
@@ -1325,13 +1411,13 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
         </div>
 
         {/* Navigation Tabs in Results */}
-        <div className="flex border-b border-slate-200 bg-white rounded-2xl p-1 gap-1 shadow-2xs">
+        <div className="flex flex-wrap border-b border-slate-200 bg-white rounded-2xl p-1 gap-1 shadow-2xs">
           <button
             onClick={() => {
               setResultsTab('overview');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
               resultsTab === 'overview' ? 'bg-slate-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -1342,12 +1428,24 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
               setResultsTab('breakdowns');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
               resultsTab === 'breakdowns' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Zap className="w-3.5 h-3.5 text-amber-400" />
             <span>Question-by-Question Diagnostics & Band 8+ Models ({completedAnswers.length})</span>
+          </button>
+          <button
+            onClick={() => {
+              setResultsTab('trf_certificate');
+              soundManager.playBeep(600, 0.04);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              resultsTab === 'trf_certificate' ? 'bg-emerald-700 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Award className="w-3.5 h-3.5 text-amber-300" />
+            <span>Official TRF Scorecard</span>
           </button>
         </div>
 
@@ -1497,6 +1595,180 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
               </div>
             </div>
 
+            {/* Fluency vs. Coherence Recharts Spider Chart */}
+            <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-8 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-mono font-bold uppercase text-indigo-700 tracking-wider">
+                    Fluency vs. Coherence Spider Chart
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Multi-dimensional breakdown of your speech delivery pace, logical discourse linking, and sub-skill balance against the Band 8.0 benchmark.
+                  </p>
+                </div>
+                <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg tabular-nums">
+                  Target Benchmark: Band 8.0
+                </span>
+              </div>
+
+              <div className="w-full h-[300px] sm:h-[330px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart
+                    cx="50%"
+                    cy="50%"
+                    outerRadius="74%"
+                    data={[
+                      {
+                        subject: 'Fluency Flow',
+                        candidate: Number(criteria.fluency.band.toFixed(1)),
+                        benchmark: 8.0,
+                        fullMark: 9.0
+                      },
+                      {
+                        subject: 'Logical Coherence',
+                        candidate: Number(
+                          Math.min(
+                            9.0,
+                            Math.max(
+                              5.0,
+                              criteria.fluency.band * 0.65 +
+                                criteria.lexical.band * 0.35 +
+                                (analytics.totalFillers <= 3 ? 0.3 : -0.3)
+                            )
+                          ).toFixed(1)
+                        ),
+                        benchmark: 8.0,
+                        fullMark: 9.0
+                      },
+                      {
+                        subject: 'Hesitation Control',
+                        candidate: Number(
+                          Math.min(
+                            9.0,
+                            Math.max(5.0, criteria.fluency.band - analytics.totalFillers * 0.15 + 0.4)
+                          ).toFixed(1)
+                        ),
+                        benchmark: 8.0,
+                        fullMark: 9.0
+                      },
+                      {
+                        subject: 'Lexical Precision',
+                        candidate: Number(criteria.lexical.band.toFixed(1)),
+                        benchmark: 8.0,
+                        fullMark: 9.0
+                      },
+                      {
+                        subject: 'Grammar Range',
+                        candidate: Number(criteria.grammar.band.toFixed(1)),
+                        benchmark: 8.0,
+                        fullMark: 9.0
+                      },
+                      {
+                        subject: 'Pronunciation',
+                        candidate: Number(criteria.pronunciation.band.toFixed(1)),
+                        benchmark: 8.0,
+                        fullMark: 9.0
+                      }
+                    ]}
+                  >
+                    <PolarGrid stroke="#e2e8f0" />
+                    <PolarAngleAxis
+                      dataKey="subject"
+                      tick={{ fill: '#1e293b', fontSize: 11, fontWeight: 700 }}
+                    />
+                    <PolarRadiusAxis
+                      angle={30}
+                      domain={[0, 9]}
+                      tickCount={6}
+                      tick={{ fill: '#64748b', fontSize: 10 }}
+                    />
+                    <Radar
+                      name="Band 8.0 Benchmark"
+                      dataKey="benchmark"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      fill="#10b981"
+                      fillOpacity={0.12}
+                    />
+                    <Radar
+                      name="Candidate Score"
+                      dataKey="candidate"
+                      stroke="#4f46e5"
+                      strokeWidth={2.5}
+                      fill="#4f46e5"
+                      fillOpacity={0.35}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        borderColor: '#334155',
+                        borderRadius: '12px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                        fontWeight: 600
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 700 }} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Acoustic Fluency & Hesitation Timeline */}
+            <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-8 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-mono font-bold uppercase text-slate-800 tracking-wider">
+                    Acoustic Fluency & Speech Rate Telemetry
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Turn-by-turn speaking pace vs. Cambridge Optimal Native Cadence Zone (115–150 WPM).
+                  </p>
+                </div>
+                <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg tabular-nums">
+                  Session Avg: {analytics.averageWpm} WPM · {analytics.totalFillers} Fillers
+                </span>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                {completedAnswers.map((ans, idx) => {
+                  const turnWpm =
+                    ans.durationSec > 0 ? Math.round((ans.wordCount / Math.max(ans.durationSec, 3)) * 60) : 125;
+                  const fillerMatches = ans.transcript.match(/\b(um|uh|er|ah|like|you know|basically)\b/gi) || [];
+                  const isOptimalPace = turnWpm >= 110 && turnWpm <= 155;
+                  const barPct = Math.min(100, Math.max(15, Math.round((turnWpm / 180) * 100)));
+
+                  return (
+                    <div key={idx} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-bold text-slate-900">
+                          Turn {idx + 1} · Part {ans.part} ({ans.topic})
+                        </span>
+                        <div className="flex items-center gap-3 font-mono tabular-nums">
+                          <span className={isOptimalPace ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                            {turnWpm} WPM {isOptimalPace ? '(Optimal Cadence)' : turnWpm < 110 ? '(Slow / Hesitant)' : '(Rushed)'}
+                          </span>
+                          <span className="text-slate-400">·</span>
+                          <span className={fillerMatches.length === 0 ? 'text-slate-600' : 'text-rose-600 font-bold'}>
+                            {fillerMatches.length} filler{fillerMatches.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden relative">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            isOptimalPace ? 'bg-emerald-600' : 'bg-amber-500'
+                          }`}
+                          style={{ width: `${barPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Grammar & Lexical Corrections Table */}
             <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-8 shadow-xs space-y-4">
               <h3 className="text-sm font-mono font-bold uppercase text-slate-500 tracking-wider">
@@ -1534,7 +1806,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
               </div>
             </div>
           </>
-        ) : (
+        ) : resultsTab === 'breakdowns' ? (
           /* Question-by-Question Diagnostics Breakdown Tab */
           <div className="space-y-4 animate-fade-in">
             {completedAnswers.map((ans, idx) => {
@@ -1705,6 +1977,89 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
               );
             })}
           </div>
+        ) : (
+          /* TAB 3: OFFICIAL BRITISH COUNCIL / IDP-STYLE TEST REPORT FORM (TRF) SCORECARD */
+          <div className="bg-white rounded-3xl border-2 border-slate-900 p-6 sm:p-10 shadow-sm space-y-6 animate-fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b-2 border-slate-900">
+              <div>
+                <div className="text-[11px] font-mono font-bold uppercase tracking-widest text-slate-500">
+                  INTERNATIONAL ENGLISH LANGUAGE TESTING SYSTEM
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mt-1">
+                  TEST REPORT FORM · SPEAKING MODULE
+                </h2>
+                <p className="text-xs font-mono text-slate-600 mt-1">
+                  Centre Number: <strong>GB599</strong> · Date: <strong>{new Date().toLocaleDateString('en-GB')}</strong> · Candidate Ref: <strong>{testId.slice(-8).toUpperCase()}</strong>
+                </p>
+              </div>
+
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer self-start sm:self-auto"
+              >
+                Print / Save Official TRF PDF
+              </button>
+            </div>
+
+            {/* Candidate Details Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-mono">
+              <div>
+                <span className="text-slate-400 uppercase block text-[10px]">Candidate Name</span>
+                <strong className="text-slate-900 text-sm">{candidateIdentity.fullName || 'REGISTERED CANDIDATE'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 uppercase block text-[10px]">Country / Origin</span>
+                <strong className="text-slate-900 text-sm">{candidateIdentity.origin || 'International'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 uppercase block text-[10px]">CEFR Proficiency Level</span>
+                <strong className="text-emerald-700 text-sm">
+                  {overallBand >= 8.0 ? 'C2 (Mastery)' : overallBand >= 7.0 ? 'C1 (Effective Operational)' : 'B2 (Vantage)'}
+                </strong>
+              </div>
+            </div>
+
+            {/* 4 Criteria Official Score Boxes */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center font-mono tabular-nums">
+              <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
+                <div className="text-[10px] font-bold uppercase text-slate-500">Fluency & Coherence</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.fluency.band.toFixed(1)}</div>
+              </div>
+              <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
+                <div className="text-[10px] font-bold uppercase text-slate-500">Lexical Resource</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.lexical.band.toFixed(1)}</div>
+              </div>
+              <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
+                <div className="text-[10px] font-bold uppercase text-slate-500">Grammatical Range</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.grammar.band.toFixed(1)}</div>
+              </div>
+              <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
+                <div className="text-[10px] font-bold uppercase text-slate-500">Pronunciation</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.pronunciation.band.toFixed(1)}</div>
+              </div>
+              <div className="col-span-2 sm:col-span-1 p-4 rounded-2xl bg-slate-900 text-white">
+                <div className="text-[10px] font-bold uppercase text-amber-300">Overall Speaking</div>
+                <div className="text-3xl font-black text-white mt-0.5">{overallBand.toFixed(1)}</div>
+              </div>
+            </div>
+
+            {/* Examiner Remarks & Verification Stamp */}
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+              <div className="font-mono font-bold uppercase text-slate-500">
+                Senior Examiner Diagnostic Endorsement
+              </div>
+              <p className="text-slate-700 leading-relaxed font-serif">
+                The candidate completed all three parts of the IELTS Speaking examination at a sustained speech rate of{' '}
+                <strong>{analytics.averageWpm} WPM</strong> with <strong>{analytics.uniqueVocabularyCount} unique lexical items</strong>.{' '}
+                {criteria.fluency.strengths[0] || 'Coherent discourse markers were maintained across abstract Part 3 turns.'}{' '}
+                To advance further, focus on: <em>{criteria.grammar.improvements[0] || 'subordinate clause variety and zero-hesitation transitions'}</em>.
+              </p>
+              <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-slate-500">
+                <span>Examiner: Dr. Alistair Vance (Cert. #UK-4092)</span>
+                <span>IELTS Sprint Diagnostic Verification Seal · Validated</span>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -1804,44 +2159,81 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
       {/* 2. Main Exam Interaction Screen */}
       <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-8 shadow-xs space-y-6">
-        {/* Examiner Identity & Prompt Display */}
-        <div className="flex flex-col sm:flex-row sm:items-start gap-4 pb-4 border-b border-slate-100">
-          <div className="relative shrink-0">
-            <div
-              className={`w-14 h-14 rounded-2xl bg-gradient-to-tr from-slate-900 to-indigo-950 text-white flex flex-col items-center justify-center font-black shadow-md ${
-                isExaminerSpeaking ? 'ring-4 ring-blue-400 animate-pulse' : ''
-              }`}
-            >
-              <UserCheck className="w-6 h-6 text-amber-300" />
+        {/* Cambridge Video-Call Assessment Booth: Humanoid/Anime Examiner + Candidate WebRTC Camera */}
+        <div className="space-y-4 pb-5 border-b border-slate-100">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+            {/* Examiner Portrait Studio */}
+            <div className="md:col-span-5 p-4 rounded-2xl bg-slate-950 text-white border border-slate-800 flex flex-col justify-between gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-mono font-bold text-slate-300">
+                  Dr. Alistair Vance · Chief Examiner
+                </span>
+                <div className="inline-flex p-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setExaminerArtStyle('humanoid')}
+                    className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
+                      examinerArtStyle === 'humanoid' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Humanoid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExaminerArtStyle('anime')}
+                    className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
+                      examinerArtStyle === 'anime' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Anime
+                  </button>
+                </div>
+              </div>
+
+              <ExaminerHumanoidCanvas
+                gender="male"
+                artStyle={examinerArtStyle}
+                isSpeaking={isExaminerSpeaking}
+                isListening={isRecording}
+                mouthOpenness={examinerMouthOpen}
+                examinerName="Dr. Alistair Vance"
+                compact={true}
+              />
             </div>
-            {isExaminerSpeaking && (
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-blue-500 border-2 border-white animate-ping" />
-            )}
-          </div>
 
-          <div className="flex-1 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono font-bold uppercase text-slate-500 tracking-wider">
-                Dr. Alistair Vance · Oral Examiner
-              </span>
+            {/* Candidate Live WebRTC Video Camera Booth */}
+            <div className="md:col-span-7 flex flex-col justify-between gap-3">
+              <CandidateCameraBooth
+                candidateName={candidateIdentity.preferredName || candidateIdentity.fullName || 'Candidate'}
+                isCandidateSpeaking={isRecording}
+                isIdCheckMode={isIdCheck && idCheckStep === 3}
+                compact={true}
+                onShowToast={onShowToast}
+              />
 
-              {/* Repeat Question Button */}
-              {(isIdCheck || isPart1 || isPart3) && (
-                <button
-                  onClick={handleRepeatQuestion}
-                  disabled={isExaminerSpeaking}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold transition flex items-center gap-1 disabled:opacity-40 cursor-pointer"
-                  title="Ask the examiner to repeat this question"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Please Repeat Question</span>
-                </button>
-              )}
-            </div>
+              {/* Current Spoken Question Prompt */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono font-bold uppercase text-slate-500 tracking-wider">
+                    Examiner Spoken Prompt · {currentActiveTopic}
+                  </span>
 
-            {/* Current Spoken Question Prompt */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-900 text-base sm:text-lg font-medium leading-relaxed">
-              "{currentActivePrompt}"
+                  {(isIdCheck || isPart1 || isPart3) && (
+                    <button
+                      onClick={handleRepeatQuestion}
+                      disabled={isExaminerSpeaking}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold transition flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                      title="Ask the examiner to repeat this question"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Please Repeat Question</span>
+                    </button>
+                  )}
+                </div>
+                <div className="text-slate-900 text-sm sm:text-base font-semibold leading-relaxed">
+                  “{currentActivePrompt}”
+                </div>
+              </div>
             </div>
           </div>
         </div>

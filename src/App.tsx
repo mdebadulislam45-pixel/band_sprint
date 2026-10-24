@@ -5,13 +5,16 @@ import {
   ShieldCheck, AlertCircle, RefreshCw, X, ChevronRight
 } from 'lucide-react';
 import { UserProfile } from './types';
-import { getCurrentUser, createDefaultProgress } from './utils/userStorage';
+import { getCurrentUser, createDefaultProgress, switchActiveUser, saveUser } from './utils/userStorage';
 import { getMistakes } from './utils/vaultStorage';
+import { PreLoginLanding } from './components/landing/PreLoginLanding';
+import { ProductionAuthModal } from './components/auth/ProductionAuthModal';
 
 // Top-Level Navigation & Layout
 import { AppHeader } from './components/navigation/AppHeader';
 import { BottomNav, BottomNavTab } from './components/navigation/BottomNav';
 import { DesktopSidebar } from './components/navigation/DesktopSidebar';
+import { MobileSidebarDrawer } from './components/navigation/MobileSidebarDrawer';
 
 // Main Dashboard & Labs
 import { HomeDashboard } from './components/HomeDashboard';
@@ -35,6 +38,9 @@ import { ProgressPage } from './components/pages/ProgressPage';
 import { ProfilePage } from './components/pages/ProfilePage';
 import { MockTestPage } from './components/pages/MockTestPage';
 import { CDIELTSExamMode } from './components/cdielts/CDIELTSExamMode';
+import { CDIELTSSpeakingSuite } from './components/cdielts/CDIELTSSpeakingSuite';
+import { PreExamHardwareCheck } from './components/cdielts/PreExamHardwareCheck';
+import { OnboardingDiagnosticFunnel } from './components/onboarding/OnboardingDiagnosticFunnel';
 import { UsefulPhrasesPage } from './components/pages/UsefulPhrasesPage';
 import { IdiomLabPage } from './components/pages/IdiomLabPage';
 import { C1IdiomsPage } from './components/pages/C1IdiomsPage';
@@ -52,6 +58,7 @@ import { SprintCalendarPage } from './components/pages/SprintCalendarPage';
 import { CambridgeLibraryPage } from './components/cambridge/CambridgeLibraryPage';
 import { ContextualAITutor } from './components/common/ContextualAITutor';
 import { OfflineStatusIndicator } from './components/common/OfflineStatusIndicator';
+import { audioManager } from './services/AudioManager';
 
 // Modals
 import { GlobalSearchModal } from './components/modals/GlobalSearchModal';
@@ -73,24 +80,8 @@ function AppContent() {
   const [mistakeCount, setMistakeCount] = useState<number>(0);
   const [examMode, setExamMode] = useState<'Academic' | 'General Training'>('Academic');
 
-  // Modal States
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isVaultOpen, setIsVaultOpen] = useState(false);
-  const [isBandModalOpen, setIsBandModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-
-  // Commercial & Legal Modal States (Subscription option paused for 1 month)
-  const [isShowcaseOpen, setIsShowcaseOpen] = useState(false);
-  const [isLegalOpen, setIsLegalOpen] = useState(false);
-  const [legalTab, setLegalTab] = useState<'terms' | 'privacy'>('terms');
-  const [isContactOpen, setIsContactOpen] = useState(false);
-  const [isSeoGuideOpen, setIsSeoGuideOpen] = useState(false);
-
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // ZIP download state
-  const [downloadingZip, setDownloadingZip] = useState(false);
 
   // Toast Notification Handler
   const showToast = useCallback((msg: string) => {
@@ -103,6 +94,77 @@ function AppContent() {
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
+
+  const [isGoogleAuthOpen, setIsGoogleAuthOpen] = useState(false);
+  const isLoggedIn = !!user || !!localStorage.getItem('ielts_auth_session');
+
+  const handleSignOut = useCallback(() => {
+    try {
+      localStorage.removeItem('ielts_auth_session');
+      localStorage.removeItem('ielts_active_user_id_v1');
+    } catch {}
+    setUser(null);
+    showToast('Signed out successfully. Returning to pre-login welcome.');
+  }, [showToast]);
+
+  useEffect(() => {
+    const handleSignOutEvent = () => handleSignOut();
+    window.addEventListener('sign_out_candidate', handleSignOutEvent);
+    return () => window.removeEventListener('sign_out_candidate', handleSignOutEvent);
+  }, [handleSignOut]);
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-blue-500 selection:text-white">
+        <PreLoginLanding
+          onOpenGoogleAuth={() => setIsGoogleAuthOpen(true)}
+          onPreviewExamRoom={() => {
+            setIsGoogleAuthOpen(true);
+            showToast('Please authenticate with Google and link your mobile number to access the exam room preview.');
+          }}
+          onShowToast={showToast}
+        />
+        <ProductionAuthModal
+          isOpen={isGoogleAuthOpen}
+          onClose={() => setIsGoogleAuthOpen(false)}
+          onShowToast={showToast}
+          onSuccess={() => {
+            const active = getCurrentUser();
+            setUser(active);
+          }}
+        />
+        {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-semibold">
+            <span>{toastMessage}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Modal States
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isVaultOpen, setIsVaultOpen] = useState(false);
+  const [isBandModalOpen, setIsBandModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [isHardwareCheckOpen, setIsHardwareCheckOpen] = useState(false);
+  const [preflightModule, setPreflightModule] = useState<'reading' | 'listening' | 'speaking' | 'full_mock'>('listening');
+
+  // Commercial & Legal Modal States (Subscription option paused for 1 month)
+  const [isShowcaseOpen, setIsShowcaseOpen] = useState(false);
+  const [isLegalOpen, setIsLegalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<'terms' | 'privacy'>('terms');
+  const [isContactOpen, setIsContactOpen] = useState(false);
+  const [isSeoGuideOpen, setIsSeoGuideOpen] = useState(false);
+
+
+
+  // Route Change Global Audio Killswitch: stops any ongoing audio/speech whenever currentPage changes
+  useEffect(() => {
+    audioManager.killAllAudio();
+  }, [currentPage]);
 
   // Sync user and mistakes
   const syncUserData = useCallback(() => {
@@ -164,6 +226,11 @@ function AppContent() {
     };
     const handleOpenContact = () => setIsContactOpen(true);
     const handleOpenSeoGuide = () => setIsSeoGuideOpen(true);
+    const handleOpenOnboarding = () => setIsOnboardingOpen(true);
+    const handleOpenCdIeltsPreflight = (e: any) => {
+      if (e?.detail?.module) setPreflightModule(e.detail.module);
+      setIsHardwareCheckOpen(true);
+    };
 
     window.addEventListener('open_vault_modal', handleOpenVaultModal);
     window.addEventListener('open_band_modal', handleOpenBandModal);
@@ -174,6 +241,8 @@ function AppContent() {
     window.addEventListener('open_legal_modal', handleOpenLegal);
     window.addEventListener('open_contact_modal', handleOpenContact);
     window.addEventListener('open_seo_guide', handleOpenSeoGuide);
+    window.addEventListener('open_onboarding_diagnostic', handleOpenOnboarding);
+    window.addEventListener('open_cdielts_preflight', handleOpenCdIeltsPreflight);
 
     return () => {
       window.removeEventListener('user_auth_updated', handleAuth);
@@ -189,6 +258,8 @@ function AppContent() {
       window.removeEventListener('open_legal_modal', handleOpenLegal);
       window.removeEventListener('open_contact_modal', handleOpenContact);
       window.removeEventListener('open_seo_guide', handleOpenSeoGuide);
+      window.removeEventListener('open_onboarding_diagnostic', handleOpenOnboarding);
+      window.removeEventListener('open_cdielts_preflight', handleOpenCdIeltsPreflight);
     };
   }, [syncUserData]);
 
@@ -213,20 +284,7 @@ function AppContent() {
     }
   }, [navHistory, handleNavigate]);
 
-  const handleDownloadSourceZip = () => {
-    setDownloadingZip(true);
-    showToast('Packaging complete source code archive...');
-    const link = document.createElement('a');
-    link.href = '/api/download-source-zip';
-    link.download = 'ielts-sprint-source-code.zip';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => {
-      setDownloadingZip(false);
-      showToast('Source code ZIP downloaded!');
-    }, 1800);
-  };
+
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -344,6 +402,8 @@ function AppContent() {
         );
       case 'cdielts':
         return <CDIELTSExamMode onExit={handleBack} onShowToast={showToast} />;
+      case 'cdieltsspeaking':
+        return <CDIELTSSpeakingSuite onExit={handleBack} onShowToast={showToast} candidateName={user?.name || 'Candidate'} />;
       case 'livemock':
         return <LiveMockTest onShowToast={showToast} onNavigateToVault={() => setIsVaultOpen(true)} />;
       case 'vocab':
@@ -397,49 +457,6 @@ function AppContent() {
         );
       case 'calendar':
         return <SprintCalendarPage onNavigate={handleNavigate} onShowToast={showToast} />;
-      case 'source':
-        return (
-          <div className="max-w-4xl mx-auto space-y-6 animate-fade-in p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
-              <div>
-                <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Download className="w-6 h-6 text-emerald-500" />
-                  Source Code & Project Downloads
-                </h1>
-                <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1">
-                  Full production repository with Express backend API routes, multi-accent audio engines, and Cambridge exam simulators.
-                </p>
-              </div>
-
-              <button
-                onClick={handleDownloadSourceZip}
-                disabled={downloadingZip}
-                className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-sm shrink-0"
-              >
-                <Download className="w-4 h-4" />
-                {downloadingZip ? 'Packaging ZIP...' : 'Download Full Source ZIP'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-2">
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm">Full Repository Contents</h3>
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Includes complete Express TypeScript server, Vite configuration, Cambridge Question Engine, and 16 native audio characters.
-                </p>
-              </div>
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-2">
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm">Direct Express Endpoints</h3>
-                <div className="font-mono text-xs text-slate-600 dark:text-slate-400 space-y-1">
-                  <div>GET /api/download-source-zip</div>
-                  <div>POST /api/tts/stream</div>
-                  <div>POST /api/evaluate-speaking-turn</div>
-                  <div>POST /api/evaluate-writing</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
       default:
         return (
           <HomeDashboard
@@ -453,8 +470,66 @@ function AppContent() {
     }
   };
 
+  const isExamRoomMode = currentPage === 'cdielts' || currentPage === 'cdieltsspeaking';
+
+  if (isExamRoomMode) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#070D1B] text-slate-900 dark:text-slate-100 flex flex-col font-sans">
+        <main className="w-full flex-1 min-h-screen p-0 m-0 overflow-x-hidden">
+          {renderCurrentPage()}
+        </main>
+
+        {/* Global Modals accessible even in exam mode if needed */}
+        <BandCalculatorModal
+          isOpen={isBandModalOpen}
+          onClose={() => setIsBandModalOpen(false)}
+        />
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          onShowToast={showToast}
+          onNavigateToModule={handleNavigate}
+        />
+        <OfflineStatusIndicator />
+        {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-semibold">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <span className="flex-1">{toastMessage}</span>
+            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white p-0.5">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const isCDIELTSMode = currentPage === 'cdielts' || currentPage === 'cdieltsspeaking';
+
+  if (isCDIELTSMode) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-slate-900 text-white flex flex-col font-sans">
+        <main className="flex-1 w-full h-full overflow-hidden">
+          {renderCurrentPage()}
+        </main>
+        {/* Offline / Online Status Indicator Banner */}
+        <OfflineStatusIndicator />
+        {/* Toast Notification Bar */}
+        {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-semibold max-w-sm">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <span className="flex-1">{toastMessage}</span>
+            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white p-0.5">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#070D1B] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
+    <div className="min-h-screen bg-[#FAF8F5] dark:bg-[#080D1A] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       {/* Top App Header Navigation Bar */}
       <AppHeader
         currentPage={currentPage}
@@ -464,7 +539,22 @@ function AppContent() {
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenVault={() => setIsVaultOpen(true)}
         onOpenProfile={() => setIsAuthModalOpen(true)}
+        onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
         mistakeCount={mistakeCount}
+        user={user}
+        examMode={examMode}
+        onExamModeChange={(mode) => setExamMode(mode)}
+      />
+
+      {/* Mobile Navigation Sliding Drawer (<md) */}
+      <MobileSidebarDrawer
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        currentPage={currentPage}
+        onNavigate={handleNavigate}
+        mistakeCount={mistakeCount}
+        onOpenVault={() => setIsVaultOpen(true)}
+        onOpenBandModal={() => setIsBandModalOpen(true)}
         user={user}
         examMode={examMode}
         onExamModeChange={(mode) => setExamMode(mode)}
@@ -526,6 +616,35 @@ function AppContent() {
         onClose={() => setIsAuthModalOpen(false)}
         onShowToast={showToast}
         onNavigateToModule={handleNavigate}
+      />
+
+      {/* High-Converting Pre-Login Diagnostic Funnel (Inspired by ieltsly.ai) */}
+      <OnboardingDiagnosticFunnel
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+        onCompleted={(newProfile) => {
+          setUser(newProfile);
+          showToast(`Welcome ${newProfile.name}! Your 8-week Band ${newProfile.progress.targetBand} sprint is activated.`);
+        }}
+        onOpenAuthModal={() => {
+          setIsOnboardingOpen(false);
+          setIsAuthModalOpen(true);
+        }}
+      />
+
+      {/* Official CD-IELTS Pre-Exam Device Check (Headphones, Mic & Lockdown) */}
+      <PreExamHardwareCheck
+        isOpen={isHardwareCheckOpen}
+        onClose={() => setIsHardwareCheckOpen(false)}
+        onProceedToExam={() => {
+          setIsHardwareCheckOpen(false);
+          if (preflightModule === 'speaking') {
+            handleNavigate('cdieltsspeaking');
+          } else {
+            handleNavigate('cdielts');
+          }
+        }}
+        moduleType={preflightModule}
       />
 
       {/* Commercial Showcase & Trust Modals (Subscription paused for 1 month) */}

@@ -39,6 +39,8 @@ import {
 import { soundManager } from '../utils/audioEffects';
 import { handleGoogleSignInAction } from '../utils/googleAuth';
 import { GoogleSignInModal } from './auth/GoogleSignInModal';
+import { firebaseSyncService } from '../services/firebaseSyncService';
+import { loginCandidateWithServer, registerCandidateWithServer } from '../services/authService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -97,6 +99,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     return () => window.removeEventListener('user_auth_updated', handleAuth);
   }, [isOpen, activeTab]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading && !isGoogleModalOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isLoading, isGoogleModalOpen, onClose]);
+
   if (!isOpen) return null;
 
   const refreshUser = () => {
@@ -119,8 +132,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const passwordStrength = getPasswordStrength(regPass);
 
-  const handleGoogleSuccess = (candidateInfo: { email: string; name?: string; targetBand?: number }) => {
-    setLoadingText('Connecting Google Secure Account...');
+  const handleGoogleSuccess = (candidateInfo: {
+    uid: string;
+    email: string;
+    name?: string;
+    targetBand?: number;
+    verifiedByFirebase: boolean;
+  }) => {
+    setLoadingText('Connecting Verified Google Account...');
     setIsLoading(true);
     setTimeout(() => {
       const res = handleGoogleSignInAction(candidateInfo);
@@ -134,19 +153,71 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         soundManager.playWarning();
         onShowToast(res.message);
       }
-    }, 500);
+    }, 300);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleForgotPassword = async () => {
+    const trimmed = loginEmail.trim();
+    if (!trimmed || !trimmed.includes('@')) {
+      soundManager.playWarning();
+      onShowToast('Please enter your registered email address first to receive a password reset link.');
+      return;
+    }
+    setLoadingText('Sending Password Reset Email...');
+    setIsLoading(true);
+    try {
+      await firebaseSyncService.sendResetPasswordEmail(trimmed);
+      setIsLoading(false);
+      soundManager.playSuccess();
+      onShowToast(`Password reset instructions sent to ${trimmed}.`);
+    } catch (err: any) {
+      setIsLoading(false);
+      soundManager.playWarning();
+      onShowToast(err?.message || 'Could not send reset email. Verify your email address.');
+    }
+  };
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail.trim()) {
+    const identifier = loginEmail.trim();
+    if (!identifier) {
       onShowToast('Please enter your email or candidate name.');
       return;
     }
     setLoadingText('Authenticating Candidate Credentials...');
     setIsLoading(true);
-    setTimeout(() => {
-      const res = loginUser(loginEmail, loginPass);
+
+    try {
+      // 1. If email + password provided, try Firebase Auth first
+      if (identifier.includes('@') && loginPass.length >= 6) {
+        try {
+          const fbProfile = await firebaseSyncService.loginWithEmail(identifier, loginPass);
+          setIsLoading(false);
+          setUser(fbProfile);
+          setActiveTab('profile');
+          soundManager.playSuccess();
+          onShowToast(`Welcome back, ${fbProfile.name}! Cloud sync active.`);
+          return;
+        } catch {
+          // Fall through to server/local check if account was created locally
+        }
+      }
+
+      // 2. Try Express server auth
+      if (loginPass) {
+        const srvRes = await loginCandidateWithServer({ email: identifier, password: loginPass });
+        if (srvRes.success && srvRes.user) {
+          setIsLoading(false);
+          setUser(srvRes.user);
+          setActiveTab('profile');
+          soundManager.playSuccess();
+          onShowToast(srvRes.message || `Welcome back, ${srvRes.user.name}!`);
+          return;
+        }
+      }
+
+      // 3. Fallback to local userStorage for backward compatibility with existing local profiles
+      const res = loginUser(identifier, loginPass);
       setIsLoading(false);
       if (res.success && res.user) {
         setUser(res.user);
@@ -157,18 +228,69 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         soundManager.playWarning();
         onShowToast(res.message);
       }
-    }, 500);
+    } catch (err: any) {
+      setIsLoading(false);
+      soundManager.playWarning();
+      onShowToast(err?.message || 'Sign-in failed. Please check your credentials.');
+    }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regName.trim() || !regEmail.trim()) {
       onShowToast('Please enter both name and email.');
       return;
     }
-    setLoadingText('Registering Candidate Profile & Roadmap...');
+    if (regPass && regPass.length > 0 && regPass.length < 6) {
+      onShowToast('Please use at least 6 characters for your password.');
+      return;
+    }
+
+    setLoadingText('Registering Candidate Profile & Cloud Sync...');
     setIsLoading(true);
-    setTimeout(() => {
+
+    try {
+      // 1. Register in Firebase Auth if password >= 6 chars
+      if (regPass && regPass.length >= 6) {
+        try {
+          const fbProfile = await firebaseSyncService.registerWithEmail(
+            regName.trim(),
+            regEmail.trim(),
+            regPass,
+            regBand,
+            regFormat,
+            regCountry,
+            regDate
+          );
+          // Also register on Express backend for session token compatibility
+          await registerCandidateWithServer({
+            name: regName.trim(),
+            email: regEmail.trim(),
+            password: regPass,
+            targetBand: regBand,
+            intendedFormat: regFormat,
+            targetCountry: regCountry
+          }).catch(() => {});
+
+          setIsLoading(false);
+          setUser(fbProfile);
+          setActiveTab('profile');
+          soundManager.playSuccess();
+          onShowToast(`Account created and synced to cloud! Welcome, ${fbProfile.name}.`);
+          return;
+        } catch (fbErr: any) {
+          if (fbErr?.code === 'auth/email-already-in-use') {
+            setIsLoading(false);
+            soundManager.playWarning();
+            onShowToast('An account with this email already exists. Please switch to Sign In.');
+            setActiveTab('login');
+            setLoginEmail(regEmail.trim());
+            return;
+          }
+        }
+      }
+
+      // 2. Fallback to local registration
       const res = registerUser(
         regName,
         regEmail,
@@ -188,7 +310,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         soundManager.playWarning();
         onShowToast(res.message);
       }
-    }, 600);
+    } catch (err: any) {
+      setIsLoading(false);
+      soundManager.playWarning();
+      onShowToast(err?.message || 'Registration could not be completed.');
+    }
   };
 
   const handleSaveGoal = () => {
@@ -615,7 +741,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                     Password / PIN (পাসওয়ার্ড)
                   </label>
-                  <span className="text-[10px] text-slate-400">Optional if not set</span>
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />

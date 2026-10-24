@@ -24,9 +24,15 @@ import {
 import { UserProfile } from '../types';
 import { soundManager } from '../utils/audioEffects';
 import { sanitizeCandidateName } from '../utils/nameSanitizer';
-import { getMistakes } from '../utils/vaultStorage';
+import { getMistakes, getVaultRetentionStats } from '../utils/vaultStorage';
 import { isFullMockExamRecord } from '../utils/userStorage';
 import { LondonSunsetHeroBanner } from './home/LondonSunsetHeroBanner';
+import { SmartRecommendationBanner } from './home/SmartRecommendationBanner';
+import { AIBandScorecard } from './home/AIBandScorecard';
+import { AISpeakingPartnerCard } from './home/AISpeakingPartnerCard';
+import { AIWritingQuickEvaluator } from './home/AIWritingQuickEvaluator';
+import { AIWeaknessDetector } from './home/AIWeaknessDetector';
+import { DailyGoalMomentumCard } from './home/DailyGoalMomentumCard';
 import { AITutorWidget } from './home/AITutorWidget';
 import { ProgressDonutCard } from './home/ProgressDonutCard';
 import { QuickActionsCard } from './home/QuickActionsCard';
@@ -38,6 +44,7 @@ import { BandProjectorCard } from './home/BandProjectorCard';
 import { MistakeVaultWidget } from './home/MistakeVaultWidget';
 import { ExamPacingStrategyCard } from './home/ExamPacingStrategyCard';
 import { AcademicCollocationFinder } from './home/AcademicCollocationFinder';
+import { PracticeHeatmap } from './home/PracticeHeatmap';
 import { CommercialFooter } from './commercial/CommercialFooter';
 
 interface HomeDashboardProps {
@@ -68,6 +75,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
 
   const [viewFilter, setViewFilter] = useState<DashboardViewFilter>('overview');
   const [unmasteredMistakeCount, setUnmasteredMistakeCount] = useState<number>(0);
+  const [sm2Stats, setSm2Stats] = useState(() => getVaultRetentionStats());
 
   useEffect(() => {
     if (propExamMode) setExamMode(propExamMode);
@@ -85,6 +93,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
     const syncMistakes = () => {
       const list = getMistakes();
       setUnmasteredMistakeCount(list.filter((m) => !m.mastered).length);
+      setSm2Stats(getVaultRetentionStats());
     };
     syncMistakes();
     window.addEventListener('vault_updated', syncMistakes);
@@ -105,8 +114,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   const recentHistory = examHistory.slice(0, 3);
   const activeSession = user?.progress?.activeSession;
 
-  // Compute realistic readiness metrics from user's actual full-mock history & completed modules
-  const { estimatedBand, overallPercentage } = useMemo(() => {
+  // Compute realistic readiness metrics from user's actual full-mock or practice exam history
+  // Never fabricate a fake Band 6.6 when the user has completed 0 assessments
+  const { estimatedBand, overallPercentage, hasAssessedBand } = useMemo(() => {
     const fullMockHistory = examHistory.filter(
       (rec) => isFullMockExamRecord(rec) && typeof rec.overallBand === 'number' && rec.overallBand > 0
     );
@@ -116,11 +126,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
         fullMockHistory.length;
       const rounded = Math.round(avg * 2) / 2;
       const pct = Math.min(98, Math.max(25, Math.round((rounded / targetBand) * 85)));
-      return { estimatedBand: rounded, overallPercentage: pct };
+      return { estimatedBand: rounded, overallPercentage: pct, hasAssessedBand: true };
     }
-    const baseBand = Math.min(targetBand, +(6.5 + Math.min(completedModules.length * 0.1, 1.0)).toFixed(1));
-    const basePct = Math.min(95, Math.max(42, 58 + completedModules.length * 6));
-    return { estimatedBand: baseBand, overallPercentage: basePct };
+    const anyScoredExam = examHistory.filter(
+      (rec) =>
+        (typeof rec.overallBand === 'number' && rec.overallBand > 0) ||
+        (typeof rec.listeningBand === 'number' && rec.listeningBand > 0) ||
+        (typeof rec.readingBand === 'number' && rec.readingBand > 0)
+    );
+    if (anyScoredExam.length > 0) {
+      const scores = anyScoredExam.map(
+        (r) => r.overallBand || r.readingBand || r.listeningBand || 6.0
+      );
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const rounded = Math.round(avg * 2) / 2;
+      const pct = Math.min(95, Math.max(20, Math.round((rounded / targetBand) * 80)));
+      return { estimatedBand: rounded, overallPercentage: pct, hasAssessedBand: true };
+    }
+    const moduleProgressPct = Math.min(85, Math.round((completedModules.length / 14) * 100));
+    return { estimatedBand: 0, overallPercentage: moduleProgressPct, hasAssessedBand: false };
   }, [examHistory, completedModules.length, targetBand]);
 
   const toggleExamTrack = useCallback(() => {
@@ -137,7 +161,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   }, [onShowToast]);
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-4 sm:space-y-5 pb-28 sm:pb-24 select-none">
+    <div className="w-full max-w-7xl mx-auto space-y-4 sm:space-y-5 pb-40 sm:pb-32 select-none">
       {/* 1. Compact Time-Reactive Greeting & Collocation Banner */}
       <LondonSunsetHeroBanner
         userName={sanitizedFirstName}
@@ -149,30 +173,96 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
         onOpenBandModal={onOpenBandModal}
       />
 
-      {/* Commercial Trust & 100% Free Launch Announcement Strip */}
-      <div className="flex items-center justify-between gap-3 p-3 px-4 rounded-2xl bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-emerald-900/10 border border-blue-500/20 text-xs">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-          <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
-            IELTS Sprint™ Community Beta — All AI Examiners & Cambridge Mock Tests are 100% Free!
-          </span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              soundManager.playBeep(550, 0.03);
-              window.dispatchEvent(new CustomEvent('open_commercial_showcase'));
-            }}
-            className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
-          >
-            <span>Why IELTS Sprint →</span>
-          </button>
+      {/* High-Clarity Editorial Action Bento: Cambridge AI Speaking Studio & CD-IELTS Exam Suite */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Card 1: Single Unified Cambridge AI Speaking Studio Bento Card */}
+        <AISpeakingPartnerCard
+          onNavigate={onNavigate}
+          onShowToast={onShowToast}
+        />
+
+        {/* Card 2: Computer-Delivered IELTS Practice Suite & Cambridge Library */}
+        <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#0E1526] border border-stone-200/90 dark:border-slate-800/90 shadow-2xs flex flex-col justify-between space-y-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Official Exam Simulation</span>
+              <span aria-hidden="true">·</span>
+              <span>Cambridge Books 11–21</span>
+              <span aria-hidden="true">·</span>
+              <span>Timed Conditions</span>
+            </div>
+            <h3 className="font-display text-lg sm:text-xl font-semibold text-slate-900 dark:text-white tracking-tight">
+              CD-IELTS Exam Room & Authentic Tests
+            </h3>
+            <p className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              Practise with split-screen passages, text highlighting, live timer warnings, and full Cambridge Books 11–21 simulations.
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-stone-100 dark:border-slate-800/80 flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playBeep(560, 0.03);
+                window.dispatchEvent(new CustomEvent('open_cdielts_preflight', { detail: { module: 'listening' } }));
+              }}
+              className="flex-1 min-h-[42px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-semibold text-xs shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <span>CD-IELTS Exam Room</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playBeep(560, 0.03);
+                onNavigate('cambridge');
+              }}
+              className="min-h-[42px] px-4 py-2 rounded-xl bg-[#FAF8F5] hover:bg-stone-200/60 dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-stone-200/90 dark:border-slate-700 font-semibold text-xs text-slate-800 dark:text-slate-200 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
+              <span>Cambridge 11–21</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 2. Executive Command KPI Strip (4 Interactive Status Cards) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+      {/* 2. AI Smart Recommendation Banner */}
+      <SmartRecommendationBanner
+        onNavigate={onNavigate}
+        onShowToast={onShowToast}
+        targetBand={targetBand}
+        estimatedBand={hasAssessedBand ? estimatedBand : 0}
+      />
+
+      {/* Uncalibrated Candidate Diagnostic CTA Strip (Shown when candidate has not completed a diagnostic or mock test) */}
+      {!hasAssessedBand && (
+        <div className="p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-amber-400 font-bold">
+              <span>Baseline Uncalibrated</span>
+              <span aria-hidden="true">·</span>
+              <span>Current Estimated Band: Not Yet Assessed</span>
+              <span aria-hidden="true">·</span>
+              <span className="text-emerald-400">Target Band: {targetBand.toFixed(1)}</span>
+            </div>
+            <p className="text-xs text-slate-300">
+              Complete a real diagnostic or mock assessment to calibrate your personal IELTS band profile across Listening, Reading, Writing, and Speaking.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              soundManager.playBeep(600, 0.04);
+              onNavigate('mocktest');
+            }}
+            className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition shrink-0 cursor-pointer shadow-xs whitespace-nowrap"
+          >
+            Take 15-Minute Diagnostic Mock to Reveal Your Band →
+          </button>
+        </div>
+      )}
+
+      {/* 3. Executive Command KPI Strip (4 Interactive Status Cards) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* KPI 1: Target vs Current Trajectory */}
         <button
           type="button"
@@ -180,51 +270,51 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             soundManager.playBeep(560, 0.04);
             onOpenBandModal();
           }}
-          className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-[#0B1224] border border-slate-200/90 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
+          className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0E1526] border border-stone-200/90 dark:border-slate-800/90 hover:border-blue-500 dark:hover:border-blue-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
         >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
               <Target className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] font-mono uppercase font-bold text-slate-400 dark:text-slate-500">
-                Band Trajectory
+              <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                {hasAssessedBand ? 'Current vs Target Band' : 'Baseline Uncalibrated'}
               </div>
-              <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate font-mono">
-                {estimatedBand.toFixed(1)} <span className="text-slate-400 font-normal">→</span>{' '}
-                <span className="text-blue-600 dark:text-blue-400">{targetBand.toFixed(1)}</span>
+              <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate font-mono tabular-nums mt-0.5">
+                {hasAssessedBand ? `Band ${estimatedBand.toFixed(1)}` : 'Band: Not Yet Assessed'}{' '}
+                <span className="text-slate-400 font-normal">→</span>{' '}
+                <span className="text-blue-700 dark:text-blue-400">Target {targetBand.toFixed(1)}</span>
               </div>
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition shrink-0" />
+          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition shrink-0" />
         </button>
 
-        {/* KPI 2: Active Exam Format Track */}
+        {/* KPI 2: Cambridge AI Speaking Studio Direct Launch */}
         <button
           type="button"
-          onClick={toggleExamTrack}
-          className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-[#0B1224] border border-slate-200/90 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
-          title="Click to switch between Academic and General Training"
+          onClick={() => {
+            soundManager.playBeep(600, 0.04);
+            onNavigate('speaking');
+          }}
+          className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0E1526] border border-stone-200/90 dark:border-slate-800/90 hover:border-indigo-500 dark:hover:border-indigo-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
+          title="Open Cambridge AI Speaking Studio"
         >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-              {examMode === 'Academic' ? (
-                <BookOpen className="w-4 h-4" />
-              ) : (
-                <Briefcase className="w-4 h-4" />
-              )}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <Mic className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] font-mono uppercase font-bold text-slate-400 dark:text-slate-500">
-                Active Track
+              <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                Speaking Studio
               </div>
-              <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                {examMode === 'Academic' ? 'IELTS Academic' : 'General Training'}
+              <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate mt-0.5">
+                Parts 1–3 Live
               </div>
             </div>
           </div>
-          <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 group-hover:underline shrink-0">
-            Switch
+          <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-400 group-hover:underline shrink-0">
+            Enter →
           </span>
         </button>
 
@@ -235,69 +325,71 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             soundManager.playBeep(620, 0.04);
             onNavigate('cdielts');
           }}
-          className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-[#0B1224] border border-slate-200/90 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
+          className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0E1526] border border-stone-200/90 dark:border-slate-800/90 hover:border-emerald-500 dark:hover:border-emerald-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
         >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
               <Zap className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] font-mono uppercase font-bold text-slate-400 dark:text-slate-500">
+              <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                 Exam Simulator
               </div>
-              <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+              <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate mt-0.5">
                 CD-IELTS Mode
               </div>
             </div>
           </div>
-          <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition shrink-0" />
+          <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition shrink-0" />
         </button>
 
-        {/* KPI 4: Mistake Vault Status */}
+        {/* KPI 4: Mistake Vault Status (SuperMemo SM-2) */}
         <button
           type="button"
           onClick={() => {
             soundManager.playBeep(540, 0.04);
             window.dispatchEvent(new CustomEvent('open_vault_modal'));
           }}
-          className="p-3 sm:p-3.5 rounded-2xl bg-white dark:bg-[#0B1224] border border-slate-200/90 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
+          className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0E1526] border border-stone-200/90 dark:border-slate-800/90 hover:border-amber-500 dark:hover:border-amber-500 transition flex items-center justify-between gap-2.5 text-left group shadow-2xs cursor-pointer"
         >
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div
               className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                unmasteredMistakeCount > 0
-                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400'
-                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
+                sm2Stats.dueCount > 0 || unmasteredMistakeCount > 0
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
               }`}
             >
-              {unmasteredMistakeCount > 0 ? (
+              {sm2Stats.dueCount > 0 || unmasteredMistakeCount > 0 ? (
                 <ShieldAlert className="w-4 h-4" />
               ) : (
                 <ShieldCheck className="w-4 h-4" />
               )}
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] font-mono uppercase font-bold text-slate-400 dark:text-slate-500">
-                Mistake Vault
+              <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                SM-2 Recall ({sm2Stats.retentionRate}%)
               </div>
-              <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                {unmasteredMistakeCount > 0
-                  ? `${unmasteredMistakeCount} Error${unmasteredMistakeCount > 1 ? 's' : ''} to Fix`
-                  : 'All Clear'}
+              <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate mt-0.5 font-mono tabular-nums">
+                {sm2Stats.dueCount > 0
+                  ? `${sm2Stats.dueCount} Due Today`
+                  : unmasteredMistakeCount > 0
+                  ? `${unmasteredMistakeCount} Learning`
+                  : '100% Mastered'}
               </div>
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-500 group-hover:translate-x-0.5 transition shrink-0" />
+          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition shrink-0" />
         </button>
       </div>
 
-      {/* 3. Streamlined Dashboard View Filter Bar */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800/80 pb-2.5 overflow-x-auto scrollbar-none">
-        <div className="flex items-center gap-1.5">
+      {/* 3. Segmented Dashboard View Filter Bar */}
+      <div className="flex items-center justify-between gap-3 border-b border-stone-200/80 dark:border-slate-800/80 pb-3 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-1 p-1 rounded-xl bg-stone-200/60 dark:bg-slate-900/90 border border-stone-200/80 dark:border-slate-800">
           {[
-            { id: 'overview', label: 'Complete Overview', icon: LayoutGrid },
-            { id: 'skills', label: '4 Core Skills', icon: Headphones },
-            { id: 'labs', label: 'Interactive Labs', icon: Layers },
+            { id: 'overview', label: 'Action Overview', icon: LayoutGrid },
+            { id: 'skills', label: '4 Core Skills & AI Examiners', icon: Headphones },
+            { id: 'labs', label: 'Interactive Labs & Tools', icon: Layers },
             { id: 'strategy', label: 'Pacing & Analytics', icon: BarChart3 }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -310,10 +402,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
                   soundManager.playBeep(540, 0.03);
                   setViewFilter(tab.id as DashboardViewFilter);
                 }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                   active
-                    ? 'bg-slate-900 text-white dark:bg-blue-600 dark:text-white shadow-2xs'
-                    : 'bg-white dark:bg-[#0B1224] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-slate-800'
+                    ? 'bg-white text-slate-900 dark:bg-blue-600 dark:text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -329,7 +421,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             soundManager.playBeep(580, 0.04);
             onNavigate('calendar');
           }}
-          className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline shrink-0 cursor-pointer"
+          className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:underline shrink-0 cursor-pointer whitespace-nowrap"
         >
           <Clock className="w-3.5 h-3.5" />
           <span>14-Day Sprint Plan</span>
@@ -343,19 +435,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
         <div className="lg:col-span-8 space-y-5 sm:space-y-6">
           {/* Active Session Recovery Banner (If user has an unfinished session) */}
           {activeSession ? (
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-50/90 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/70 flex items-center justify-between gap-3 shadow-2xs">
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#0E1526] border border-blue-200 dark:border-blue-800/70 flex items-center justify-between gap-3 shadow-2xs">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-blue-600/15 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
                   <Clock className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
+                  <div className="text-[11px] font-semibold text-blue-700 dark:text-blue-400">
                     Resume Unfinished Session
                   </div>
                   <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
                     {activeSession.title}
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-mono tabular-nums">
                     {activeSession.subtitle} · {activeSession.percent}% complete
                   </div>
                 </div>
@@ -366,13 +458,22 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
                   soundManager.playBeep(640, 0.04);
                   onNavigate(activeSession.module);
                 }}
-                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold shrink-0 transition flex items-center gap-1 cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 active:scale-95 text-white text-xs font-semibold shrink-0 transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
               >
                 <span>Resume</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           ) : null}
+
+          {/* 4 Core IELTS Skills Matrix (Primary Action Hub on Overview & Skills) */}
+          {(viewFilter === 'overview' || viewFilter === 'skills') && (
+            <SkillMasteryMatrix
+              onNavigate={onNavigate}
+              examMode={examMode}
+              completedModules={completedModules}
+            />
+          )}
 
           {/* Today's Study Sprint Mission Hub */}
           {(viewFilter === 'overview' || viewFilter === 'skills') && (
@@ -382,17 +483,27 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             />
           )}
 
-          {/* 4 Core IELTS Skills Matrix */}
+          {/* AI Band Scorecard & Criteria Diagnostic */}
           {(viewFilter === 'overview' || viewFilter === 'skills') && (
-            <SkillMasteryMatrix
+            <AIBandScorecard
+              estimatedBand={estimatedBand}
+              targetBand={targetBand}
+              overallPercentage={overallPercentage}
               onNavigate={onNavigate}
-              examMode={examMode}
-              completedModules={completedModules}
+              onOpenBandModal={onOpenBandModal}
+            />
+          )}
+
+          {/* AI Writing Quick-Evaluator Dock */}
+          {viewFilter === 'skills' && (
+            <AIWritingQuickEvaluator
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
             />
           )}
 
           {/* Specialized Practice Labs Dock */}
-          {(viewFilter === 'overview' || viewFilter === 'labs') && (
+          {viewFilter === 'labs' && (
             <AdvancedLabsDock
               onNavigate={onNavigate}
               onOpenVault={() => {
@@ -402,8 +513,44 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
           )}
 
           {/* Core Lexical & Grammatical Learning Tools */}
-          {(viewFilter === 'overview' || viewFilter === 'labs' || viewFilter === 'skills') && (
+          {(viewFilter === 'labs' || viewFilter === 'skills') && (
             <LearningToolsCard onNavigate={onNavigate} />
+          )}
+
+          {/* Band 8.5+ Topic Collocation Explorer */}
+          {viewFilter === 'labs' && (
+            <AcademicCollocationFinder
+              onShowToast={onShowToast}
+              onNavigate={onNavigate}
+            />
+          )}
+
+          {/* 30-Day Practice Heatmap */}
+          {viewFilter === 'strategy' && (
+            <PracticeHeatmap
+              user={user}
+              examHistory={examHistory}
+              streakDays={streakDays}
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
+            />
+          )}
+
+          {/* AI Weakness Radar & Trap Alerts */}
+          {viewFilter === 'strategy' && (
+            <AIWeaknessDetector
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
+              unmasteredMistakeCount={unmasteredMistakeCount}
+            />
+          )}
+
+          {/* Exam Time & Pacing Strategizer */}
+          {viewFilter === 'strategy' && (
+            <ExamPacingStrategyCard
+              onShowToast={onShowToast}
+              onNavigate={onNavigate}
+            />
           )}
 
           {/* Recent Authentic Activity (Shown when user has completed assessments) */}
@@ -438,16 +585,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono font-bold uppercase text-slate-500 dark:text-slate-400">
-                        {isFullMockExamRecord(rec) ? 'Full Mock Exam' : 'Listening Mock'}
+                        {isFullMockExamRecord(rec) ? 'Full Mock Exam' : 'Practice Test'}
                       </span>
                       <span className="text-xs font-black text-blue-600 dark:text-blue-400 font-mono">
                         {isFullMockExamRecord(rec)
                           ? `Band ${(rec.overallBand ?? rec.listeningBand).toFixed(1)}`
-                          : `Listening ${rec.listeningBand.toFixed(1)}`}
+                          : `Band ${(rec.overallBand || rec.readingBand || rec.listeningBand).toFixed(1)}`}
                       </span>
                     </div>
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1 truncate">
-                      {rec.submissionType === 'timer' ? 'Official Timed Simulation' : 'Standard Assessment'}
+                      {rec.submissionType === 'timer' ? 'Timed Simulation' : 'Completed Assessment'}
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5">
                       {new Date(rec.timestamp).toLocaleDateString()} · {rec.correctCount}/{rec.totalQuestions} Correct
@@ -458,25 +605,54 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             </section>
           )}
 
-          {/* Exam Time & Pacing Strategizer */}
-          {(viewFilter === 'overview' || viewFilter === 'strategy') && (
-            <ExamPacingStrategyCard
-              onShowToast={onShowToast}
-              onNavigate={onNavigate}
-            />
-          )}
-
-          {/* Band 8.5+ Topic Collocation Explorer */}
-          {(viewFilter === 'overview' || viewFilter === 'labs' || viewFilter === 'strategy') && (
-            <AcademicCollocationFinder
-              onShowToast={onShowToast}
-              onNavigate={onNavigate}
-            />
+          {/* Quick Section Explorer Dock on Overview so all specialist labs & analytics are 1 tap away */}
+          {viewFilter === 'overview' && (
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#0B1224] border border-slate-200/90 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  Explore Specialist AI Labs, Collocations & Pacing Analytics
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Switch dashboard views to access AI Speaking Partner, Writing Quick-Evaluator, 28-Day Heatmap, and Collocation Explorer.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setViewFilter('skills')}
+                  className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60 text-xs font-bold hover:bg-blue-100 transition cursor-pointer"
+                >
+                  AI Examiners →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewFilter('labs')}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 transition cursor-pointer"
+                >
+                  Interactive Labs →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewFilter('strategy')}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 transition cursor-pointer"
+                >
+                  Heatmap & Pacing →
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
         {/* ================= RIGHT COLUMN (Desktop Sidebar Widgets: lg:col-span-4) ================= */}
         <div className="lg:col-span-4 space-y-5">
+          {/* Daily Goal & Momentum Hub (Benchmark: IELTSly.ai) */}
+          <DailyGoalMomentumCard
+            streakDays={streakDays}
+            examDate={testDate}
+            onNavigate={onNavigate}
+            onShowToast={onShowToast}
+          />
+
           {/* A. Band Readiness Index Donut Ring with Interactive 4-Skill Matrix */}
           <ProgressDonutCard
             overallPercentage={overallPercentage}

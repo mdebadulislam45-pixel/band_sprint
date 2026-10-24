@@ -32,7 +32,10 @@ import {
   Sliders,
   Send,
   Languages,
-  Gift
+  Gift,
+  Radio,
+  MessageSquare,
+  Headphones
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
@@ -45,6 +48,9 @@ import { MASTER_1000_VOCAB_DATABASE } from '../../data/masterVocabDatabase';
 import { SpeakingVoiceOrb } from '../audio/SpeakingVoiceOrb';
 import { ChubbyMascotAvatar, MascotMood } from '../common/ChubbyMascotAvatar';
 import { Icon3D, Icon3DVariant } from '../common/Icon3D';
+import { Cambridge3DStudio } from '../three/Cambridge3DStudio';
+import { GeminiLiveAndTranscribeHub } from '../ai/GeminiLiveAndTranscribeHub';
+import { LiveAvatarSpeakingPartner } from '../speaking/LiveAvatarSpeakingPartner';
 
 
 interface AIToolsPageProps {
@@ -54,6 +60,10 @@ interface AIToolsPageProps {
 
 type StudioView =
   | 'overview'
+  // Next-Gen Gemini & 3D Tools
+  | 'live-voice-examiner'
+  | 'audio-transcriber'
+  | 'multi-model-chat'
   // Exam Practice
   | 'speaking-examiner'
   | 'writing-coach'
@@ -83,6 +93,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
   const [barnabyMood, setBarnabyMood] = useState<MascotMood>('idle');
   const [barnabyTipIndex, setBarnabyTipIndex] = useState(0);
   const [barnabySpeaking, setBarnabySpeaking] = useState(false);
+  const [studioVoiceActive, setStudioVoiceActive] = useState(false);
 
   const barnabySurprises = [
     {
@@ -611,16 +622,16 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       icon: typeof Mic;
       variant: Icon3DVariant;
     }> = [
-      // Exam Practice
-      { id: 'speaking-examiner', title: 'AI Speaking Examiner', cat: 'exam', desc: 'Parts 1, 2, 3 simulation with British voice examiner & live mic analysis.', icon: Mic, variant: 'rose' },
-      { id: 'writing-coach', title: 'AI Writing Coach', cat: 'exam', desc: 'Task 1 & 2 evaluation with side-by-side Band 8.5 improvements & rewrite drills.', icon: PenTool, variant: 'purple' },
+      // Core Focused Suite & Exam Practice
+      { id: 'speaking-examiner', title: 'Speaking Studio', cat: 'exam', desc: 'Simulate authentic face-to-face IELTS interviews (Parts 1–3) with real-time fluency scoring and instant grammar feedback.', icon: Mic, variant: 'rose' },
+      { id: 'writing-coach', title: 'Writing Evaluator', cat: 'exam', desc: 'Task 1 & 2 evaluation with side-by-side Band 8.5 improvements & rewrite drills.', icon: PenTool, variant: 'purple' },
+      { id: 'vocab-builder', title: 'Vocabulary Builder', cat: 'english', desc: 'Extracts C1 words & collocations from essays or reading with 1-click deck save.', icon: BookMarked, variant: 'indigo' },
+      { id: 'listening-shadowing', title: 'Listening Lab', cat: 'english', desc: 'Sentence-by-sentence British audio playback with syllable stress pacing.', icon: Headphones, variant: 'emerald' },
       { id: 'reading-explainer', title: 'Reading Passage Explainer', cat: 'exam', desc: 'Analyzes dense paragraph arguments, referencing words, and author stance.', icon: BookOpen, variant: 'emerald' },
       { id: 'question-explainer', title: 'Question Explainer', cat: 'exam', desc: 'Deconstructs True/False/Not Given & multiple choice traps with Cambridge heuristics.', icon: HelpCircle, variant: 'blue' },
       // English Improvement
-      { id: 'vocab-builder', title: 'AI Vocabulary Builder', cat: 'english', desc: 'Extracts C1 words & collocations from essays or reading with 1-click deck save.', icon: BookMarked, variant: 'indigo' },
       { id: 'grammar-improvement', title: 'Grammar & Sentence Improvement', cat: 'english', desc: 'Elevates colloquial syntax into formal Band 8.5 academic structures.', icon: FileText, variant: 'cyan' },
       { id: 'speaking-fluency', title: 'Speaking Fluency Coach', cat: 'english', desc: 'Spontaneous 30-sec response analyzer: speech rate, fillers, and thought units.', icon: Zap, variant: 'amber' },
-      { id: 'listening-shadowing', title: 'Listening & Shadowing Coach', cat: 'english', desc: 'Sentence-by-sentence British audio playback with syllable stress pacing.', icon: Volume2, variant: 'emerald' },
       // Personalized Coaching
       { id: 'weakness-detector', title: 'AI Weakness Detector', cat: 'coaching', desc: 'Correlates genuine mistakes from test history to identify score bottlenecks.', icon: Target, variant: 'amber' },
       { id: 'mistake-analysis', title: 'Mistake Analysis', cat: 'coaching', desc: 'Categorizes unmastered vault errors by root cause: Mishearing vs Grammar vs Trap.', icon: AlertTriangle, variant: 'rose' },
@@ -694,42 +705,151 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
         </div>
       </div>
 
-      {/* ================= BARNABY CHUBBY AI TUTOR LIVE COMPANION BANNER ================= */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#0B1224] via-[#111C38] to-[#1E293B] text-white border border-slate-800 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5 min-w-0">
-          <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-amber-100 via-amber-50 to-blue-100 flex items-center justify-center shrink-0 border-2 border-amber-300/80 shadow-inner">
-            <ChubbyMascotAvatar mood={barnabyMood} size="lg" />
-            <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0B1224]" />
-          </div>
-          <div className="min-w-0 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm sm:text-base font-black text-white">
-                Barnaby · Your Chubby Cambridge AI Companion
-              </span>
-              <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-400/40 font-mono text-[10px] font-bold">
-                {barnabySurprises[barnabyTipIndex].badge}
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              <strong className="text-amber-300 mr-1.5">{barnabySurprises[barnabyTipIndex].title}:</strong>
-              {barnabySurprises[barnabyTipIndex].text}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-          <button
-            type="button"
-            onClick={handleBarnabySurprise}
-            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95"
-          >
-            <Gift className="w-4 h-4" />
-            <span>{barnabySpeaking ? 'Speaking Surprise...' : 'Surprise Me! (C2 Idiom / Boost)'}</span>
-          </button>
-        </div>
+      {/* ================= FOCUSED 4-TOOL SUITE DOCK ================= */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {[
+          {
+            id: 'speaking-examiner' as const,
+            label: 'Speaking Studio',
+            sub: 'Parts 1–3 Live Video',
+            icon: Mic
+          },
+          {
+            id: 'writing-coach' as const,
+            label: 'Writing Evaluator',
+            sub: 'Task 1 & 2 Band Rubric',
+            icon: PenTool
+          },
+          {
+            id: 'vocab-builder' as const,
+            label: 'Vocabulary Builder',
+            sub: 'C1/C2 Collocations',
+            icon: BookMarked
+          },
+          {
+            id: 'listening-shadowing' as const,
+            label: 'Listening Lab',
+            sub: 'British RP Shadowing',
+            icon: Headphones
+          }
+        ].map((item) => {
+          const Icon = item.icon;
+          const isActive = activeView === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                stopSpeech();
+                soundManager.playBeep(600, 0.03);
+                setActiveView(item.id);
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                isActive
+                  ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                  : 'bg-white dark:bg-[#101B32] text-slate-900 dark:text-white border-slate-200/90 dark:border-slate-800 hover:border-blue-500'
+              }`}
+            >
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  isActive
+                    ? 'bg-white/20 text-white'
+                    : 'bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm font-bold truncate">{item.label}</div>
+                <div
+                  className={`text-[11px] truncate ${
+                    isActive ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {item.sub}
+                </div>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* ================= STUDIO OVERVIEW (GRID OF 12 TOOLS ACROSS 3 SECTIONS) ================= */}
+      {/* ================= BARNABY COMPANION BANNER (HIDDEN INSIDE SPEAKING STUDIO) ================= */}
+      {activeView !== 'speaking-examiner' && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#0B1224] via-[#111C38] to-[#1E293B] text-white border border-slate-800 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-amber-100 via-amber-50 to-blue-100 flex items-center justify-center shrink-0 border-2 border-amber-300/80 shadow-inner">
+              <ChubbyMascotAvatar mood={barnabyMood} size="lg" />
+              <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0B1224]" />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm sm:text-base font-black text-white">
+                  Barnaby · Your Cambridge AI Companion
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-400/40 font-mono text-[10px] font-bold">
+                  {barnabySurprises[barnabyTipIndex].badge}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                <strong className="text-amber-300 mr-1.5">{barnabySurprises[barnabyTipIndex].title}:</strong>
+                {barnabySurprises[barnabyTipIndex].text}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={handleBarnabySurprise}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95 whitespace-nowrap"
+            >
+              <Gift className="w-4 h-4" />
+              <span>{barnabySpeaking ? 'Speaking Surprise...' : 'Surprise Me! (C2 Idiom / Boost)'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= INTERACTIVE 3D CAMBRIDGE SPEAKING & ACOUSTIC STUDIO ================= */}
+      {activeView === 'overview' && (
+        <Cambridge3DStudio
+          activeSpeakingPart={speakingPart}
+          isVoiceActive={studioVoiceActive || barnabySpeaking || examinerSpeaking}
+          onSelectSpeakingPart={(part) => setSpeakingPart(part)}
+          onLaunchSpeakingStudio={() => setActiveView('speaking-examiner')}
+          onLaunchWritingEvaluator={() => setActiveView('writing-coach')}
+          onLaunchVocabBuilder={() => setActiveView('vocab-builder')}
+          onLaunchListeningLab={() => setActiveView('listening-shadowing')}
+        />
+      )}
+
+      {/* ================= NEXT-GEN GEMINI LIVE VOICE / TRANSCRIBER / MULTI-MODEL CHAT VIEWS ================= */}
+      {activeView === 'live-voice-examiner' && (
+        <GeminiLiveAndTranscribeHub
+          mode="live-voice"
+          onShowToast={onShowToast}
+          onVoiceActivityChange={setStudioVoiceActive}
+        />
+      )}
+
+      {activeView === 'audio-transcriber' && (
+        <GeminiLiveAndTranscribeHub
+          mode="transcriber"
+          onShowToast={onShowToast}
+          onVoiceActivityChange={setStudioVoiceActive}
+        />
+      )}
+
+      {activeView === 'multi-model-chat' && (
+        <GeminiLiveAndTranscribeHub
+          mode="multi-chat"
+          onShowToast={onShowToast}
+          onVoiceActivityChange={setStudioVoiceActive}
+        />
+      )}
+
+      {/* ================= STUDIO OVERVIEW (GRID OF 15 TOOLS ACROSS 3 SECTIONS) ================= */}
       {activeView === 'overview' && (
         <div className="space-y-6">
           {/* Category Tabs & Search Bar */}
@@ -826,9 +946,16 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
         </div>
       )}
 
-      {/* ================= 1. AI SPEAKING EXAMINER VIEW ================= */}
+      {/* ================= 1. SPEAKING STUDIO VIEW (UNIFIED SINGLE SOURCE OF TRUTH) ================= */}
       {activeView === 'speaking-examiner' && (
-        <div className="space-y-4 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
+          <LiveAvatarSpeakingPartner
+            isModal={false}
+            isOpen={true}
+            autoStart5MinDrill={true}
+            onShowToast={onShowToast}
+            onNavigateToFullLab={() => onNavigate('speaking')}
+          />
           <div className="p-5 sm:p-6 rounded-3xl bg-slate-900 text-white border border-slate-800 space-y-4 shadow-md">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">

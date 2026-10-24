@@ -1,149 +1,40 @@
-# IELTSly.ai Benchmark & Dashboard Experience Upgrade Plan
+# IELTS Speaking Studio Upgrade Plan: Humanoid/Studio Anime Examiner, AI Live Speaking Partner & WebRTC Camera Booth
 
-> An executive architectural blueprint to upgrade the IELTS Sprint™ dashboard to match and exceed **IELTSly.ai** and leading IELTS prep platforms (IDP/Cambridge, IELTS Ready, E2Language) while preserving 100% of existing features, tests, audio suites, and state stores.
+## 1. Visual & Architectural Vision
+To replace the flat geometric SVG cartoon avatar shown in your screenshots and elevate the Speaking Exam & Practice experience to an authentic Cambridge Video-Call Assessment Booth:
 
----
+### A. High-Craft Humanoid & Studio Anime Examiner Avatars (Anti-Cartoon Upgrade)
+- **Dual Art-Style Switcher (3D Humanoid & Studio Anime)**:
+  - **Semi-Realistic 3D Humanoid Style (Default)**: Replaces flat `<ellipse>`/`<circle>` cartoon shapes with multi-layered anatomical portraits for **Dr. Clara Sterling** (Senior Cambridge Examiner), **Prof. Arthur Pendelton** (Visiting Oxbridge Assessor), and **Dr. Alistair Vance** (Chief Examiner). Features realistic facial proportions, subsurface skin shading gradients, detailed iris/cornea reflections, sculpted hair strands, tailored academic blazer/attire, natural micro-saccade eye movement, breathing chest motion, and multi-stage acoustic viseme lip-sync driven by live speech cadence.
+  - **Studio Anime Style (Makoto Shinkai / Kyoto Animation Aesthetic)**: Optional 1-click toggle for candidates who prefer an expressive, high-detail illustrated anime examiner with multi-layered cel-shaded lighting, expressive multi-highlight eyes, and smooth mouth visemes.
 
-## User Review & Critical Decisions
+### B. True "AI Live Speaking Partner" Mode (Free-Talk & Adaptive Follow-Ups)
+- **Two Practice Modes in `LiveAvatarSpeakingPartner`**:
+  1. **5-Minute Part 1 Sprint Drill**: Structured timed practice across common Cambridge Part 1 topics.
+  2. **AI Live Speaking Partner (Adaptive Free-Talk Mode)**: A continuous, natural back-and-forth live conversation where the AI Examiner listens to what you actually say, extracts your key points/keywords, responds conversationally to your specific point, asks dynamic Socratic follow-up questions (or lets you pick any custom topic/scenario), and provides live inline grammar coaching and C1/C2 lexical upgrades in real time.
 
-> [!IMPORTANT]
-> **Zero Code Changes Execution Gate**: As per your explicit instructions (*"first make the plan and show don't exquisite any changes without my permission"*), **no source code has been altered**. Review this detailed plan and click **"Proceed"** or provide feedback to authorize execution.
-
-- **Feature Preservation Guarantee**: All existing components (Full Cambridge tests, CD-IELTS Exam Mode, Mistake Vault, Band Calculator, Audio Labs, Vocab Decks, Bangla Guide, Beginner 101, Slide Guides, Task 1 Visualizer, Argument Matrix, Auth, and Commercial features) will remain 100% intact and functional.
-- **Visual & Layout Strategy**: The home dashboard will adopt a modern, high-density IELTSly-inspired "Mission Control" layout with:
-  1. **AI Band Scorecard & Criteria Diagnostic** (Current Band vs Target Band with 4-Skill visual breakdown).
-  2. **AI Speaking Partner Quick-Launcher** (1-click voice interview simulation for Parts 1, 2, and 3).
-  3. **AI Essay Evaluator & Rewriter Dock** (Instant band evaluation mapped to official Cambridge rubrics).
-  4. **Smart Weakness Heatmap & Targeted Next Drill** (Automated error diagnostics pinpointing sub-skills like True/False/Not Given, Part 2 cue timing, or lexical repetition).
-  5. **Daily Goal & XP Tracker** (Study time, daily target minutes, streak flame, and readiness score).
-
----
-
-## 1. Overview & Core Concept
-
-### What It Delivers
-A world-class, AI-augmented IELTS dashboard experience modeled after **IELTSly.ai**, **IELTS Ready: Premium (British Council)**, and **Cambridge English Empower**. It transforms the home view into an adaptive preparation command center where candidates see their real-time estimated band, identified weaknesses, active study streak, and immediate 1-click drill recommendations without hunting through sub-menus.
-
-### Competitive Gap Analysis (What We Are Lagging & Upgrading)
-
-| Feature Dimension | Current IELTS Sprint App | IELTSly.ai Benchmark | Planned Upgrade (Our New Dashboard) |
-| :--- | :--- | :--- | :--- |
-| **Band Progress Tracking** | General percentage donut + simple estimated band | Dynamic Predicted Band + 4-Skill criteria breakdown (L, R, W1/W2, S1/S2/S3) | **Interactive AI Band Predictor & Scorecard**: Visual sub-score bars, target delta indicator (+1.0 needed), and Cambridge descriptor criteria tags. |
-| **AI Speaking Access** | Inside Speaking Lab / Voice Examiner page | Instant "Talk to Mihu" AI Speaking Partner card directly on dashboard | **Live AI Speaking Quick-Partner Widget**: 1-click launch into Part 1 / Part 2 / Part 3 with audio test prompt preview and topic selector. |
-| **AI Writing Evaluation** | Located inside Writing Lab sub-views | Instant essay evaluator & criterion checker accessible from dashboard | **Instant AI Essay Evaluator Dock**: Quick essay paste / question picker with instant Cambridge rubric breakdown (TR, CC, LR, GRA). |
-| **Weakness Diagnostics** | Raw mistake count in Mistake Vault | Automated Weakness Detector isolating specific question types and error traps | **AI Weakness Diagnostic Radar**: Categorizes error patterns (e.g., T/F/NG traps, map labellings, cohesion linkers, pronunciation pacing) + 1-click "Fix This Weakness" drills. |
-| **Daily Goal & Gamification** | Streak count in top hero banner | Daily goal timer (e.g., 35/45 mins), XP points, and streak status | **Daily Sprint Goal & Momentum Hub**: Live daily study progress ring, minutes remaining, XP multiplier, and test countdown timer. |
-| **Next Best Action** | Daily mission list | "Smart Recommended Next Drill" personalized to lowest-performing skill | **Intelligent AI Recommendation Banner**: Analyzes user's lowest band skill and prescribes the highest-impact 10-15 min drill. |
+### C. WebRTC Candidate Camera Studio (Exam & Practice Sections)
+- **Dedicated Reusable `CandidateCameraBooth` Component**:
+  - Integrates real browser camera access (`navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } })`) into **both**:
+    1. **Practice Section (`LiveAvatarSpeakingPartner.tsx`)**: Split-screen / Picture-in-Picture video call layout alongside the Examiner Avatar.
+    2. **Full Exam Section (`VoiceExaminer.tsx`)**: Official Cambridge Video-Call IELTS Speaking Booth during ID Check (presenting passport/ID to camera) and Parts 1, 2, and 3.
+- **Interactive Camera Features**:
+  - **Live Eye-Contact & Presence Coach HUD**: Real-time frame luminescence & head-centering tracker that measures camera engagement, posture framing, and speaking presence confidence (`Eye Contact %`, `Framing Nominal`, `Studio Blur` filter toggle, and `Mirror Flip` toggle).
+  - **Privacy & Graceful Fallback**: One-click camera On/Off toggle, zero server uploads (100% local in-browser video stream), and automatic clean fallback if a device has no webcam or permission is declined.
 
 ---
 
-## 2. User Experience & Visual Design
+## 2. Planned File Changes
 
-### Key User Flows
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        UPGRADED HOME DASHBOARD                         │
-├────────────────────────────────────────────────────────────────────────┤
-│ 1. Mission Control Header: Exam Date Countdown · Target Band · Streak  │
-├────────────────────────────────────────────────────────────────────────┤
-│ 2. Smart Recommendation: "Your weakest area is Writing Task 2 Cohesion"│
-│    [ Start 10-Min Target Drill → ]                                     │
-├──────────────────────────────────┬─────────────────────────────────────┤
-│ MAIN COLUMN (8 Cols)             │ SIDEBAR COLUMN (4 Cols)             │
-│ • Predicted Band & 4-Skill Matrix│ • AI Speaking Partner (Mihu Voice)  │
-│ • Cambridge Exam Simulator Dock  │ • Daily Goal & XP Progress Ring     │
-│ • AI Writing Quick Evaluator     │ • Weakness Radar (Error Triage)     │
-│ • 4 Core Skills Interactive Hub  │ • Active Practice Session Recovery  │
-│ • Recent Mock Attempts & Trends  │ • Quick Utility Launchpad           │
-└──────────────────────────────────┴─────────────────────────────────────┘
-```
-
-### Visual Identity & Theme
-- **Color Palette & Atmosphere**:
-  - Background: Crisp institutional slate `#0B1224` (dark mode) / `#F8FAFC` (light mode).
-  - Primary Accent: Cambridge Academic Indigo `#3B82F6` and British Navy `#1E3A8A`.
-  - Secondary Accents: Emerald `#10B981` (mastered / high band), Amber `#F59E0B` (needs improvement), Purple `#8B5CF6` (AI intelligence).
-- **Typography & Layout Density**:
-  - Display Font: `Plus Jakarta Sans` / `Outfit` for confident, modern academic headings.
-  - Tabular Numerals: `font-mono tabular-nums` for all band scores, timers, question counts, and percentages to eliminate jitter.
-  - Cards: High-density, single-elevation cards with crisp 1px borders (`border-slate-200/80 dark:border-slate-800`), avoiding nested-card clutter.
-
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-### 1. Zero Modification to Core Engines
-- **Decision**: Keep all underlying test engines, audio playback pipelines, scoring utilities (`userStorage.ts`, `vaultStorage.ts`, `geminiLiveService.ts`, etc.) completely unchanged.
-- **Why**: Ensures absolute stability, zero regression, and preservation of user data and existing practice modules.
-
-### 2. Modular Dashboard Component Architecture
-- **Decision**: Create dedicated modular widgets in `src/components/home/` rather than a monolithic dashboard file:
-  - `AIBandScorecard.tsx`: Real-time predicted band vs target band with module breakdown.
-  - `AISpeakingPartnerCard.tsx`: Instant audio examiner launch card (modeled after IELTSly's Mihu).
-  - `AIWritingQuickEvaluator.tsx`: Fast writing check with criteria rubrics.
-  - `AIWeaknessDetector.tsx`: Diagnostic heatmap identifying question traps and error trends.
-  - `DailyGoalMomentumCard.tsx`: Visual study minutes goal and XP progression.
-  - `SmartRecommendationBanner.tsx`: Contextual recommendation based on recent diagnostic performance.
-- **Why**: Keeps code clean, testable, maintainable, and allows instant toggle between Overview, Skills, and Labs views.
-
-### 3. Preservation of Academic & General Training Tracks
-- **Decision**: Retain 1-click track toggling (`Academic` ↔ `General Training`) across all new widgets so both test formats receive tailored band scoring tables and task prompts.
-
----
-
-## 4. Technical Architecture & Component Diagrams
-
-```
-                    ┌────────────────────────┐
-                    │      App.tsx State     │
-                    │  (user, examMode, nav) │
-                    └───────────┬────────────┘
-                                │
-                    ┌───────────▼────────────┐
-                    │    HomeDashboard.tsx   │
-                    └───────────┬────────────┘
-                                │
-   ┌────────────────────────────┼───────────────────────────┐
-   │                            │                           │
-┌──▼────────────────┐  ┌────────▼──────────┐      ┌─────────▼────────┐
-│ SmartRecommendation│  │  AIBandScorecard  │      │AISpeakingPartner │
-│ Banner (Dynamic)   │  │  (4 Skills + Δ)   │      │Card (Mihu Voice) │
-└──┬────────────────┘  └────────┬──────────┘      └─────────┬────────┘
-   │                            │                           │
-┌──▼────────────────┐  ┌────────▼──────────┐      ┌─────────▼────────┐
-│ AIWritingEvaluator│  │AIWeaknessDetector │      │DailyGoalMomentum │
-│ Dock (Rubric AI)  │  │(Error Diagnostics)│      │(Timer + XP Ring) │
-└──┬────────────────┘  └────────┬──────────┘      └─────────┬────────┘
-   │                            │                           │
-   └────────────────────────────┼───────────────────────────┘
-                                │
-                  ┌─────────────▼────────────┐
-                  │ Existing Underlying Labs │
-                  │  (Speaking, Writing,     │
-                  │   Listening, Reading,    │
-                  │   Cambridge, CDIELTS)    │
-                  └──────────────────────────┘
-```
-
----
-
-## 5. Phased Execution Roadmap (Pending Approval)
-
-Once approved, the implementation will proceed in four focused steps:
-
-1. **Step 1: Dashboard Widgets Creation**:
-   - Build `AIBandScorecard.tsx`, `AISpeakingPartnerCard.tsx`, `AIWritingQuickEvaluator.tsx`, `AIWeaknessDetector.tsx`, and `DailyGoalMomentumCard.tsx` in `src/components/home/`.
-2. **Step 2: Dashboard Layout Integration**:
-   - Integrate the new widgets into `HomeDashboard.tsx` under the responsive 12-column grid.
-   - Retain all existing tabs, search modals, mistake vault triggers, and commercial modals.
-3. **Step 3: Verification & Interactive Polish**:
-   - Wire all buttons to existing navigation targets (`practice`, `speaking`, `writing`, `reading`, `listening`, `cdielts`, `history`).
-   - Validate sound effects, dark/light theme switching, and responsive mobile/desktop layouts.
-4. **Step 4: Quality & Compilation Checks**:
-   - Run `compile_applet` and verify zero TypeScript, ESLint, or runtime errors.
-
----
-
-> [!NOTE]
-> **Awaiting Your Approval**: To start implementing these upgrades, please click **Proceed** in the Plan Approval Curtain above or let me know what adjustments you would like.
+1. **`/metadata.json`**:
+   - Add `"camera"` alongside `"microphone"` in `requestFramePermissions` so the browser/iframe permits WebRTC video streaming.
+2. **`/src/components/speaking/CandidateCameraBooth.tsx` (New Component)**:
+   - Self-contained WebRTC camera feed manager with live video stream, studio background blur/lighting toggle, mirror flip, real-time optical centering & eye-contact confidence telemetry, ID verification frame overlay (for `ID_CHECK` stage), and clean hardware fallback.
+3. **`/src/components/speaking/ExaminerHumanoidCanvas.tsx` (New Component)**:
+   - High-detail anatomical SVG/Canvas examiner renderer supporting both **Semi-Realistic Humanoid** and **Studio Anime** visual styles, 6-state phoneme/viseme mouth articulation, natural eye blinks, head nods while listening, and examiner persona selection.
+4. **`/src/components/speaking/LiveAvatarSpeakingPartner.tsx`**:
+   - Replace the old cartoon `ExaminerAvatar3DCanvas` with `ExaminerHumanoidCanvas`.
+   - Add the **AI Live Speaking Partner (Adaptive Free-Talk)** mode with contextual conversational replies and dynamic follow-up generation based on the user's spoken transcript.
+   - Integrate `CandidateCameraBooth` for a realistic Zoom/Cambridge Video-Call split-screen or PiP view.
+5. **`/src/components/VoiceExaminer.tsx` & `/src/components/pages/SpeakingLabPage.tsx`**:
+   - Embed the upgraded `ExaminerHumanoidCanvas` and `CandidateCameraBooth` into the full 3-Part Speaking Exam simulator (`PRE_TEST`, `ID_CHECK`, `PART_1`, `PART_2_PREP`, `PART_2_SPEAK`, `PART_3`) so candidates experience a realistic face-to-face video exam.

@@ -24,6 +24,7 @@ export interface MockExamSet {
   format: 'Academic' | 'General Training';
   listeningTitle: string;
   listeningScript: string;
+  audioSrc?: string;
   readingTitle: string;
   readingPassage: string;
   writingPrompt: string;
@@ -61,6 +62,7 @@ export const MOCK_EXAM_SETS: MockExamSet[] = [
     level: 'B2-C1',
     format: 'Academic',
     listeningTitle: 'University Orientation & Course Admissions Office',
+    audioSrc: 'https://ia801503.us.archive.org/15/items/insightintoielts0000jake_o7m2/Track%2001.mp3',
     listeningScript: `International English Language Testing System. Listening Practice Simulation.
 Section 1. You will hear an admissions officer at a British university conducting an enrollment verification interview with a prospective engineering postgraduate student.
 First, you have some time to look at questions 1 to 5.
@@ -206,6 +208,7 @@ In conclusion, although the threat of diminished scholastic discipline demands m
     level: 'B2',
     format: 'Academic',
     listeningTitle: 'Cotswold Heritage Arts Centre & Festival Registration',
+    audioSrc: 'https://ia801503.us.archive.org/15/items/insightintoielts0000jake_o7m2/Track%2002.mp3',
     listeningScript: `International English Language Testing System. Listening Practice Simulation.
 Section 1. You will hear an enquiry dialogue between a community arts coordinator and a visitor registering for the Cotswold Summer Arts Festival.
 First, you have some time to look at questions 1 to 5.
@@ -354,6 +357,7 @@ In conclusion, although space exploration expands humanity's scientific horizons
     level: 'C1',
     format: 'Academic',
     listeningTitle: 'Greenfield Eco-Resort Booking & Transport Logistics',
+    audioSrc: 'https://ia801503.us.archive.org/15/items/insightintoielts0000jake_o7m2/Track%2003.mp3',
     listeningScript: `International English Language Testing System. Listening Practice Simulation.
 Section 1. You will hear a telephone conversation between an eco-sanctuary reservations manager and a university research team director.
 First, you have some time to look at questions 1 to 5.
@@ -498,6 +502,7 @@ In conclusion, although telecommunication technologies eliminate geographic barr
     level: 'B2-C1',
     format: 'Academic',
     listeningTitle: 'Municipal Autonomous Fleet Logistics & Charging Depot',
+    audioSrc: 'https://ia801503.us.archive.org/15/items/insightintoielts0000jake_o7m2/Track%2004.mp3',
     listeningScript: `International English Language Testing System. Listening Practice Simulation.
 Section 1. You will hear an engineering consultation between a municipal transport planner and a technical contractor inspecting an autonomous electric vehicle charging depot.
 First, you have some time to look at questions 1 to 5.

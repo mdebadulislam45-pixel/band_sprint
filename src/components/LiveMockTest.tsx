@@ -62,6 +62,11 @@ import {
   InstantSpeakingFeedback,
   DetailedGrammarError
 } from '../types/speakingTypes';
+import {
+  calculateOfficialListeningBand,
+  calculateOfficialAcademicReadingBand
+} from '../utils/listeningAnswerEvaluator';
+import { checkWritingWordThreshold } from '../services/WritingEvaluationService';
 
 const MOCK_TEST_PERSISTENCE_KEY = 'ielts_sprint_live_mock_active_session';
 
@@ -418,20 +423,23 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
     setExamState('review');
     soundManager.playSuccess();
 
-    // Auto-record to active user profile progress
+    // Auto-record to active user profile progress ONLY if the candidate actually attempted at least one section with > 0 score
     try {
       const currentScores = calculateScores();
-      recordExamAttempt({
-        examType: 'full_mock',
-        overallBand: currentScores.overall,
-        listeningBand: currentScores.lBand,
-        readingBand: currentScores.rBand,
-        writingBand: currentScores.wBand,
-        wordCount: currentScores.wordCount,
-        submissionType: reason,
-        correctCount: currentScores.listeningCorrect + currentScores.readingCorrect,
-        totalQuestions: questions.length
-      });
+      if (currentScores.overall > 0) {
+        recordExamAttempt({
+          examType: 'full_mock',
+          overallBand: currentScores.overall,
+          listeningBand: currentScores.lBand,
+          readingBand: currentScores.rBand,
+          writingBand: currentScores.wBand,
+          speakingBand: currentScores.sBand,
+          wordCount: currentScores.wordCount,
+          submissionType: reason,
+          correctCount: currentScores.listeningCorrect + currentScores.readingCorrect,
+          totalQuestions: questions.length
+        });
+      }
     } catch (e) {
       console.error('Failed to record exam history to profile', e);
     }
@@ -443,59 +451,72 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
     }
   };
 
-  // Score Calculations
+  // Strict Psychometric Score Calculations (0 points for unanswered, 0.0 Band for unattempted modules)
   const calculateScores = () => {
     let listeningCorrect = 0;
+    let listeningTotal = 0;
+    let listeningUnanswered = 0;
     let readingCorrect = 0;
+    let readingTotal = 0;
+    let readingUnanswered = 0;
 
     questions.forEach(q => {
       const userAns = (answers[q.id] || '').trim().toLowerCase();
-      const targetAns = q.correctAnswer.toLowerCase();
-      const isCorrect = userAns.length > 0 && (targetAns.includes(userAns) || userAns.includes(targetAns));
+      const targetAns = q.correctAnswer.toLowerCase().trim();
+      const isUnanswered = userAns.length === 0;
+      const isCorrect = !isUnanswered && (userAns === targetAns || targetAns.split('/').map(s => s.trim()).includes(userAns));
 
-      if (q.section === 'listening' && isCorrect) listeningCorrect++;
-      if (q.section === 'reading' && isCorrect) readingCorrect++;
+      if (q.section === 'listening') {
+        listeningTotal++;
+        if (isUnanswered) listeningUnanswered++;
+        else if (isCorrect) listeningCorrect++;
+      }
+      if (q.section === 'reading') {
+        readingTotal++;
+        if (isUnanswered) readingUnanswered++;
+        else if (isCorrect) readingCorrect++;
+      }
     });
 
-    // Sub-bands based on 5-question samples
-    // 5/5 = 8.5, 4/5 = 7.5, 3/5 = 6.5, 2/5 = 5.5, 1/5 = 4.5
-    const getBand = (score: number) => {
-      if (score >= 5) return 8.5;
-      if (score === 4) return 7.5;
-      if (score === 3) return 6.5;
-      if (score === 2) return 5.5;
-      return 4.5;
-    };
+    const lBand = calculateOfficialListeningBand(listeningCorrect, listeningTotal || 5);
+    const rBand = calculateOfficialAcademicReadingBand(readingCorrect, readingTotal || 5);
 
-    const lBand = getBand(listeningCorrect);
-    const rBand = getBand(readingCorrect);
+    // Writing evaluation strictly guarded by minimum word threshold (Task 2 minimum: 50 words)
+    const writingGate = checkWritingWordThreshold(essayText, 'task2');
+    const wordCount = writingGate.wordCount;
+    let wBand = 0.0;
+    if (writingGate.isValidAttempt) {
+      if (wordCount >= 250) wBand = 7.5;
+      else if (wordCount >= 180) wBand = 6.5;
+      else if (wordCount >= 100) wBand = 5.5;
+      else wBand = 5.0;
+    }
 
-    // Writing estimation based on words & paragraphs
-    const wordCount = essayText.trim() ? essayText.trim().split(/\s+/).length : 0;
-    let wBand = 6.0;
-    if (wordCount >= 250) wBand = 7.5;
-    else if (wordCount >= 180) wBand = 6.5;
-    else if (wordCount >= 100) wBand = 5.5;
-
-    // Overall Cambridge Rounding with evaluated speaking or benchmark
+    // Speaking Band strictly from actual evaluated speaking turns (0.0 if unattempted — never fake 7.0)
     const evaluatedSpeakingBands = speakingAnswers
-      .map(a => a.instantFeedback?.estimatedBand || a.sampleBandScore)
-      .filter((b): b is number => typeof b === 'number');
+      .filter(a => a.instantFeedback?.isValidAttempt !== false && (a.wordCount || 0) >= 5)
+      .map(a => a.instantFeedback?.overallBand ?? a.instantFeedback?.estimatedBand)
+      .filter((b): b is number => typeof b === 'number' && b > 0);
 
     const sBand = evaluatedSpeakingBands.length > 0
       ? Math.round((evaluatedSpeakingBands.reduce((a, b) => a + b, 0) / evaluatedSpeakingBands.length) * 2) / 2
-      : 7.0;
+      : 0.0;
 
     const avg = (lBand + rBand + wBand + sBand) / 4;
-    const whole = Math.floor(avg);
-    const frac = avg - whole;
-    let overall = whole;
-    if (frac >= 0.75) overall += 1.0;
-    else if (frac >= 0.25) overall += 0.5;
+    let overall = 0.0;
+    if (avg > 0) {
+      const whole = Math.floor(avg);
+      const frac = avg - whole;
+      overall = whole;
+      if (frac >= 0.75) overall += 1.0;
+      else if (frac >= 0.25) overall += 0.5;
+    }
 
     return {
       listeningCorrect,
+      listeningUnanswered,
       readingCorrect,
+      readingUnanswered,
       lBand,
       rBand,
       wBand,
@@ -616,10 +637,10 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
       stopSpeakingRecording();
     }
 
-    const transcriptToEvaluate = speakingTranscript.trim() || 'Candidate delivered verbal response to examiner prompt.';
-    const duration = Math.max(speakingSeconds, 15);
-    const words = transcriptToEvaluate.split(/\s+/).filter(Boolean).length;
-    const wpm = Math.round((words / duration) * 60);
+    const transcriptToEvaluate = speakingTranscript.trim();
+    const duration = Math.max(speakingSeconds, 1);
+    const words = transcriptToEvaluate ? transcriptToEvaluate.split(/\s+/).filter(Boolean).length : 0;
+    const wpm = duration > 0 && words > 0 ? Math.round((words / duration) * 60) : 0;
 
     const record: SpeakingAnswerRecord = {
       questionId: qId,
@@ -647,8 +668,12 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
       setSelectedSpeakingFeedback(feedback);
       setSpeakingAnswers(prev => [...prev.filter(a => a.questionId !== qId), record]);
       setShowSpeakingFeedbackModal(true);
-      soundManager.playSuccess();
-      onShowToast(`Evaluated: Band ${(feedback.estimatedBand ?? feedback.estimatedBands?.overall ?? 7.0).toFixed(1)} with Instant Feedback!`);
+      if (feedback.isValidAttempt === false) {
+        soundManager.playBeep(360, 0.12);
+      } else {
+        soundManager.playSuccess();
+        onShowToast(`Evaluated: Band ${(feedback.overallBand ?? feedback.estimatedBand ?? 0).toFixed(1)} with Instant Feedback!`);
+      }
     } catch (e) {
       const fallback = generateDiagnosticTurnFeedback(record);
       record.instantFeedback = fallback;
@@ -691,14 +716,23 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
     onShowToast(`Saved "${err.corrected}" to Mistake Vault!`);
   };
 
-  // Instant AI Feedback for Writing Task 2
+  // Instant AI Feedback for Writing Task 2 (Strictly guarded by 50-word Task 2 minimum threshold)
   const handleEvaluateWritingInstant = async () => {
-    const wordCount = essayText.trim() ? essayText.trim().split(/\s+/).length : 0;
-    if (wordCount < 40) {
-      onShowToast('Please write at least 40 words before requesting instant grammar feedback.');
+    const gate = checkWritingWordThreshold(essayText, 'task2');
+    if (!gate.isValidAttempt) {
+      soundManager.playBeep(360, 0.1);
+      setWritingInstantFeedback({
+        grammaticalErrors: [],
+        vocabUpgrades: [],
+        modelBand8: '',
+        verdict: `${gate.feedbackEn} | ${gate.feedbackBn}`
+      });
+      setShowWritingFeedbackCard(true);
+      onShowToast(gate.feedbackTitle);
       return;
     }
 
+    const wordCount = gate.wordCount;
     setIsEvaluatingWritingInstant(true);
     soundManager.playBeep(580, 0.08);
 
@@ -721,10 +755,7 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
         const data = await res.json();
         setWritingInstantFeedback({
           grammaticalErrors: data.grammaticalErrors || [],
-          vocabUpgrades: data.vocabUpgrades || [
-            { original: 'taking a gap year', upgraded: 'undertaking an experiential sabbatical', explanation: 'Formal academic register.' },
-            { original: 'learn practical life skills', upgraded: 'cultivate pragmatic acumen and occupational discernment', explanation: 'Band 9.0 lexical resource.' }
-          ],
+          vocabUpgrades: data.vocabUpgrades || [],
           modelBand8: data.betterAnswerBand8 || writingModelEssay,
           verdict: data.verdict || 'Grammar and lexical review completed.'
         });
@@ -736,7 +767,7 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
       }
     } catch {}
 
-    // Algorithmic Fallback
+    // Algorithmic Fallback — only flag real errors present in essayText
     const grammarErrors: { observed: string; corrected: string; explanation: string; ruleCategory?: string }[] = [];
     if (/it make\b/i.test(essayText)) {
       grammarErrors.push({
@@ -761,22 +792,6 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
         explanation: 'Plural pronoun "they" requires "have" instead of third-person singular "has".',
         ruleCategory: 'Subject-Verb Agreement'
       });
-    }
-    if (grammarErrors.length === 0) {
-      grammarErrors.push(
-        {
-          observed: 'Every citizens must contribute...',
-          corrected: 'Every citizen must contribute...',
-          explanation: '"Every" must be followed by a singular countable noun.',
-          ruleCategory: 'Noun-Quantifier Agreement'
-        },
-        {
-          observed: 'In the other hand...',
-          corrected: 'On the other hand...',
-          explanation: 'Standard fixed discourse marker preposition is "On".',
-          ruleCategory: 'Discourse Marker Precision'
-        }
-      );
     }
 
     setWritingInstantFeedback({

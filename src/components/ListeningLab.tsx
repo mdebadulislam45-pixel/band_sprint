@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 import { soundManager } from '../utils/audioEffects';
 import { addMistake } from '../utils/vaultStorage';
-import { stopSpeech } from '../utils/britishVoice';
+import { speakBritish, stopSpeech } from '../utils/britishVoice';
 import { IELTSAudioPlayer } from './audio/IELTSAudioPlayer';
 import { AudioPlaybackWaveform } from './audio/AudioPlaybackWaveform';
 import { questionEngine, IELTSQuestion } from '../services/QuestionEngine';
@@ -366,9 +366,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
   // Clean up audio on unmount
   useEffect(() => {
     return () => {
-      audioManager.reset('listening_unmount');
-      audioService.stop();
-      stopSpeech();
+      audioManager.killAllAudio();
     };
   }, []);
 
@@ -616,35 +614,36 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     }));
   };
 
-  // Evaluate candidate answers
+  // Evaluate candidate answers strictly against Cambridge raw-score conversion table
   const handleVerifyAnswers = () => {
     setIsEvaluated(true);
     let correctCount = 0;
 
     questions.forEach((q) => {
       const userRaw = (userAnswers[q.id] || '').trim();
-      const isCorrect = isAnswerCorrect(q, userRaw);
+      const isUnanswered = userRaw.length === 0;
+      const isCorrect = !isUnanswered && isAnswerCorrect(q, userRaw);
 
       if (isCorrect) {
         correctCount++;
-      } else {
-        // Record mistake in vault
+      } else if (!isUnanswered) {
+        // Record actual candidate mistake in vault
         addMistake({
           module: 'listening',
           title: `Listening Section ${activeSection}: ${q.prompt}`,
-          userAnswer: userAnswers[q.id] || '(blank)',
+          userAnswer: userRaw,
           correctAnswer: formatDisplayedCorrectAnswer(q),
           explanation: q.explanation || 'Review Cambridge audio transcript clues carefully.'
         });
       }
 
-      // Record in centralized QuestionEngine (skip duplicate Mistake Vault write)
+      // Record in centralized QuestionEngine (mark skipped questions explicitly as unanswered with 0 points)
       questionEngine.recordAttempt({
         questionId: q.id,
         module: 'listening',
         questionType: q.questionType,
         topic: q.topic,
-        userAnswer: userAnswers[q.id] || '',
+        userAnswer: isUnanswered ? 'unanswered' : userRaw,
         isCorrect,
         score: isCorrect ? 1 : 0,
         explanation: q.explanation,
@@ -653,24 +652,34 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     });
 
     const total = questions.length;
-    const ratio = total > 0 ? correctCount / total : 0;
-    let band = 5.0;
-    if (ratio >= 0.9) band = 9.0;
-    else if (ratio >= 0.8) band = 8.5;
-    else if (ratio >= 0.7) band = 7.5;
-    else if (ratio >= 0.6) band = 7.0;
-    else if (ratio >= 0.5) band = 6.5;
-    else if (ratio >= 0.4) band = 6.0;
+    const scaledRaw = total > 0 ? Math.round((correctCount / total) * 40) : 0;
+    let band = 0.0;
+    if (correctCount <= 0 || total <= 0) band = 0.0;
+    else if (scaledRaw >= 39) band = 9.0;
+    else if (scaledRaw >= 37) band = 8.5;
+    else if (scaledRaw >= 35) band = 8.0;
+    else if (scaledRaw >= 32) band = 7.5;
+    else if (scaledRaw >= 30) band = 7.0;
+    else if (scaledRaw >= 26) band = 6.5;
+    else if (scaledRaw >= 23) band = 6.0;
+    else if (scaledRaw >= 18) band = 5.5;
+    else if (scaledRaw >= 16) band = 5.0;
+    else if (scaledRaw >= 13) band = 4.5;
+    else if (scaledRaw >= 10) band = 4.0;
+    else if (scaledRaw >= 7) band = 3.5;
+    else if (scaledRaw >= 4) band = 3.0;
+    else if (scaledRaw >= 2) band = 2.5;
+    else band = 2.0;
 
     const summary = { correct: correctCount, total, band };
     setScoreSummary(summary);
 
     if (correctCount === total && total > 0) {
       soundManager.playSuccess();
-      onShowToast(`Sensational! Perfect ${correctCount}/${total} — Band ${band}`);
+      onShowToast(`Sensational! Perfect ${correctCount}/${total} — Band ${band.toFixed(1)}`);
     } else {
       soundManager.playBeep(480, 0.1);
-      onShowToast(`Scored ${correctCount}/${total} (Estimated Band ${band}). Mistakes logged in Mistake Vault.`);
+      onShowToast(`Scored ${correctCount}/${total} (Band ${band.toFixed(1)}).`);
     }
   };
 
@@ -1430,12 +1439,41 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
 
             {showTranscript ? (
               <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1 text-xs">
-                {currentDialogue.map((line, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
-                    <span className="font-bold text-blue-800 text-[11px] block">{line.speaker}</span>
-                    <p className="text-slate-700 font-serif leading-relaxed italic">"{line.text}"</p>
-                  </div>
-                ))}
+                {currentDialogue.map((line, i) => {
+                  const hasSelfCorrectionTrap = /\b(apologies|sorry|wait|actually|no,|mistake|instead|old contact|used to)\b/i.test(
+                    line.text
+                  );
+                  return (
+                    <div
+                      key={i}
+                      className={`p-3 rounded-xl border space-y-1.5 transition ${
+                        hasSelfCorrectionTrap
+                          ? 'bg-amber-50/70 border-amber-300'
+                          : 'bg-slate-50 border-slate-200/80'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-blue-800 text-[11px]">{line.speaker}</span>
+                          {hasSelfCorrectionTrap && (
+                            <span className="text-[10px] font-mono font-bold uppercase text-amber-800 bg-amber-200/70 px-1.5 py-0.5 rounded">
+                              Distractor / Self-Correction Trap
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => speakBritish(line.text)}
+                          className="text-[11px] font-bold text-slate-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+                          title="Replay this line in British RP"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                          <span>Listen</span>
+                        </button>
+                      </div>
+                      <p className="text-slate-700 font-serif leading-relaxed italic">"{line.text}"</p>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">

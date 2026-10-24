@@ -16,12 +16,23 @@ import {
   BarChart3,
   Zap,
   Flame,
-  Trophy
+  Trophy,
+  Brain
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from 'recharts';
 import { UserProfile, ExamHistoryRecord } from '../../types';
 import { questionEngine } from '../../services/QuestionEngine';
 import { soundManager } from '../../utils/audioEffects';
-import { getMistakes } from '../../utils/vaultStorage';
+import { getMistakes, getVaultRetentionStats, seedHighYieldMistakes } from '../../utils/vaultStorage';
 import { isFullMockExamRecord } from '../../utils/userStorage';
 
 import {
@@ -203,8 +214,9 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
     });
   }, [qAttempts]);
 
-  // Real Mistake Vault Categorization
-  const vaultMistakes = React.useMemo(() => getMistakes(), []);
+  // Real Mistake Vault Categorization & SM-2 Retention Stats
+  const vaultMistakes = React.useMemo(() => getMistakes(), [refreshKey, mistakeCount]);
+  const sm2Stats = React.useMemo(() => getVaultRetentionStats(), [refreshKey, mistakeCount]);
   const unmasteredList = React.useMemo(() => vaultMistakes.filter((m) => !m.mastered), [vaultMistakes]);
 
   const mistakesByCategory = React.useMemo(() => {
@@ -218,6 +230,36 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
     });
     return cats;
   }, [unmasteredList]);
+
+  // 30-Day Recharts Data for Weakness Trends by Question Type
+  const weaknessTrendsData = React.useMemo(() => {
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const recent = vaultMistakes.filter((m) => m.timestamp >= thirtyDaysAgo);
+    const typeCounts: Record<string, { questionType: string; totalMistakes: number; masteredCount: number; dueCount: number }> = {};
+
+    recent.forEach((m) => {
+      const rawLabel = m.questionType || m.module.toUpperCase() || 'General Practice';
+      const shortLabel = rawLabel.length > 24 ? `${rawLabel.slice(0, 22)}…` : rawLabel;
+      if (!typeCounts[shortLabel]) {
+        typeCounts[shortLabel] = {
+          questionType: shortLabel,
+          totalMistakes: 0,
+          masteredCount: 0,
+          dueCount: 0
+        };
+      }
+      typeCounts[shortLabel].totalMistakes += 1;
+      if (m.mastered) {
+        typeCounts[shortLabel].masteredCount += 1;
+      } else if (!m.nextReviewAt || m.nextReviewAt <= Date.now()) {
+        typeCounts[shortLabel].dueCount += 1;
+      }
+    });
+
+    return Object.values(typeCounts)
+      .sort((a, b) => b.totalMistakes - a.totalMistakes)
+      .slice(0, 6);
+  }, [vaultMistakes]);
 
 
   return (
@@ -237,14 +279,16 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-white/10 rounded-2xl border border-white/10 text-center min-w-[90px]">
-              <div className="text-[10px] uppercase font-bold text-blue-200">Current Band</div>
-              <div className="text-2xl sm:text-3xl font-black text-amber-300 font-mono">
-                {overallBand ? overallBand.toFixed(1) : '—'}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="p-3 bg-white/10 rounded-2xl border border-white/10 text-center min-w-[140px]">
+              <div className="text-[10px] uppercase font-bold text-blue-200">
+                {overallBand ? 'Current Estimated Band' : 'Baseline Uncalibrated'}
+              </div>
+              <div className="text-lg sm:text-2xl font-black text-amber-300 font-mono mt-0.5">
+                {overallBand ? `Band ${overallBand.toFixed(1)}` : 'Band: Not Yet Assessed'}
               </div>
               <div className="text-[9px] text-blue-200/80 mt-0.5">
-                {overallBand ? 'Diagnostic' : 'Untested'}
+                {overallBand ? 'Calibrated Diagnostic' : 'Complete a Diagnostic Mock'}
               </div>
             </div>
             <div className="p-3 bg-white/10 rounded-2xl border border-white/10 text-center min-w-[90px]">
@@ -252,10 +296,24 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
               <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono">
                 {targetBand.toFixed(1)}
               </div>
-              <div className="text-[9px] text-blue-200/80 mt-0.5">Target</div>
+              <div className="text-[9px] text-blue-200/80 mt-0.5">Goal</div>
             </div>
           </div>
         </div>
+
+        {!overallBand && (
+          <div className="mt-5 pt-4 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-xs text-blue-100">
+              Your baseline band is currently uncalibrated. Complete a full diagnostic mock test to reveal your official Cambridge band estimate.
+            </p>
+            <button
+              onClick={() => onNavigate('mocktest')}
+              className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition shrink-0 cursor-pointer shadow-xs"
+            >
+              Take 15-Minute Diagnostic Mock to Reveal Your Band →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 4 Skill Performance Bars */}
@@ -433,6 +491,119 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
               </div>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* WEAKNESS TRENDS (LAST 30 DAYS) RECHARTS VISUALIZATION & SM-2 TELEMETRY */}
+      <div className="bg-white dark:bg-[#101B32] rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                Weakness Trends by Question Type (Last 30 Days)
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Recharts diagnostic comparing logged mistakes vs. SuperMemo SM-2 mastered traps over the past 30 days
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
+              <Brain className="w-3 h-3" />
+              <span>SM-2 Retention: {sm2Stats.retentionRate}%</span>
+            </span>
+            <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20">
+              30-Day Analytics
+            </span>
+          </div>
+        </div>
+
+        {/* SM-2 Memory Retention Summary Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono">
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+            <span className="text-[10px] uppercase text-slate-400 block font-bold">Total Logged (30d)</span>
+            <span className="text-base font-black text-slate-900 dark:text-white">{sm2Stats.total} Traps</span>
+          </div>
+          <div className="p-3 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40">
+            <span className="text-[10px] uppercase text-rose-600 dark:text-rose-400 block font-bold">Due Today (SM-2)</span>
+            <span className="text-base font-black text-rose-600 dark:text-rose-400">{sm2Stats.dueCount} Cards</span>
+          </div>
+          <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/40">
+            <span className="text-[10px] uppercase text-emerald-600 dark:text-emerald-400 block font-bold">SM-2 Mastered</span>
+            <span className="text-base font-black text-emerald-600 dark:text-emerald-400">{sm2Stats.masteredCount} Cards</span>
+          </div>
+          <div className="p-3 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/40">
+            <span className="text-[10px] uppercase text-blue-600 dark:text-blue-400 block font-bold">Memory Retention</span>
+            <span className="text-base font-black text-blue-600 dark:text-blue-400">{sm2Stats.retentionRate}%</span>
+          </div>
+        </div>
+
+        {/* Interactive Recharts BarChart */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+          {weaknessTrendsData.length > 0 ? (
+            <div className="w-full h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={weaknessTrendsData}
+                  margin={{ top: 12, right: 16, left: -12, bottom: 20 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
+                  <XAxis
+                    dataKey="questionType"
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    interval={0}
+                    angle={-12}
+                    textAnchor="end"
+                    height={50}
+                  />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0f172a',
+                      borderColor: '#334155',
+                      borderRadius: '12px',
+                      color: '#f8fafc',
+                      fontSize: '12px'
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
+                  <Bar
+                    dataKey="totalMistakes"
+                    name="Logged Mistakes (30d)"
+                    fill="#f43f5e"
+                    radius={[6, 6, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="masteredCount"
+                    name="SM-2 Mastered"
+                    fill="#10b981"
+                    radius={[6, 6, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="text-center py-8 space-y-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                No mistakes logged in the last 30 days yet. The Mistake Vault strictly logs real errors from your test attempts. You may optionally preview the vault in Tutorial / Walkthrough Mode:
+              </p>
+              <button
+                onClick={() => {
+                  soundManager.playSuccess();
+                  seedHighYieldMistakes();
+                  setRefreshKey((k) => k + 1);
+                }}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Tutorial / Walkthrough Mode: Load Sample Traps</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

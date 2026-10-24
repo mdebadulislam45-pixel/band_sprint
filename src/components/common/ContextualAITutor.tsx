@@ -15,13 +15,18 @@ import {
   GraduationCap,
   ChevronLeft,
   ChevronRight,
-  MessageSquare
+  MessageSquare,
+  Mic,
+  Square,
+  Sparkles
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
+import { audioManager } from '../../services/AudioManager';
 import { getMistakes } from '../../utils/vaultStorage';
 import { ChubbyMascotAvatar, MascotMood } from './ChubbyMascotAvatar';
 import { C1_IDIOMS_AND_PHRASES, C1IdiomEntry } from '../../data/c1IdiomsAndPhrasesData';
+import { firebaseSyncService } from '../../services/firebaseSyncService';
 
 export interface TutorContextPayload {
   module?: string;
@@ -41,9 +46,14 @@ interface TutorResponse {
     route: string;
   };
   bengaliTip?: string;
+  modelUsed?: string;
+  personaName?: string;
   isAiPowered?: boolean;
   disclaimer?: string;
 }
+
+type TutorPersonaId = 'lexical_barnaby' | 'examiner_arthur' | 'writing_charlotte';
+type TutorModelId = 'gemini-3.8-flash' | 'gemini-3.1-flash-lite' | 'gemini-4-argon';
 
 interface MessageItem {
   id: string;
@@ -80,6 +90,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
   onShowToast
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isSpeakingStudioOpen, setIsSpeakingStudioOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'lexicon'>('chat');
   const [lexiconFilter, setLexiconFilter] = useState<LexiconFilter>('all');
@@ -95,8 +106,21 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [mascotMood, setMascotMood] = useState<MascotMood>('idle');
   const [liveHintBubble, setLiveHintBubble] = useState<string | null>(null);
+  const [selectedPersona, setSelectedPersona] = useState<TutorPersonaId>('lexical_barnaby');
+  const [selectedModel, setSelectedModel] = useState<TutorModelId>('gemini-3.8-flash');
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Clean up any speech audio on unmount
+  useEffect(() => {
+    return () => {
+      audioManager.killAllAudio();
+    };
+  }, []);
 
   const mistakes = getMistakes();
   const unmasteredCount = mistakes.filter((m) => !m.mastered).length;
@@ -137,6 +161,9 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
     }
   ]);
 
+  const [isDotMinimized, setIsDotMinimized] = useState(false);
+  const hintBubbleRef = useRef<HTMLDivElement | null>(null);
+
   // Live Page-Aware Guidance Bubble whenever the user navigates to a new section
   useEffect(() => {
     setActiveContext((prev) => ({
@@ -144,6 +171,9 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
       module: currentPage,
       examMode
     }));
+
+    const isSnoozed = typeof window !== 'undefined' && sessionStorage.getItem('barnaby_snoozed') === 'true';
+    if (isSnoozed) return;
 
     const hint =
       LIVE_PAGE_GUIDANCE[currentPage] ||
@@ -154,10 +184,31 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
     const hideTimer = setTimeout(() => {
       setLiveHintBubble(null);
       setMascotMood('idle');
-    }, 8500);
+    }, 6000);
 
     return () => clearTimeout(hideTimer);
   }, [currentPage, examMode]);
+
+  const handleSnooze = () => {
+    setLiveHintBubble(null);
+    try {
+      sessionStorage.setItem('barnaby_snoozed', 'true');
+    } catch {}
+    onShowToast('Barnaby snoozed. Tap the right edge tab anytime to reopen.');
+  };
+
+  // Click outside hint bubble auto-dismiss
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (hintBubbleRef.current && !hintBubbleRef.current.contains(e.target as Node)) {
+        setLiveHintBubble(null);
+      }
+    };
+    if (liveHintBubble) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [liveHintBubble]);
 
   // Listen for global custom event to open tutor with specific question/context
   useEffect(() => {
@@ -191,6 +242,75 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
     }
   }, [messages, isOpen, isMinimized, isLoading, activeTab]);
 
+  const handleToggleVoiceTranscribe = async () => {
+    if (isRecordingAudio) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecordingAudio(false);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (audioBlob.size < 100) return;
+
+        setIsTranscribingAudio(true);
+        setMascotMood('thinking');
+        try {
+          const base64Audio = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result || ''));
+            reader.onerror = reject;
+            reader.readAsDataURL(audioBlob);
+          });
+
+          const res = await fetch('/api/ai/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audioBase64: base64Audio,
+              mimeType: audioBlob.type || 'audio/webm',
+              contextPrompt: `IELTS ${currentPage} (${examMode})`
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.transcript) {
+              setInputMessage(data.transcript);
+              onShowToast('Audio transcribed via Gemini 3.5 Transcribe!');
+            }
+          }
+        } catch {
+          onShowToast('Could not transcribe audio clip.');
+        } finally {
+          setIsTranscribingAudio(false);
+          setMascotMood('idle');
+        }
+      };
+
+      recorder.start();
+      setIsRecordingAudio(true);
+      soundManager.playBeep(660, 0.04);
+    } catch {
+      onShowToast('Microphone permission is required for voice transcription.');
+    }
+  };
+
   const sendMessage = async (textToSend?: string, customContext?: TutorContextPayload) => {
     const query = (textToSend || inputMessage).trim();
     if (!query || isLoading) return;
@@ -199,6 +319,11 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
     soundManager.playBeep(520, 0.04);
     setInputMessage('');
     setMascotMood('thinking');
+
+    const historyPayload = messages.slice(-10).map((m) => ({
+      role: m.sender === 'user' ? 'user' : 'model',
+      text: m.text
+    }));
 
     const userMsg: MessageItem = {
       id: 'usr_' + Date.now(),
@@ -224,6 +349,9 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: query,
+          history: historyPayload,
+          persona: selectedPersona,
+          model: selectedModel,
           context: mergedContext
         })
       });
@@ -241,6 +369,17 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
         setMascotMood('motivating');
         soundManager.playSuccess();
         setTimeout(() => setMascotMood('idle'), 2000);
+
+        // Persist multi-turn chat exchange to Firestore if user is authenticated
+        firebaseSyncService
+          .saveChatTurnToFirestore({
+            persona: selectedPersona,
+            model: data.modelUsed || selectedModel,
+            userMessage: query,
+            aiReply: data.reply,
+            module: mergedContext.module
+          })
+          .catch(() => {});
       } else {
         throw new Error(`Server returned ${res.status}`);
       }
@@ -316,16 +455,86 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
     }
   ];
 
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 768;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileViewport(window.innerWidth < 768);
+    };
+    const handleSpeakingStudioVisibility = (e: Event) => {
+      const customEvent = e as CustomEvent<{ open?: boolean }>;
+      setIsSpeakingStudioOpen(Boolean(customEvent.detail?.open));
+    };
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('speaking_studio_visibility', handleSpeakingStudioVisibility);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('speaking_studio_visibility', handleSpeakingStudioVisibility);
+    };
+  }, []);
+
+  if (
+    currentPage === 'cdielts' ||
+    currentPage === 'cdieltsspeaking' ||
+    currentPage === 'speaking' ||
+    currentPage === 'shadowing' ||
+    isSpeakingStudioOpen
+  ) {
+    return null;
+  }
+
   // ================= FLOATING LIVE AI COMPANION (WHEN CHAT DRAWER IS CLOSED) =================
   if (!isOpen) {
+    if (isDotMinimized) {
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            setIsDotMinimized(false);
+            soundManager.playBeep(600, 0.03);
+          }}
+          style={{
+            bottom: isMobileViewport
+              ? 'calc(4.5rem + env(safe-area-inset-bottom, 0px))'
+              : '1.25rem',
+            right: isMobileViewport
+              ? 'max(1rem, env(safe-area-inset-right, 0px))'
+              : '1.25rem'
+          }}
+          className="fixed z-40 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#0B1224] text-amber-300 border border-amber-400/80 shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all cursor-pointer group"
+          title="Expand Barnaby AI Tutor"
+          aria-label="Expand Barnaby AI Tutor"
+        >
+          <div className="relative">
+            <ChubbyMascotAvatar mood={mascotMood} size="sm" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0B1224] animate-pulse" />
+          </div>
+        </button>
+      );
+    }
+
     return (
       <aside
         aria-label="Barnaby Live Cambridge AI Companion"
-        className="fixed bottom-20 md:bottom-5 right-2.5 sm:right-5 z-40 flex flex-col items-end gap-2 max-w-[92vw] sm:max-w-xs"
+        style={{
+          bottom: isMobileViewport
+            ? 'calc(5rem + env(safe-area-inset-bottom, 0px))'
+            : '1.5rem',
+          right: '0px'
+        }}
+        className="fixed z-30 flex flex-col items-end gap-2 pr-1 sm:pr-4 translate-x-2 hover:translate-x-0 transition-transform duration-200"
       >
         {/* Live Contextual Guidance Speech Bubble */}
         {liveHintBubble && (
-          <div className="w-64 sm:w-72 rounded-2xl bg-white/95 dark:bg-[#0B1224]/95 backdrop-blur-md border border-blue-200 dark:border-slate-700 shadow-xl p-2.5 sm:p-3 animate-fade-in text-left flex items-start justify-between gap-2">
+          <div
+            ref={hintBubbleRef}
+            className="w-64 sm:w-72 rounded-2xl bg-white/95 dark:bg-[#0B1224]/95 backdrop-blur-md border border-blue-200 dark:border-slate-700 shadow-xl p-3 animate-fade-in text-left flex items-start justify-between gap-2"
+          >
             <div
               onClick={() => setIsOpen(true)}
               className="text-[11px] text-slate-700 dark:text-slate-200 font-medium leading-snug cursor-pointer"
@@ -335,17 +544,18 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => setLiveHintBubble(null)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-white shrink-0"
-              aria-label="Dismiss hint"
+              onClick={handleSnooze}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-white shrink-0 cursor-pointer p-0.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+              title="Dismiss & snooze popup for this session"
+              aria-label="Dismiss & snooze popup"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
         {/* Cute Chubby Animal Launcher Bar */}
-        <div className="flex items-center gap-1.5 bg-[#0B1224] text-white p-1.5 pr-2.5 rounded-full border border-slate-700/90 shadow-xl hover:border-blue-400/60 transition-all">
+        <div className="flex items-center gap-1.5 bg-[#0B1224] text-white p-1.5 pr-2 rounded-full border border-slate-700/90 shadow-xl hover:border-blue-400/60 transition-all">
           {/* Chubby Mascot Button -> Opens Full Live AI Tutor */}
           <button
             type="button"
@@ -391,6 +601,20 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
             <GraduationCap className="w-3.5 h-3.5 text-indigo-300" />
             <span>C1/C2</span>
           </button>
+
+          {/* Collapse into Tiny Discreet Dot Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsDotMinimized(true);
+              setLiveHintBubble(null);
+            }}
+            className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            title="Minimize Barnaby to tiny dot"
+            aria-label="Minimize Barnaby to tiny dot"
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       </aside>
     );
@@ -400,10 +624,21 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
   return (
     <aside
       aria-label="Barnaby Cambridge AI Tutor Chat"
+      style={{
+        bottom: isMobileViewport
+          ? 'calc(4.75rem + env(safe-area-inset-bottom, 0px))'
+          : '1.5rem',
+        right: isMobileViewport
+          ? 'max(0.75rem, env(safe-area-inset-right, 0px))'
+          : '1.5rem',
+        maxHeight: isMobileViewport
+          ? 'calc(100vh - 6.5rem - env(safe-area-inset-bottom, 0px))'
+          : '650px'
+      }}
       className={`fixed z-50 transition-all duration-200 shadow-2xl ${
         isMinimized
-          ? 'bottom-20 md:bottom-6 right-2.5 sm:right-6 w-[calc(100vw-1.25rem)] sm:w-80 rounded-2xl bg-[#0B1224] text-white border border-slate-700 p-3'
-          : 'bottom-20 md:bottom-6 inset-x-2.5 sm:inset-x-auto sm:right-6 sm:w-[430px] max-h-[78vh] sm:max-h-[650px] rounded-2xl sm:rounded-3xl bg-white dark:bg-[#0B1224] text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden'
+          ? 'w-[calc(100vw-1.5rem)] sm:w-80 rounded-2xl bg-[#0B1224] text-white border border-slate-700 p-3'
+          : 'w-[calc(100vw-1.5rem)] sm:w-[430px] rounded-2xl sm:rounded-3xl bg-white dark:bg-[#0B1224] text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden'
       }`}
     >
       {/* Top Header with Cute Chubby Mascot */}
@@ -677,6 +912,34 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
           ) : (
             /* ================= LIVE AI TUTOR CHAT TAB ================= */
             <>
+              {/* Persona & Gemini Model Selector Strip */}
+              <div className="px-3 py-2 bg-slate-50 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-1.5 shrink-0">
+                <div className="flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <select
+                    value={selectedPersona}
+                    onChange={(e) => setSelectedPersona(e.target.value as TutorPersonaId)}
+                    aria-label="Select AI Tutor Persona"
+                    className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-[10px] font-bold text-slate-700 dark:text-slate-200 focus:outline-none"
+                  >
+                    <option value="lexical_barnaby">Barnaby · C1/C2 Coach</option>
+                    <option value="examiner_arthur">Arthur · Chief Examiner</option>
+                    <option value="writing_charlotte">Dr. Charlotte · Writing</option>
+                  </select>
+                </div>
+
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value as TutorModelId)}
+                  aria-label="Select Gemini Model Tier"
+                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-[10px] font-mono font-bold text-blue-700 dark:text-blue-300 focus:outline-none"
+                >
+                  <option value="gemini-3.8-flash">gemini-3.8-flash (Balanced)</option>
+                  <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fast)</option>
+                  <option value="gemini-4-argon">gemini-4-argon (Deep)</option>
+                </select>
+              </div>
+
               {/* Active Context Banner */}
               {activeContext.currentQuestion && (
                 <div className="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 flex items-center justify-between gap-2 shrink-0">
@@ -695,7 +958,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
               )}
 
               {/* Messages Scroll Area */}
-              <div className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-3 min-h-[220px] max-h-[360px] bg-slate-50/50 dark:bg-slate-950/40">
+              <div className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-3 min-h-[220px] max-h-[340px] bg-slate-50/50 dark:bg-slate-950/40">
                 {messages.map((m) => (
                   <div
                     key={m.id}
@@ -828,21 +1091,54 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
                 ))}
               </div>
 
-              {/* Input Form */}
+              {/* Input Form with Gemini 3.5 Audio Transcribe Mic Button */}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   sendMessage();
                 }}
-                className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0"
+                className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center gap-1.5 shrink-0"
               >
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceTranscribe}
+                  disabled={isLoading || isTranscribingAudio}
+                  className={`h-10 w-10 rounded-xl border flex items-center justify-center shrink-0 transition cursor-pointer ${
+                    isRecordingAudio
+                      ? 'bg-rose-600 border-rose-500 text-white animate-pulse'
+                      : isTranscribingAudio
+                      ? 'bg-amber-500/20 border-amber-400 text-amber-500'
+                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                  title={
+                    isRecordingAudio
+                      ? 'Stop recording & transcribe via Gemini 3.5 Transcribe'
+                      : 'Record voice prompt (Gemini 3.5 Audio Transcribe)'
+                  }
+                  aria-label="Record voice for Gemini 3.5 Audio Transcription"
+                >
+                  {isRecordingAudio ? (
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                  ) : isTranscribingAudio ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Mic className="w-4 h-4" />
+                  )}
+                </button>
+
                 <input
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder={`Ask Barnaby about ${currentPage} or C1/C2 idioms...`}
+                  placeholder={
+                    isRecordingAudio
+                      ? 'Recording voice... tap square to transcribe'
+                      : isTranscribingAudio
+                      ? 'Transcribing with gemini-3.5-transcribe...'
+                      : `Ask ${selectedPersona === 'examiner_arthur' ? 'Examiner Arthur' : selectedPersona === 'writing_charlotte' ? 'Dr. Charlotte' : 'Barnaby'}...`
+                  }
                   disabled={isLoading}
-                  className="flex-1 h-10 px-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 h-10 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   type="submit"
