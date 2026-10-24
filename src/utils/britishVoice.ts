@@ -97,7 +97,7 @@ export function speakDialogue(
     const label = line.speaker.trim().toLowerCase();
     const namedSpeaker = Object.values(IELTS_SPEAKERS).find((speaker) => {
       const canonicalName = speaker.name.split(' (')[0].trim().toLowerCase();
-      const firstName = canonicalName.split(/\\s+/)[0];
+      const firstName = canonicalName.split(/\s+/)[0];
       return label === canonicalName || label === firstName;
     });
 
