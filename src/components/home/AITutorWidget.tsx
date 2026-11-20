@@ -1,7 +1,32 @@
-import React, { useState } from 'react';
-import { Send, Sparkles, ChevronRight, Volume2, VolumeX, Gift } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Send,
+  Sparkles,
+  ChevronRight,
+  Volume2,
+  VolumeX,
+  Heart,
+  Apple,
+  Zap,
+  ThumbsUp,
+  ThumbsDown,
+  ArrowRight
+} from 'lucide-react';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
+import {
+  BARNABY_STATE_EVENT,
+  BarnabyCompanionState,
+  MOOD_META,
+  answerBarnabyMiniQuiz,
+  feedBarnabyWordTreat,
+  getBondStage,
+  loadBarnabyState,
+  petBarnaby,
+  rateBarnabyMessage,
+  sendBarnabyChatMessage,
+  startBarnabyMiniQuiz
+} from '../../services/barnabyCompanionStore';
 
 interface AITutorWidgetProps {
   userName: string;
@@ -9,217 +34,317 @@ interface AITutorWidgetProps {
   onShowToast: (msg: string) => void;
 }
 
-const SURPRISE_DROPS = [
-  {
-    type: 'c2_idiom',
-    badge: 'C2 IDIOM',
-    title: '“A double-edged sword”',
-    text: 'C2 Idiom: “A double-edged sword” — something that brings both significant advantages and unintended drawbacks. Example: “Rapid automation is a double-edged sword, bolstering industrial productivity while displacing routine labour.”'
-  },
-  {
-    type: 'motivation',
-    badge: 'STUDY BOOST',
-    title: 'Steady Band 8+ Momentum',
-    text: 'Tip from Barnaby: Every 15 minutes of focused IELTS practice sharpens your ear for distractor traps and builds effortless lexical fluency. Keep going — your Target Band is within reach!'
-  },
-  {
-    type: 'c2_idiom',
-    badge: 'C2 EXPRESSION',
-    title: '“To walk a tightrope”',
-    text: 'C2 Idiom: “To walk a tightrope” — to navigate a delicate situation requiring extreme caution between two opposing pressures. Example: “Policymakers must walk a tightrope between economic expansion and ecological preservation.”'
-  },
-  {
-    type: 'c2_idiom',
-    badge: 'BAND 9 LINKER',
-    title: '“By the same token”',
-    text: 'Band 9 Linker: “By the same token” — in the exact same way or for the same compelling reason. Use it in Speaking Part 3 or Writing Task 2 to transition smoothly between parallel arguments.'
-  },
-  {
-    type: 'motivation',
-    badge: 'EXAMINER INSIGHT',
-    title: 'How Speaking Is Graded',
-    text: 'Reminder: IELTS Speaking examiners do not grade your opinions — they reward natural rhythm, precise collocations, and clear coherence. Speak steadily and develop each answer with a reason and example.'
-  }
-];
-
 export const AITutorWidget: React.FC<AITutorWidgetProps> = ({
-  userName,
+  onNavigateToAITools,
   onShowToast
 }) => {
+  const [state, setState] = useState<BarnabyCompanionState>(() => loadBarnabyState('/progress'));
   const [inputMessage, setInputMessage] = useState('');
-  const [messages, setMessages] = useState<Array<{ sender: 'ai' | 'user'; text: string; badge?: string }>>([
-    {
-      sender: 'ai',
-      badge: 'AI STUDY TUTOR',
-      text: `Hi ${userName}! I'm Barnaby, your IELTS study tutor. Ask me anything or tap "Surprise" for a C2 idiom or exam strategy tip.`
-    }
-  ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [surpriseIndex, setSurpriseIndex] = useState(0);
+  const streamRef = useRef<HTMLDivElement>(null);
+
+  // Stay 100% synchronized with FloatingBarnaby in real time!
+  useEffect(() => {
+    const onSync = (e: Event) => {
+      const detail = (e as CustomEvent<BarnabyCompanionState>).detail;
+      if (detail) setState(detail);
+      else setState(loadBarnabyState('/progress'));
+    };
+    window.addEventListener(BARNABY_STATE_EVENT, onSync);
+    return () => {
+      window.removeEventListener(BARNABY_STATE_EVENT, onSync);
+      stopSpeech();
+    };
+  }, []);
+
+  useEffect(() => {
+    streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: 'smooth' });
+  }, [state.messages, isLoading]);
 
   const suggestedQuestions = [
-    'Give me a C2 idiom for Speaking Part 3',
-    'Give me a plan for Writing Task 2.',
+    'What should I focus on next for my target band?',
+    'Give me a Band 8.5 Writing Task 2 plan.',
     'Explain True / False / Not Given traps.'
   ];
 
-  const handleTriggerSurprise = () => {
-    const drop = SURPRISE_DROPS[surpriseIndex % SURPRISE_DROPS.length];
-    setSurpriseIndex((prev) => prev + 1);
+  const handlePet = () => {
+    const { state: next, quip } = petBarnaby();
+    setState(next);
     soundManager.playSuccess();
+    onShowToast(`Barnaby (+5 Bond XP): ${quip}`);
+  };
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        sender: 'ai',
-        badge: drop.badge,
-        text: drop.text
-      }
-    ]);
-    onShowToast(`Barnaby shared a ${drop.badge}: ${drop.title}`);
+  const handleWordTreat = () => {
+    const { state: next, treat, message } = feedBarnabyWordTreat();
+    setState(next);
+    soundManager.playSuccess();
+    onShowToast(`Barnaby munched a Word Treat: “${treat.word}” (+10 XP)`);
 
     setIsPlayingAudio(true);
-    speakBritish(drop.text, {
+    speakBritish(message.text, {
       speakerId: 'speaker_barnaby',
-      onEnd: () => {
-        setIsPlayingAudio(false);
-      },
-      onError: () => {
-        setIsPlayingAudio(false);
-      }
+      onEnd: () => setIsPlayingAudio(false),
+      onError: () => setIsPlayingAudio(false)
     });
+  };
+
+  const handleQuiz = () => {
+    const { state: next } = startBarnabyMiniQuiz();
+    setState(next);
+    soundManager.playBeep(700, 0.04);
+  };
+
+  const handleAnswerQuiz = (msgId: string, optIdx: number) => {
+    const { state: next, isCorrect } = answerBarnabyMiniQuiz(msgId, optIdx);
+    setState(next);
+    if (isCorrect) {
+      soundManager.playSuccess();
+      onShowToast('Nice catch! +15 Bond XP with Barnaby!');
+    } else {
+      soundManager.playBeep(380, 0.05);
+    }
+  };
+
+  const handleRate = (msgId: string, rating: 'up' | 'down') => {
+    const next = rateBarnabyMessage(msgId, rating);
+    setState(next);
+    onShowToast(
+      rating === 'up' ? 'Barnaby is beaming with pride! (+3 Bond XP)' : 'Feedback saved — Barnaby will sharpen his tips!'
+    );
   };
 
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || inputMessage).trim();
-    if (!query) return;
-
-    const userMsg = { sender: 'user' as const, text: query };
-    setMessages((prev) => [...prev, userMsg]);
+    if (!query || isLoading) return;
     setInputMessage('');
     setIsLoading(true);
-
     try {
-      const res = await fetch('/api/tutor/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: query, module: 'general' })
-      });
-      const data = await res.json();
-      const reply =
-        data.reply ||
-        'Focus on consistent daily practice and review your recurring errors in the Mistake Vault.';
-      setMessages((prev) => [...prev, { sender: 'ai', badge: 'EXAM ADVICE', text: reply }]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: 'ai',
-          badge: 'BAND 8+ STRATEGY',
-          text: 'To score Band 7.5+, combine high-frequency collocations with clear paragraph cohesion and active listening to IELTS Section 3 & 4 recordings.'
-        }
-      ]);
+      const { state: next } = await sendBarnabyChatMessage(query, '/progress');
+      setState(next);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSpeakLast = () => {
-    const lastAiMsg = [...messages].reverse().find((m) => m.sender === 'ai');
+    const lastAiMsg = [...state.messages].reverse().find((m) => m.sender === 'barnaby');
     if (!lastAiMsg) return;
-
     if (isPlayingAudio) {
       stopSpeech();
       setIsPlayingAudio(false);
       return;
     }
-
     setIsPlayingAudio(true);
     speakBritish(lastAiMsg.text, {
       speakerId: 'speaker_barnaby',
-      onEnd: () => {
-        setIsPlayingAudio(false);
-      },
-      onError: () => {
-        setIsPlayingAudio(false);
-      }
+      onEnd: () => setIsPlayingAudio(false),
+      onError: () => setIsPlayingAudio(false)
     });
   };
 
+  const moodMeta = MOOD_META[state.mood] || MOOD_META.happy;
+  const bond = getBondStage(state.bondXp);
+
   return (
     <div className="rounded-2xl bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] p-4 sm:p-5 space-y-3.5">
-      {/* Unified Barnaby Header (Clean, zero truncation on mobile) */}
+      {/* Unified Living Barnaby Header */}
       <div className="flex items-center justify-between gap-2.5">
         <div className="flex items-center gap-3 min-w-0">
-          <img
-            src="/barnaby-dragon-avatar.webp"
-            alt="Barnaby AI Study Tutor"
-            className="w-11 h-11 rounded-2xl object-cover bg-[#EEF3F1] border border-[#D3DDDA] dark:border-[#1E3533] shrink-0"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = '/barnaby-dragon-avatar.png';
-            }}
-          />
+          <button
+            type="button"
+            onClick={handlePet}
+            title="Tap to pet Barnaby!"
+            className="relative shrink-0 cursor-pointer"
+          >
+            <img
+              src="/barnaby-dragon-avatar.webp"
+              alt="Barnaby AI Study Companion"
+              className={`w-11 h-11 rounded-2xl object-cover bg-[#EEF3F1] ring-2 ${moodMeta.ringClass} ${moodMeta.animClass}`}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/barnaby-dragon-avatar.png';
+              }}
+            />
+            <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] text-[11px] flex items-center justify-center shadow-xs">
+              {moodMeta.emoji}
+            </span>
+          </button>
+
           <div className="min-w-0">
-            <div className="text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1] leading-tight">
-              Barnaby
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1] leading-tight">
+                Barnaby
+              </span>
+              <span className="text-[10px] font-mono font-bold text-[#0F4C45] dark:text-[#F4A62A]">
+                Lv.{bond.level} · {bond.title}
+              </span>
             </div>
-            <div className="text-xs text-[#566664] dark:text-[#9AAEA9] leading-tight mt-0.5">
-              IELTS Study Tutor &amp; C2 Coach
+            <div className="text-xs text-[#566664] dark:text-[#9AAEA9] leading-tight mt-0.5 truncate">
+              {moodMeta.label} · {state.activityText}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleTriggerSurprise}
-            className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#FDF6E7] dark:bg-[#F4A62A]/15 hover:bg-[#F4A62A]/25 border border-[#F4A62A]/40 text-[#8A5A0A] dark:text-[#F4A62A] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
-            title="Get a random C2 Idiom or Exam Tip from Barnaby"
-          >
-            <Gift className="w-3.5 h-3.5 shrink-0" />
-            <span>Surprise</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSpeakLast}
-            className={`min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl border transition cursor-pointer ${
-              isPlayingAudio
-                ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
-                : 'bg-[#F7F9F8] dark:bg-[#0B1514] text-[#566664] dark:text-[#9AAEA9] hover:text-[#0F4C45] dark:hover:text-[#F4A62A] border-[#D3DDDA] dark:border-[#1E3533]'
-            }`}
-            title={isPlayingAudio ? 'Stop British Audio' : 'Listen with British Voice'}
-            aria-label={isPlayingAudio ? 'Stop British Audio' : 'Listen with British Voice'}
-          >
-            {isPlayingAudio ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleSpeakLast}
+          className={`min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl border transition cursor-pointer shrink-0 ${
+            isPlayingAudio
+              ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+              : 'bg-[#F7F9F8] dark:bg-[#0B1514] text-[#566664] dark:text-[#9AAEA9] hover:text-[#0F4C45] dark:hover:text-[#F4A62A] border-[#D3DDDA] dark:border-[#1E3533]'
+          }`}
+          title={isPlayingAudio ? 'Stop Barnaby Voice' : 'Listen with Barnaby Voice'}
+          aria-label={isPlayingAudio ? 'Stop Barnaby Voice' : 'Listen with Barnaby Voice'}
+        >
+          {isPlayingAudio ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+        </button>
       </div>
 
-      {/* Message Stream */}
-      <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1 text-xs">
-        {messages.map((m, idx) => (
+      {/* Bond XP Bar */}
+      <div className="flex items-center gap-2 text-[10px] font-mono text-[#566664] dark:text-[#9AAEA9]">
+        <span>Bond XP</span>
+        <div className="flex-1 h-1.5 rounded-full bg-[#EEF3F1] dark:bg-[#0B1514] overflow-hidden">
           <div
-            key={idx}
-            className={`p-3 rounded-xl leading-relaxed ${
-              m.sender === 'ai'
+            className="h-full bg-[#F4A62A] rounded-full transition-all duration-500"
+            style={{ width: `${bond.progressPct}%` }}
+          />
+        </div>
+        <span className="font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">{bond.currentXp} XP</span>
+      </div>
+
+      {/* Interactive Pet + Mini-Quiz Bar */}
+      <div className="grid grid-cols-3 gap-1.5">
+        <button
+          type="button"
+          onClick={handlePet}
+          className="min-h-[38px] px-2 py-1.5 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] hover:border-rose-400 text-xs font-semibold text-[#0E1F1E] dark:text-[#EEF3F1] flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+        >
+          <Heart className="w-3.5 h-3.5 text-rose-500" />
+          <span>Pet</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleWordTreat}
+          className="min-h-[38px] px-2 py-1.5 rounded-xl bg-[#FDF6E7] dark:bg-[#F4A62A]/15 border border-[#F4A62A]/40 hover:bg-[#F4A62A]/25 text-xs font-semibold text-[#8A5A0A] dark:text-[#F4A62A] flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+        >
+          <Apple className="w-3.5 h-3.5" />
+          <span>Treat</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleQuiz}
+          className="min-h-[38px] px-2 py-1.5 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] hover:border-[#0F4C45] text-xs font-semibold text-[#0E1F1E] dark:text-[#EEF3F1] flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+        >
+          <Zap className="w-3.5 h-3.5 text-[#0F4C45] dark:text-[#7CD4C4]" />
+          <span>15s Quiz</span>
+        </button>
+      </div>
+
+      {/* Synchronized Message Stream */}
+      <div ref={streamRef} className="space-y-2.5 max-h-64 overflow-y-auto pr-1 text-xs">
+        {state.messages.map((m) => (
+          <div
+            key={m.id}
+            className={`p-3 rounded-xl leading-relaxed space-y-2 ${
+              m.sender === 'barnaby'
                 ? 'bg-[#F7F9F8] dark:bg-[#0B1514] text-[#0E1F1E] dark:text-[#EEF3F1] border border-[#D3DDDA] dark:border-[#1E3533]'
                 : 'bg-[#0F4C45] text-white ml-6 font-medium text-right'
             }`}
           >
             {m.badge && (
-              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#0F4C45] dark:text-[#F4A62A] mb-1 flex items-center gap-1">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#0F4C45] dark:text-[#F4A62A] flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-[#F4A62A]" />
                 <span>{m.badge}</span>
               </div>
             )}
-            <div>{m.text}</div>
+            <div className="whitespace-pre-line">{m.text}</div>
+
+            {m.quiz && (
+              <div className="space-y-1.5 pt-1">
+                {m.quiz.options.map((opt, idx) => {
+                  const answered = m.quiz!.selectedIndex !== undefined;
+                  const isPicked = m.quiz!.selectedIndex === idx;
+                  const isRight = m.quiz!.correctIndex === idx;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={answered}
+                      onClick={() => handleAnswerQuiz(m.id, idx)}
+                      className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs font-semibold transition cursor-pointer disabled:cursor-default ${
+                        answered
+                          ? isRight
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300'
+                            : isPicked
+                            ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-700 dark:text-rose-300'
+                            : 'opacity-60 border-[#D3DDDA] dark:border-[#1E3533]'
+                          : 'bg-white dark:bg-[#11201F] border-[#D3DDDA] dark:border-[#1E3533] hover:border-[#0F4C45]'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+                {m.quiz.selectedIndex !== undefined && (
+                  <div className="p-2 rounded-lg bg-[#0F4C45]/5 dark:bg-[#0F4C45]/20 text-[11px] space-y-1">
+                    <p>{m.quiz.explanationEn}</p>
+                    <p className="text-[#0F4C45] dark:text-[#7CD4C4] font-bengali">
+                      <strong>বাংলা:</strong> {m.quiz.explanationBn}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {m.bengaliTip && (
+              <div className="text-[11px] p-2 rounded-lg bg-[#0F4C45]/5 dark:bg-[#0F4C45]/20 text-[#0F4C45] dark:text-[#9EBEB8] font-bengali">
+                <strong>বাংলা টিপস:</strong> {m.bengaliTip}
+              </div>
+            )}
+
+            {m.suggestedAction && (
+              <button
+                type="button"
+                onClick={onNavigateToAITools}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C45] dark:text-[#F4A62A] hover:underline cursor-pointer"
+              >
+                <span>{m.suggestedAction.label}</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
+
+            {m.sender === 'barnaby' && m.id !== 'barnaby_welcome' && (
+              <div className="flex items-center justify-between pt-1.5 border-t border-[#D3DDDA]/50 dark:border-[#1E3533] text-[10px] text-[#566664]">
+                <span>{m.rating ? 'Rated' : 'Helpful?'}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleRate(m.id, 'up')}
+                    className={`p-1 rounded cursor-pointer ${
+                      m.rating === 'up' ? 'text-emerald-600 bg-emerald-50' : 'hover:text-[#0F4C45]'
+                    }`}
+                    aria-label="Rate helpful"
+                  >
+                    <ThumbsUp className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRate(m.id, 'down')}
+                    className={`p-1 rounded cursor-pointer ${
+                      m.rating === 'down' ? 'text-rose-600 bg-rose-50' : 'hover:text-rose-600'
+                    }`}
+                    aria-label="Rate could be better"
+                  >
+                    <ThumbsDown className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
         {isLoading && (
           <div className="p-3 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] text-[#566664] dark:text-[#9AAEA9] text-xs">
-            Barnaby is drafting your tip…
+            Barnaby is flapping his wings &amp; drafting your tip…
           </div>
         )}
       </div>
@@ -251,7 +376,7 @@ export const AITutorWidget: React.FC<AITutorWidgetProps> = ({
           type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          placeholder="Ask Barnaby for Band 9 tips…"
+          placeholder="Ask Barnaby in English or বাংলা…"
           className="flex-1 min-w-0 min-h-[44px] px-3.5 py-2 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] text-xs sm:text-sm text-[#0E1F1E] dark:text-[#EEF3F1] placeholder:text-[#566664] focus:outline-none focus:border-[#0F4C45]"
         />
         <button

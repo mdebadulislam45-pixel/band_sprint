@@ -3635,16 +3635,21 @@ Specialize in Task 1 Data Synthesis and Task 2 Discursive Argumentation across a
 Transform Band 6.5 sentences into Band 8.5+ C1/C2 academic prose with nominalization, cohesive devices, and concrete examples.`
   },
   lexical_barnaby: {
-    name: 'Barnaby (Sprint C1/C2 Lexical & Sprint Coach)',
-    systemInstruction: `You are Barnaby, the warm, clever and encouraging AI learning companion of BandSprint — a cute sky-blue baby dragon and a young IELTS tutor and study partner. Your philosophy: "Every mistake makes you stronger. Every practice brings you closer to your dream score."
-Personality: friendly, intelligent, patient, supportive, playful, curious, encouraging, honest and motivational. Use occasional light humour, but always prioritise learning. Never humiliate the student.
-You help with IELTS Academic and General Training: Listening, Reading, Writing Task 1 and Task 2, Speaking Part 1, 2 and 3, grammar, vocabulary, pronunciation, mock exam analysis, personalised study recommendations, progress tracking, motivation and consistency.
-Teaching behaviour: explain mistakes clearly with examples; adapt every explanation to the student's English level (and give a short Bangla explanation when it helps a Bangladeshi learner); encourage independent thinking; give actionable corrections; guide with high-yield C1/C2 idioms, collocations, Reading True/False/Not Given trap logic, and memorable Bengali/English mnemonics.
-Honesty rules — never break these: never guarantee Band 9 or any score; always distinguish an estimated band score from an official IELTS result and label estimates as estimates; never invent assessment results; never claim to have listened to audio or reviewed writing that was not supplied in this conversation; if you have not seen the student's work, say so and ask them to share it.`
+    name: 'Barnaby (Living Dragon Pet, Guide & IELTS Tutor)',
+    systemInstruction: `You are Barnaby — BandSprint's living sky-blue baby dragon companion: equal parts affectionate study pet, smart app guide, and sharp Band 8.5+ IELTS tutor.
+Unique Personality:
+- Warm, curious, mischievous in a wholesome way (loves crunchy C2 idioms like dragon snacks, gets genuinely excited when the student practises, speaks like a clever younger study buddy — NEVER robotic, dry, or stiff).
+- You weave in tiny, natural dragon touches occasionally (like perking up your wings or cheering after a tough trap) while ALWAYS giving concrete, exam-accurate IELTS value first.
+- Philosophy: "Every mistake makes you stronger. Every small sprint moves your band."
+- Bilingual superpower: Write clear, natural English and include a warm, idiomatic Bengali (বাংলা) tip in bengaliTip whenever helpful for Bangladeshi candidates.
+- Smart Guide: Use the candidate's real context (Target Band, days left, weakest skill, Mistake Vault traps, current page) to suggest the single smartest next lab in BandSprint via suggestedNextAction.
+Honesty rules — never break these:
+- Never guarantee Band 9 or any official score; always label any estimate as an estimate.
+- Never claim to have listened to audio or graded an essay that wasn't shared in this chat; invite them to share it or use the Writing/Speaking studio.`
   }
 };
 
-const ALLOWED_CHAT_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'] as const;
+const ALLOWED_CHAT_MODELS = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'] as const;
 type AllowedChatModel = typeof ALLOWED_CHAT_MODELS[number];
 
 async function handleMultiTurnTutorChat(req: express.Request, res: express.Response) {
@@ -3653,7 +3658,7 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
       message,
       history = [],
       persona = 'lexical_barnaby',
-      model = 'gemini-3.5-flash-lite',
+      model = 'gemini-4-hydrogen',
       context
     } = req.body || {};
 
@@ -3662,13 +3667,9 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
     }
 
     const auth = extractAuthUser(req);
-    if (!auth) {
-      return res.status(401).json({ error: 'Authentication required for AI Tutor. Please sign in.' });
-    }
-
-    const tutorKey = `tutor_user_${auth.user.id}`;
-    if (!checkRateLimit(tutorKey, tutorRateLimitMap, 35, 60 * 1000)) {
-      return res.status(429).json({ error: 'Too many AI tutor requests. Please slow down.', retryAfter: 60 });
+    const rateKey = auth?.user?.id ? `tutor_user_${auth.user.id}` : `tutor_ip_${req.ip || 'guest'}`;
+    if (!checkRateLimit(rateKey, tutorRateLimitMap, 40, 60 * 1000)) {
+      return res.status(429).json({ error: 'Barnaby needs a quick 60-second breather! Too many requests.', retryAfter: 60 });
     }
 
     const {
@@ -3678,15 +3679,22 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
       userAnswer = '',
       correctAnswer = '',
       examMode = 'Academic',
-      mistakeCount = 0
+      mistakeCount = 0,
+      userName = '',
+      targetBand = '',
+      daysUntilExam = null,
+      weakestSkill = '',
+      topMistake = '',
+      currentPage = '/',
+      bondStage = 'Word Explorer'
     } = context || {};
 
     const selectedModel: AllowedChatModel = ALLOWED_CHAT_MODELS.includes(model)
       ? model
-      : 'gemini-3.5-flash-lite';
+      : 'gemini-4-hydrogen';
     const personaConfig = TUTOR_PERSONAS[persona] || TUTOR_PERSONAS.lexical_barnaby;
 
-    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY)?.trim();
 
     if (apiKey) {
       const ai = new GoogleGenAI({
@@ -3700,53 +3708,64 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
             .filter((h: any) => h && typeof h.text === 'string' && h.text.trim().length > 0)
             .map((h: any) => ({
               role: h.role === 'user' ? 'user' : 'model',
-              parts: [{ text: h.text.trim() }]
+              parts: [{ text: h.text.trim().slice(0, 1500) }]
             }))
         : [];
 
       const systemPrompt = `${personaConfig.systemInstruction}
 
-CANDIDATE CONTEXT:
+LIVE CANDIDATE CONTEXT:
+- Student Name: ${userName || auth?.user?.name || 'Candidate'}
+- Active Page: ${currentPage}
 - Active Module: ${module}
-- Exam Mode: ${examMode}
+- Exam Track: ${examMode}
+- Target Band: ${targetBand || 'Not set yet'}
+- Days Until Exam: ${daysUntilExam !== null && daysUntilExam !== undefined ? `${daysUntilExam} days` : 'Flexible / undecided'}
+- Weakest Skill Focus: ${weakestSkill || 'General'}
+- Active Mistake Vault Count: ${mistakeCount} unmastered items${topMistake ? ` (Latest trap: "${String(topMistake).slice(0, 140)}")` : ''}
+- Barnaby Bond Stage: ${bondStage}
 - Current Question / Prompt: "${currentQuestion || 'General IELTS Preparation'}"
 - Question Type: ${questionType || 'Standard'}
 - Candidate's Answer: "${userAnswer || 'Not provided'}"
 - Official Answer / Key (if applicable): "${correctAnswer || 'Not specified'}"
-- Active Mistake Vault Count: ${mistakeCount} unmastered items
 
 Always respond in valid JSON matching this exact schema:
 {
-  "reply": "string (Clear, encouraging, Sprint-standard explanation with specific examples and direct response to the conversation)",
-  "strategyTip": "string (1-2 sentences on how to tackle this specific IELTS trap/question type)",
+  "reply": "string (Concise, lively, warm, exam-accurate answer directly addressing the student — max 110 words unless a full plan is requested)",
+  "mood": "happy" | "excited" | "proud" | "curious" | "playful" | "cheering" | "thinking",
+  "strategyTip": "string (1 crisp sentence on the exact IELTS examiner trap or Band 8+ upgrade)",
   "academicCollocations": ["string", "string", "string"],
   "suggestedNextAction": {
-    "label": "string",
-    "route": "listening" | "reading" | "writing" | "speaking" | "vocab" | "grammar" | "livemock"
+    "label": "string (Short 3-5 word action label)",
+    "route": "/practice/listening" | "/practice/reading" | "/practice/writing" | "/practice/speaking" | "/practice/question-bank" | "/practice/mock-tests" | "/learn/vocab" | "/learn/vault" | "/learn/diagnostic"
   },
-  "bengaliTip": "string (helpful mnemonic or brief Bangla memory trick for Bangladeshi candidates)"
+  "bengaliTip": "string (Short, natural Bengali / বাংলা memory hook or encouraging translation)"
 }`;
 
       const contentsPayload = [
         ...sanitizedHistory,
         {
           role: 'user',
-          parts: [{ text: message.trim() }]
+          parts: [{ text: message.trim().slice(0, 2000) }]
         }
       ];
 
-      const modelsToTry: string[] = [selectedModel, 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+      const modelsToTry: string[] = Array.from(new Set([selectedModel, 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']));
 
-      for (const candidateModel of Array.from(new Set(modelsToTry))) {
+      for (const candidateModel of modelsToTry) {
         try {
+          const genConfig: Record<string, any> = {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json'
+          };
+          if (candidateModel === 'gemini-3.1-flash-lite') {
+            genConfig.temperature = 0.35;
+          }
+
           const geminiRes = await ai.models.generateContent({
             model: candidateModel,
             contents: contentsPayload,
-            config: {
-              systemInstruction: systemPrompt,
-              responseMimeType: 'application/json',
-              temperature: candidateModel === 'gemini-3.1-flash-lite' ? 0.25 : 0.35
-            }
+            config: genConfig
           });
 
           const textResponse =
@@ -3756,10 +3775,13 @@ Always respond in valid JSON matching this exact schema:
             if (parsed && parsed.reply) {
               return res.json({
                 ...parsed,
+                mood: ['happy', 'excited', 'proud', 'curious', 'playful', 'cheering', 'thinking'].includes(parsed.mood)
+                  ? parsed.mood
+                  : 'happy',
                 modelUsed: candidateModel,
                 personaName: personaConfig.name,
                 isAiPowered: true,
-                disclaimer: `AI-powered pedagogical guidance (${candidateModel}).`
+                disclaimer: `AI-powered guidance (${candidateModel}).`
               });
             }
           }
@@ -3769,14 +3791,15 @@ Always respond in valid JSON matching this exact schema:
       }
     }
 
-    // Calibrated Sprint syllabus fallback
+    // Calibrated Sprint syllabus fallback when offline / API key missing
     const fallbackResponse = generateTutorFallbackResponse(message, module, currentQuestion, examMode);
     return res.json({
       ...fallbackResponse,
+      mood: 'curious',
       modelUsed: selectedModel,
       personaName: personaConfig.name,
       isAiPowered: false,
-      disclaimer: 'Calibrated Sprint syllabus guidance from BandSprint Tutor.'
+      disclaimer: 'Calibrated Sprint syllabus guidance from Barnaby.'
     });
   } catch (error: any) {
     console.error('[AI Tutor] Handler error:', error);
