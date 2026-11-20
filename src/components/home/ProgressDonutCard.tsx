@@ -5,12 +5,12 @@ import { ExamHistoryRecord } from '../../types';
 import { isFullMockExamRecord } from '../../utils/userStorage';
 
 interface ProgressDonutCardProps {
-  overallPercentage: number;
-  estimatedBand: number;
+  overallPercentage?: number;
+  estimatedBand?: number;
   targetBand?: number;
   completedCount?: number;
   examHistory?: ExamHistoryRecord[];
-  onViewAnalytics: () => void;
+  onViewAnalytics?: () => void;
   onNavigate?: (module: string) => void;
 }
 

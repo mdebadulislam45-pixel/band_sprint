@@ -1,6 +1,6 @@
 /**
- * Official IELTS Band 7–9: 200 High-Level Phrases & Idioms
- * Extracted directly from authentic Cambridge IELTS preparation materials.
+ * IELTS Band 7–9: 200 High-Level Phrases & Idioms
+ * Extracted directly from authentic IELTS preparation materials.
  * Specially curated for IELTS Speaking & Academic Writing.
  */
 

@@ -136,13 +136,17 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
         .replace(/\b\w/g, (c) => c.toUpperCase());
 
     const existing = getCurrentUser();
-    const newProfile: UserProfile = {
-      id: existing?.id || `cand_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      name: finalName,
-      email: cleanEmail,
-      createdAt: existing?.createdAt || Date.now(),
+    if (!existing || !existing.id || existing.id === 'default_candidate') {
+      setEmailError('Please sign in with Google or your candidate password before activating a study plan.');
+      return;
+    }
+
+    const updatedProfile: UserProfile = {
+      ...existing,
+      name: finalName || existing.name,
       progress: {
-        ...createDefaultProgress(targetBand, finalName),
+        ...createDefaultProgress(targetBand, finalName || existing.name),
+        ...existing.progress,
         targetBand,
         intendedFormat,
         targetCountry,
@@ -152,22 +156,22 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
             : timeline === '1-3months'
             ? 'Within 90 Days'
             : 'Within 6 Months',
-        streakDays: 1,
+        streakDays: Math.max(1, existing.progress?.streakDays || 1),
         lastActiveDate: new Date().toISOString().split('T')[0]
       }
     };
 
-    saveUser(newProfile);
+    saveUser(updatedProfile);
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(ACTIVE_USER_KEY, newProfile.id);
+      localStorage.setItem(ACTIVE_USER_KEY, updatedProfile.id);
       localStorage.setItem('ielts_exam_mode', intendedFormat);
       localStorage.setItem('ielts_onboarding_completed', 'true');
     }
 
-    window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: newProfile }));
+    window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: updatedProfile }));
     window.dispatchEvent(new CustomEvent('ielts_exam_mode_changed', { detail: intendedFormat }));
 
-    onCompleted(newProfile);
+    onCompleted(updatedProfile);
     onClose();
   };
 
@@ -253,7 +257,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                     {
                       id: 'exploring',
                       title: 'Personal Benchmark',
-                      desc: 'Evaluating current English proficiency with Cambridge standards',
+                      desc: 'Evaluating current English proficiency with Practice standards',
                       icon: '📈'
                     }
                   ].map((item) => (
@@ -406,7 +410,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                     What is your target band and preparation timeline?
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    We will calibrate the difficulty of your daily Cambridge mock sessions accordingly.
+                    We will calibrate the difficulty of your daily Practice mock sessions accordingly.
                   </p>
                 </div>
 
@@ -556,7 +560,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                     {
                       id: 'exam_anxiety',
                       title: 'Computer-Delivered Interface Unfamiliarity',
-                      desc: 'Unsure how official British Council screen split and flags work'
+                      desc: 'Unsure how official Coach screen split and flags work'
                     }
                   ].map((item) => {
                     const isSelected = painPoints.includes(item.id);
@@ -636,7 +640,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                       <span>Financial Loss-Aversion Audit</span>
                     </div>
                     <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-                      Official IELTS Registration Fee: <span className="text-rose-600 dark:text-rose-400">25,500+ BDT</span> per attempt
+                      IELTS Registration Fee: <span className="text-rose-600 dark:text-rose-400">25,500+ BDT</span> per attempt
                     </div>
                     <p className="text-xs text-slate-600 dark:text-slate-300">
                       Failing by just 0.5 band forces a complete retake or One Skill Retake (17,000+ BDT) + missing your university visa intake cycle.
@@ -644,7 +648,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                   </div>
                   <div className="text-right shrink-0">
                     <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
-                      IELTS SPRINT: 100% Free
+                      BandSprint: Free Tier — No Card Needed
                     </span>
                   </div>
                 </div>
@@ -656,7 +660,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                       <tr>
                         <th className="p-3">Method</th>
                         <th className="p-3">Cost</th>
-                        <th className="p-3">CD-IELTS Authentic Environment</th>
+                        <th className="p-3">CD-IELTS Practice Environment</th>
                         <th className="p-3">Speaking & Writing Scoring</th>
                       </tr>
                     </thead>
@@ -676,10 +680,10 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                       <tr className="bg-blue-50/60 dark:bg-blue-950/40 font-bold text-blue-900 dark:text-blue-100">
                         <td className="p-3 flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
                           <Sparkles className="w-4 h-4" />
-                          <span>IELTS SPRINT</span>
+                          <span>BandSprint</span>
                         </td>
-                        <td className="p-3 text-emerald-600 dark:text-emerald-400 font-mono">100% Free</td>
-                        <td className="p-3 text-emerald-600 dark:text-emerald-400">1:1 British Council Simulation</td>
+                        <td className="p-3 text-emerald-600 dark:text-emerald-400 font-mono">Free Tier</td>
+                        <td className="p-3 text-emerald-600 dark:text-emerald-400">1:1 Coach Simulation</td>
                         <td className="p-3 text-emerald-600 dark:text-emerald-400">Instant AI British Examiner</td>
                       </tr>
                     </tbody>
@@ -726,7 +730,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                   </h3>
                   <div className="text-xs sm:text-sm font-mono text-blue-600 dark:text-blue-400">
                     {calcPhase === 1 && 'Analyzing diagnostic profile and gap to Band ' + targetBand.toFixed(1) + '...'}
-                    {calcPhase === 2 && 'Calibrating Cambridge 11–21 Academic and General Training suites...'}
+                    {calcPhase === 2 && 'Calibrating IELTS Practice Library Academic and General Training suites...'}
                     {calcPhase === 3 && 'Generating prioritized 8-Week sprint curriculum...'}
                     {calcPhase === 4 && 'Curriculum ready! Finalizing roadmap snapshot...'}
                   </div>
@@ -755,7 +759,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                     <span>Plan Calibrated for Band {targetBand.toFixed(1)}</span>
                   </div>
                   <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                    Your {timeline === '1month' ? '4-Week Intensive' : '8-Week Target'} IELTS Sprint Roadmap
+                    Your {timeline === '1month' ? '4-Week Intensive' : '8-Week Target'} BandSprint Roadmap
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
                     Structured specifically for {intendedFormat} to qualify for {targetCountry}.
@@ -784,7 +788,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                     <div className="text-[10px] font-mono font-bold text-emerald-600 uppercase">Phase 3: Peak</div>
                     <div className="text-xs font-bold mt-1">1:1 CD-IELTS Simulation</div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                      Full exam room pacing under strict British Council timers.
+                      Full exam room pacing under strict Coach timers.
                     </p>
                   </div>
                 </div>
@@ -799,7 +803,7 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
                       Activate & Save Your Personalized Sprint
                     </div>
                     <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                      100% Free · Instant Access
+                      Free Tier · Instant Access
                     </span>
                   </div>
 

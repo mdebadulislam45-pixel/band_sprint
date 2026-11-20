@@ -206,7 +206,7 @@ export const C1IdiomsPage: React.FC<C1IdiomsPageProps> = ({ onBack, onShowToast 
             <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
             <div>
               <strong className="text-white block mb-0.5 font-semibold">
-                Cambridge Examiner Study Tip:
+                Practice Examiner Study Tip:
               </strong>
               <span>
                 "{C1_GUIDE_METADATA.studyTip}"
@@ -414,7 +414,7 @@ export const C1IdiomsPage: React.FC<C1IdiomsPageProps> = ({ onBack, onShowToast 
                     {/* Example Sentence */}
                     <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-150 leading-relaxed mb-3">
                       <span className="font-bold text-slate-800 block mb-0.5 text-[11px] font-mono uppercase">
-                        Cambridge Example:
+                        Practice Example:
                       </span>
                       "{item.exampleSentence}"
                     </div>
@@ -756,11 +756,11 @@ export const C1IdiomsPage: React.FC<C1IdiomsPageProps> = ({ onBack, onShowToast 
               </div>
             </div>
 
-            {/* Cambridge Context & Exam Suitability */}
+            {/* Practice Context & Exam Suitability */}
             <div className="space-y-2.5 text-xs">
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1 font-mono">
-                  Cambridge Example in Context
+                  Practice Example in Context
                 </span>
                 <p className="text-slate-800 italic font-serif leading-relaxed text-xs sm:text-sm">
                   "{selectedDetailItem.exampleSentence}"

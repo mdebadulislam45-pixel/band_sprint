@@ -40,7 +40,6 @@ export async function fetchPlans(): Promise<{ plans: Record<string, ClientPlan>;
     if (!res.ok) throw new Error('Failed to load plans');
     return await res.json();
   } catch (err) {
-    console.warn('[billingService] Using default plans cache:', err);
     return {
       plans: {
         free: {
@@ -70,7 +69,7 @@ export async function fetchPlans(): Promise<{ plans: Record<string, ClientPlan>;
         pro: {
           id: 'pro',
           name: 'Sprint Premium',
-          tagline: 'Interactive 1-on-1 AI voice examiner & unlimited Cambridge evaluations',
+          tagline: 'Interactive 1-on-1 AI voice examiner & unlimited Sprint evaluations',
           priceMonthly: 150,
           priceYearly: 1500,
           currency: 'BDT',
@@ -78,7 +77,7 @@ export async function fetchPlans(): Promise<{ plans: Record<string, ClientPlan>;
             'Interactive 1-on-1 Voice Examiner (British Male Voices)',
             'Unlimited Speaking Fluency & Grammar Diagnostics',
             'Task 1 & Task 2 Writing Band Evaluator',
-            'Band 9 Official Cambridge Model Answers',
+            'Band 9 BandSprint Model Answers',
             'Comprehensive Mistake Vault with Spaced Repetition'
           ],
           limits: {
@@ -102,7 +101,7 @@ export async function fetchPlans(): Promise<{ plans: Record<string, ClientPlan>;
             'Full Timed Live Mock Test Simulations',
             'Deep AI Examiner Diagnostic Breakdown across all 4 Criteria',
             'Priority High-Fidelity Audio Streaming',
-            'Verified Cambridge Band Certificate of Completion'
+            'Verified Sprint Band Certificate of Completion'
           ],
           limits: {
             speakingEvaluationsPerDay: 9999,
@@ -190,7 +189,6 @@ export async function fetchSubscriptionStatus(): Promise<SubscriptionStatusRespo
 
     return data;
   } catch (err) {
-    console.warn('[billingService] Failed to fetch subscription status:', err);
     return null;
   }
 }
@@ -322,7 +320,6 @@ export async function fetchTrialStatus(): Promise<{
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
-    console.warn('[billingService] Failed to fetch trial status:', err);
     return null;
   }
 }
@@ -421,7 +418,6 @@ export async function fetchBkashStatus(): Promise<BkashMerchantStatusResponse | 
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
-    console.warn('[billingService] Failed to fetch bKash merchant status:', err);
     return null;
   }
 }

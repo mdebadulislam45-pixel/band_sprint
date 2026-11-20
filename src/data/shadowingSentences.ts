@@ -181,7 +181,7 @@ export const SHADOWING_ITEMS: ShadowingItem[] = [
     topic: 'Expressing Nuanced Stance',
     bandTarget: '8.5',
     targetSentence: 'From my vantage point, it is imperative that policymakers take immediate, decisive action.',
-    focusTip: 'Pause for a micro-beat after "vantage point" to establish confident Cambridge speaker rhythm.',
+    focusTip: 'Pause for a micro-beat after "vantage point" to establish confident Practice speaker rhythm.',
     phoneticKeyWords: ['vantage', 'imperative', 'policymakers', 'decisive'],
     intonationPattern: 'rising-falling',
     contextNote: 'Band 8+ starter phrase to introduce your opinion.',

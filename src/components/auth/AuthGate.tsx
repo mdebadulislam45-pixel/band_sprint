@@ -70,7 +70,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthSuccess, onShowToast }
 
       if (billingStatus === 'success') {
         soundManager.playSuccess();
-        onShowToast(`🎉 Congratulations! Your IELTS Sprint ${plan ? plan.toUpperCase() : 'Pro'} subscription is now active!`);
+        onShowToast(`🎉 Congratulations! Your BandSprint ${plan ? plan.toUpperCase() : 'Pro'} subscription is now active!`);
       } else if (billingStatus === 'cancelled') {
         onShowToast('Checkout cancelled.');
       }
@@ -166,7 +166,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthSuccess, onShowToast }
 
   const handleEmailVerified = () => {
     soundManager.playSuccess();
-    onShowToast('Email verified successfully! Welcome to IELTS Sprint.');
+    onShowToast('Email verified successfully! Welcome to BandSprint.');
     setRoute('personalize');
   };
 

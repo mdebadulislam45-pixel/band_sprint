@@ -417,7 +417,7 @@ export const Band9EssayArchitect: React.FC = () => {
         <div className="relative z-10 max-w-2xl space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-mono font-bold border border-blue-400/30">
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Cambridge Band 9 Architecture</span>
+            <span>Practice Band 9 Architecture</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight">
             IELTS Band 9 Writing Architect & Live Scorer
@@ -458,7 +458,7 @@ export const Band9EssayArchitect: React.FC = () => {
           }`}
         >
           <Zap className="w-4 h-4" />
-          <span>⚡ Live Cambridge Rubric Scorer & Word Enhancer</span>
+          <span>⚡ Live Practice Rubric Scorer & Word Enhancer</span>
         </button>
       </div>
 
@@ -578,7 +578,7 @@ export const Band9EssayArchitect: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Cambridge Certified Model Paragraph</span>
+                      <span>Practice Certified Model Paragraph</span>
                     </span>
                     <button
                       onClick={() => handleReadSample(p.band9Example)}
@@ -630,7 +630,7 @@ export const Band9EssayArchitect: React.FC = () => {
         </div>
       )}
 
-      {/* Live Cambridge Rubric Scorer View */}
+      {/* Live Practice Rubric Scorer View */}
       {activeMode === 'evaluator' && (
         <div className="space-y-6 animate-fade-in">
           {/* Controls Bar */}
@@ -786,7 +786,7 @@ export const Band9EssayArchitect: React.FC = () => {
               )}
             </div>
 
-            {/* Right 1 Col: Live Cambridge 4-Criteria Scorecard */}
+            {/* Right 1 Col: Live Practice Set 4-Criteria Scorecard */}
             <div className="space-y-4">
               <div className="p-6 rounded-3xl bg-white dark:bg-[#101B32] border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">

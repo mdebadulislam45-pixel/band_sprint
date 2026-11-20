@@ -1,7 +1,7 @@
 /**
- * IELTS Sprint - Structured Study Roadmap (30-Day Sprint & 60-Day Comprehensive)
+ * BandSprint - Structured Study Roadmap (30-Day Sprint & 60-Day Comprehensive)
  * Covers balanced daily targets across Listening, Reading, Writing, Speaking, Lexical Resource & Grammar.
- * Calibrated to Cambridge English & British Council test specifications.
+ * Calibrated to Practice English & Coach test specifications.
  */
 
 export interface DailyStudyTask {
@@ -275,7 +275,7 @@ export const THIRTY_DAY_STUDY_PLAN: DailyStudyTask[] = [
     morningRoutine: '55m: Complete Section 1–4 Listening with standard pause discipline',
     eveningDrill: '30m: Audit mistake log and update adaptive personal study targets',
     tasks: [
-      { description: 'Complete an authentic 40-question Listening test with Cambridge British audio', actionModule: 'listening', isCore: true },
+      { description: 'Complete an authentic 40-question Listening test with Practice British audio', actionModule: 'listening', isCore: true },
       { description: 'Complete 1 Passage of Reading under strict 20-minute timer', actionModule: 'reading', isCore: true },
       { description: 'Log all missed items into the Mistake Vault and check error trends', actionModule: 'vault', isCore: true }
     ],
@@ -407,7 +407,7 @@ export const THIRTY_DAY_STUDY_PLAN: DailyStudyTask[] = [
     tasks: [
       { description: 'Complete a full timed Writing test (Task 1 + Task 2 in 60 minutes sharp)', actionModule: 'writing', isCore: true },
       { description: 'Conduct a full 14-minute speaking interview with AI Examiner', actionModule: 'speaking', isCore: true },
-      { description: 'Audit lexical range against Cambridge Band Descriptors', actionModule: 'banddescriptors', isCore: true }
+      { description: 'Audit lexical range against Practice Band Descriptors', actionModule: 'banddescriptors', isCore: true }
     ],
     tipOfDay: 'Time allocation is non-negotiable: exactly 20 minutes for Task 1 and 40 minutes for Task 2. Never steal time from Task 2!',
     examinerInsight: 'Task 2 is worth twice as many marks as Task 1 toward your overall Writing band score.',
@@ -475,7 +475,7 @@ export const THIRTY_DAY_STUDY_PLAN: DailyStudyTask[] = [
     day: 25,
     phase: 'Phase 4: Exam Sprint & Final Readiness',
     focusSkill: 'Full Mock',
-    title: 'Official Cambridge Full Mock Exam 1 (Strict 2h 45m Timed Simulation)',
+    title: 'Practice Full Mock Exam 1 (Strict 2h 45m Timed Simulation)',
     title_bn: 'পূর্ণাঙ্গ কেমব্রিজ মক টেস্ট ১ (২ ঘণ্টা ৪৫ মিনিট সিমুলেশন)',
     estimatedMinutes: 165,
     morningRoutine: '10m: Quiet mental centering, hydration, and workspace preparation',
@@ -511,7 +511,7 @@ export const THIRTY_DAY_STUDY_PLAN: DailyStudyTask[] = [
     day: 27,
     phase: 'Phase 4: Exam Sprint & Final Readiness',
     focusSkill: 'Full Mock',
-    title: 'Official Cambridge Full Mock Exam 2 & Score Stabilization',
+    title: 'Practice Full Mock Exam 2 & Score Stabilization',
     title_bn: 'পূর্ণাঙ্গ কেমব্রিজ মক টেস্ট ২ ও স্কোর স্থিতিশীলকরণ',
     estimatedMinutes: 165,
     morningRoutine: '10m: Breathing protocol and quick review of personal error checklists',

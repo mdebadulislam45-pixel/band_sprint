@@ -52,7 +52,7 @@ export interface IELTSQuestion {
   wordLimit?: number;
   maxWords?: number;
   estimatedTimeSec?: number;
-  source: 'cambridge_standard' | 'original' | 'generated';
+  source: 'sprint_standard' | 'original' | 'generated';
   version: number;
   createdAt: number;
 }
@@ -221,7 +221,7 @@ class QuestionEngineService {
     if (this.isInitialized) return;
     this.registerQuestions(ALL_INITIAL_QUESTIONS);
 
-    // Register comprehensive Cambridge speaking banks (Parts 1, 2, 3)
+    // Register comprehensive Sprint speaking banks (Parts 1, 2, 3)
     const speakingToRegister: IELTSQuestion[] = [
       ...PART_1_SPEAKING_BANK.map((s) => ({
         id: s.id,
@@ -232,7 +232,7 @@ class QuestionEngineService {
         topic: s.topic,
         skillTags: s.tags || ['fluency'],
         prompt: s.questionText,
-        source: 'cambridge_standard' as const,
+        source: 'sprint_standard' as const,
         version: 1,
         createdAt: s.createdAt
       })),
@@ -246,7 +246,7 @@ class QuestionEngineService {
         skillTags: s.tags || ['long_turn', 'narrative'],
         prompt: s.questionText,
         cueCardBulletPoints: s.cueCardBulletPoints,
-        source: 'cambridge_standard' as const,
+        source: 'sprint_standard' as const,
         version: 1,
         createdAt: s.createdAt
       })),
@@ -259,7 +259,7 @@ class QuestionEngineService {
         topic: s.topic,
         skillTags: s.tags || ['abstract_discussion'],
         prompt: s.questionText,
-        source: 'cambridge_standard' as const,
+        source: 'sprint_standard' as const,
         version: 1,
         createdAt: s.createdAt
       }))
@@ -618,7 +618,7 @@ class QuestionEngineService {
     const totalCorrect = modAttempts.filter((a) => a.isCorrect).length;
     const overallAccuracy = totalAttempted > 0 ? (totalCorrect / totalAttempted) * 100 : 0;
 
-    // Estimate IELTS Band (Cambridge scale approximation)
+    // Estimate IELTS Band (Sprint scale approximation)
     let estimatedBand = 5.0;
     if (overallAccuracy >= 90) estimatedBand = 8.5;
     else if (overallAccuracy >= 82) estimatedBand = 8.0;
@@ -718,7 +718,6 @@ class QuestionEngineService {
       const slice = this.attempts.slice(0, 1000);
       localStorage.setItem(STORAGE_KEY_ATTEMPTS, JSON.stringify(slice));
     } catch (e) {
-      console.warn('Could not persist question attempts to localStorage:', e);
     }
   }
 }

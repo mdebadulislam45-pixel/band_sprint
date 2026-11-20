@@ -1,5 +1,5 @@
 {
-  "name": "IELTS Sprint Masterguide",
+  "name": "BandSprint",
   "description": "An all-in-one, interactive web dashboard providing AI-driven exam prep, diagnostics, and tools in a single, portable file.",
   "requestFramePermissions": [
     "microphone",

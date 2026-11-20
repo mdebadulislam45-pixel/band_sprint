@@ -57,7 +57,7 @@ const MAP_QUESTIONS: MapQuestion[] = [
   }
 ];
 
-const AUDIO_SCRIPT = `Welcome to the Cambridge University South Precinct orientation. If you consult your campus map, we are currently standing at the Main Reception Rotunda at the southern entrance. 
+const AUDIO_SCRIPT = `Welcome to the Practice University South Precinct orientation. If you consult your campus map, we are currently standing at the Main Reception Rotunda at the southern entrance. 
 Now, for those of you requiring the Graduate Research Library (Question 11), proceed directly north along the central avenue past the ornamental fountain. The library is the imposing brick structure located immediately adjacent to the rose gardens on your left—that corresponds to Letter B.
 Next, if you are looking for the Biological Sciences Laboratory (Question 12), follow Willow Way heading east. Cross the pedestrian footbridge over the brook, and you will see the modern three-storey lab situated directly opposite the solar pavilion at Letter E.
 For medical appointments, the Campus Health Centre (Question 13) is tucked away in the extreme northwest corner of the grounds, past the student union and overlooking the visitor car park at Letter A.
@@ -136,7 +136,7 @@ export const ListeningMapLab: React.FC = () => {
             Interactive Directional Map & Diagram Simulator
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Master spatial prepositions, turning orientations, and campus diagram labeling—the #1 trap area in Cambridge Listening Section 2.
+            Master spatial prepositions, turning orientations, and campus diagram labeling—the #1 trap area in Practice Listening Section 2.
           </p>
         </div>
       </div>
@@ -166,7 +166,7 @@ export const ListeningMapLab: React.FC = () => {
           </button>
 
           <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-            {isPlayingAudio ? '🎙️ Playing Arthur (British Council RP)...' : '🎧 Listen carefully for spatial markers'}
+            {isPlayingAudio ? '🎙️ Playing Arthur (Coach RP)...' : '🎧 Listen carefully for spatial markers'}
           </span>
         </div>
 
@@ -214,7 +214,7 @@ export const ListeningMapLab: React.FC = () => {
         <div className="lg:col-span-7 p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-[#101B32] border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Cambridge University South Precinct Map
+              Practice University South Precinct Map
             </span>
             <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400">
               <Compass className="w-3.5 h-3.5 text-blue-500" />

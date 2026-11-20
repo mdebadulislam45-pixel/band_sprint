@@ -143,8 +143,6 @@ class UnifiedAudioLogger {
         console.error(prefix, details || '', metrics || '');
       } else if (level === 'warn') {
         console.warn(prefix, details || '', metrics || '');
-      } else {
-        console.log(prefix, details || '', metrics || '');
       }
     }
 

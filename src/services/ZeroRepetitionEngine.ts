@@ -3,7 +3,7 @@
  *
  * Guarantees:
  * 1. Honest Audio Provenance:
- *    - Never mislabels AI-generated speech, browser TTS, or studio-synthesized voices as "Official Cambridge IELTS Audio".
+ *    - Never mislabels AI-generated speech, browser TTS, or studio-synthesized voices as "BandSprint IELTS Audio".
  *    - Distinguishes between verified licensed/authorized official recordings ('authorized_official')
  *      and newly generated/curated original practice recordings ('original_practice_synthesized').
  * 2. Persistent Multi-Dimensional Fingerprinting (localStorage + IndexedDB):
@@ -182,6 +182,8 @@ export function parseRawScriptIntoDialogueLines(
     pauseAfterMs: number;
   }> = [];
 
+  let activeAssignedSpeaker: { speakerId: string; gender: 'male' | 'female' } | null = null;
+
   for (const rawLine of lines) {
     // Check if line matches "Speaker Name: "Text"" or "Speaker Name: Text"
     const match = rawLine.match(/^([A-Za-z0-9\s().-]{2,38}):\s*(.+)$/);
@@ -200,6 +202,8 @@ export function parseRawScriptIntoDialogueLines(
       }
 
       const assigned = speakerVoiceAssignment.get(speakerLabel)!;
+      activeAssignedSpeaker = assigned;
+
       result.push({
         speakerId: assigned.speakerId,
         text: spokenContent,
@@ -207,15 +211,34 @@ export function parseRawScriptIntoDialogueLines(
         pauseAfterMs: 380
       });
     } else {
-      // Narrator / rubric instruction line
-      const cleaned = rawLine.replace(/^["“”']+|["“”']+$/g, '').trim();
+      const cleaned = rawLine.replace(/^["“”']+|["...“”']+$/g, '').trim();
       if (!cleaned) continue;
-      result.push({
-        speakerId: defaultSpeakerId,
-        text: cleaned,
-        gender: defaultSpeakerId === 'speaker_05' ? 'female' : 'male',
-        pauseAfterMs: 450
-      });
+
+      const lower = cleaned.toLowerCase();
+      const isRubricInstruction =
+        lower.startsWith('part ') ||
+        lower.startsWith('section ') ||
+        lower.startsWith('international english') ||
+        lower.startsWith('that is the end') ||
+        lower.startsWith('you will hear') ||
+        lower.startsWith('first, you have');
+
+      if (isRubricInstruction || !activeAssignedSpeaker) {
+        result.push({
+          speakerId: defaultSpeakerId,
+          text: cleaned,
+          gender: defaultSpeakerId === 'speaker_05' ? 'female' : 'male',
+          pauseAfterMs: 450
+        });
+      } else {
+        // Multi-line continuation paragraph belonging to activeAssignedSpeaker
+        result.push({
+          speakerId: activeAssignedSpeaker.speakerId,
+          text: cleaned,
+          gender: activeAssignedSpeaker.gender,
+          pauseAfterMs: 420
+        });
+      }
     }
   }
 
@@ -275,7 +298,6 @@ class ZeroRepetitionEngineService {
         }
       }
     } catch (e) {
-      console.warn('[ZeroRepetitionEngine] Failed to load registry from localStorage:', e);
     }
 
     // Async sync from IndexedDB if localStorage was cleared
@@ -328,7 +350,7 @@ class ZeroRepetitionEngineService {
   public registerAuthorizedOfficialAudio(
     targetId: string,
     audioUrl: string,
-    licenseNote = 'User-provided licensed Cambridge IELTS audio recording'
+    licenseNote = 'User-provided licensed IELTS audio recording'
   ): void {
     this.customOfficialAudioUrls.set(targetId, { url: audioUrl, licenseNote });
   }
@@ -339,7 +361,7 @@ class ZeroRepetitionEngineService {
 
   /**
    * Returns honest, transparent provenance metadata for any exam or question recording.
-   * Never mislabels synthesized/TTS practice audio as official Cambridge audio.
+   * Never mislabels synthesized/TTS practice audio as official Sprint audio.
    */
   public getAudioProvenance(params: {
     targetId: string;
@@ -358,7 +380,7 @@ class ZeroRepetitionEngineService {
       return {
         provenance: 'authorized_official',
         badgeText: 'Authorized Official Audio',
-        sourceLabel: info?.licenseNote || 'Licensed Official IELTS Practice Audio',
+        sourceLabel: info?.licenseNote || 'Licensed IELTS Practice Audio',
         disclosureText:
           'Playing verified licensed official audio recording attached to this session.',
         isOfficialAuthorized: true,
@@ -371,9 +393,9 @@ class ZeroRepetitionEngineService {
     return {
       provenance: 'original_practice_synthesized',
       badgeText: 'Original Practice Audio · British RP Studio',
-      sourceLabel: 'Original IELTS Practice Recording (Cambridge-Calibrated Format)',
+      sourceLabel: 'Original IELTS Practice Recording (Sprint-Calibrated Format)',
       disclosureText:
-        'Original practice audio generated via British RP multi-speaker studio synthesis. Licensed proprietary Cambridge recordings require separate institutional authorization.',
+        'Original practice audio generated via British RP multi-speaker studio synthesis. Licensed proprietary Sprint recordings require separate institutional authorization.',
       isOfficialAuthorized: false,
       recordingId,
       scriptFingerprint: scriptFp,
@@ -567,7 +589,7 @@ class ZeroRepetitionEngineService {
       const postcodes = ['OX14 3JP', 'CB2 8PH', 'EH8 9YL', 'BS8 1TH', 'YO1 7HH', 'GL50 1NW', 'BA1 2LT', 'SN1 5ET'];
       const venues = [
         'Cotswold Heritage Cycling Club',
-        'Cambridge Botanical Conservatory',
+        'Sprint Botanical Conservatory',
         'Bristol Harbourside Kayaking Centre',
         'Yorkshire Dales Eco-Lodge',
         'Bath Roman Thermal Spa Membership',
@@ -582,20 +604,19 @@ class ZeroRepetitionEngineService {
       const rooms = ['PAVILION', 'GALLERY', 'ATRIUM', 'ANNEX', 'COURTYARD'];
       const streetNames = ['MILLBROOK', 'CRESCENT', 'OAKFIELD', 'HIGHGATE', 'RIVERSIDE'];
 
-      const sIdx = uniqueSeed % surnames.length;
-      const vIdx = (uniqueSeed >> 2) % venues.length;
-      const surname = surnames[sIdx];
-      const venue = venues[vIdx];
-      const postcode = postcodes[(uniqueSeed >> 3) % postcodes.length];
-      const dateStr = days[(uniqueSeed >> 4) % days.length];
-      const fee = fees[(uniqueSeed >> 5) % fees.length];
-      const facility = facilities[(uniqueSeed >> 6) % facilities.length];
-      const diet = diets[(uniqueSeed >> 7) % diets.length];
-      const phone = phones[(uniqueSeed >> 8) % phones.length];
-      const discount = discounts[(uniqueSeed >> 9) % discounts.length];
-      const room = rooms[(uniqueSeed >> 10) % rooms.length];
-      const street = streetNames[(uniqueSeed >> 11) % streetNames.length];
-      const topicTitle = `${venue} Registration (#${(uniqueSeed % 900) + 100})`;
+      const absSeed = Math.abs(uniqueSeed);
+      const surname = surnames[absSeed % surnames.length] || surnames[0];
+      const venue = venues[Math.floor(absSeed / 4) % venues.length] || venues[0];
+      const postcode = postcodes[Math.floor(absSeed / 8) % postcodes.length] || postcodes[0];
+      const dateStr = days[Math.floor(absSeed / 16) % days.length] || days[0];
+      const fee = fees[Math.floor(absSeed / 32) % fees.length] || fees[0];
+      const facility = facilities[Math.floor(absSeed / 64) % facilities.length] || facilities[0];
+      const diet = diets[Math.floor(absSeed / 128) % diets.length] || diets[0];
+      const phone = phones[Math.floor(absSeed / 256) % phones.length] || phones[0];
+      const discount = discounts[Math.floor(absSeed / 512) % discounts.length] || discounts[0];
+      const room = rooms[Math.floor(absSeed / 1024) % rooms.length] || rooms[0];
+      const street = streetNames[Math.floor(absSeed / 2048) % streetNames.length] || streetNames[0];
+      const topicTitle = `${venue} Registration (#${(absSeed % 900) + 100})`;
 
       const section1Pairs = [
         {
@@ -619,7 +640,7 @@ class ZeroRepetitionEngineService {
           applicant: { name: 'Thomas (British Resident)', speakerId: 'speaker_01', gender: 'male' as const, accent: 'British' }
         }
       ];
-      const pair = section1Pairs[uniqueSeed % section1Pairs.length];
+      const pair = section1Pairs[absSeed % section1Pairs.length] || section1Pairs[0];
 
       const items: Array<{
         prompt: string;
@@ -862,7 +883,7 @@ class ZeroRepetitionEngineService {
           questionType: 'form_completion',
           difficulty: idx < 5 ? 'easy' : 'medium',
           topic: topicTitle,
-          skillTags: ['form_completion', 'original_practice', pair.official.accent.toLowerCase()],
+          skillTags: ['form_completion', 'original_practice', (pair?.official?.accent || 'British').toLowerCase()],
           prompt: it.prompt,
           correctAnswer: it.answer,
           acceptableAnswers: it.acceptable,
@@ -894,9 +915,10 @@ class ZeroRepetitionEngineService {
       ]
     };
 
-    const secThemes = themesBySection[section as 2 | 3 | 4];
-    const chosenTheme = secThemes[uniqueSeed % secThemes.length];
-    const topicLabel = `${chosenTheme.title} (Series ${(uniqueSeed % 899) + 101})`;
+    const secThemes = themesBySection[section as 2 | 3 | 4] || themesBySection[2];
+    const absSeed = Math.abs(uniqueSeed);
+    const chosenTheme = secThemes[absSeed % secThemes.length] || secThemes[0];
+    const topicLabel = `${chosenTheme.title} (Series ${(absSeed % 899) + 101})`;
 
     // Character profiles for sections 2, 3, 4 (British English RP standard)
     const sec2Speakers = [
@@ -905,7 +927,7 @@ class ZeroRepetitionEngineService {
       { name: 'Libby (British Civic Coordinator)', speakerId: 'speaker_02', gender: 'female' as const, accent: 'British' },
       { name: 'Alistair (British Museum Curator)', speakerId: 'speaker_03', gender: 'male' as const, accent: 'British' }
     ];
-    const sec2Speaker = sec2Speakers[uniqueSeed % sec2Speakers.length];
+    const sec2Speaker = sec2Speakers[absSeed % sec2Speakers.length] || sec2Speakers[0];
 
     const sec3Tutors = [
       { name: 'Dr. Alistair Sterling (British Academic Supervisor)', speakerId: 'speaker_03', gender: 'male' as const, accent: 'British' },
@@ -915,15 +937,15 @@ class ZeroRepetitionEngineService {
       { name: 'Libby (British Postgraduate Student)', speakerId: 'speaker_02', gender: 'female' as const, accent: 'British' },
       { name: 'Thomas (British Honours Researcher)', speakerId: 'speaker_01', gender: 'male' as const, accent: 'British' }
     ];
-    const tutor = sec3Tutors[uniqueSeed % sec3Tutors.length];
-    const student = sec3Students[(uniqueSeed + 1) % sec3Students.length];
+    const tutor = sec3Tutors[absSeed % sec3Tutors.length] || sec3Tutors[0];
+    const student = sec3Students[(absSeed + 1) % sec3Students.length] || sec3Students[0];
 
     const sec4Professors = [
-      { name: 'Professor Arthur Sterling (Cambridge Academic Lecture · British RP)', speakerId: 'speaker_04', gender: 'male' as const, accent: 'British' },
+      { name: 'Professor Arthur Sterling (Sprint Academic Lecture · British RP)', speakerId: 'speaker_04', gender: 'male' as const, accent: 'British' },
       { name: 'Professor Charlotte Vance (Oxford Environmental Lecture · British RP)', speakerId: 'speaker_05', gender: 'female' as const, accent: 'British' },
       { name: 'Professor Alistair Davis (Imperial Applied Science Keynote · British RP)', speakerId: 'speaker_03', gender: 'male' as const, accent: 'British' }
     ];
-    const sec4Speaker = sec4Professors[uniqueSeed % sec4Professors.length];
+    const sec4Speaker = sec4Professors[absSeed % sec4Professors.length] || sec4Professors[0];
 
     const keyTerms = [
       { word: 'SEDIMENT', context: 'accumulated coastal sediment layers measured over three decades' },
@@ -942,7 +964,7 @@ class ZeroRepetitionEngineService {
 
     const generated: IELTSQuestion[] = [];
     for (let i = 0; i < count; i++) {
-      const termObj = keyTerms[(uniqueSeed + i * 3) % keyTerms.length];
+      const termObj = keyTerms[(absSeed + i * 3) % keyTerms.length] || keyTerms[0];
       const qId = `orig_s${section}_${uniqueSeed}_${i + 1}`;
       const dialogueLines =
         section === 3
@@ -959,7 +981,7 @@ class ZeroRepetitionEngineService {
                 speakerId: student.speakerId,
                 accent: student.accent,
                 gender: student.gender,
-                text: `We initially considered satellite imagery alone, but to eliminate calibration drift we focused on ${termObj.context}, which confirmed that ${termObj.word.toLowerCase()} was the decisive factor.`
+                text: `We initially considered satellite imagery alone, but to eliminate calibration drift we focused on ${termObj.context}, which confirmed that ${(termObj.word || '').toLowerCase()} was the decisive factor.`
               }
             ]
           : [
@@ -968,7 +990,7 @@ class ZeroRepetitionEngineService {
                 speakerId: section === 2 ? sec2Speaker.speakerId : sec4Speaker.speakerId,
                 accent: section === 2 ? sec2Speaker.accent : sec4Speaker.accent,
                 gender: (section === 2 ? sec2Speaker.gender : sec4Speaker.gender),
-                text: `Moving to point ${i + 1} of our ${chosenTheme.title.toLowerCase()}: researchers documented ${termObj.context}. Consequently, the primary classification term recorded in the official log is ${termObj.word.toLowerCase()}.`
+                text: `Moving to point ${i + 1} of our ${(chosenTheme.title || '').toLowerCase()}: researchers documented ${termObj.context}. Consequently, the primary classification term recorded in the official log is ${(termObj.word || '').toLowerCase()}.`
               }
             ];
 
@@ -983,11 +1005,11 @@ class ZeroRepetitionEngineService {
         questionType: section === 4 ? 'note_completion' : 'sentence_completion',
         difficulty: section >= 3 ? 'hard' : 'medium',
         topic: topicLabel,
-        skillTags: [chosenTheme.domain.toLowerCase(), 'original_practice', 'zero_repetition'],
+        skillTags: [(chosenTheme.domain || 'General').toLowerCase(), 'original_practice', 'zero_repetition'],
         prompt: `Complete the note (ONE WORD ONLY): Researchers focused on ${termObj.context.replace(new RegExp(termObj.word, 'i'), '[___]')} — key factor: [${i + 1}]`,
         correctAnswer: termObj.word,
-        acceptableAnswers: [termObj.word, termObj.word.toLowerCase()],
-        explanation: `The speaker explicitly states that ${termObj.word.toLowerCase()} was recorded as the key factor (${termObj.context}).`,
+        acceptableAnswers: [termObj.word, (termObj.word || '').toLowerCase()],
+        explanation: `The speaker explicitly states that ${(termObj.word || '').toLowerCase()} was recorded as the key factor (${termObj.context}).`,
         dialogue: dialogueLines,
         source: 'original',
         version: 2,
@@ -1057,7 +1079,11 @@ class ZeroRepetitionEngineService {
       // generate genuinely new, unused original practice questions & audio scripts!
       if (secSelected.length < 10) {
         const needed = 10 - secSelected.length;
-        const newlyGenerated = this.generateFreshOriginalSectionQuestions(sec, needed, sec * 13);
+        const newlyGenerated = this.generateFreshOriginalSectionQuestions(
+          sec,
+          needed,
+          sec * 13 + this.generationCounter * 31
+        );
         for (const nq of newlyGenerated) {
           const scriptFp = computeContentFingerprint(extractQuestionScriptText(nq), 'scr');
           if (scriptFp !== 'scr_empty') localUsedScriptFps.add(scriptFp);
@@ -1431,7 +1457,7 @@ That is the end of Section 1. You now have half a minute to check your answers.`
     const synthesizedSet: MockExamSet = {
       id: dynamicId,
       title: `Original Practice Mock Exam Series ${seriesNum} (${uniqueRefCode})`,
-      source: 'IELTS Sprint Original Practice Engine (Cambridge-Calibrated)',
+      source: 'BandSprint Original Practice Engine (Sprint-Calibrated)',
       badge: 'Original Practice · Unique Audio',
       level: 'B2-C1',
       format: 'Academic',

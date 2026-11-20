@@ -34,7 +34,16 @@ import {
   FileCheck
 } from 'lucide-react';
 import { soundManager } from '../utils/audioEffects';
-import { speakBritish, stopSpeech } from '../utils/britishVoice';
+import { speakBritish, stopSpeech, audioService } from '../utils/britishVoice';
+import { ieltsAudioEngine } from '../services/IELTSAudioEngine';
+import {
+  BritishRegionalAccent,
+  BRITISH_REGIONAL_ACCENT_LIST,
+  BRITISH_REGIONAL_ACCENT_METADATA,
+  getPreferredBritishRegionalAccent,
+  setPreferredBritishRegionalAccent,
+  resolveRegionalExaminerSpeaker
+} from '../config/voiceConfig';
 import { questionEngine } from '../services/QuestionEngine';
 import { audioManager } from '../services/AudioManager';
 import { evaluateSpeakingSession, analyzeSpeakingFluency, evaluateSingleSpeakingTurn, generateDiagnosticTurnFeedback } from '../services/SpeakingEvaluationService';
@@ -50,6 +59,7 @@ import {
 import { addMistake } from '../utils/vaultStorage';
 import { getActiveUser } from '../utils/userStorage';
 import { InstantSpeakingFeedbackModal } from './speaking/InstantSpeakingFeedbackModal';
+import { BritishCouncilSpeakingResult } from './speaking/BritishCouncilSpeakingResult';
 import {
   PART_1_SPEAKING_BANK,
   PART_2_CUE_CARD_BANK,
@@ -58,6 +68,7 @@ import {
 import { AudioWaveformVisualizer } from './audio/AudioWaveformVisualizer';
 import { SpeakingVoiceOrb, VoiceOrbState } from './audio/SpeakingVoiceOrb';
 import { ExaminerHumanoidCanvas, ExaminerArtStyle } from './speaking/ExaminerHumanoidCanvas';
+import { adaptSpeakingPilotSetForExaminer } from '../services/candidateAiPilotService';
 import { CandidateCameraBooth } from './speaking/CandidateCameraBooth';
 import {
   ResponsiveContainer,
@@ -90,58 +101,70 @@ export interface CandidateIdentityInfo {
   isVerified: boolean;
 }
 
-export const OFFICIAL_CANDIDATE_ID_PROTOCOL = [
-  {
-    step: 0,
-    title: 'Candidate Full Name',
-    prompt: 'Good afternoon. My name is Dr. Alistair Vance. Can you tell me your full name, please?',
-    subtext: 'State your full legal name as registered on your passport or identity card.',
-    field: 'fullName' as const,
-    placeholder: 'e.g., My full name is Md Ebadul Islam',
-    exampleAnswer: 'My full name is Md Ebadul Islam.'
-  },
-  {
-    step: 1,
-    title: 'Preferred Name',
-    prompt: 'Thank you. And what can I call you?',
-    subtext: 'Give your preferred first name or conversational name.',
-    field: 'preferredName' as const,
-    placeholder: 'e.g., You can call me Ebadul',
-    exampleAnswer: 'You can call me Ebadul.'
-  },
-  {
-    step: 2,
-    title: 'Hometown & Origin',
-    prompt: 'Thank you. And where do you come from?',
-    subtext: 'State the city and country you are from.',
-    field: 'origin' as const,
-    placeholder: 'e.g., I come from Dhaka, Bangladesh',
-    exampleAnswer: 'I come from Dhaka, Bangladesh.'
-  },
-  {
-    step: 3,
-    title: 'Identification Verification',
-    prompt: 'Thank you. Could you show me your identification, please?',
-    subtext: 'Present and confirm your valid passport or National ID card.',
-    field: 'idDocument' as const,
-    placeholder: 'e.g., Yes, of course. Here is my passport.',
-    exampleAnswer: 'Yes, of course. Here is my passport.'
-  }
-];
+export function getPracticeCandidateIdProtocol(examinerName: string = 'Examiner Arthur, AI') {
+  return [
+    {
+      step: 0,
+      title: 'Candidate Full Name',
+      prompt: `Good afternoon. My name is ${examinerName}. Can you tell me your full name, please?`,
+      subtext: 'State your full legal name as registered on your passport or identity card.',
+      field: 'fullName' as const,
+      placeholder: 'e.g., My full name is Md Ebadul Islam',
+      exampleAnswer: 'My full name is Md Ebadul Islam.'
+    },
+    {
+      step: 1,
+      title: 'Preferred Name',
+      prompt: 'Thank you. And what can I call you?',
+      subtext: 'Give your preferred first name or conversational name.',
+      field: 'preferredName' as const,
+      placeholder: 'e.g., You can call me Ebadul',
+      exampleAnswer: 'You can call me Ebadul.'
+    },
+    {
+      step: 2,
+      title: 'Hometown & Origin',
+      prompt: 'Thank you. And where do you come from?',
+      subtext: 'State the city and country you are from.',
+      field: 'origin' as const,
+      placeholder: 'e.g., I come from Dhaka, Bangladesh',
+      exampleAnswer: 'I come from Dhaka, Bangladesh.'
+    },
+    {
+      step: 3,
+      title: 'Identification Verification',
+      prompt: 'Thank you. Could you show me your identification, please?',
+      subtext: 'Present and confirm your valid passport or National ID card.',
+      field: 'idDocument' as const,
+      placeholder: 'e.g., Yes, of course. Here is my passport.',
+      exampleAnswer: 'Yes, of course. Here is my passport.'
+    }
+  ];
+}
+
+export const Practice_CANDIDATE_ID_PROTOCOL = getPracticeCandidateIdProtocol('Examiner Arthur, AI');
+// Legacy export preserved above via getPracticeCandidateIdProtocol
 
 interface VoiceExaminerProps {
   onGradeInMock?: (text: string, partTitle: string) => void;
   onShowToast: (msg: string) => void;
+  customMockSet?: any;
+  onClearCustomMockSet?: () => void;
 }
 
 const STORAGE_SESSION_KEY = 'ielts_speaking_exam_session_v4';
 const STORAGE_SEEN_KEY = 'ielts_speaking_recent_seen_ids_v2';
 
-export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onShowToast }) => {
+export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
+  onGradeInMock,
+  onShowToast,
+  customMockSet,
+  onClearCustomMockSet
+}) => {
   // 1. State Machine Stage
   const [stage, setStage] = useState<SpeakingExamStage>('PRE_TEST');
 
-  // 1.5 Official Candidate Identification State
+  // 1.5 Practice Candidate Identification State
   const [idCheckStep, setIdCheckStep] = useState<number>(0);
   const [candidateIdentity, setCandidateIdentity] = useState<CandidateIdentityInfo>(() => {
     const active = getActiveUser();
@@ -188,7 +211,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   const [isLoadingTurnFeedback, setIsLoadingTurnFeedback] = useState<boolean>(false);
   const [pendingTurnAdvance, setPendingTurnAdvance] = useState<(() => void) | null>(null);
   const [nextTurnLabel, setNextTurnLabel] = useState<string>('Next Question →');
-  const [resultsTab, setResultsTab] = useState<'overview' | 'breakdowns' | 'trf_certificate'>('overview');
+  const [resultsTab, setResultsTab] = useState<'overview' | 'breakdowns' | 'Scorecard_certificate'>('overview');
   const [playingModelTurnIdx, setPlayingModelTurnIdx] = useState<number | null>(null);
   const [savedTurnErrors, setSavedTurnErrors] = useState<Record<string, boolean>>({});
 
@@ -197,11 +220,48 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   const [soundCheckActive, setSoundCheckActive] = useState<boolean>(false);
   const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
   const [expandedTurns, setExpandedTurns] = useState<Record<number, boolean>>({});
-  const [examinerArtStyle, setExaminerArtStyle] = useState<ExaminerArtStyle>('humanoid');
+  const [examinerArtStyle] = useState<ExaminerArtStyle>('humanoid');
+  const [examinerGender, setExaminerGender] = useState<'male' | 'female'>(() => {
+    try {
+      const saved = localStorage.getItem('ielts_selected_examiner_gender_v1');
+      if (saved === 'male' || saved === 'female') return saved;
+    } catch {}
+    return 'male';
+  });
+  const [regionalAccent, setRegionalAccent] = useState<BritishRegionalAccent>(() =>
+    getPreferredBritishRegionalAccent()
+  );
+  const [isExaminerMuted, setIsExaminerMuted] = useState<boolean>(false);
+  const [activeSpokenPrompt, setActiveSpokenPrompt] = useState<string>('');
   const [examinerMouthOpen, setExaminerMouthOpen] = useState<number>(0);
 
   useEffect(() => {
-    if (!isExaminerSpeaking) {
+    const handleRegionalSync = (e: Event) => {
+      const custom = e as CustomEvent<{ accent: BritishRegionalAccent }>;
+      if (custom.detail?.accent) {
+        setRegionalAccent(custom.detail.accent);
+      }
+    };
+    const handleGenderSync = (e: Event) => {
+      const custom = e as CustomEvent<{ gender: 'male' | 'female' }>;
+      if (custom.detail?.gender === 'male' || custom.detail?.gender === 'female') {
+        setExaminerGender(custom.detail.gender);
+      }
+    };
+    window.addEventListener('ielts_british_regional_accent_changed', handleRegionalSync);
+    window.addEventListener('ielts_voice_gender_changed', handleGenderSync);
+    return () => {
+      window.removeEventListener('ielts_british_regional_accent_changed', handleRegionalSync);
+      window.removeEventListener('ielts_voice_gender_changed', handleGenderSync);
+    };
+  }, []);
+
+  const activeExaminerName =
+    examinerGender === 'female' ? 'Examiner Clara, AI' : 'Examiner Arthur, AI';
+  const activeRegionConfig = BRITISH_REGIONAL_ACCENT_METADATA[regionalAccent];
+
+  useEffect(() => {
+    if (!isExaminerSpeaking || isExaminerMuted) {
       setExaminerMouthOpen(0);
       return;
     }
@@ -209,7 +269,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       setExaminerMouthOpen(0.25 + Math.random() * 0.72);
     }, 95);
     return () => clearInterval(timer);
-  }, [isExaminerSpeaking]);
+  }, [isExaminerSpeaking, isExaminerMuted]);
 
   // Refs for speech recognition & intervals
   const recognitionRef = useRef<any>(null);
@@ -218,10 +278,66 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   const prepTimerRef = useRef<NodeJS.Timeout | null>(null);
   const monologueTimerRef = useRef<NodeJS.Timeout | null>(null);
   const silenceCheckRef = useRef<NodeJS.Timeout | null>(null);
+  const examinerTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const examinerPromptTokenRef = useRef<number>(0);
   const lastSpeechTimeRef = useRef<number>(Date.now());
   const previousTranscriptLengthRef = useRef<number>(0);
+  const currentTranscriptRef = useRef<string>('');
+  const currentAttemptIdRef = useRef<number>(0);
+  const isMountedRef = useRef<boolean>(true);
 
-  // Helper to load distinct, fresh questions from QuestionEngine and Comprehensive Bank
+  // Sound check status & tokenized watchdogs
+  const soundCheckTokenRef = useRef<number>(0);
+  const soundCheckStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const soundCheckCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSoundCheckTimers = useCallback(() => {
+    if (soundCheckStartTimerRef.current) {
+      clearTimeout(soundCheckStartTimerRef.current);
+      soundCheckStartTimerRef.current = null;
+    }
+    if (soundCheckCompletionTimerRef.current) {
+      clearTimeout(soundCheckCompletionTimerRef.current);
+      soundCheckCompletionTimerRef.current = null;
+    }
+  }, []);
+
+  const stopSoundCheck = useCallback(() => {
+    soundCheckTokenRef.current += 1;
+    clearSoundCheckTimers();
+    setSoundCheckActive(false);
+    ieltsAudioEngine.stopCurrentOperation('sound_check_stopped');
+  }, [clearSoundCheckTimers]);
+
+  const clearExaminerTransitionTimeout = useCallback(() => {
+    if (examinerTransitionTimeoutRef.current) {
+      clearTimeout(examinerTransitionTimeoutRef.current);
+      examinerTransitionTimeoutRef.current = null;
+    }
+  }, []);
+
+  const schedulePostPromptAction = useCallback(
+    (action: () => void, delayMs: number = 380) => {
+      clearExaminerTransitionTimeout();
+      examinerTransitionTimeoutRef.current = setTimeout(() => {
+        examinerTransitionTimeoutRef.current = null;
+        action();
+      }, delayMs);
+    },
+    [clearExaminerTransitionTimeout]
+  );
+
+  // Fisher-Yates unbiased shuffle helper so question banks never stay locked in fixed order
+  const shuffleItems = <T,>(items: T[]): T[] => {
+    const arr = [...items];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  // Helper to load distinct, fresh questions from Comprehensive Bank with guaranteed non-repetition
   const assembleExamQuestions = useCallback((): {
     p1: SpeakingQuestionItem[];
     p2: SpeakingQuestionItem;
@@ -234,53 +350,73 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       if (raw) seenIds = new Set(JSON.parse(raw));
     } catch {}
 
-    // Filter available pool
-    const availableP1 = PART_1_SPEAKING_BANK.filter((q) => !seenIds.has(q.id));
-    const p1Pool = availableP1.length >= 4 ? availableP1 : PART_1_SPEAKING_BANK;
+    // 1. Part 1: Prefer unseen items; if exhausted, clear old Part 1 IDs so fresh shuffled items are picked
+    let availableP1 = PART_1_SPEAKING_BANK.filter((q) => !seenIds.has(q.id));
+    if (availableP1.length < 4) {
+      PART_1_SPEAKING_BANK.forEach((q) => seenIds.delete(q.id));
+      availableP1 = [...PART_1_SPEAKING_BANK];
+    }
+    const p1Pool = shuffleItems(availableP1);
 
-    // Pick 3-4 Part 1 questions across distinct topic domains
+    // Pick 4 distinct Part 1 questions across distinct topic domains
     const p1Selected: SpeakingQuestionItem[] = [];
     const usedP1Topics = new Set<string>();
+    const usedP1Ids = new Set<string>();
     for (const q of p1Pool) {
-      if (!usedP1Topics.has(q.topic) && p1Selected.length < 4) {
+      if (!usedP1Topics.has(q.topic) && !usedP1Ids.has(q.id) && p1Selected.length < 4) {
         usedP1Topics.add(q.topic);
+        usedP1Ids.add(q.id);
         p1Selected.push(q);
       }
     }
-    while (p1Selected.length < 4 && p1Pool.length > 0) {
-      p1Selected.push(p1Pool[Math.floor(Math.random() * p1Pool.length)]);
+    for (const q of p1Pool) {
+      if (p1Selected.length >= 4) break;
+      if (!usedP1Ids.has(q.id)) {
+        usedP1Ids.add(q.id);
+        p1Selected.push(q);
+      }
     }
 
-    // Pick 1 Part 2 Cue card
-    const availableP2 = PART_2_CUE_CARD_BANK.filter((q) => !seenIds.has(q.id));
-    const p2Pool = availableP2.length > 0 ? availableP2 : PART_2_CUE_CARD_BANK;
-    const p2Selected = p2Pool[Math.floor(Math.random() * p2Pool.length)];
+    // 2. Part 2 Cue Card: Prefer unseen; clear old Part 2 IDs once all cue cards have been practiced
+    let availableP2 = PART_2_CUE_CARD_BANK.filter((q) => !seenIds.has(q.id));
+    if (availableP2.length === 0) {
+      PART_2_CUE_CARD_BANK.forEach((q) => seenIds.delete(q.id));
+      availableP2 = [...PART_2_CUE_CARD_BANK];
+    }
+    const p2Pool = shuffleItems(availableP2);
+    const p2Selected = p2Pool[0];
 
-    // Pick 3 Part 3 Discussion questions logically aligned with the Part 2 theme
-    const p2Theme = p2Selected.topic.toLowerCase();
-    const availableP3 = PART_3_DISCUSSION_BANK.filter((q) => !seenIds.has(q.id));
-    const p3Pool = availableP3.length >= 3 ? availableP3 : PART_3_DISCUSSION_BANK;
+    // 3. Part 3 Discussion: Prefer unseen; clear old Part 3 IDs once exhausted; always shuffle
+    let availableP3 = PART_3_DISCUSSION_BANK.filter((q) => !seenIds.has(q.id));
+    if (availableP3.length < 3) {
+      PART_3_DISCUSSION_BANK.forEach((q) => seenIds.delete(q.id));
+      availableP3 = [...PART_3_DISCUSSION_BANK];
+    }
+    const p3Pool = shuffleItems(availableP3);
 
-    // Thematic matching first
-    let p3Candidates = p3Pool.filter((q) => {
-      const qText = (q.topic + ' ' + q.questionText).toLowerCase();
-      return (
-        qText.includes('decision') ||
-        qText.includes('travel') ||
-        qText.includes('technology') ||
-        qText.includes('habit') ||
-        qText.includes('culture') ||
-        qText.includes('education')
-      );
+    // Light thematic preference aligned with Part 2 topic keywords, then fall back to shuffled pool
+    const p2Keywords = (p2Selected?.topic || '')
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((w) => w.length >= 4);
+    const p3Thematic = p3Pool.filter((q) => {
+      const text = `${q.topic} ${q.questionText}`.toLowerCase();
+      return p2Keywords.some((kw) => text.includes(kw));
     });
-    if (p3Candidates.length < 3) p3Candidates = p3Pool;
+    const p3Selected: SpeakingQuestionItem[] = [];
+    const usedP3Ids = new Set<string>();
+    for (const q of [...p3Thematic, ...p3Pool]) {
+      if (p3Selected.length >= 3) break;
+      if (!usedP3Ids.has(q.id)) {
+        usedP3Ids.add(q.id);
+        p3Selected.push(q);
+      }
+    }
 
-    const p3Selected = p3Candidates.slice(0, 3);
-
-    // Save newly selected IDs to seen pool (keep last 50)
+    // Save newly selected IDs to seen pool
     const newSeen = Array.from(
       new Set([...Array.from(seenIds), ...p1Selected.map((q) => q.id), p2Selected.id, ...p3Selected.map((q) => q.id)])
-    ).slice(-50);
+    );
     try {
       localStorage.setItem(STORAGE_SEEN_KEY, JSON.stringify(newSeen));
     } catch {}
@@ -298,23 +434,43 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       const raw = localStorage.getItem(STORAGE_SESSION_KEY);
       if (raw) {
         const saved = JSON.parse(raw);
+        const activeUser = getActiveUser();
         if (saved && saved.stage && saved.stage !== 'PRE_TEST') {
-          setStage(saved.stage);
-          setTestId(saved.testId || 'spk_exam_' + Date.now());
-          setPart1Questions(saved.part1Questions || []);
-          setPart2CueCard(saved.part2CueCard || null);
-          setPart3Questions(saved.part3Questions || []);
-          setPart1Index(saved.part1Index || 0);
-          setPart3Index(saved.part3Index || 0);
-          setIdCheckStep(saved.idCheckStep || 0);
-          if (saved.candidateIdentity) setCandidateIdentity(saved.candidateIdentity);
-          setPrepSecondsLeft(saved.prepSecondsLeft ?? 60);
-          setMonologueSecondsLeft(saved.monologueSecondsLeft ?? 120);
-          setPart2Notes(saved.part2Notes || '');
-          setCompletedAnswers(saved.completedAnswers || []);
-          setCandidateTranscript(saved.candidateTranscript || '');
-          setEvaluationReport(saved.evaluationReport || null);
-          return;
+          if (saved.userId && activeUser?.id && saved.userId !== activeUser.id) {
+            localStorage.removeItem(STORAGE_SESSION_KEY);
+          } else {
+            setStage(saved.stage);
+            setTestId(saved.testId || 'spk_exam_' + Date.now());
+            setPart1Questions(saved.part1Questions || []);
+            setPart2CueCard(saved.part2CueCard || null);
+            setPart3Questions(saved.part3Questions || []);
+            setPart1Index(saved.part1Index || 0);
+            setPart3Index(saved.part3Index || 0);
+            setIdCheckStep(saved.idCheckStep || 0);
+            if (saved.candidateIdentity) {
+              setCandidateIdentity({
+                ...saved.candidateIdentity,
+                fullName: activeUser?.name || saved.candidateIdentity.fullName || '',
+                preferredName:
+                  (activeUser?.name ? activeUser.name.split(' ')[0] : '') ||
+                  saved.candidateIdentity.preferredName ||
+                  ''
+              });
+            } else if (activeUser?.name) {
+              setCandidateIdentity((prev) => ({
+                ...prev,
+                fullName: activeUser.name,
+                preferredName: activeUser.name.split(' ')[0]
+              }));
+            }
+            setPrepSecondsLeft(saved.prepSecondsLeft ?? 60);
+            setMonologueSecondsLeft(saved.monologueSecondsLeft ?? 120);
+            setPart2Notes(saved.part2Notes || '');
+            setCompletedAnswers(saved.completedAnswers || []);
+            setCandidateTranscript(saved.candidateTranscript || '');
+            setEvaluationReport(saved.evaluationReport || null);
+            return;
+          }
         }
       }
     } catch (e) {
@@ -328,11 +484,63 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     setPart3Questions(initialSet.p3);
   }, [assembleExamQuestions]);
 
+  const prevCustomMockSetRef = useRef<any | null>(null);
+
+  // Sync custom AI Pilot mock set if provided (adapting nested part1.topicGroups, part2, part3.themes), or restore standard bank only when clearing an active pilot
+  useEffect(() => {
+    if (customMockSet && customMockSet.part1 && customMockSet.part2 && customMockSet.part3) {
+      prevCustomMockSetRef.current = customMockSet;
+      try {
+        if (Array.isArray(customMockSet.part1.topicGroups) && Array.isArray(customMockSet.part3.themes)) {
+          const adapted = adaptSpeakingPilotSetForExaminer(customMockSet);
+          setTestId(adapted.id || 'spk_draft_' + Date.now());
+          setPart1Questions(adapted.part1Questions as any);
+          setPart2CueCard(adapted.part2CueCard as any);
+          setPart3Questions(adapted.part3Questions as any);
+          setPrepSecondsLeft(adapted.part2CueCard.preparationTimeSeconds || 60);
+          setMonologueSecondsLeft(adapted.part2CueCard.speakingTimeSeconds || 120);
+        } else {
+          setTestId(customMockSet.id || 'spk_draft_' + Date.now());
+          setPart1Questions(Array.isArray(customMockSet.part1) ? customMockSet.part1 : []);
+          setPart2CueCard(customMockSet.part2);
+          setPart3Questions(Array.isArray(customMockSet.part3) ? customMockSet.part3 : []);
+        }
+      } catch (err) {
+        console.error('[VoiceExaminer] Failed to adapt Speaking AI Pilot set:', err);
+      }
+    } else if (!customMockSet && prevCustomMockSetRef.current) {
+      prevCustomMockSetRef.current = null;
+      const stdSet = assembleExamQuestions();
+      setTestId('spk_exam_' + Date.now());
+      setPart1Questions(stdSet.p1);
+      setPart2CueCard(stdSet.p2);
+      setPart3Questions(stdSet.p3);
+    }
+  }, [customMockSet, assembleExamQuestions]);
+
+  const handleExitCustomPilot = useCallback(() => {
+    stopSpeech();
+    try {
+      localStorage.removeItem(STORAGE_SESSION_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    setStage('PRE_TEST');
+    setPart1Index(0);
+    setPart3Index(0);
+    setCompletedAnswers([]);
+    setCandidateTranscript('');
+    if (onClearCustomMockSet) {
+      onClearCustomMockSet();
+    }
+  }, [onClearCustomMockSet]);
+
   // Persist session state to localStorage
   useEffect(() => {
     if (stage === 'PRE_TEST') return;
     try {
       const snapshot = {
+        userId: getActiveUser()?.id || null,
         stage,
         testId,
         part1Questions,
@@ -405,6 +613,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
             fullText += event.results[i][0].transcript + ' ';
           }
           const cleaned = fullText.trim();
+          currentTranscriptRef.current = cleaned;
           setCandidateTranscript(cleaned);
           lastSpeechTimeRef.current = Date.now();
 
@@ -436,12 +645,14 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
         recognitionRef.current = recognition;
       } catch (err) {
-        console.warn('SpeechRecognition initialization error:', err);
       }
     }
 
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       isSessionRecordingRef.current = false;
+      examinerPromptTokenRef.current += 1;
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -451,39 +662,50 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       if (prepTimerRef.current) clearInterval(prepTimerRef.current);
       if (monologueTimerRef.current) clearInterval(monologueTimerRef.current);
       if (silenceCheckRef.current) clearInterval(silenceCheckRef.current);
+      if (examinerTransitionTimeoutRef.current) {
+        clearTimeout(examinerTransitionTimeoutRef.current);
+        examinerTransitionTimeoutRef.current = null;
+      }
       audioManager.reset('speaking_unmount');
-      stopSpeech();
     };
   }, [onShowToast]);
 
-  // Silence Detection Loop (Natural examiner responsiveness)
+  const latestDoneSpeakingRef = useRef<() => void>(() => {});
+  const silenceCountdownValRef = useRef<number | null>(null);
+
+  // Silence Detection Loop (Natural examiner responsiveness — always invokes latest handler via ref)
   useEffect(() => {
     if (!isRecording) {
       if (silenceCheckRef.current) clearInterval(silenceCheckRef.current);
+      silenceCountdownValRef.current = null;
       setSilenceCountdown(null);
       return;
     }
 
     silenceCheckRef.current = setInterval(() => {
-      const words = candidateTranscript.trim().split(/\s+/).filter(Boolean).length;
+      const words = (currentTranscriptRef.current || candidateTranscript).trim().split(/\s+/).filter(Boolean).length;
       // In ID check, even a short response (1-2 words like full name or "Dhaka") is sufficient
       const minWords = stage === 'ID_CHECK' ? 2 : stage === 'PART_2_SPEAK' ? 25 : 8;
 
       if (words >= minWords) {
         const timeSinceSpeech = Date.now() - lastSpeechTimeRef.current;
-        const silenceThreshold = stage === 'ID_CHECK' ? 2200 : 3000;
+        const silenceThreshold = stage === 'ID_CHECK' ? 2500 : stage === 'PART_2_SPEAK' ? 4500 : 3500;
         if (timeSinceSpeech >= silenceThreshold) {
-          // Trigger smooth auto-advance after silence confirmation
-          setSilenceCountdown((prev) => {
-            if (prev === null) return 2;
-            if (prev <= 1) {
-              clearInterval(silenceCheckRef.current!);
-              handleCandidateDoneSpeaking();
-              return null;
-            }
-            return prev - 1;
-          });
+          const prev = silenceCountdownValRef.current;
+          if (prev === null) {
+            silenceCountdownValRef.current = 2;
+            setSilenceCountdown(2);
+          } else if (prev <= 1) {
+            if (silenceCheckRef.current) clearInterval(silenceCheckRef.current);
+            silenceCountdownValRef.current = null;
+            setSilenceCountdown(null);
+            latestDoneSpeakingRef.current();
+          } else {
+            silenceCountdownValRef.current = prev - 1;
+            setSilenceCountdown(prev - 1);
+          }
         } else {
+          silenceCountdownValRef.current = null;
           setSilenceCountdown(null);
         }
       }
@@ -496,6 +718,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
   // Start candidate recording
   const startRecording = useCallback(() => {
+    currentTranscriptRef.current = '';
     setCandidateTranscript('');
     setSpeakingElapsedSec(0);
     previousTranscriptLengthRef.current = 0;
@@ -519,8 +742,8 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     }, 1000);
   }, []);
 
-  // Stop candidate recording
-  const stopRecording = useCallback(() => {
+  // Stop candidate recording & return flushed transcript
+  const stopRecording = useCallback((): string => {
     isSessionRecordingRef.current = false;
     setIsRecording(false);
     if (speechTimerRef.current) clearInterval(speechTimerRef.current);
@@ -532,39 +755,174 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
         recognitionRef.current.stop();
       } catch {}
     }
+    return (currentTranscriptRef.current || '').trim();
   }, []);
 
-  // Examiner speaking helper (Strictly British male Arthur/Fenrir)
+  // Examiner speaking helper (supports British regional accents with explicit fallback disclosure)
   const speakExaminerPrompt = useCallback(
-    (promptText: string, onFinished?: () => void) => {
+    (
+      promptText: string,
+      onFinished?: () => void,
+      genderOverride?: 'male' | 'female',
+      accentOverride?: BritishRegionalAccent
+    ) => {
+      examinerPromptTokenRef.current += 1;
+      const myPromptToken = examinerPromptTokenRef.current;
+      let hasSettled = false;
+
+      clearExaminerTransitionTimeout();
       stopRecording();
-      setIsExaminerSpeaking(true);
+      const targetGender = genderOverride || examinerGender;
+      const targetRegion = accentOverride || regionalAccent;
+      const resolvedVoice = resolveRegionalExaminerSpeaker(targetGender, targetRegion);
+      setActiveSpokenPrompt(promptText);
       audioManager.reset('examiner_prompt');
 
-      audioManager.playCustomAudio('examiner_turn_' + Date.now(), promptText, {
-        speakerId: 'speaker_04', // Fenrir / British Male Examiner Arthur
+      if (isExaminerMuted) {
+        setIsExaminerSpeaking(false);
+        schedulePostPromptAction(() => {
+          if (examinerPromptTokenRef.current === myPromptToken && !hasSettled) {
+            hasSettled = true;
+            onFinished?.();
+          }
+        }, 250);
+        return;
+      }
+
+      setIsExaminerSpeaking(true);
+      audioManager.playCustomAudio('examiner_turn_' + myPromptToken + '_' + Date.now(), promptText, {
+        speakerId: resolvedVoice.speakerId,
+        gender: targetGender,
+        accent: targetRegion,
+        rate: resolvedVoice.rate,
+        deliveryProfile: promptText.trim().endsWith('?') ? 'examiner_question' : 'examiner_instruction',
         allowReplay: true,
         onEnd: () => {
+          if (!isMountedRef.current || hasSettled || examinerPromptTokenRef.current !== myPromptToken) return;
+          hasSettled = true;
           setIsExaminerSpeaking(false);
           onFinished?.();
         },
         onError: () => {
+          if (!isMountedRef.current || hasSettled || examinerPromptTokenRef.current !== myPromptToken) return;
+          hasSettled = true;
           setIsExaminerSpeaking(false);
+          onShowToast('Examiner audio encountered an interruption — continuing with written prompt.');
           onFinished?.();
         }
       });
     },
-    [stopRecording]
+    [clearExaminerTransitionTimeout, schedulePostPromptAction, stopRecording, examinerGender, regionalAccent, isExaminerMuted, onShowToast]
   );
+
+  const activeIdProtocol = useMemo(
+    () => getPracticeCandidateIdProtocol(activeExaminerName),
+    [activeExaminerName]
+  );
+
+  const handleSwitchMockExaminerGender = (nextGender: 'male' | 'female') => {
+    clearExaminerTransitionTimeout();
+    audioManager.reset('switch_examiner_gender');
+    stopSpeech();
+    setIsExaminerSpeaking(false);
+    setExaminerGender(nextGender);
+    try {
+      localStorage.setItem('ielts_selected_examiner_gender_v1', nextGender);
+      localStorage.setItem('ielts_sprint_preferred_voice_gender_v2', nextGender);
+      window.dispatchEvent(new CustomEvent('ielts_voice_gender_changed', { detail: { gender: nextGender } }));
+    } catch {}
+    soundManager.playBeep(580, 0.04);
+    const nextName = nextGender === 'female' ? 'Examiner Clara, AI' : 'Examiner Arthur, AI';
+    onShowToast(
+      `Switched examiner to ${nextName} (${activeRegionConfig.label} · ${nextGender === 'female' ? 'Female' : 'Practice Male'})`
+    );
+
+    if (stage === 'ID_CHECK' || stage === 'PART_1' || stage === 'PART_3') {
+      const promptToSpeak =
+        stage === 'ID_CHECK'
+          ? getPracticeCandidateIdProtocol(nextName)[idCheckStep]?.prompt || ''
+          : stage === 'PART_1'
+          ? part1Questions[part1Index]?.questionText || ''
+          : part3Questions[part3Index]?.questionText || '';
+      if (promptToSpeak) {
+        speakExaminerPrompt(
+          promptToSpeak,
+          () => {
+            schedulePostPromptAction(() => {
+              startRecording();
+            }, 380);
+          },
+          nextGender,
+          regionalAccent
+        );
+      }
+    } else if (stage === 'PRE_TEST') {
+      speakExaminerPrompt(
+        `Good day. I am ${nextName}, your IELTS Speaking examiner persona for today's ${activeRegionConfig.label} practice session.`,
+        undefined,
+        nextGender,
+        regionalAccent
+      );
+    } else if (activeSpokenPrompt) {
+      const updatedPrompt = activeSpokenPrompt
+        .replace(/Prof\. Arthur Pendelton|Dr\. Clara Sterling|Dr\. Alistair Vance/g, nextName);
+      speakExaminerPrompt(updatedPrompt, undefined, nextGender, regionalAccent);
+    }
+  };
+
+  const handleSwitchRegionalAccent = (nextAccent: BritishRegionalAccent) => {
+    clearExaminerTransitionTimeout();
+    audioManager.reset('switch_regional_accent');
+    stopSpeech();
+    setIsExaminerSpeaking(false);
+    setRegionalAccent(nextAccent);
+    setPreferredBritishRegionalAccent(nextAccent);
+    soundManager.playBeep(610, 0.04);
+    const cfg = BRITISH_REGIONAL_ACCENT_METADATA[nextAccent];
+    onShowToast(
+      cfg.isRegionalVoiceAvailable
+        ? `Switched examiner accent to ${cfg.label} (${cfg.regionName})`
+        : `Selected ${cfg.label} — ${cfg.fallbackDisclosure || 'Using British English fallback'}`
+    );
+
+    if (stage === 'ID_CHECK' || stage === 'PART_1' || stage === 'PART_3') {
+      const promptToSpeak =
+        stage === 'ID_CHECK'
+          ? activeIdProtocol[idCheckStep]?.prompt || ''
+          : stage === 'PART_1'
+          ? part1Questions[part1Index]?.questionText || ''
+          : part3Questions[part3Index]?.questionText || '';
+      if (promptToSpeak) {
+        speakExaminerPrompt(
+          promptToSpeak,
+          () => {
+            schedulePostPromptAction(() => {
+              startRecording();
+            }, 380);
+          },
+          examinerGender,
+          nextAccent
+        );
+      }
+    } else if (stage === 'PRE_TEST') {
+      speakExaminerPrompt(
+        cfg.sampleGreeting,
+        undefined,
+        examinerGender,
+        nextAccent
+      );
+    }
+  };
 
   // Repeat question handler
   const handleRepeatQuestion = useCallback(() => {
     if (isExaminerSpeaking) return;
+    clearExaminerTransitionTimeout();
     stopRecording();
 
     let currentQText = '';
     if (stage === 'ID_CHECK') {
-      currentQText = OFFICIAL_CANDIDATE_ID_PROTOCOL[idCheckStep]?.prompt || '';
+      currentQText = activeIdProtocol[idCheckStep]?.prompt || '';
     } else if (stage === 'PART_1') {
       currentQText = part1Questions[part1Index]?.questionText || '';
     } else if (stage === 'PART_3') {
@@ -575,40 +933,42 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
     soundManager.playBeep(520, 0.08);
     speakExaminerPrompt(`Certainly. ${currentQText}`, () => {
-      // Re-enable candidate recording after repeat
-      setTimeout(() => {
+      // Re-enable candidate recording after repeat with natural 650ms floor handover
+      schedulePostPromptAction(() => {
         startRecording();
-      }, 400);
+      }, 380);
     });
-  }, [isExaminerSpeaking, stage, idCheckStep, part1Questions, part1Index, part3Questions, part3Index, speakExaminerPrompt, startRecording, stopRecording]);
+  }, [isExaminerSpeaking, clearExaminerTransitionTimeout, schedulePostPromptAction, stage, idCheckStep, activeIdProtocol, part1Questions, part1Index, part3Questions, part3Index, speakExaminerPrompt, startRecording, stopRecording]);
 
   // ========================================================
   // STATE MACHINE TRANSITIONS
   // ========================================================
 
-  // Transition: PRE_TEST -> ID_CHECK (Official IELTS Identity & Name Verification Protocol)
+  // Transition: PRE_TEST -> ID_CHECK (IELTS Identity & Name Verification Protocol)
   const startExamination = () => {
+    clearExaminerTransitionTimeout();
     soundManager.playSuccess();
     setStage('ID_CHECK');
     setIdCheckStep(0);
     setCandidateTranscript('');
     setCompletedAnswers([]);
 
-    const p0 = OFFICIAL_CANDIDATE_ID_PROTOCOL[0];
+    const p0 = activeIdProtocol[0];
 
-    setTimeout(() => {
+    schedulePostPromptAction(() => {
       speakExaminerPrompt(p0.prompt, () => {
-        setTimeout(() => {
+        schedulePostPromptAction(() => {
           startRecording();
-        }, 500);
+        }, 380);
       });
-    }, 400);
+    }, 200);
   };
 
   // Advance Candidate ID Protocol Turn
   const advanceIdCheckStep = () => {
-    stopRecording();
-    const spoken = candidateTranscript.trim();
+    clearExaminerTransitionTimeout();
+    const flushedText = stopRecording();
+    const spoken = (flushedText || currentTranscriptRef.current || candidateTranscript).trim();
 
     setCandidateIdentity((prev) => {
       const updated = { ...prev };
@@ -636,11 +996,11 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       setCandidateTranscript('');
       soundManager.playBeep(560, 0.08);
 
-      const nextItem = OFFICIAL_CANDIDATE_ID_PROTOCOL[nextStep];
+      const nextItem = Practice_CANDIDATE_ID_PROTOCOL[nextStep];
       speakExaminerPrompt(nextItem.prompt, () => {
-        setTimeout(() => {
+        schedulePostPromptAction(() => {
           startRecording();
-        }, 500);
+        }, 380);
       });
     } else {
       // Step 3 finished -> ID verified -> Transition to Part 1
@@ -654,15 +1014,16 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       const p1Intro = `Thank you, that's fine. Now, in this first part, I would like to ask you some questions about yourself. ${q1?.questionText || 'Where is your hometown located?'}`;
 
       speakExaminerPrompt(p1Intro, () => {
-        setTimeout(() => {
+        schedulePostPromptAction(() => {
           startRecording();
-        }, 500);
+        }, 380);
       });
     }
   };
 
   // Immediate Fast-Track / Skip ID Check directly to Part 1
   const handleFastTrackToPart1 = () => {
+    clearExaminerTransitionTimeout();
     stopRecording();
     stopSpeech();
     setCandidateIdentity((prev) => ({ ...prev, isVerified: true }));
@@ -672,12 +1033,12 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     setCandidateTranscript('');
 
     const q1 = part1Questions[0];
-    const greetingText = `Good afternoon. My name is Dr. Alistair Vance, and I will be your official examiner today. In this first part, I would like to ask you some questions about yourself. ${q1?.questionText || 'Where is your hometown located?'}`;
+    const greetingText = `Good afternoon. My name is ${activeExaminerName}, and I will be your examiner today. In this first part, I would like to ask you some questions about yourself. ${q1?.questionText || 'Where is your hometown located?'}`;
 
     speakExaminerPrompt(greetingText, () => {
-      setTimeout(() => {
+      schedulePostPromptAction(() => {
         startRecording();
-      }, 500);
+      }, 380);
     });
   };
 
@@ -698,61 +1059,83 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     advanceExecution: () => void,
     nextLabel: string
   ) => {
-    setIsLoadingTurnFeedback(true);
+    const attemptId = Date.now();
+    currentAttemptIdRef.current = attemptId;
     soundManager.playBeep(580, 0.08);
+
+    // When Instant Coaching Modal is disabled (standard exam flow), advance and speak the examiner's
+    // next prompt immediately so turn evaluation never blocks or delays the examiner's voice transition.
+    if (!autoInstantFeedback) {
+      setCompletedAnswers((prev) => [...prev.filter((a) => a.questionId !== record.questionId), record]);
+      advanceExecution();
+      evaluateSingleSpeakingTurn(
+        record,
+        record.part === 2 ? part2CueCard?.cueCardBulletPoints : []
+      )
+        .then((feedback) => {
+          record.instantFeedback = feedback;
+          setCompletedAnswers((prev) => [...prev.filter((a) => a.questionId !== record.questionId), { ...record }]);
+        })
+        .catch(() => {
+          const fallback = generateDiagnosticTurnFeedback(record);
+          record.instantFeedback = fallback;
+          setCompletedAnswers((prev) => [...prev.filter((a) => a.questionId !== record.questionId), { ...record }]);
+        });
+      return;
+    }
+
+    setIsLoadingTurnFeedback(true);
 
     try {
       const feedback = await evaluateSingleSpeakingTurn(
         record,
         record.part === 2 ? part2CueCard?.cueCardBulletPoints : []
       );
+      if (currentAttemptIdRef.current !== attemptId) return; // Discard out-of-order evaluation
       record.instantFeedback = feedback;
       setCurrentTurnFeedback(feedback);
       setCompletedAnswers(prev => [...prev.filter(a => a.questionId !== record.questionId), record]);
 
-      if (autoInstantFeedback) {
-        setPendingTurnAdvance(() => advanceExecution);
-        setNextTurnLabel(nextLabel);
-        setShowTurnFeedbackModal(true);
-        soundManager.playSuccess();
-      } else {
-        advanceExecution();
-      }
+      setPendingTurnAdvance(() => advanceExecution);
+      setNextTurnLabel(nextLabel);
+      setShowTurnFeedbackModal(true);
+      soundManager.playSuccess();
     } catch (err) {
+      if (currentAttemptIdRef.current !== attemptId) return;
       const fallback = generateDiagnosticTurnFeedback(record);
       record.instantFeedback = fallback;
       setCurrentTurnFeedback(fallback);
       setCompletedAnswers(prev => [...prev.filter(a => a.questionId !== record.questionId), record]);
-      if (autoInstantFeedback) {
-        setPendingTurnAdvance(() => advanceExecution);
-        setNextTurnLabel(nextLabel);
-        setShowTurnFeedbackModal(true);
-      } else {
-        advanceExecution();
-      }
+      setPendingTurnAdvance(() => advanceExecution);
+      setNextTurnLabel(nextLabel);
+      setShowTurnFeedbackModal(true);
     } finally {
-      setIsLoadingTurnFeedback(false);
+      if (currentAttemptIdRef.current === attemptId) {
+        setIsLoadingTurnFeedback(false);
+      }
     }
   };
 
   // Retake current turn (Candidate repeats speech with coach tips)
   const handleRetakeTurnFromModal = () => {
     setShowTurnFeedbackModal(false);
+    clearExaminerTransitionTimeout();
     stopSpeech();
     setCandidateTranscript('');
     setSpeakingElapsedSec(0);
-    setTimeout(() => {
+    schedulePostPromptAction(() => {
       startRecording();
-    }, 400);
+    }, 150);
   };
 
   // Transition: PART_1 Next Question or to PART_2_PREP
   const advancePart1Turn = () => {
-    stopRecording();
+    clearExaminerTransitionTimeout();
+    const flushedText = stopRecording();
     const currentQ = part1Questions[part1Index];
     if (!currentQ) return;
 
-    const cleanTranscript = candidateTranscript.trim();
+    const cleanTranscript = (flushedText || currentTranscriptRef.current || candidateTranscript).trim();
     const realWordCount = cleanTranscript ? cleanTranscript.split(/\s+/).filter(Boolean).length : 0;
 
     // Record answer strictly from candidate's actual spoken words
@@ -787,9 +1170,9 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
         const lead = transitionPhrases[nextIdx % transitionPhrases.length];
 
         speakExaminerPrompt(`${lead} ${nextQ.questionText}`, () => {
-          setTimeout(() => {
+          schedulePostPromptAction(() => {
             startRecording();
-          }, 400);
+          }, 380);
         });
       } else {
         // Transition to PART_2_PREP
@@ -840,10 +1223,10 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     soundManager.playSuccess();
 
     speakExaminerPrompt('All right, your preparation time is up. Please begin speaking now.', () => {
-      setTimeout(() => {
+      schedulePostPromptAction(() => {
         startRecording();
         startMonologueTimer();
-      }, 500);
+      }, 380);
     });
   };
 
@@ -868,12 +1251,13 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   // Transition: PART_2_SPEAK -> PART_3
   const advancePart2SpeakToPart3 = () => {
     if (monologueTimerRef.current) clearInterval(monologueTimerRef.current);
-    stopRecording();
+    clearExaminerTransitionTimeout();
+    const flushedText = stopRecording();
 
     if (!part2CueCard) return;
 
     // Record Part 2 Monologue answer strictly from candidate's actual spoken words
-    const cleanTranscript = candidateTranscript.trim();
+    const cleanTranscript = (flushedText || currentTranscriptRef.current || candidateTranscript).trim();
     const words = cleanTranscript ? cleanTranscript.split(/\s+/).filter(Boolean).length : 0;
     const duration = Math.max(0, 120 - monologueSecondsLeft);
 
@@ -902,9 +1286,9 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       const p3Intro = `Thank you very much. Now, in Part 3, let's explore some more general questions related to this theme. ${q1?.questionText || 'Do you believe modern society values these experiences as much as in the past?'}`;
 
       speakExaminerPrompt(p3Intro, () => {
-        setTimeout(() => {
+        schedulePostPromptAction(() => {
           startRecording();
-        }, 500);
+        }, 380);
       });
     };
 
@@ -917,11 +1301,12 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
   // Transition: PART_3 Next Question or to COMPLETED
   const advancePart3Turn = () => {
-    stopRecording();
+    clearExaminerTransitionTimeout();
+    const flushedText = stopRecording();
     const currentQ = part3Questions[part3Index];
     if (!currentQ) return;
 
-    const cleanTranscript = candidateTranscript.trim();
+    const cleanTranscript = (flushedText || currentTranscriptRef.current || candidateTranscript).trim();
     const words = cleanTranscript ? cleanTranscript.split(/\s+/).filter(Boolean).length : 0;
 
     const record: SpeakingAnswerRecord = {
@@ -953,16 +1338,16 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
         const nextQ = part3Questions[nextIdx];
 
         const transitions = [
-          'Thank you. Considering another perspective:',
-          'I see. And how does this connect to broader societal trends?',
-          'Right. Looking at this from an international angle:'
+          'Thank you. Considering another perspective,',
+          'I see. Building on that idea,',
+          'Right. Looking at this from a wider angle,'
         ];
         const intro = transitions[nextIdx % transitions.length];
 
         speakExaminerPrompt(`${intro} ${nextQ.questionText}`, () => {
-          setTimeout(() => {
+          schedulePostPromptAction(() => {
             startRecording();
-          }, 400);
+          }, 380);
         });
       } else {
         // Conclude Test
@@ -970,9 +1355,9 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
         soundManager.playSuccess();
 
         speakExaminerPrompt('Thank you very much. That is the end of the speaking examination.', () => {
-          setTimeout(() => {
+          schedulePostPromptAction(() => {
             generateFinalEvaluation([...completedAnswers, record]);
-          }, 1200);
+          }, 600);
         });
       }
     };
@@ -997,6 +1382,56 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     }
   };
 
+  // Keep latestDoneSpeakingRef synced on every render so silence auto-advance never uses stale part1Index/part3Index
+  latestDoneSpeakingRef.current = handleCandidateDoneSpeaking;
+
+  // Immediate Skip to Next Question (bypasses feedback modal so candidate never feels stuck on one prompt)
+  const handleSkipToNextQuestion = () => {
+    clearExaminerTransitionTimeout();
+    stopRecording();
+    stopSpeech();
+    soundManager.playBeep(600, 0.04);
+
+    if (stage === 'ID_CHECK') {
+      advanceIdCheckStep();
+      return;
+    }
+
+    if (stage === 'PART_1') {
+      if (part1Index < part1Questions.length - 1) {
+        const nextIdx = part1Index + 1;
+        setPart1Index(nextIdx);
+        setCandidateTranscript('');
+        const nextQ = part1Questions[nextIdx];
+        speakExaminerPrompt(`Alright, moving on. ${nextQ.questionText}`, () => {
+          schedulePostPromptAction(() => startRecording(), 380);
+        });
+      } else {
+        setStage('PART_2_PREP');
+        setPrepSecondsLeft(60);
+        speakExaminerPrompt(
+          'Thank you. Now, in Part 2, I am going to give you a topic card. You have one minute to prepare your notes.',
+          () => startPart2PrepTimer()
+        );
+      }
+      return;
+    }
+
+    if (stage === 'PART_3') {
+      if (part3Index < part3Questions.length - 1) {
+        const nextIdx = part3Index + 1;
+        setPart3Index(nextIdx);
+        setCandidateTranscript('');
+        const nextQ = part3Questions[nextIdx];
+        speakExaminerPrompt(`Let's explore another angle. ${nextQ.questionText}`, () => {
+          schedulePostPromptAction(() => startRecording(), 380);
+        });
+      } else {
+        advancePart3Turn();
+      }
+    }
+  };
+
   // Generate Final Assessment Report
   const generateFinalEvaluation = (answersToEvaluate: SpeakingAnswerRecord[]) => {
     setStage('ANALYZING');
@@ -1007,14 +1442,15 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       // Record attempts into QuestionEngine for spaced review
       answersToEvaluate.forEach((ans) => {
         try {
+          const turnBand = ans.instantFeedback?.overallBand ?? ans.instantFeedback?.estimatedBand ?? report.overallBand;
           questionEngine.recordAttempt({
             questionId: ans.questionId,
             module: 'speaking',
             userAnswer: ans.transcript,
-            isCorrect: ans.wordCount >= 25,
-            score: ans.wordsPerMinute >= 100 && ans.wordsPerMinute <= 165 ? 7.5 : 6.5,
+            isCorrect: turnBand >= 6.0 && ans.wordCount >= 10,
+            score: turnBand,
             timeSpentSec: ans.durationSec,
-            explanation: `Part ${ans.part} response evaluated against official Cambridge descriptors.`
+            explanation: `Part ${ans.part} response evaluated against Practice Practice descriptors.`
           });
         } catch {}
       });
@@ -1022,7 +1458,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       setEvaluationReport(report);
       setStage('RESULTS');
       soundManager.playSuccess();
-      onShowToast('Official IELTS Speaking Diagnostic Report Generated!');
+      onShowToast('IELTS Speaking Diagnostic Report Generated!');
     }, 1800);
   };
 
@@ -1052,18 +1488,31 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     onShowToast('Prepared fresh IELTS Speaking Examination with zero repetition.');
   };
 
-  // Sound Check Button in Pre-Test
+  // Sound Check Button in Pre-Test (via unified IELTSAudioEngine)
   const handleSoundCheck = () => {
     if (soundCheckActive) return;
     setSoundCheckActive(true);
     soundManager.playBeep(520, 0.1);
 
-    speakExaminerPrompt(
-      'Good day. This is an authentic sound check for the IELTS Speaking test. If you can hear this message clearly, your audio output is configured correctly.',
-      () => {
+    const speakerId = examinerGender === 'female' ? 'speaker_05' : 'speaker_04';
+    const sampleText =
+      'Good day. This is an authentic sound check for the IELTS Speaking test. If you can hear this message clearly, your audio output is configured correctly.';
+
+    ieltsAudioEngine.playSoundCheck({
+      speakerId,
+      sampleText,
+      onStart: () => {
+        setSoundCheckActive(true);
+      },
+      onEnd: () => {
         setSoundCheckActive(false);
+      },
+      onError: (err) => {
+        setSoundCheckActive(false);
+        const reason = typeof err?.message === 'string' ? err.message : 'Audio stream playback failed.';
+        onShowToast(`⚠ Sound check failed: ${reason}`);
       }
-    );
+    });
   };
 
   // Format mm:ss helper
@@ -1076,7 +1525,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   // Current active question prompt
   const currentActivePrompt = useMemo(() => {
     if (stage === 'ID_CHECK') {
-      return OFFICIAL_CANDIDATE_ID_PROTOCOL[idCheckStep]?.prompt || '';
+      return activeIdProtocol[idCheckStep]?.prompt || '';
     }
     if (stage === 'PART_1') {
       return part1Questions[part1Index]?.questionText || '';
@@ -1088,12 +1537,12 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       return part3Questions[part3Index]?.questionText || '';
     }
     return '';
-  }, [stage, idCheckStep, part1Questions, part1Index, part2CueCard, part3Questions, part3Index]);
+  }, [stage, idCheckStep, activeIdProtocol, part1Questions, part1Index, part2CueCard, part3Questions, part3Index]);
 
   // Current active question topic
   const currentActiveTopic = useMemo(() => {
     if (stage === 'ID_CHECK') {
-      return `Phase 0 · ${OFFICIAL_CANDIDATE_ID_PROTOCOL[idCheckStep]?.title || 'Identity Protocol'}`;
+      return `Phase 0 · ${activeIdProtocol[idCheckStep]?.title || 'Identity Protocol'}`;
     }
     if (stage === 'PART_1') {
       return part1Questions[part1Index]?.topic || 'Introduction';
@@ -1105,7 +1554,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
       return part3Questions[part3Index]?.topic || 'Abstract Discussion';
     }
     return '';
-  }, [stage, idCheckStep, part1Questions, part1Index, part2CueCard, part3Questions, part3Index]);
+  }, [stage, idCheckStep, activeIdProtocol, part1Questions, part1Index, part2CueCard, part3Questions, part3Index]);
 
   // Toggle expansion of transcript turn
   const toggleTurnExpand = (idx: number) => {
@@ -1122,8 +1571,9 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     setPlayingModelTurnIdx(turnIdx);
     soundManager.playBeep(640, 0.05);
     speakBritish(text, {
-      speakerId: 'speaker_04',
-      rate: 0.96,
+      gender: examinerGender,
+      regionalAccent,
+      rate: activeRegionConfig.defaultRate,
       onEnd: () => setPlayingModelTurnIdx(null),
       onError: () => setPlayingModelTurnIdx(null)
     });
@@ -1152,15 +1602,42 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     return (
       <div className="w-full max-w-4xl mx-auto space-y-6 animate-fade-in pb-16">
         {/* Top Header Badge */}
-        <div className="flex items-center justify-between bg-white px-4 py-3 rounded-2xl border border-slate-200 shadow-2xs">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse"></span>
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800">
-              Official IELTS Speaking Examination · Computer-Delivered Simulation
-            </span>
+        {customMockSet ? (
+          <div className="flex flex-wrap items-center justify-between bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 px-4 py-3 rounded-2xl shadow-2xs gap-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <div>
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-900 dark:text-emerald-200 block">
+                  AI PILOT — APPROVED PRACTICE
+                </span>
+                <span className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
+                  {customMockSet.title || customMockSet.topic} ({customMockSet.format || 'Academic'} · {customMockSet.difficulty || 'Standard'})
+                  {Array.isArray(customMockSet.part1?.topicGroups) && Array.isArray(customMockSet.part3?.themes)
+                    ? ` · ${customMockSet.part1.topicGroups.length} Part 1 Topic Groups · ${customMockSet.part3.themes.length} Part 3 Themes`
+                    : ''}
+                </span>
+              </div>
+            </div>
+            {onClearCustomMockSet && (
+              <button
+                onClick={handleExitCustomPilot}
+                className="px-3 py-1.5 min-h-[44px] rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-emerald-300 dark:border-emerald-700 text-xs font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900 transition cursor-pointer"
+              >
+                Exit Pilot & Reset to Standard Bank
+              </button>
+            )}
           </div>
-          <span className="text-xs text-slate-500 font-mono">Standard British Council / IDP Format</span>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between bg-white px-4 py-3 rounded-2xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse"></span>
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800">
+                AI Speaking Studio · Computer-Delivered Simulation
+              </span>
+            </div>
+            <span className="text-xs text-slate-500 font-mono">Standard IELTS Speaking Format</span>
+          </div>
+        )}
 
         {/* Hero Card */}
         <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-10 shadow-sm space-y-8">
@@ -1178,14 +1655,88 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
               <div>
                 <div className="inline-block px-2.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-mono font-bold uppercase mb-1">
-                  Dr. Alistair Vance · Cambridge Oral Examiner
+                  {activeExaminerName} · {activeRegionConfig.label} ({examinerGender === 'female' ? 'Female' : 'Male'})
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                   IELTS Speaking Mock Examination
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500">
-                  Authentic 3-part oral interview with natural British audio, live silence detection, and Cambridge diagnostic band scoring.
+                  Realistic 3-part oral interview with natural British regional accents, live silence detection, and Practice diagnostic band scoring.
                 </p>
+              </div>
+            </div>
+
+            {/* Pre-Test Examiner Voice Persona & Regional Accent Selector */}
+            <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+              <div className="flex flex-col items-start sm:items-end gap-1">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                  Select Examiner Persona
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-label="Select IELTS Speaking Examiner Persona"
+                  className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={examinerGender === 'male'}
+                    onClick={() => handleSwitchMockExaminerGender('male')}
+                    className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      examinerGender === 'male'
+                        ? 'bg-slate-900 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Prof. Arthur — Male
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={examinerGender === 'female'}
+                    onClick={() => handleSwitchMockExaminerGender('female')}
+                    className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      examinerGender === 'female'
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Dr. Clara — Female
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-start sm:items-end gap-1">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                  British Regional Accent
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-label="Select British Regional Accent"
+                  className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 text-[11px] font-bold flex-wrap"
+                >
+                  {BRITISH_REGIONAL_ACCENT_LIST.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={regionalAccent === item.id}
+                      onClick={() => handleSwitchRegionalAccent(item.id)}
+                      className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                        regionalAccent === item.id
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {item.shortLabel}
+                    </button>
+                  ))}
+                </div>
+                {activeRegionConfig.fallbackDisclosure && (
+                  <span className="text-[10px] font-mono text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md max-w-xs text-right">
+                    {activeRegionConfig.fallbackDisclosure}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1316,13 +1867,13 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
 
         <div className="space-y-2">
           <div className="text-xs font-mono uppercase tracking-wider text-slate-500 font-bold">
-            Cambridge IELTS Diagnostic Assessment
+            IELTS Diagnostic Assessment
           </div>
           <h2 className="text-2xl font-black text-slate-900">
             Evaluating Speaking Performance...
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto">
-            Analyzing speech rate, pause distributions, lexical diversity, and grammatical structures against the 4 official IELTS criteria.
+            Analyzing speech rate, pause distributions, lexical diversity, and grammatical structures against the 4 IELTS criteria.
           </p>
         </div>
 
@@ -1333,7 +1884,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
     );
   }
 
-  // VIEW 3: RESULTS STATE (Official-Style Diagnostic Report)
+  // VIEW 3: RESULTS STATE (Practice-Style Diagnostic Report)
   if (stage === 'RESULTS' && evaluationReport) {
     const { overallBand, criteria, grammarObservations, vocabUpgrades } = evaluationReport;
     const analytics = analyzeSpeakingFluency(completedAnswers);
@@ -1397,7 +1948,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-slate-600 shrink-0" />
             <span>
-              <strong>AI-Estimated Performance Diagnostic:</strong> Aligned with official Cambridge IELTS Band Descriptors (Not an official IELTS test certificate).
+              <strong>AI-Estimated Performance Diagnostic:</strong> Aligned with Practice IELTS Band Descriptors (Not an IELTS test certificate).
             </span>
           </div>
 
@@ -1421,7 +1972,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
               resultsTab === 'overview' ? 'bg-slate-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            4 Cambridge Criteria Overview
+            4 Practice Criteria Overview
           </button>
           <button
             onClick={() => {
@@ -1437,163 +1988,29 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
           </button>
           <button
             onClick={() => {
-              setResultsTab('trf_certificate');
+              setResultsTab('Scorecard_certificate');
               soundManager.playBeep(600, 0.04);
             }}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              resultsTab === 'trf_certificate' ? 'bg-emerald-700 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              resultsTab === 'Scorecard_certificate' ? 'bg-emerald-700 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Award className="w-3.5 h-3.5 text-amber-300" />
-            <span>Official TRF Scorecard</span>
+            <span>Practice Scorecard Scorecard</span>
           </button>
         </div>
 
         {resultsTab === 'overview' ? (
           <>
-            {/* Scorecard Hero */}
-            <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-8 shadow-xs space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-b border-slate-100 pb-6">
-                <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono font-bold uppercase">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Examination Completed
-                  </div>
-                  <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
-                    IELTS Speaking Diagnostic Report
-                  </h1>
-                  <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                    Evaluated by Dr. Vance across Parts 1, 2 & 3.
-                  </p>
-
-                  {/* Candidate Identity Verification Badge */}
-                  <div className="flex flex-wrap items-center gap-2 pt-3">
-                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-mono font-semibold">
-                      Candidate: <strong>{candidateIdentity.fullName || 'Registered Candidate'}</strong>
-                    </span>
-                    {candidateIdentity.preferredName && (
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-mono font-semibold">
-                        Known As: <strong>{candidateIdentity.preferredName}</strong>
-                      </span>
-                    )}
-                    {candidateIdentity.origin && (
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-mono">
-                        Origin: <strong>{candidateIdentity.origin}</strong>
-                      </span>
-                    )}
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono font-semibold flex items-center gap-1">
-                      <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Official Identity Verified</span>
-                    </span>
-                  </div>
-                </div>
-
-                {/* Overall Band */}
-                <div className="p-5 rounded-2xl bg-slate-900 text-white text-center min-w-[170px] shadow-sm">
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-bold">
-                    Overall Band Estimate
-                  </div>
-                  <div className="text-5xl font-black font-mono text-white my-1">
-                    {overallBand.toFixed(1)}
-                  </div>
-                  <div className="text-[11px] text-amber-300 font-semibold font-mono">
-                    {overallBand >= 8.0 ? 'C2 Expert User' : overallBand >= 7.0 ? 'C1 Good User' : 'B2 Competent User'}
-                  </div>
-                </div>
-              </div>
-
-              {/* 4 Official Criteria Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* 1. Fluency & Coherence */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800">Fluency & Coherence</span>
-                    <span className="text-base font-black font-mono text-slate-900">
-                      Band {criteria.fluency.band.toFixed(1)}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 space-y-1">
-                    <div>Pace: ~{analytics.averageWpm} WPM</div>
-                    <div>Hesitations: {analytics.totalFillers} detected</div>
-                  </div>
-                </div>
-
-                {/* 2. Lexical Resource */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800">Lexical Resource</span>
-                    <span className="text-base font-black font-mono text-slate-900">
-                      Band {criteria.lexical.band.toFixed(1)}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 space-y-1">
-                    <div>Vocabulary Pool: {analytics.uniqueVocabularyCount} unique words</div>
-                    <div>Diversity: {Math.round(analytics.lexicalDiversityRatio * 100)}%</div>
-                  </div>
-                </div>
-
-                {/* 3. Grammatical Range */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800">Grammatical Range</span>
-                    <span className="text-base font-black font-mono text-slate-900">
-                      Band {criteria.grammar.band.toFixed(1)}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 space-y-1">
-                    <div>Complex Structures: Active</div>
-                    <div>Tense Control: High</div>
-                  </div>
-                </div>
-
-                {/* 4. Pronunciation */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800">Pronunciation</span>
-                    <span className="text-base font-black font-mono text-slate-900">
-                      Band {criteria.pronunciation.band.toFixed(1)}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 space-y-1">
-                    <div>Enunciation: Clear</div>
-                    <div>Rhythm: Natural UK cadence</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Evidence-Based Strengths & Weaknesses */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2">
-                  <div className="text-xs font-mono font-bold text-emerald-900 uppercase flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Key Strengths
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1 list-disc list-inside">
-                    {criteria.fluency.strengths.slice(0, 2).map((s, i) => (
-                      <li key={i}>{s}</li>
-                    ))}
-                    {criteria.lexical.strengths.slice(0, 1).map((s, i) => (
-                      <li key={'l_' + i}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-2">
-                  <div className="text-xs font-mono font-bold text-amber-900 uppercase flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-600" /> Priorities for Band 8+
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1 list-disc list-inside">
-                    {criteria.fluency.improvements.slice(0, 1).map((s, i) => (
-                      <li key={i}>{s}</li>
-                    ))}
-                    {criteria.grammar.improvements.slice(0, 1).map((s, i) => (
-                      <li key={'g_' + i}>{s}</li>
-                    ))}
-                    {criteria.lexical.improvements.slice(0, 1).map((s, i) => (
-                      <li key={'lx_' + i}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
+            {/* Modern Coach Card-Based Scorecard Interface */}
+            <BritishCouncilSpeakingResult
+              evaluationReport={evaluationReport}
+              analytics={analytics}
+              completedAnswers={completedAnswers}
+              candidateName={candidateIdentity.preferredName || candidateIdentity.fullName || 'Candidate'}
+              onRetakeExam={handleRetakeExam}
+              onShowToast={onShowToast}
+            />
 
             {/* Fluency vs. Coherence Recharts Spider Chart */}
             <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-8 shadow-xs space-y-4">
@@ -1723,7 +2140,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
                     Acoustic Fluency & Speech Rate Telemetry
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Turn-by-turn speaking pace vs. Cambridge Optimal Native Cadence Zone (115–150 WPM).
+                    Turn-by-turn speaking pace vs. Practice Optimal Native Cadence Zone (115–150 WPM).
                   </p>
                 </div>
                 <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg tabular-nums">
@@ -1978,7 +2395,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
             })}
           </div>
         ) : (
-          /* TAB 3: OFFICIAL BRITISH COUNCIL / IDP-STYLE TEST REPORT FORM (TRF) SCORECARD */
+          /* TAB 3: Practice Coach / IDP-STYLE TEST REPORT FORM (Scorecard) SCORECARD */
           <div className="bg-white rounded-3xl border-2 border-slate-900 p-6 sm:p-10 shadow-sm space-y-6 animate-fade-in">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b-2 border-slate-900">
               <div>
@@ -1997,7 +2414,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
                 onClick={() => window.print()}
                 className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer self-start sm:self-auto"
               >
-                Print / Save Official TRF PDF
+                Print / Save Practice Scorecard PDF
               </button>
             </div>
 
@@ -2019,7 +2436,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
               </div>
             </div>
 
-            {/* 4 Criteria Official Score Boxes */}
+            {/* 4 Criteria Practice Score Boxes */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center font-mono tabular-nums">
               <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
                 <div className="text-[10px] font-bold uppercase text-slate-500">Fluency & Coherence</div>
@@ -2055,8 +2472,8 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
                 To advance further, focus on: <em>{criteria.grammar.improvements[0] || 'subordinate clause variety and zero-hesitation transitions'}</em>.
               </p>
               <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-slate-500">
-                <span>Examiner: Dr. Alistair Vance (Cert. #UK-4092)</span>
-                <span>IELTS Sprint Diagnostic Verification Seal · Validated</span>
+                <span>Examiner: {activeExaminerName} (Cert. #{examinerGender === 'female' ? 'UK-5108' : 'UK-4092'})</span>
+                <span>BandSprint Diagnostic Verification Seal · Validated</span>
               </div>
             </div>
           </div>
@@ -2075,134 +2492,194 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
   const isPart3 = stage === 'PART_3';
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-5 animate-fade-in pb-20 select-none">
-      {/* 1. Top Status & Progress Bar (No Gamification) */}
-      <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 border border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">
-            IELTS
+    <div className="w-full max-w-4xl mx-auto flex flex-col min-h-[calc(100dvh-5.5rem)] md:min-h-0 space-y-4 animate-fade-in pb-24 md:pb-12 select-none">
+      {/* 1. Sticky Top Header: Examiner Selection Tabs & Stage Status */}
+      <div className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3 sm:p-4 shadow-md flex flex-col gap-2.5 border border-slate-800">
+        {/* AI Pilot Banner if active */}
+        {customMockSet && (
+          <div className="flex items-center justify-between bg-emerald-950/90 border border-emerald-500/40 text-emerald-200 px-3 py-1.5 rounded-xl text-xs font-mono font-semibold">
+            <span className="flex items-center gap-1.5 truncate">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0 animate-pulse" />
+              <span className="truncate">AI PILOT — APPROVED PRACTICE ({customMockSet.title || customMockSet.topic})</span>
+            </span>
+            {onClearCustomMockSet && (
+              <button
+                onClick={handleExitCustomPilot}
+                className="text-[11px] underline hover:text-white transition cursor-pointer shrink-0 ml-2"
+              >
+                Exit Pilot
+              </button>
+            )}
           </div>
-          <div>
-            <div className="text-[10px] font-mono tracking-wider uppercase text-slate-400">
-              Speaking Examination
+        )}
+
+        {/* Top Row: IELTS Stage, Title & Live Timers */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+              IELTS
             </div>
-            <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-              {isIdCheck && (
-                <span className="flex items-center gap-1.5 text-amber-300">
-                  <BadgeCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Phase 0: Candidate Identification (Step {idCheckStep + 1} of 4)</span>
-                </span>
-              )}
-              {isPart1 && <span>Part 1: Introduction ({part1Index + 1} of {part1Questions.length})</span>}
-              {isPart2Prep && <span>Part 2: 1-Minute Preparation Period</span>}
-              {isPart2Speak && <span>Part 2: 2-Minute Individual Monologue</span>}
-              {isPart3 && <span>Part 3: In-Depth Discussion ({part3Index + 1} of {part3Questions.length})</span>}
+            <div className="min-w-0">
+              <div className="text-[10px] font-mono tracking-wider uppercase text-slate-400">
+                Speaking Examination
+              </div>
+              <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 truncate">
+                {isIdCheck && (
+                  <span className="flex items-center gap-1 text-amber-300 truncate">
+                    <BadgeCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">Phase 0: ID Check ({idCheckStep + 1}/4)</span>
+                  </span>
+                )}
+                {isPart1 && <span className="truncate">Part 1: Introduction ({part1Index + 1}/{part1Questions.length})</span>}
+                {isPart2Prep && <span className="truncate">Part 2: 1-Min Prep</span>}
+                {isPart2Speak && <span className="truncate">Part 2: 2-Min Monologue</span>}
+                {isPart3 && <span className="truncate">Part 3: Discussion ({part3Index + 1}/{part3Questions.length})</span>}
+              </div>
             </div>
+          </div>
+
+          {/* Phase / Audio Indicator & Timers */}
+          <div className="flex items-center gap-2 shrink-0">
+            {isExaminerSpeaking ? (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-950/90 border border-blue-600 text-blue-300 font-mono text-[11px]">
+                <Volume2 className="w-3 h-3 animate-bounce" />
+                <span>Examiner Speaking</span>
+              </span>
+            ) : isRecording ? (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/90 border border-emerald-600 text-emerald-300 font-mono text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>Candidate Speaking</span>
+              </span>
+            ) : isPart2Prep ? (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-950/90 border border-amber-600 text-amber-300 font-mono text-[11px]">
+                <Clock className="w-3 h-3 animate-spin" />
+                <span>Prep Time</span>
+              </span>
+            ) : (
+              <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono text-[11px]">
+                Ready
+              </span>
+            )}
+
+            {/* Timers */}
+            {isPart2Prep && (
+              <div className="px-2.5 py-1 rounded-lg bg-amber-500 text-white font-mono font-bold text-xs shadow-2xs">
+                {prepSecondsLeft}s left
+              </div>
+            )}
+
+            {isPart2Speak && (
+              <div className="px-2.5 py-1 rounded-lg bg-purple-600 text-white font-mono font-bold text-xs shadow-2xs">
+                {formatTime(monologueSecondsLeft)}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Phase / Audio Indicator & Instant Coach Toggle */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => {
-              const nextState = !autoInstantFeedback;
-              setAutoInstantFeedback(nextState);
-              soundManager.playBeep(700, 0.04);
-              onShowToast(nextState ? '⚡ Instant Band 8+ Coach Activated!' : 'Switched to continuous exam mode');
-            }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              autoInstantFeedback
-                ? 'bg-amber-400 text-slate-950 font-black shadow-xs'
-                : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
-            }`}
-            title="Instant Band 8+ coach and grammar analysis after each question"
+        {/* Bottom Row: Examiner Selection Tabs & Instant Coach & Voice Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-800/80">
+          {/* Examiner Selection Segmented Control */}
+          <div
+            role="radiogroup"
+            aria-label="Select IELTS Mock Examiner"
+            className="inline-flex p-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px] font-bold shrink-0"
           >
-            <Zap className="w-3.5 h-3.5 fill-current" />
-            <span>Instant Band 8+ Coach: {autoInstantFeedback ? 'ON' : 'OFF'}</span>
-          </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={examinerGender === 'male'}
+              onClick={() => handleSwitchMockExaminerGender('male')}
+              className={`min-h-[34px] px-2.5 sm:px-3 py-1 rounded-md transition cursor-pointer flex items-center gap-1.5 ${
+                examinerGender === 'male' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>Prof. Arthur</span>
+              <span className="text-[10px] opacity-80">(Male)</span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={examinerGender === 'female'}
+              onClick={() => handleSwitchMockExaminerGender('female')}
+              className={`min-h-[34px] px-2.5 sm:px-3 py-1 rounded-md transition cursor-pointer flex items-center gap-1.5 ${
+                examinerGender === 'female' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>Dr. Clara</span>
+              <span className="text-[10px] opacity-80">(Female)</span>
+            </button>
+          </div>
 
-          {isExaminerSpeaking ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-950/80 border border-blue-700 text-blue-300 font-mono text-xs">
-              <Volume2 className="w-3.5 h-3.5 animate-bounce" />
-              <span>Examiner Speaking</span>
-            </span>
-          ) : isRecording ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-950/80 border border-emerald-700 text-emerald-300 font-mono text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              <span>Candidate Speaking</span>
-            </span>
-          ) : isPart2Prep ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-950/80 border border-amber-700 text-amber-300 font-mono text-xs">
-              <Clock className="w-3.5 h-3.5 animate-spin" />
-              <span>Preparation Period</span>
-            </span>
-          ) : (
-            <span className="px-3 py-1 rounded-xl bg-slate-800 text-slate-300 font-mono text-xs">
-              Ready
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const nextMuted = !isExaminerMuted;
+                setIsExaminerMuted(nextMuted);
+                if (nextMuted) {
+                  audioManager.reset('examiner_muted');
+                  stopSpeech();
+                  setIsExaminerSpeaking(false);
+                  onShowToast('Examiner voice muted — candidate microphone stays active.');
+                } else {
+                  onShowToast('Examiner voice unmuted.');
+                }
+              }}
+              className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition cursor-pointer ${
+                isExaminerMuted
+                  ? 'bg-rose-600 text-white border-rose-500'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+              }`}
+              title={isExaminerMuted ? 'Unmute examiner voice' : 'Mute examiner voice'}
+            >
+              {isExaminerMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-sky-400" />}
+              <span>{isExaminerMuted ? 'Unmute' : 'Mute'}</span>
+            </button>
 
-          {/* Timers */}
-          {isPart2Prep && (
-            <div className="px-3 py-1 rounded-xl bg-amber-500 text-white font-mono font-bold text-xs shadow-2xs">
-              {prepSecondsLeft}s left
-            </div>
-          )}
-
-          {isPart2Speak && (
-            <div className="px-3 py-1 rounded-xl bg-purple-600 text-white font-mono font-bold text-xs shadow-2xs">
-              {formatTime(monologueSecondsLeft)}
-            </div>
-          )}
+            <button
+              onClick={() => {
+                const nextState = !autoInstantFeedback;
+                setAutoInstantFeedback(nextState);
+                soundManager.playBeep(700, 0.04);
+                onShowToast(nextState ? '⚡ Instant Band 8+ Coach Activated!' : 'Switched to continuous exam mode');
+              }}
+              className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                autoInstantFeedback
+                  ? 'bg-amber-400 text-slate-950 font-black shadow-xs'
+                  : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+              }`}
+              title="Instant Band 8+ coach and grammar analysis after each question"
+            >
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>Coach: {autoInstantFeedback ? 'ON' : 'OFF'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 2. Main Exam Interaction Screen */}
-      <div className="bg-white rounded-3xl border border-slate-300 p-6 sm:p-8 shadow-xs space-y-6">
-        {/* Cambridge Video-Call Assessment Booth: Humanoid/Anime Examiner + Candidate WebRTC Camera */}
-        <div className="space-y-4 pb-5 border-b border-slate-100">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
-            {/* Examiner Portrait Studio */}
-            <div className="md:col-span-5 p-4 rounded-2xl bg-slate-950 text-white border border-slate-800 flex flex-col justify-between gap-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-mono font-bold text-slate-300">
-                  Dr. Alistair Vance · Chief Examiner
-                </span>
-                <div className="inline-flex p-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[10px] font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setExaminerArtStyle('humanoid')}
-                    className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
-                      examinerArtStyle === 'humanoid' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Humanoid
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setExaminerArtStyle('anime')}
-                    className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
-                      examinerArtStyle === 'anime' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Anime
-                  </button>
-                </div>
-              </div>
-
+      <div className="bg-white rounded-3xl border border-slate-300 p-4 sm:p-6 shadow-xs flex flex-col flex-1 gap-4">
+        {/* Assessment Stage: Dynamic flexible Avatar + Candidate Camera */}
+        <div className="w-full pb-3 border-b border-slate-100 shrink-0">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-stretch">
+            {/* Examiner Portrait Studio: Dynamic Max-Height to Prevent Collision */}
+            <div className="md:col-span-6 w-full max-h-[28vh] sm:max-h-[35vh] p-2.5 sm:p-3 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 text-white border border-slate-800 shadow-md ring-1 ring-white/5 flex flex-col justify-center items-center overflow-hidden shrink-0 relative">
               <ExaminerHumanoidCanvas
-                gender="male"
+                gender={examinerGender}
                 artStyle={examinerArtStyle}
-                isSpeaking={isExaminerSpeaking}
+                isSpeaking={isExaminerSpeaking && !isExaminerMuted}
                 isListening={isRecording}
+                isThinking={isLoadingTurnFeedback}
+                isMuted={isExaminerMuted}
+                spokenText={activeSpokenPrompt || currentActivePrompt}
                 mouthOpenness={examinerMouthOpen}
-                examinerName="Dr. Alistair Vance"
+                examinerName={activeExaminerName}
                 compact={true}
               />
             </div>
 
             {/* Candidate Live WebRTC Video Camera Booth */}
-            <div className="md:col-span-7 flex flex-col justify-between gap-3">
+            <div className="md:col-span-6 flex flex-col justify-between gap-2 min-h-0">
               <CandidateCameraBooth
                 candidateName={candidateIdentity.preferredName || candidateIdentity.fullName || 'Candidate'}
                 isCandidateSpeaking={isRecording}
@@ -2210,306 +2687,326 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
                 compact={true}
                 onShowToast={onShowToast}
               />
-
-              {/* Current Spoken Question Prompt */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-mono font-bold uppercase text-slate-500 tracking-wider">
-                    Examiner Spoken Prompt · {currentActiveTopic}
-                  </span>
-
-                  {(isIdCheck || isPart1 || isPart3) && (
-                    <button
-                      onClick={handleRepeatQuestion}
-                      disabled={isExaminerSpeaking}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold transition flex items-center gap-1 disabled:opacity-40 cursor-pointer"
-                      title="Ask the examiner to repeat this question"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Please Repeat Question</span>
-                    </button>
-                  )}
-                </div>
-                <div className="text-slate-900 text-sm sm:text-base font-semibold leading-relaxed">
-                  “{currentActivePrompt}”
-                </div>
-              </div>
             </div>
           </div>
         </div>
 
-        {/* 2.5 CANDIDATE IDENTIFICATION PROTOCOL (Phase 0) */}
-        {isIdCheck && (
-          <div className="space-y-4 animate-fade-in">
-            {/* Protocol Step Progress Indicator */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {OFFICIAL_CANDIDATE_ID_PROTOCOL.map((item, idx) => {
-                const isCurrent = idCheckStep === idx;
-                const isPast = idCheckStep > idx;
-                return (
-                  <div
-                    key={idx}
-                    className={`p-3 rounded-2xl border text-xs transition ${
-                      isCurrent
-                        ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                        : isPast
-                        ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                        : 'bg-slate-50 text-slate-500 border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between font-mono text-[10px] uppercase font-bold">
-                      <span>Step {idx + 1}</span>
-                      {isPast ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : isCurrent ? (
-                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                      ) : null}
-                    </div>
-                    <div className="font-bold text-xs mt-1 truncate">{item.title}</div>
-                  </div>
-                );
-              })}
-            </div>
+        {/* 3. Current Spoken Question Prompt Card */}
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5 shrink-0 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono font-bold uppercase text-slate-500 tracking-wider truncate">
+              Examiner Spoken Prompt · {currentActiveTopic}
+            </span>
 
-            {/* Official Candidate Examination Desk Docket Card */}
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-50 via-white to-blue-50/40 border border-slate-300 shadow-2xs space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <IdCard className="w-4 h-4 text-indigo-600" />
-                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800">
-                    Candidate Examination Desk Docket
-                  </span>
-                </div>
-                <span className="text-[11px] font-mono text-slate-500">
-                  British Council / IDP Verification Standard
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="p-2.5 rounded-xl bg-white border border-slate-200">
-                  <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">
-                    Official Full Name
-                  </span>
-                  <span className="font-bold text-slate-900 text-sm">
-                    {candidateIdentity.fullName || 'Awaiting candidate speech...'}
-                  </span>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-white border border-slate-200">
-                  <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">
-                    Preferred First Name
-                  </span>
-                  <span className="font-bold text-slate-900 text-sm">
-                    {candidateIdentity.preferredName || (idCheckStep > 0 ? 'Same as full name' : '—')}
-                  </span>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-white border border-slate-200">
-                  <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">
-                    Identification Document
-                  </span>
-                  <span className="font-bold text-emerald-800 flex items-center gap-1.5 text-xs">
-                    {candidateIdentity.isVerified ? (
-                      <>
-                        <BadgeCheck className="w-4 h-4 text-emerald-600" />
-                        <span>Verified Passport / ID Card</span>
-                      </>
-                    ) : (
-                      <span className="text-amber-800">Awaiting ID Presentation</span>
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              {/* Examiner Tip for Current Step */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                <div className="text-xs text-slate-600">
-                  💡 <strong>Examiner Instruction:</strong> {OFFICIAL_CANDIDATE_ID_PROTOCOL[idCheckStep]?.subtext}
-                  <span className="italic text-slate-500 block sm:inline sm:ml-1">
-                    (e.g., "{OFFICIAL_CANDIDATE_ID_PROTOCOL[idCheckStep]?.exampleAnswer}")
-                  </span>
-                </div>
-
-                {idCheckStep === 3 && (
-                  <button
-                    onClick={handlePresentPassportId}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
-                  >
-                    <BadgeCheck className="w-4 h-4" />
-                    <span>Present Passport / ID Document (Verify)</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Fast-Track Option */}
-            <div className="flex items-center justify-between text-xs text-slate-500 px-1">
-              <span>Candidate identification takes ~30 seconds and verifies your audio setup.</span>
-              <button
-                onClick={handleFastTrackToPart1}
-                className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline flex items-center gap-1 cursor-pointer"
-              >
-                <span>Fast-Track to Part 1 Questions ⏭️</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 3. PART 2 SPECIFIC: Cue Card & 1-Minute Prep Area */}
-        {(isPart2Prep || isPart2Speak) && part2CueCard && (
-          <div className="space-y-4">
-            {/* Candidate Task Card (Cue Card) */}
-            <div className="p-6 rounded-2xl bg-amber-50/70 border-2 border-amber-300 text-slate-900 space-y-3 shadow-2xs">
-              <div className="flex items-center justify-between border-b border-amber-200 pb-2">
-                <span className="font-mono text-xs font-black uppercase tracking-wider text-amber-900">
-                  Candidate Task Card (Part 2)
-                </span>
-                <span className="text-xs font-semibold text-amber-800">Speak for 1 to 2 minutes</span>
-              </div>
-
-              <div className="font-bold text-sm sm:text-base text-slate-900">
-                {part2CueCard.questionText}
-              </div>
-
-              <div className="space-y-1.5 text-xs text-slate-800">
-                <div className="font-semibold text-slate-700">You should say:</div>
-                <ul className="list-disc list-inside space-y-1 pl-1 text-slate-700">
-                  {(part2CueCard.cueCardBulletPoints || [
-                    'What this experience or topic is',
-                    'When and where it occurred',
-                    'Who was involved with you',
-                    'And explain why this left a memorable impression on you'
-                  ]).map((bp, i) => (
-                    <li key={i}>{bp}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* Part 2 Prep: Scratchpad & Early Start Button */}
-            {isPart2Prep && (
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                    <PenTool className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Candidate Scratchpad (Jot bullet words/idioms):</span>
-                  </div>
-
-                  <button
-                    onClick={transitionToPart2Speak}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-2xs active:scale-95"
-                  >
-                    Ready to Speak Now →
-                  </button>
-                </div>
-
-                <textarea
-                  value={part2Notes}
-                  onChange={(e) => setPart2Notes(e.target.value)}
-                  placeholder="e.g. 1. Lake District hike; 2. torrential downpour; 3. shelter in rustic barn; 4. forged lifelong resilience..."
-                  rows={2}
-                  className="w-full p-3 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-slate-900"
-                />
+            {(isIdCheck || isPart1 || isPart3) && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={handleRepeatQuestion}
+                  disabled={isExaminerSpeaking}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold transition flex items-center gap-1 disabled:opacity-40 cursor-pointer min-h-[32px] px-2"
+                  title="Ask the examiner to repeat this question"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Repeat</span>
+                </button>
+                <button
+                  onClick={handleSkipToNextQuestion}
+                  className="text-xs text-[#0F4C45] hover:text-[#0B3833] bg-[#EEF3F1] hover:bg-[#E1ECE9] border border-[#D3DDDA] rounded-lg font-bold transition flex items-center gap-1 cursor-pointer min-h-[32px] px-2.5"
+                  title="Move directly to the next speaking question"
+                >
+                  <span>Next Question</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
           </div>
-        )}
+          <div className="text-slate-900 text-sm sm:text-base font-semibold leading-relaxed">
+            “{currentActivePrompt}”
+          </div>
+        </div>
 
-        {/* 4. Candidate Speaking Interface (Voice Orb, Waveform & Silence Detection) */}
-        {!isPart2Prep && (
-          <div className="space-y-4 pt-2">
-            {/* Interactive Animated Voice Orb */}
-            <SpeakingVoiceOrb
-              state={
-                isExaminerSpeaking
-                  ? 'examiner_speaking'
-                  : isLoadingTurnFeedback
-                  ? 'thinking'
-                  : isRecording
-                  ? 'recording'
-                  : showTurnFeedbackModal
-                  ? 'feedback'
-                  : 'idle'
-              }
-              size="md"
-            />
+        {/* 4. Smoothly Scrollable Prompt/Transcript Container */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scroll-smooth space-y-3.5 pr-0.5 max-h-[54vh] sm:max-h-[50vh]">
+          {/* CANDIDATE IDENTIFICATION PROTOCOL (Phase 0) */}
+          {isIdCheck && (
+            <div className="space-y-3.5 animate-fade-in">
+              {/* Protocol Step Progress Indicator */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {Practice_CANDIDATE_ID_PROTOCOL.map((item, idx) => {
+                  const isCurrent = idCheckStep === idx;
+                  const isPast = idCheckStep > idx;
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl border text-xs transition ${
+                        isCurrent
+                          ? 'bg-[#0F4C45] text-white border-[#0F4C45] shadow-sm'
+                          : isPast
+                          ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                          : 'bg-slate-50 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-mono text-[10px] uppercase font-bold">
+                        <span>Step {idx + 1}</span>
+                        {isPast ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : isCurrent ? (
+                          <span className="w-2 h-2 rounded-full bg-[#F4A62A]" />
+                        ) : null}
+                      </div>
+                      <div className="font-bold text-xs mt-1 truncate">{item.title}</div>
+                    </div>
+                  );
+                })}
+              </div>
 
-            {/* Live Audio Waveform Visualizer */}
-            <div className="space-y-1.5">
-              <AudioWaveformVisualizer isRecording={isRecording} height={46} showMetrics={true} />
+              {/* Candidate Examination Desk Docket Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-[#F7F9F8] via-white to-[#EEF3F1]/60 border border-[#D3DDDA] shadow-2xs space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D3DDDA] pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <IdCard className="w-4 h-4 text-[#0F4C45]" />
+                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#0E1F1E]">
+                      Candidate Examination Desk Docket
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#566664]">
+                    Standard IELTS ID Verification
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div className="p-2.5 rounded-xl bg-white border border-[#D3DDDA]">
+                    <span className="text-[10px] font-mono uppercase text-[#566664] block font-bold">
+                      Candidate Full Name
+                    </span>
+                    <span className="font-bold text-[#0E1F1E] text-xs sm:text-sm truncate block mt-0.5">
+                      {candidateIdentity.fullName || 'Awaiting candidate speech...'}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">
+                      Preferred First Name
+                    </span>
+                    <span className="font-bold text-slate-900 text-xs sm:text-sm truncate block">
+                      {candidateIdentity.preferredName || (idCheckStep > 0 ? 'Same as full name' : '—')}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">
+                      Identification Document
+                    </span>
+                    <span className="font-bold text-emerald-800 flex items-center gap-1 text-xs truncate">
+                      {candidateIdentity.isVerified ? (
+                        <>
+                          <BadgeCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span className="truncate">Verified Passport</span>
+                        </>
+                      ) : (
+                        <span className="text-amber-800 truncate">Awaiting ID Presentation</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Examiner Tip for Current Step */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
+                  <div className="text-xs text-slate-600 leading-relaxed">
+                    💡 <strong>Examiner Instruction:</strong> {Practice_CANDIDATE_ID_PROTOCOL[idCheckStep]?.subtext}
+                    <span className="italic text-slate-500 block sm:inline sm:ml-1">
+                      (e.g., "{Practice_CANDIDATE_ID_PROTOCOL[idCheckStep]?.exampleAnswer}")
+                    </span>
+                  </div>
+
+                  {idCheckStep === 3 && (
+                    <button
+                      onClick={handlePresentPassportId}
+                      className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                    >
+                      <BadgeCheck className="w-4 h-4" />
+                      <span>Present Passport / ID Document (Verify)</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Fast-Track Option */}
+              <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+                <span>Verification confirms microphone acoustic levels.</span>
+                <button
+                  onClick={handleFastTrackToPart1}
+                  className="min-h-[36px] text-xs font-semibold text-slate-600 hover:text-slate-900 underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Fast-Track to Part 1 ⏭️</span>
+                </button>
+              </div>
             </div>
+          )}
 
+          {/* PART 2 SPECIFIC: Cue Card & 1-Minute Prep Area */}
+          {(isPart2Prep || isPart2Speak) && part2CueCard && (
+            <div className="space-y-3.5">
+              {/* Candidate Task Card (Cue Card) */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/70 border-2 border-amber-300 text-slate-900 space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-amber-200 pb-2">
+                  <span className="font-mono text-xs font-black uppercase tracking-wider text-amber-900">
+                    Candidate Task Card (Part 2)
+                  </span>
+                  <span className="text-xs font-semibold text-amber-800">Speak for 1 to 2 minutes</span>
+                </div>
+
+                <div className="font-bold text-sm sm:text-base text-slate-900">
+                  {part2CueCard.questionText}
+                </div>
+
+                <div className="space-y-1 text-xs text-slate-800">
+                  <div className="font-semibold text-slate-700">You should say:</div>
+                  <ul className="list-disc list-inside space-y-0.5 pl-1 text-slate-700">
+                    {(part2CueCard.cueCardBulletPoints || [
+                      'What this experience or topic is',
+                      'When and where it occurred',
+                      'Who was involved with you',
+                      'And explain why this left a memorable impression on you'
+                    ]).map((bp, i) => (
+                      <li key={i}>{bp}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Part 2 Prep: Scratchpad & Early Start Button */}
+              {isPart2Prep && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                      <PenTool className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Candidate Scratchpad:</span>
+                    </div>
+
+                    <button
+                      onClick={transitionToPart2Speak}
+                      className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-2xs active:scale-95 flex items-center justify-center cursor-pointer"
+                    >
+                      Ready to Speak Now →
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={part2Notes}
+                    onChange={(e) => setPart2Notes(e.target.value)}
+                    placeholder="e.g. 1. Lake District hike; 2. torrential downpour; 3. shelter in rustic barn; 4. forged lifelong resilience..."
+                    rows={2}
+                    className="w-full p-2.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Live Candidate Transcript Input / Stream */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-mono uppercase text-slate-400 font-bold flex items-center justify-between">
+              <span>Speech-to-Text Capture Stream:</span>
+              <span className="text-slate-400 font-normal">Transcribed in real-time</span>
+            </div>
+            <textarea
+              value={candidateTranscript}
+              onChange={(e) => setCandidateTranscript(e.target.value)}
+              placeholder={
+                isIdCheck
+                  ? Practice_CANDIDATE_ID_PROTOCOL[idCheckStep]?.placeholder || 'Speak or type your response here...'
+                  : 'Speak naturally into your microphone. Your spoken words will appear here. You may also type or edit if microphone access is unavailable...'
+              }
+              rows={2}
+              className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-slate-400"
+            />
+          </div>
+        </div>
+
+        {/* 5. Docked Bottom Controls & Voice Status */}
+        {!isPart2Prep && (
+          <div className="sticky bottom-0 z-20 bg-white/95 dark:bg-[#11201F]/95 backdrop-blur-md border-t border-[#D3DDDA] dark:border-[#1E3533] pt-3 pb-3 px-1 rounded-b-2xl mt-auto shrink-0 space-y-2.5">
+            {/* Responsive Compact Voice Orb + Audio Waveform */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+              <div className="shrink-0">
+                <SpeakingVoiceOrb
+                  compact={true}
+                  onClick={() => {
+                    if (isRecording) {
+                      stopRecording();
+                    } else if (!isExaminerSpeaking) {
+                      startRecording();
+                    }
+                  }}
+                  state={
+                    isExaminerSpeaking
+                      ? 'examiner_speaking'
+                      : isLoadingTurnFeedback
+                      ? 'thinking'
+                      : isRecording
+                      ? 'recording'
+                      : showTurnFeedbackModal
+                      ? 'feedback'
+                      : 'idle'
+                  }
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <AudioWaveformVisualizer isRecording={isRecording} height={36} showMetrics={false} />
+              </div>
+            </div>
 
             {/* Silence Detection Alert */}
             {silenceCountdown !== null && (
-              <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-center justify-between animate-fade-in">
-                <span>Silence detected after speaking. Continuing in {silenceCountdown}s...</span>
+              <div className="p-2.5 rounded-xl bg-[#EEF3F1] border border-[#D3DDDA] text-[#0E1F1E] text-xs flex items-center justify-between gap-2 animate-fade-in">
+                <span>Silence detected. Auto-continuing in {silenceCountdown}s…</span>
                 <button
                   onClick={handleCandidateDoneSpeaking}
-                  className="font-bold text-blue-700 underline text-xs"
+                  className="font-bold text-[#0F4C45] underline text-xs min-h-[36px] px-2 flex items-center cursor-pointer"
                 >
                   Continue Now
                 </button>
               </div>
             )}
 
-            {/* Candidate Controls Row */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-              <div className="text-xs text-slate-500 font-mono flex items-center gap-2">
-                {isRecording && (
-                  <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+            {/* Status & Primary Action Trigger */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5">
+              <div className="text-xs text-[#566664] font-mono flex items-center gap-3 tabular-nums">
+                {isRecording ? (
+                  <span className="flex items-center gap-1.5 text-emerald-700 font-bold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
                     <span>Microphone Live</span>
                   </span>
+                ) : (
+                  <span>Microphone Ready</span>
                 )}
                 <span>Elapsed: {speakingElapsedSec}s</span>
               </div>
 
-              {/* Large Microphone / Done Speaking Button */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCandidateDoneSpeaking}
-                  disabled={isLoadingTurnFeedback}
-                  className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-md transition flex items-center gap-2 active:scale-95 disabled:opacity-60 cursor-pointer"
-                >
-                  {isIdCheck ? (
-                    <>
-                      <Check className="w-4 h-4 text-emerald-300" />
-                      <span>{idCheckStep < 3 ? 'Confirm & Next ID Step →' : 'Complete Verification & Begin Part 1 →'}</span>
-                    </>
-                  ) : isLoadingTurnFeedback ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Analyzing Speech (Band 8+)...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                      <span>Done Speaking (Feedback)</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Live Candidate Transcript Feedback Box */}
-            <div className="pt-2">
-              <div className="text-[10px] font-mono uppercase text-slate-400 font-bold mb-1 flex items-center justify-between">
-                <span>Speech-to-Text Stream:</span>
-                <span className="text-slate-400 font-normal">Candidate response captured in real-time</span>
-              </div>
-              <textarea
-                value={candidateTranscript}
-                onChange={(e) => setCandidateTranscript(e.target.value)}
-                placeholder={
-                  isIdCheck
-                    ? OFFICIAL_CANDIDATE_ID_PROTOCOL[idCheckStep]?.placeholder || 'Speak or type your response here...'
-                    : 'Speak naturally into your microphone. Your spoken words will appear here. You may also type or edit if microphone access is unavailable...'
-                }
-                rows={3}
-                className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50/60 text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-slate-400"
-              />
+              <button
+                onClick={handleCandidateDoneSpeaking}
+                disabled={isLoadingTurnFeedback}
+                className="w-full sm:w-auto min-h-[48px] px-5 py-3 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs sm:text-sm font-bold shadow-sm transition flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+              >
+                {isIdCheck ? (
+                  <>
+                    <Check className="w-4 h-4 text-[#F4A62A]" />
+                    <span>{idCheckStep < 3 ? 'Confirm & Next ID Step →' : 'Complete Verification & Begin Part 1 →'}</span>
+                  </>
+                ) : isLoadingTurnFeedback ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Analyzing Speech…</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 text-[#F4A62A]" />
+                    <span>Done Speaking (Get Feedback)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
             </div>
           </div>
         )}
@@ -2523,12 +3020,19 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({ onGradeInMock, onS
           onClose={() => {
             setShowTurnFeedbackModal(false);
             stopSpeech();
+            if (pendingTurnAdvance) {
+              const fn = pendingTurnAdvance;
+              setPendingTurnAdvance(null);
+              fn();
+            }
           }}
           onNextQuestion={() => {
             setShowTurnFeedbackModal(false);
             stopSpeech();
             if (pendingTurnAdvance) {
-              pendingTurnAdvance();
+              const fn = pendingTurnAdvance;
+              setPendingTurnAdvance(null);
+              fn();
             }
           }}
           onRetakeTurn={handleRetakeTurnFromModal}

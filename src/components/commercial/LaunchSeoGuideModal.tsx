@@ -57,7 +57,7 @@ export const LaunchSeoGuideModal: React.FC<LaunchSeoGuideModalProps> = ({
             </div>
             <div>
               <h2 id="launch-guide-title" className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                How to Rank "IELTS Sprint" on Google & Launch Commercial Domain
+                How to Rank "BandSprint" on Google & Launch Commercial Domain
               </h2>
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 Official Production Deployment & Search Engine Indexing Blueprint
@@ -85,7 +85,7 @@ export const LaunchSeoGuideModal: React.FC<LaunchSeoGuideModalProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-bold text-sm text-blue-700 dark:text-blue-300">
                 <Globe2 className="w-4 h-4 shrink-0" />
-                <span>Step 1: Point Your Domain (e.g. ieltssprint.com)</span>
+                <span>Step 1: Point Your Domain (e.g. bandsprint.app)</span>
               </div>
               <span className="px-2 py-0.5 rounded-full bg-blue-200/70 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-[10px] font-mono font-bold">
                 2 Mins
@@ -142,10 +142,10 @@ export const LaunchSeoGuideModal: React.FC<LaunchSeoGuideModalProps> = ({
               Open <a href="https://search.google.com/search-console" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 underline font-bold">Google Search Console</a> and add your domain. Then submit your automated sitemap URL:
             </p>
             <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-slate-800 flex items-center justify-between font-mono text-[11px]">
-              <span className="text-indigo-600 dark:text-indigo-400 font-bold">https://ieltssprint.com/sitemap.xml</span>
+              <span className="text-indigo-600 dark:text-indigo-400 font-bold">https://bandsprint.app/sitemap.xml</span>
               <button
                 type="button"
-                onClick={() => handleCopy('https://ieltssprint.com/sitemap.xml', 'Sitemap URL')}
+                onClick={() => handleCopy('https://bandsprint.app/sitemap.xml', 'Sitemap URL')}
                 className="p-1.5 text-slate-400 hover:text-indigo-600 transition"
                 title="Copy Sitemap"
               >
@@ -185,7 +185,7 @@ export const LaunchSeoGuideModal: React.FC<LaunchSeoGuideModalProps> = ({
               </div>
               <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span><strong>100% Free Beta Access</strong> (subscription paused)</span>
+                <span><strong>Free Tier</strong> (5 full mocks, 2 AI Speaking + 1 AI Writing/day, no card)</span>
               </div>
             </div>
           </div>
@@ -194,11 +194,11 @@ export const LaunchSeoGuideModal: React.FC<LaunchSeoGuideModalProps> = ({
           <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-1.5 text-amber-900 dark:text-amber-200">
             <div className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
               <Share2 className="w-4 h-4" />
-              <span>How to Rank #1 for "IELTS Sprint" Quickly</span>
+              <span>How to Rank #1 for "BandSprint" Quickly</span>
             </div>
             <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
               <li>Share your domain in Bangladeshi IELTS preparation Facebook groups (e.g. "IELTS Preparation Bangladesh", "GRE & IELTS Bangladesh").</li>
-              <li>Create a simple YouTube / Facebook video showing the AI British examiner in action with the title "Free IELTS Speaking Practice with AI on IELTS Sprint".</li>
+              <li>Create a simple YouTube / Facebook video showing the AI British examiner in action with the title "Free IELTS Speaking Practice with AI on BandSprint".</li>
               <li>Encourage 50–100 students to complete a practice test—Google rewards websites with real engagement and low bounce rates!</li>
             </ul>
           </div>
@@ -206,7 +206,7 @@ export const LaunchSeoGuideModal: React.FC<LaunchSeoGuideModalProps> = ({
 
         {/* Footer */}
         <div className="p-4 px-5 sm:px-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
-          <span>Target Keywords: IELTS Sprint, Cambridge IELTS prep, AI Speaking</span>
+          <span>Target Keywords: BandSprint, IELTS prep, AI Speaking</span>
           <button
             type="button"
             onClick={onClose}

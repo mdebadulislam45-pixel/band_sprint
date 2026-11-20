@@ -45,9 +45,10 @@ import { AudioPlaybackWaveform } from './audio/AudioPlaybackWaveform';
 import { questionEngine, IELTSQuestion } from '../services/QuestionEngine';
 import { audioService, DialogueLine, AudioPlaybackState, isInterruptedPlaybackError } from '../services/audioService';
 import { audioManager } from '../services/AudioManager';
-import { AuthenticIELTSListeningTest } from './listening/AuthenticIELTSListeningTest';
+import { RealisticIELTSListeningTest } from './listening/RealisticIELTSListeningTest';
 import { testPersistenceService } from '../services/testPersistenceService';
 import { AudioErrorBoundary } from './common/AudioErrorBoundary';
+import { AskMentorContextualWidget } from './common/AskMentorPanel';
 import { zeroRepetitionEngine, computeContentFingerprint } from '../services/ZeroRepetitionEngine';
 import {
   parseOptionItem,
@@ -58,9 +59,17 @@ import {
   assignSectionDialogueSpeakers,
   IELTS_LISTENING_PARTS,
   getListeningPartMeta,
-  formatIELTSSpeechText
+  getListeningQuestionProgress,
+  formatIELTSSpeechText,
+  computeListeningAudioSyncMap,
+  findActiveQuestionIndexForTimestamp,
+  formatAudioTimestamp,
+  QuestionAudioSyncCue
 } from '../utils/listeningAnswerEvaluator';
 import { ListeningMapDiagram } from './listening/ListeningMapDiagram';
+import { CandidateAiPilotPanel } from './common/CandidateAiPilotPanel';
+import { CDIELTSExamMode } from './cdielts/CDIELTSExamMode';
+import type { MockExamSet } from '../data/mockExams';
 
 const LISTENING_STORAGE_KEY = 'ielts_sprint_listening_state_v3';
 
@@ -81,8 +90,10 @@ interface ListeningLabProps {
 }
 
 export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToast }) => {
-  // Primary IELTS Listening Mode: Authentic 40-question mock exam vs Section Practice
+  // Primary IELTS Listening Mode: Realistic 40-question mock exam vs Section Practice
   const [viewMode, setViewMode] = useState<'authentic_mock' | 'section_practice'>('authentic_mock');
+  const [showAiPilotPanel, setShowAiPilotPanel] = useState<boolean>(false);
+  const [activeListeningPilotSet, setActiveListeningPilotSet] = useState<MockExamSet | null>(null);
 
   // Active IELTS Listening Section (1 to 4)
   const [activeSection, setActiveSection] = useState<1 | 2 | 3 | 4>(1);
@@ -111,6 +122,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
 
   // Real-time audio playback state for visual waveform feedback
   const [audioPlaybackState, setAudioPlaybackState] = useState<AudioPlaybackState>(audioService.getState());
+  const [autoFollowAudio, setAutoFollowAudio] = useState<boolean>(true);
 
   useEffect(() => {
     const unsub = audioService.subscribe((s) => {
@@ -128,7 +140,10 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
         const raw = localStorage.getItem(LISTENING_STORAGE_KEY);
         if (raw) {
           const parsed: ListeningPersistedState = JSON.parse(raw);
-          if (parsed && Array.isArray(parsed.questionIds) && parsed.questionIds.length > 0) {
+          if (parsed && parsed.isEvaluated) {
+            // Do not trap returning learners on an already-completed test; clear and load a fresh scenario
+            localStorage.removeItem(LISTENING_STORAGE_KEY);
+          } else if (parsed && Array.isArray(parsed.questionIds) && parsed.questionIds.length > 0) {
             const restoredQuestions: IELTSQuestion[] = [];
             for (const qId of parsed.questionIds) {
               const found = questionEngine.getQuestionById(qId);
@@ -138,9 +153,11 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
             }
 
             if (restoredQuestions.length > 0 && !isCancelled) {
-              setActiveSection(parsed.activeSection || 1);
+              const secNum = parsed.activeSection || 1;
+              setActiveSection(secNum);
               setMode(parsed.mode || 'adaptive_10');
               setQuestions(restoredQuestions);
+              setActiveScenarioTopic(restoredQuestions[0]?.topic || `Section ${secNum}`);
               setActiveQuestionIndex(
                 parsed.activeQuestionIndex >= 0 && parsed.activeQuestionIndex < restoredQuestions.length
                   ? parsed.activeQuestionIndex
@@ -148,8 +165,8 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               );
               setUserAnswers(parsed.userAnswers || {});
               setFlaggedQuestions(parsed.flaggedQuestions || {});
-              setIsEvaluated(Boolean(parsed.isEvaluated));
-              setScoreSummary(parsed.scoreSummary || null);
+              setIsEvaluated(false);
+              setScoreSummary(null);
               setHasRestoredSession(true);
               return;
             }
@@ -170,9 +187,11 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           }
 
           if (restoredQuestions.length > 0) {
-            setActiveSection((idbSession.activeSection as any) || 1);
+            const secNum = (idbSession.activeSection as any) || 1;
+            setActiveSection(secNum);
             setMode(idbSession.meta.mode || 'adaptive_10');
             setQuestions(restoredQuestions);
+            setActiveScenarioTopic(restoredQuestions[0]?.topic || `Section ${secNum}`);
             setActiveQuestionIndex(idbSession.currentQuestionIndex || 0);
             setUserAnswers(idbSession.answers || {});
             setFlaggedQuestions(idbSession.flagged || {});
@@ -183,7 +202,6 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           }
         }
       } catch (e) {
-        console.warn('Failed to restore listening state from storage:', e);
       }
 
       if (!isCancelled) {
@@ -370,9 +388,15 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     };
   }, []);
 
-  // When candidate switches entire section or scenario, cleanly reset prior audio
+  // When candidate intentionally switches entire section or scenario after initialization, cleanly reset prior audio
+  const prevScenarioKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    audioManager.reset(`switch_section_${activeSection}`);
+    if (!activeScenarioTopic) return;
+    const nextKey = `${activeSection}::${activeScenarioTopic}`;
+    if (prevScenarioKeyRef.current !== null && prevScenarioKeyRef.current !== nextKey) {
+      audioManager.reset(`switch_section_${activeSection}`);
+    }
+    prevScenarioKeyRef.current = nextKey;
   }, [activeSection, activeScenarioTopic]);
 
   // Handle Section Tab switching
@@ -430,35 +454,51 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     });
   };
 
-  // Compile full audio dialogue for active topic/scenario with realistic Cambridge test duration
+  // Compile full audio dialogue covering ALL active questions in the session with authentic Practice test structure
   const currentDialogue = useMemo(() => {
-    const currentTopic = activeScenarioTopic || questions[0]?.topic || 'Cambridge Standard Audio';
-    const scenarioQuestions = questions.filter((q) => q.topic === currentTopic);
-    const partMeta = getListeningPartMeta(activeSection);
+    if (questions.length === 0) return [];
 
+    const partMeta = getListeningPartMeta(activeSection);
     const mergedLines: DialogueLine[] = [];
     const seenTexts = new Set<string>();
 
-    // 1. Original Practice Examiner Intro
+    const totalQuestions = questions.length;
+    // Practice authentic split: 1-5 and 6-10 for 10 questions, or halfway
+    const splitPoint = totalQuestions > 5 ? Math.min(5, Math.ceil(totalQuestions / 2)) : totalQuestions;
+
+    // Determine representative topic labels
+    const distinctTopics = Array.from(new Set(questions.map((q) => q.topic).filter(Boolean)));
+    const topicsLabel =
+      distinctTopics.length === 1
+        ? distinctTopics[0]
+        : distinctTopics.length > 1
+        ? `${distinctTopics[0]} and ${distinctTopics[1]}`
+        : activeScenarioTopic || 'Practice Audio';
+
+    const startQNum = (activeSection - 1) * 10 + 1;
+    const midQNum = (activeSection - 1) * 10 + splitPoint;
+    const endQNum = (activeSection - 1) * 10 + totalQuestions;
+
+    // 1. Practice Examiner Intro
     mergedLines.push({
       speaker: 'British Examiner (Arthur)',
       speakerId: 'speaker_04',
       gender: 'male',
-      text: `International English Language Testing System. Section Practice Mode. Part ${activeSection}, ${partMeta.questionRangeLabel}. You will hear a recording concerning ${currentTopic}. First, you have some time to look at the questions below.`,
-      pauseAfterMs: 1050
+      text: `International English Language Testing System. Section Practice Mode. Part ${activeSection}, ${partMeta.questionRangeLabel}. You will hear a recording concerning ${topicsLabel}. First, you have some time to look at Questions ${startQNum} to ${midQNum}.`,
+      pauseAfterMs: 750
     });
 
     mergedLines.push({
       speaker: 'British Examiner (Arthur)',
       speakerId: 'speaker_04',
       gender: 'male',
-      text: `Now listen carefully to the recording and answer the questions.`,
-      pauseAfterMs: 700
+      text: `Now listen carefully to the recording and answer Questions ${startQNum} to ${midQNum}.`,
+      pauseAfterMs: 450
     });
 
-    // 2. Scenario dialogue lines: guaranteed-distinct speakers across 2-speaker and 3-speaker sections, single-speaker in Parts 2 & 4
-    if (scenarioQuestions.length > 0) {
-      const rawScenarioLines: Array<{
+    // Helper to process question dialogue lines with speaker assignment
+    const processQuestionBatch = (startIdx: number, endIdx: number) => {
+      const rawBatchLines: Array<{
         speaker?: string;
         speakerId?: string;
         gender?: 'male' | 'female';
@@ -466,30 +506,71 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
         pauseAfterMs?: number;
       }> = [];
 
-      scenarioQuestions.forEach((q) => {
+      for (let i = startIdx; i < endIdx; i++) {
+        const q = questions[i];
+        if (!q) continue;
+
         if (q.dialogue && q.dialogue.length > 0) {
           q.dialogue.forEach((line) => {
             const t = formatIELTSSpeechText((line.text || '').trim());
             if (t && !seenTexts.has(t)) {
               seenTexts.add(t);
-              rawScenarioLines.push({
+              rawBatchLines.push({
                 speaker: line.speaker,
                 speakerId: line.speakerId,
                 gender: line.gender,
                 text: t,
-                pauseAfterMs: line.pauseAfterMs || (activeSection === 4 ? 700 : 580)
+                pauseAfterMs: line.pauseAfterMs ?? (activeSection === 4 ? 320 : 260)
               });
             }
           });
+        } else if (q.audioScript) {
+          const sentences = q.audioScript.split(/(?<=[.?!])\s+/).filter((s) => s.trim().length > 0);
+          sentences.forEach((s) => {
+            const t = formatIELTSSpeechText(s.trim());
+            if (t && !seenTexts.has(t)) {
+              seenTexts.add(t);
+              rawBatchLines.push({
+                speaker: activeSection === 2 ? 'Community Guide' : activeSection === 4 ? 'Lecturer' : 'Speaker',
+                gender: activeSection === 2 ? 'female' : 'male',
+                text: t,
+                pauseAfterMs: 300
+              });
+            }
+          });
+        } else {
+          // Synthesize an authentic spoken dialogue turn directly providing context and answer for this question
+          const ans = Array.isArray(q.correctAnswer) ? q.correctAnswer[0] : q.correctAnswer || '';
+          const promptClean = q.prompt.replace(/\[\d+\]/g, '').trim();
+          const qNum = (activeSection - 1) * 10 + i + 1;
+          const turnLineA = `Regarding Question ${qNum}, ${promptClean}, let us note the exact detail.`;
+          const turnLineB = `The confirmed specification is ${ans}. That directly satisfies Question ${qNum}.`;
+          rawBatchLines.push({
+            speaker: 'Advisor (Oliver)',
+            gender: 'male',
+            text: turnLineA,
+            pauseAfterMs: 260
+          });
+          rawBatchLines.push({
+            speaker: 'Student (Eleanor)',
+            gender: 'female',
+            text: turnLineB,
+            pauseAfterMs: 300
+          });
         }
-      });
+      }
 
-      const resolvedScenarioLines = assignSectionDialogueSpeakers(
-        rawScenarioLines,
+      const resolvedLines = assignSectionDialogueSpeakers(
+        rawBatchLines,
         activeSection,
-        activeSection === 2 ? 'Community Guide (Charlotte)' : activeSection === 4 ? 'University Lecturer (Arthur)' : 'Speaker'
+        activeSection === 2
+          ? 'Community Guide (Charlotte)'
+          : activeSection === 4
+          ? 'University Lecturer (Arthur)'
+          : 'Speaker'
       );
-      resolvedScenarioLines.forEach((rl) => {
+
+      resolvedLines.forEach((rl) => {
         mergedLines.push({
           speaker: rl.speaker,
           speakerName: rl.speakerName,
@@ -499,44 +580,46 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           pauseAfterMs: rl.pauseAfterMs
         });
       });
+    };
+
+    // 2. Part A: Questions 1 to splitPoint
+    processQuestionBatch(0, splitPoint);
+
+    // 3. Practice Mid-Section Pause & Transition if more questions remain
+    if (totalQuestions > splitPoint) {
+      mergedLines.push({
+        speaker: 'British Examiner (Arthur)',
+        speakerId: 'speaker_04',
+        gender: 'male',
+        text: `Before you hear the rest of the recording, you have some time to look at Questions ${midQNum + 1} to ${endQNum}.`,
+        pauseAfterMs: 800
+      });
+
+      mergedLines.push({
+        speaker: 'British Examiner (Arthur)',
+        speakerId: 'speaker_04',
+        gender: 'male',
+        text: `Now listen and answer Questions ${midQNum + 1} to ${endQNum}.`,
+        pauseAfterMs: 450
+      });
+
+      // Part B: Questions (splitPoint + 1) to totalQuestions
+      processQuestionBatch(splitPoint, totalQuestions);
     }
 
-    // Fallback if no questions had dialogue
-    if (seenTexts.size === 0) {
-      const firstQ = questions[0];
-      if (firstQ?.dialogue && firstQ.dialogue.length > 0) {
-        firstQ.dialogue.forEach((l) => mergedLines.push(l));
-      } else {
-        mergedLines.push({
-          speaker: 'Charlotte (Student - Asking Questions)',
-          speakerId: 'speaker_05',
-          gender: 'female',
-          text: `Good morning. I am inquiring about the registration requirements and schedule for ${currentTopic}. Could you please explain what documentation is needed?`,
-          pauseAfterMs: 650
-        });
-        mergedLines.push({
-          speaker: 'Arthur (Registrar - Giving Answers)',
-          speakerId: 'speaker_04',
-          gender: 'male',
-          text: `Certainly! Let me retrieve the details for you. Please listen carefully as we go through each of the specifications and criteria.`,
-          pauseAfterMs: 650
-        });
-      }
-    }
-
-    // 3. Official Cambridge Section Conclusion
+    // 4. Practice Section Conclusion
     mergedLines.push({
-      speaker: 'Cambridge Examiner (Arthur)',
+      speaker: 'Practice Examiner (Arthur)',
       speakerId: 'speaker_04',
       gender: 'male',
       text: `That is the end of Part ${activeSection}. You now have half a minute to check your answers.`,
-      pauseAfterMs: 700
+      pauseAfterMs: 0
     });
 
     return mergedLines;
   }, [questions, activeSection, activeScenarioTopic]);
 
-  // Audio Playback using professional audioManager & audioService (Asynchronous non-blocking)
+  // Audio Playback using professional audioManager & audioService (Synchronous user-gesture trigger)
   const handlePlayAudio = useCallback(() => {
     try {
       audioService.unlockAudio();
@@ -544,57 +627,49 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
 
       if (questions.length === 0) return;
 
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          try {
-            const dialogueLines: DialogueLine[] = currentDialogue.map((line) => {
-              const speakerId = resolveDialogueLineSpeakerId(line, activeSection);
-              return {
-                speakerId,
-                speakerName: line.speaker,
-                gender: line.gender,
-                text: line.text,
-                pauseAfterMs: line.pauseAfterMs || 550
-              };
-            });
+      const dialogueLines: DialogueLine[] = currentDialogue.map((line, idx) => {
+        const speakerId = resolveDialogueLineSpeakerId(line, activeSection);
+        const isLast = idx === currentDialogue.length - 1;
+        return {
+          speakerId,
+          speakerName: line.speaker,
+          gender: line.gender,
+          text: line.text,
+          pauseAfterMs: isLast ? 0 : (line.pauseAfterMs ?? 260)
+        };
+      });
 
-            // Create stable section-level audio metadata
-            const firstQ = questions[0] || {
-              questionType: 'multiple_choice' as const,
-              difficulty: 'medium' as const,
-              skillTags: ['listening'],
-              source: 'cambridge_standard' as const,
-              version: 1,
-              createdAt: Date.now()
-            };
-            const sectionDialogueQuestion: IELTSQuestion = {
-              ...firstQ,
-              id: `listening_sec_${activeSection}`,
-              module: 'listening',
-              section: activeSection,
-              topic: activeScenarioTopic || 'Cambridge Official Recording',
-              prompt: `Listening Section ${activeSection}`,
-              dialogue: dialogueLines.map((l) => ({
-                speaker: l.speakerName || 'Speaker',
-                speakerId: l.speakerId,
-                gender: l.gender,
-                text: l.text,
-                pauseAfterMs: l.pauseAfterMs
-              }))
-            };
+      // Create stable section-level audio metadata
+      const firstQ = questions[0] || {
+        questionType: 'multiple_choice' as const,
+        difficulty: 'medium' as const,
+        skillTags: ['listening'],
+        source: 'sprint_standard' as const,
+        version: 1,
+        createdAt: Date.now()
+      };
+      const sectionDialogueQuestion: IELTSQuestion = {
+        ...firstQ,
+        id: `listening_sec_${activeSection}_${activeScenarioTopic || 'default'}`,
+        module: 'listening',
+        section: activeSection,
+        topic: activeScenarioTopic || 'Practice Recording',
+        prompt: `Listening Section ${activeSection}`,
+        dialogue: dialogueLines.map((l) => ({
+          speaker: l.speakerName || 'Speaker',
+          speakerId: l.speakerId,
+          gender: l.gender,
+          text: l.text,
+          pauseAfterMs: l.pauseAfterMs
+        }))
+      };
 
-            audioManager.playQuestionAudio(sectionDialogueQuestion, {
-              allowReplay: true,
-              onError: (err) => {
-                if (isInterruptedPlaybackError(err)) return;
-                onShowToast('Audio stream reconnection in progress...');
-              }
-            });
-          } catch (playbackErr) {
-            console.error('Audio playback execution error:', playbackErr);
-            onShowToast('Audio playback error. Please try clicking play again.');
-          }
-        }, 20);
+      audioManager.playQuestionAudio(sectionDialogueQuestion, {
+        allowReplay: true,
+        onError: (err) => {
+          if (isInterruptedPlaybackError(err)) return;
+          onShowToast('Audio stream reconnection in progress...');
+        }
       });
     } catch (err) {
       console.error('Audio unlock or trigger error:', err);
@@ -606,6 +681,46 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     audioManager.pause();
   }, []);
 
+  // Synchronized question audio cues mapping all questions (e.g. 10 questions) across recording duration
+  const audioDurationForSync = audioPlaybackState.duration > 15 ? audioPlaybackState.duration : 47;
+  const audioSyncCues = useMemo(() => {
+    return computeListeningAudioSyncMap(
+      questions,
+      audioDurationForSync,
+      currentDialogue,
+      activeSection
+    );
+  }, [questions, audioDurationForSync, currentDialogue, activeSection]);
+
+  // Active question cue matching the current audio timestamp
+  const activeAudioCueIdx = useMemo(() => {
+    if (!audioSyncCues.length) return 0;
+    return findActiveQuestionIndexForTimestamp(audioPlaybackState.currentTime || 0, audioSyncCues);
+  }, [audioPlaybackState.currentTime, audioSyncCues]);
+
+  // Auto-follow audio when enabled during playback
+  useEffect(() => {
+    if (autoFollowAudio && audioPlaybackState.isPlaying && audioSyncCues.length > 0) {
+      if (activeAudioCueIdx !== activeQuestionIndex && activeAudioCueIdx >= 0 && activeAudioCueIdx < questions.length) {
+        setActiveQuestionIndex(activeAudioCueIdx);
+      }
+    }
+  }, [autoFollowAudio, audioPlaybackState.isPlaying, activeAudioCueIdx, activeQuestionIndex, audioSyncCues.length, questions.length]);
+
+  // Handler to seek audio playback directly to a question's audio cue
+  const handleSeekToQuestionAudio = useCallback(
+    (questionIdx: number) => {
+      if (!audioSyncCues[questionIdx]) return;
+      const targetTime = audioSyncCues[questionIdx].startTime;
+      audioService.seek(targetTime);
+      setActiveQuestionIndex(questionIdx);
+      if (!audioPlaybackState.isPlaying) {
+        handlePlayAudio();
+      }
+    },
+    [audioSyncCues, audioPlaybackState.isPlaying, handlePlayAudio]
+  );
+
   // Answer handler
   const handleSelectAnswer = (qId: string, val: string) => {
     setUserAnswers((prev) => ({
@@ -614,7 +729,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     }));
   };
 
-  // Evaluate candidate answers strictly against Cambridge raw-score conversion table
+  // Evaluate candidate answers strictly against Practice raw-score conversion table
   const handleVerifyAnswers = () => {
     setIsEvaluated(true);
     let correctCount = 0;
@@ -633,7 +748,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           title: `Listening Section ${activeSection}: ${q.prompt}`,
           userAnswer: userRaw,
           correctAnswer: formatDisplayedCorrectAnswer(q),
-          explanation: q.explanation || 'Review Cambridge audio transcript clues carefully.'
+          explanation: q.explanation || 'Review Practice audio transcript clues carefully.'
         });
       }
 
@@ -720,6 +835,10 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
   const answeredCount = questions.filter((q) => (userAnswers[q.id] || '').trim().length > 0).length;
   const flaggedCount = questions.filter((q) => flaggedQuestions[q.id]).length;
 
+  const currentProgress = useMemo(() => {
+    return getListeningQuestionProgress(activeQuestionIndex, questions.length, activeSection);
+  }, [activeQuestionIndex, questions.length, activeSection]);
+
   // Filtered view if user toggles question types
   const availableTypes = useMemo(() => {
     const set = new Set<string>();
@@ -744,6 +863,22 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     };
   }, []);
 
+  if (activeListeningPilotSet) {
+    return (
+      <div className="fixed inset-0 z-40 bg-slate-100 dark:bg-slate-950 overflow-hidden">
+        <CDIELTSExamMode
+          customPilotSet={activeListeningPilotSet}
+          initialSkill="listening"
+          onShowToast={onShowToast}
+          onExit={() => {
+            setActiveListeningPilotSet(null);
+            onShowToast('Exited Listening AI Pilot and returned to Listening Lab.');
+          }}
+        />
+      </div>
+    );
+  }
+
   if (viewMode === 'authentic_mock') {
     return (
       <div className="space-y-4">
@@ -756,19 +891,52 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
             </span>
           </div>
 
-          <button
-            onClick={() => {
-              setViewMode('section_practice');
-              soundManager.playBeep(600, 0.04);
-            }}
-            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition border border-slate-200 flex items-center gap-1.5"
-          >
-            <span>Section Practice Mode (Single Part)</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAiPilotPanel((prev) => !prev);
+                soundManager.playBeep(620, 0.04);
+              }}
+              className={`px-3 py-1.5 min-h-[44px] rounded-xl font-bold text-xs transition border flex items-center gap-1.5 cursor-pointer ${
+                showAiPilotPanel
+                  ? 'bg-emerald-700 text-white border-emerald-700'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{showAiPilotPanel ? 'Hide AI Pilots' : 'AI Listening Pilots'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setViewMode('section_practice');
+                soundManager.playBeep(600, 0.04);
+              }}
+              className="px-3 py-1.5 min-h-[44px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition border border-slate-200 flex items-center gap-1.5"
+            >
+              <span>Section Practice Mode (Single Part)</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
-        <AuthenticIELTSListeningTest
+        {showAiPilotPanel && (
+          <CandidateAiPilotPanel
+            module="listening"
+            moduleTitle="Listening"
+            onLaunchApprovedPilot={(examSet) => {
+              audioService.stop();
+              stopSpeech();
+              audioManager.killAllAudio();
+              setActiveListeningPilotSet(examSet);
+              soundManager.playSuccess();
+              onShowToast(`Launched Approved Listening AI Pilot: "${examSet.title}"`);
+            }}
+          />
+        )}
+
+        <RealisticIELTSListeningTest
           onShowToast={onShowToast}
           onSwitchToPracticeMode={() => setViewMode('section_practice')}
         />
@@ -787,16 +955,45 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           </span>
         </div>
 
-        <button
-          onClick={() => {
-            setViewMode('authentic_mock');
-            soundManager.playBeep(660, 0.05);
-          }}
-          className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shrink-0 shadow-2xs transition flex items-center gap-1.5"
-        >
-          <span>← Launch Authentic 40-Question Mock Test</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowAiPilotPanel((prev) => !prev);
+              soundManager.playBeep(620, 0.04);
+            }}
+            className="px-3.5 py-1.5 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{showAiPilotPanel ? 'Hide AI Pilots' : 'AI Listening Pilots'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setViewMode('authentic_mock');
+              soundManager.playBeep(660, 0.05);
+            }}
+            className="px-3.5 py-1.5 min-h-[44px] rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shrink-0 shadow-2xs transition flex items-center gap-1.5"
+          >
+            <span>← Launch Realistic 40-Question Mock Test</span>
+          </button>
+        </div>
       </div>
+
+      {showAiPilotPanel && (
+        <CandidateAiPilotPanel
+          module="listening"
+          moduleTitle="Listening"
+          onLaunchApprovedPilot={(examSet) => {
+            audioService.stop();
+            stopSpeech();
+            audioManager.killAllAudio();
+            setActiveListeningPilotSet(examSet);
+            soundManager.playSuccess();
+            onShowToast(`Launched Approved Listening AI Pilot: "${examSet.title}"`);
+          }}
+        />
+      )}
 
       {/* Top Banner & Header */}
       <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7 shadow-xs">
@@ -804,7 +1001,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold font-mono">
-                <Volume2 className="w-3.5 h-3.5" /> Cambridge Computer-Delivered Suite
+                <Volume2 className="w-3.5 h-3.5" /> Practice Computer-Delivered Suite
               </span>
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold font-mono border border-slate-200">
                 <Layers className="w-3 h-3 text-slate-500" />
@@ -821,7 +1018,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               IELTS Listening Laboratory
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl">
-              Authentic British multi-speaker audio, interactive form filling, map labelling, and academic lectures.
+              Realistic British multi-speaker audio, interactive form filling, map labelling, and academic lectures.
               Integrated with the adaptive QuestionEngine.
             </p>
           </div>
@@ -988,7 +1185,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               </span>
             </div>
             <div className="text-sm font-black text-slate-900 truncate">
-              {activeScenarioTopic || currentQ?.topic || 'Official Cambridge Audio'}
+              {activeScenarioTopic || currentQ?.topic || 'Practice Audio'}
             </div>
           </div>
         </div>
@@ -1030,7 +1227,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
       >
         <IELTSAudioPlayer
           title={`Listening Section ${activeSection}: ${activeScenarioTopic || currentQ?.topic || 'Original Practice Recording'}`}
-          subtitle="Original Practice Audio · British RP Multi-Speaker Studio (Cambridge-Calibrated)"
+          subtitle="Original Practice Audio · British RP Multi-Speaker Studio (IELTS-style)"
           questionId={`listening_sec_${activeSection}_${activeScenarioTopic || 'default'}`}
           audioId={computeContentFingerprint(currentDialogue.map((d) => d.text).join('|'), `sec${activeSection}`)}
           onPlay={handlePlayAudio}
@@ -1038,6 +1235,115 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           onRetry={handlePlayAudio}
         />
       </AudioErrorBoundary>
+
+      {/* Interactive 10-Question Audio Timestamp Sync Strip (Calibrated to 47s recording timeline) */}
+      {audioSyncCues.length > 0 && (
+        <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0">
+                <Radio className={`w-4 h-4 ${audioPlaybackState.isPlaying ? 'animate-pulse text-blue-600' : 'text-slate-500'}`} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 font-mono">
+                    Audio Sync Timeline ({questions.length} Questions Tracked)
+                  </h4>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold border border-slate-200">
+                    {formatAudioTimestamp(audioDurationForSync)} Studio Track
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {audioPlaybackState.isPlaying
+                    ? `Playing audio cue for Question ${audioSyncCues[activeAudioCueIdx]?.questionNumber || 1} (${audioSyncCues[activeAudioCueIdx]?.timeRangeLabel || ''})`
+                    : 'Click any question cue to jump audio and sync active question.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 self-start sm:self-auto">
+              {/* Playhead Time */}
+              <div className="px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs font-bold text-slate-700">
+                {formatAudioTimestamp(audioPlaybackState.currentTime || 0)} / {formatAudioTimestamp(audioDurationForSync)}
+              </div>
+
+              {/* Auto-Follow Toggle */}
+              <button
+                type="button"
+                onClick={() => setAutoFollowAudio((prev) => !prev)}
+                className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 cursor-pointer border ${
+                  autoFollowAudio
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                }`}
+                title="When ON, active question automatically switches as audio plays"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Auto-Follow: {autoFollowAudio ? 'ON' : 'OFF'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 10-Question Cue Buttons Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2">
+            {audioSyncCues.map((cue, idx) => {
+              const isPlayingCue = audioPlaybackState.isPlaying && activeAudioCueIdx === idx;
+              const isSelectedView = activeQuestionIndex === idx;
+              const isAnswered = Boolean((userAnswers[cue.questionId] || '').trim());
+              const isRight = isEvaluated && isListeningAnswerCorrect(questions[idx], userAnswers[cue.questionId] || '');
+              const isWrong = isEvaluated && isAnswered && !isRight;
+
+              return (
+                <button
+                  key={cue.questionId}
+                  type="button"
+                  onClick={() => handleSeekToQuestionAudio(idx)}
+                  className={`group relative p-2 rounded-2xl border text-center transition flex flex-col items-center justify-between min-h-[58px] cursor-pointer ${
+                    isPlayingCue
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400 ring-offset-1'
+                      : isSelectedView
+                      ? 'bg-blue-50 text-blue-900 border-blue-400 ring-1 ring-blue-300'
+                      : isRight
+                      ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100/70'
+                      : isWrong
+                      ? 'bg-rose-50 text-rose-900 border-rose-300 hover:bg-rose-100/70'
+                      : isAnswered
+                      ? 'bg-slate-50 text-slate-800 border-blue-200 hover:bg-blue-50/50'
+                      : 'bg-slate-50/70 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                  }`}
+                  title={`Question ${cue.questionNumber} · Spoken at ${cue.timeRangeLabel}: ${cue.promptPreview}`}
+                >
+                  <div className="flex items-center justify-between w-full px-1">
+                    <span className={`font-mono text-xs font-black ${isPlayingCue ? 'text-white' : 'text-slate-900'}`}>
+                      Q{cue.questionNumber}
+                    </span>
+                    {isPlayingCue ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                    ) : isAnswered ? (
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isPlayingCue ? 'bg-white' : isRight ? 'bg-emerald-500' : isWrong ? 'bg-rose-500' : 'bg-blue-500'
+                        }`}
+                      />
+                    ) : null}
+                  </div>
+                  <span
+                    className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-md mt-1 ${
+                      isPlayingCue
+                        ? 'bg-blue-700/80 text-blue-100'
+                        : isSelectedView
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-white/80 text-slate-600 border border-slate-200/60'
+                    }`}
+                  >
+                    {cue.timestampLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Main Split Layout: Active Question Card vs Sidebar */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1049,7 +1355,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
             <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="px-3 py-1 rounded-xl bg-blue-100 text-blue-800 font-mono text-xs font-black">
-                  Question {activeQuestionIndex + 1} of {questions.length}
+                  Question {currentProgress.overallQuestionNumber} of {currentProgress.overallTotal} (Part {currentProgress.part})
                 </span>
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono">
                   {currentQ?.topic}
@@ -1072,6 +1378,19 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Direct audio jump button to this question's cue */}
+                {audioSyncCues[activeQuestionIndex] && (
+                  <button
+                    type="button"
+                    onClick={() => handleSeekToQuestionAudio(activeQuestionIndex)}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-mono font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                    title={`Jump audio to ${audioSyncCues[activeQuestionIndex]?.timestampLabel}`}
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Audio Cue: {audioSyncCues[activeQuestionIndex]?.timestampLabel}</span>
+                  </button>
+                )}
+
                 {/* Flag for Review button */}
                 <button
                   onClick={() => currentQ && handleToggleFlag(currentQ.id)}
@@ -1203,7 +1522,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-                    <span>Cambridge standard: Spelling, plurals, and number formats are marked strictly.</span>
+                    <span>Practice standard: Spelling, plurals, and number formats are marked strictly.</span>
                     <span className="font-mono text-blue-700 font-bold">
                       {(userAnswers[currentQ?.id] || '').trim().split(/\s+/).filter(Boolean).length} word(s)
                     </span>
@@ -1222,7 +1541,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-bold text-slate-700">Official Correct Answer:</span>
+                  <span className="font-bold text-slate-700">Correct Answer:</span>
                   <span className="font-mono font-black text-emerald-900 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-300">
                     {formatDisplayedCorrectAnswer(currentQ)}
                   </span>
@@ -1230,6 +1549,27 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                 <p className="text-slate-700 leading-relaxed font-serif italic">
                   <strong>Examiner Clue:</strong> {currentQ.explanation}
                 </p>
+              </div>
+            )}
+
+            {/* Contextual Gemini 'Ask Mentor' Button & On-Demand Explanation Panel */}
+            {currentQ && (
+              <div className="pt-1">
+                <AskMentorContextualWidget
+                  module="listening"
+                  questionPrompt={currentQ.prompt}
+                  questionType={currentQ.questionType}
+                  topic={`Section ${activeSection}: ${activeScenarioTopic || currentQ.topic || 'Practice Listening'}`}
+                  evidenceContext={currentDialogue
+                    .slice(0, 8)
+                    .map((d) => `${d.speaker}: ${d.text}`)
+                    .join('\n')}
+                  userAnswer={userAnswers[currentQ.id] || ''}
+                  correctAnswer={formatDisplayedCorrectAnswer(currentQ)}
+                  trapNote={currentQ.explanation}
+                  isAnswerRevealed={isEvaluated}
+                  buttonLabel={isEvaluated ? 'Ask Mentor to Explain Answer' : 'Ask Mentor'}
+                />
               </div>
             )}
 
@@ -1300,14 +1640,27 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                         : 'bg-slate-50/60 border-slate-200 hover:bg-slate-100/60'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <span
                         className={`w-6 h-6 rounded-lg font-mono text-xs font-bold flex items-center justify-center shrink-0 ${
                           isSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'
                         }`}
                       >
-                        {idx + 1}
+                        {(activeSection - 1) * 10 + idx + 1}
                       </span>
+                      {audioSyncCues[idx] && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSeekToQuestionAudio(idx);
+                          }}
+                          className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border border-slate-200 transition shrink-0"
+                          title={`Seek audio to ${audioSyncCues[idx].timestampLabel}`}
+                        >
+                          {audioSyncCues[idx].timestampLabel}
+                        </button>
+                      )}
                       <p className="text-xs font-semibold text-slate-800 truncate">{q.prompt}</p>
                     </div>
 
@@ -1342,7 +1695,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
             {/* Score & Submit Action Bar */}
             <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <span className="text-xs text-slate-500">
-                Verify answers to see Cambridge Band score and log mistakes in your Vault.
+                Verify answers to see Practice Band score and log mistakes in your Vault.
               </span>
 
               <button
@@ -1396,7 +1749,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                         : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
                     }`}
                   >
-                    <span>{idx + 1}</span>
+                    <span>{(activeSection - 1) * 10 + idx + 1}</span>
                     {isFlagged && (
                       <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full ring-2 ring-white" />
                     )}
@@ -1462,7 +1815,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                           )}
                         </div>
                         <button
-                          onClick={() => speakBritish(line.text)}
+                          onClick={() => speakBritish(line.text, { speakerId: line.speakerId, gender: line.gender })}
                           className="text-[11px] font-bold text-slate-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
                           title="Replay this line in British RP"
                         >
@@ -1489,7 +1842,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           <div className="bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-sm space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
               <Sparkles className="w-4 h-4" />
-              <span>Section {activeSection} Cambridge Strategy</span>
+              <span>Section {activeSection} Practice Strategy</span>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
               {activeSection === 1 &&

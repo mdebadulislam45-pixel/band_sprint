@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Mail, CheckCircle2, ArrowRight, RotateCw, ExternalLink } from 'lucide-react';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { Mail, CheckCircle2, ArrowRight, RotateCw, AlertCircle } from 'lucide-react';
+import { sendEmailVerification } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
+import { BandSprintLogo } from '../common/BandSprintLogo';
 
 interface EmailVerificationScreenProps {
   email: string;
@@ -14,32 +16,61 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
   onVerified,
   onChangeEmail
 }) => {
-  const [cooldown, setCooldown] = useState<number>(30);
+  const [cooldown, setCooldown] = useState<number>(0);
   const [isResending, setIsResending] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = setInterval(() => {
-      setCooldown(prev => prev - 1);
+      setCooldown((prev) => Math.max(0, prev - 1));
     }, 1000);
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (cooldown > 0 || isResending) return;
+    setErrorMsg(null);
+    setResendStatus(null);
+
+    if (!auth.currentUser) {
+      setErrorMsg('No active Firebase session found to send a verification email.');
+      return;
+    }
+
     setIsResending(true);
-    setTimeout(() => {
-      setIsResending(false);
+    try {
+      await sendEmailVerification(auth.currentUser);
       setCooldown(45);
-      setResendStatus('A fresh verification link has been sent to your inbox.');
-    }, 500);
+      setResendStatus('A verification link has been sent to your email inbox.');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Unable to send verification email right now. Please try again later.');
+    } finally {
+      setIsResending(false);
+    }
   };
 
-  const handleOpenEmail = () => {
-    // In mobile apps / web, provide simulated mailbox or deep-link instruction
-    // Then immediately enable candidate to advance
-    onVerified();
+  const handleCheckVerification = async () => {
+    setErrorMsg(null);
+    setIsChecking(true);
+    try {
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+        if (auth.currentUser.emailVerified) {
+          onVerified();
+          return;
+        }
+        setErrorMsg('Your email is not marked as verified yet. Please click the verification link in your inbox and try again.');
+      } else {
+        onVerified();
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Could not check verification status.');
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   return (
@@ -49,7 +80,7 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
 
       {/* Header */}
       <header className="relative z-10 flex items-center justify-center pt-2 pb-4">
-        <IELTSSprintLogo variant="full" size="sm" className="brightness-125" />
+        <BandSprintLogo variant="full" size="sm" className="brightness-125" />
       </header>
 
       {/* Main card */}
@@ -60,7 +91,7 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
           transition={{ duration: 0.35 }}
           className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl backdrop-blur-md space-y-5"
         >
-          {/* Animated Mail Icon */}
+          {/* Mail Icon */}
           <div className="w-16 h-16 rounded-2xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center mx-auto shadow-inner">
             <Mail className="w-8 h-8" />
           </div>
@@ -70,7 +101,7 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
               Verify your email
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              We've sent a verification link to{' '}
+              Check your inbox at{' '}
               <span className="font-mono font-bold text-blue-400 block sm:inline mt-0.5">{email}</span>.
             </p>
           </div>
@@ -82,14 +113,22 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
             </div>
           )}
 
+          {errorMsg && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2 text-left">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
           {/* Action buttons */}
           <div className="space-y-2.5 pt-2">
             <button
               type="button"
-              onClick={handleOpenEmail}
-              className="w-full min-h-[50px] py-3.5 px-6 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 transition active:scale-98"
+              onClick={handleCheckVerification}
+              disabled={isChecking}
+              className="w-full min-h-[50px] py-3.5 px-6 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 transition active:scale-98"
             >
-              <span>Verify & Continue</span>
+              <span>{isChecking ? 'Checking status...' : 'I Have Verified My Email'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
@@ -101,7 +140,7 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
             >
               <RotateCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
               <span>
-                {cooldown > 0 ? `Resend email (${cooldown}s)` : 'Resend Email'}
+                {cooldown > 0 ? `Resend email (${cooldown}s)` : 'Send Verification Email'}
               </span>
             </button>
           </div>

@@ -85,7 +85,7 @@ const DEFAULT_FLASHCARDS: VocabFlashcard[] = [
     partOfSpeech: 'Verb',
     definition: 'To establish by verified proof, empirical research, or competent evidence.',
     academicExample:
-      'Empirical studies conducted by Cambridge economists substantiate the correlation between early childhood education and long-term vocational earnings.',
+      'Empirical studies conducted by Practice economists substantiate the correlation between early childhood education and long-term vocational earnings.',
     collocations: ['substantiate the claim', 'substantiate an assertion', 'empirically substantiate'],
     banglaMeaning: 'প্রমাণ বা যাচাই করা'
   },
@@ -192,7 +192,9 @@ export const VocabFlashcardTrainer: React.FC = () => {
 
   const handleSpeak = (text: string) => {
     setSpeakingItem(text);
+    const wordCount = text.trim().split(/\s+/).length;
     speakBritish(text, {
+      deliveryProfile: wordCount <= 3 ? 'pronunciation_model' : 'vocabulary_example',
       onEnd: () => setSpeakingItem(null),
       onError: () => setSpeakingItem(null)
     });
@@ -215,7 +217,7 @@ export const VocabFlashcardTrainer: React.FC = () => {
             IELTS Academic Flashcards (Band 8.0 - 9.0)
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Memorize high-impact lexical items with interactive flipping cards, certified Cambridge British
+            Memorize high-impact lexical items with interactive flipping cards, certified Practice British
             pronunciation, and three-stage spaced repetition review.
           </p>
         </div>
@@ -322,7 +324,7 @@ export const VocabFlashcardTrainer: React.FC = () => {
                     handleSpeak(activeCard.word);
                   }}
                   className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 hover:bg-blue-100 transition"
-                  title="Listen (Authentic British Pronunciation)"
+                  title="Listen (Realistic British Pronunciation)"
                 >
                   <Volume2 className="w-4 h-4" />
                 </button>
@@ -378,7 +380,7 @@ export const VocabFlashcardTrainer: React.FC = () => {
 
                 <div className="space-y-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
                   <div className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center justify-between">
-                    <span>Cambridge IELTS Sentence</span>
+                    <span>IELTS Sentence</span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -403,7 +405,7 @@ export const VocabFlashcardTrainer: React.FC = () => {
                         height={26}
                         barCount={18}
                         showLabel={true}
-                        label="Cambridge Sentence Audio"
+                        label="Practice Sentence Audio"
                       />
                     </div>
                   )}

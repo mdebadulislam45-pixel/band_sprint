@@ -127,11 +127,11 @@ export const AccentAuditionModal: React.FC<AccentAuditionModalProps> = ({
               <div className="flex items-center gap-2">
                 <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <h3 id="accent-modal-title" className="text-xl font-black text-slate-900 dark:text-white">
-                  Official IELTS Native Accent Audition Suite
+                  IELTS Native Accent Audition Suite
                 </h3>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Listen to studio-recorded human voice streams across all 6 official Cambridge testing accents. Zero synthetic distortion.
+                Listen to studio-recorded human voice streams across all 6 official Practice testing accents. Zero synthetic distortion.
               </p>
             </div>
 
@@ -237,7 +237,7 @@ export const AccentAuditionModal: React.FC<AccentAuditionModalProps> = ({
           <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
             <div className="flex items-center gap-1.5 font-medium">
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
-              <span>Certified Cambridge CD-IELTS Audio Compliance</span>
+              <span>Certified Practice CD-IELTS Audio Compliance</span>
             </div>
             <button
               onClick={() => {

@@ -1,11 +1,12 @@
 import React from 'react';
-import { Volume2, Mic, Activity, CheckCircle2, Sparkles, HelpCircle } from 'lucide-react';
+import { Volume2, Mic, Activity, Sparkles } from 'lucide-react';
 
 export type VoiceOrbState = 'idle' | 'examiner_speaking' | 'recording' | 'thinking' | 'feedback';
 
 interface SpeakingVoiceOrbProps {
   state: VoiceOrbState;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  compact?: boolean;
   label?: string;
   sublabel?: string;
   volumeLevel?: number; // 0 to 1
@@ -16,6 +17,7 @@ interface SpeakingVoiceOrbProps {
 export const SpeakingVoiceOrb: React.FC<SpeakingVoiceOrbProps> = ({
   state,
   size = 'md',
+  compact = false,
   label,
   sublabel,
   volumeLevel = 0,
@@ -23,104 +25,126 @@ export const SpeakingVoiceOrb: React.FC<SpeakingVoiceOrbProps> = ({
   className = ''
 }) => {
   const sizeMap = {
-    sm: { container: 'w-24 h-24', icon: 'w-6 h-6', ring1: 'w-28 h-28', ring2: 'w-32 h-32' },
-    md: { container: 'w-36 h-36', icon: 'w-8 h-8', ring1: 'w-44 h-44', ring2: 'w-52 h-52' },
-    lg: { container: 'w-48 h-48', icon: 'w-10 h-10', ring1: 'w-56 h-56', ring2: 'w-64 h-64' }
+    xs: { container: 'w-12 h-12', icon: 'w-5 h-5', ring1: 'w-14 h-14', ring2: 'w-16 h-16' },
+    sm: { container: 'w-16 h-16', icon: 'w-6 h-6', ring1: 'w-20 h-20', ring2: 'w-24 h-24' },
+    md: { container: 'w-32 h-32', icon: 'w-8 h-8', ring1: 'w-40 h-40', ring2: 'w-48 h-48' },
+    lg: { container: 'w-44 h-44', icon: 'w-10 h-10', ring1: 'w-52 h-52', ring2: 'w-60 h-60' }
   };
 
   const currentSize = sizeMap[size];
 
-  // Dynamic status text if not explicitly provided
   const resolvedLabel =
     label ||
     (state === 'examiner_speaking'
       ? 'Examiner Speaking'
       : state === 'recording'
-      ? 'Listening to Candidate'
+      ? 'Listening'
       : state === 'thinking'
-      ? 'Analyzing Fluency & Grammar'
+      ? 'Analyzing Response'
       : state === 'feedback'
-      ? 'Diagnostic Feedback Ready'
+      ? 'Feedback Ready'
       : 'Ready to Speak');
 
   const resolvedSublabel =
     sublabel ||
     (state === 'examiner_speaking'
-      ? 'British Council Oral Calibration · Listen carefully'
+      ? 'Listen carefully to the question'
       : state === 'recording'
-      ? 'Speak continuously · Natural pause detection active'
+      ? 'Speak clearly at your natural pace'
       : state === 'thinking'
-      ? 'Evaluating against 4 Cambridge descriptors...'
+      ? 'Evaluating against 4 IELTS criteria…'
       : state === 'feedback'
-      ? 'Instant Band 8+ suggestions loaded'
-      : 'Click microphone or spacebar to begin');
+      ? 'Band 8+ suggestions ready'
+      : 'Tap microphone or press spacebar');
+
+  const orbColors =
+    state === 'examiner_speaking'
+      ? 'bg-[#0F4C45] text-white ring-4 ring-[#1F8A70]/35'
+      : state === 'recording'
+      ? 'bg-emerald-600 text-white ring-4 ring-emerald-400/35'
+      : state === 'thinking'
+      ? 'bg-[#0F4C45] text-white ring-4 ring-[#F4A62A]/40'
+      : state === 'feedback'
+      ? 'bg-[#F4A62A] text-[#0E1F1E] ring-4 ring-[#F4A62A]/35'
+      : 'bg-[#0E1F1E] text-white ring-4 ring-[#D3DDDA] dark:ring-[#1E3533] hover:ring-[#0F4C45]/50';
+
+  if (compact) {
+    return (
+      <div className={`flex items-center gap-3 select-none min-w-0 ${className}`}>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={resolvedLabel}
+          className={`relative shrink-0 ${sizeMap.xs.container} rounded-full flex items-center justify-center shadow-sm transition-all duration-200 cursor-pointer active:scale-95 ${orbColors}`}
+        >
+          {state === 'examiner_speaking' && <Volume2 className="w-5 h-5" />}
+          {state === 'recording' && <Mic className="w-5 h-5 animate-pulse" />}
+          {state === 'thinking' && <Activity className="w-5 h-5 animate-spin" />}
+          {state === 'feedback' && <Sparkles className="w-5 h-5" />}
+          {state === 'idle' && <Mic className="w-5 h-5 text-white/90" />}
+        </button>
+        <div className="min-w-0 text-left">
+          <div className="text-xs sm:text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1] leading-tight truncate">
+            {resolvedLabel}
+          </div>
+          <div className="text-[11px] text-[#566664] dark:text-[#9AAEA9] leading-tight mt-0.5 truncate">
+            {resolvedSublabel}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`flex flex-col items-center justify-center text-center p-4 select-none ${className}`}>
+    <div className={`flex flex-col items-center justify-center text-center p-2 sm:p-4 select-none ${className}`}>
       {/* Outer Ripple Area */}
-      <div className="relative flex items-center justify-center my-3">
-        {/* Outermost Animated Ripple Ring */}
-        {state === 'examiner_speaking' && (
-          <div
-            className={`absolute ${currentSize.ring2} rounded-full bg-blue-500/15 animate-ping pointer-events-none duration-1000`}
-          />
-        )}
+      <div className="relative flex items-center justify-center my-2">
         {state === 'recording' && (
           <div
-            className={`absolute ${currentSize.ring2} rounded-full bg-emerald-500/20 animate-pulse pointer-events-none`}
-            style={{ transform: `scale(${1 + volumeLevel * 0.4})` }}
+            className={`absolute ${currentSize.ring2} rounded-full bg-emerald-500/15 pointer-events-none transition-transform duration-150`}
+            style={{ transform: `scale(${1 + volumeLevel * 0.35})` }}
           />
         )}
         {state === 'thinking' && (
           <div
-            className={`absolute ${currentSize.ring2} rounded-full border-2 border-indigo-400/40 border-t-indigo-600 animate-spin pointer-events-none`}
+            className={`absolute ${currentSize.ring2} rounded-full border-2 border-[#0F4C45]/25 border-t-[#0F4C45] animate-spin pointer-events-none`}
           />
         )}
 
-        {/* Secondary Concentric Ripple */}
+        {/* Secondary Concentric Ring */}
         <div
           className={`absolute ${currentSize.ring1} rounded-full transition-all duration-300 pointer-events-none ${
             state === 'examiner_speaking'
-              ? 'bg-blue-600/20 border border-blue-400/40 animate-pulse'
+              ? 'bg-[#0F4C45]/15 border border-[#0F4C45]/30'
               : state === 'recording'
-              ? 'bg-emerald-600/20 border border-emerald-400/40'
+              ? 'bg-emerald-600/15 border border-emerald-400/40'
               : state === 'thinking'
-              ? 'bg-indigo-600/20 border border-indigo-400/40 animate-spin'
+              ? 'bg-[#F4A62A]/15 border border-[#F4A62A]/40'
               : state === 'feedback'
-              ? 'bg-purple-600/20 border border-purple-400/40 animate-bounce'
-              : 'bg-slate-200/50 dark:bg-slate-800/50'
+              ? 'bg-[#F4A62A]/20 border border-[#F4A62A]/40'
+              : 'bg-[#EEF3F1] dark:bg-[#162927]'
           }`}
-          style={state === 'recording' ? { transform: `scale(${1 + volumeLevel * 0.25})` } : undefined}
+          style={state === 'recording' ? { transform: `scale(${1 + volumeLevel * 0.2})` } : undefined}
         />
 
         {/* Central Core Orb */}
         <button
+          type="button"
           onClick={onClick}
-          className={`relative ${currentSize.container} rounded-full flex flex-col items-center justify-center shadow-2xl transition-all duration-300 z-10 cursor-pointer active:scale-95 ${
-            state === 'examiner_speaking'
-              ? 'bg-gradient-to-tr from-blue-700 via-indigo-600 to-sky-500 text-white ring-4 ring-blue-300/60 shadow-blue-500/30'
-              : state === 'recording'
-              ? 'bg-gradient-to-tr from-emerald-700 via-teal-600 to-green-500 text-white ring-4 ring-emerald-300/60 shadow-emerald-500/30'
-              : state === 'thinking'
-              ? 'bg-gradient-to-tr from-indigo-800 via-purple-700 to-pink-600 text-white ring-4 ring-purple-300/60 shadow-purple-500/30 animate-pulse'
-              : state === 'feedback'
-              ? 'bg-gradient-to-tr from-amber-500 via-orange-600 to-purple-600 text-white ring-4 ring-amber-300/60 shadow-amber-500/30'
-              : 'bg-gradient-to-tr from-slate-800 via-slate-900 to-indigo-950 text-white ring-4 ring-slate-700/50 hover:ring-blue-500/60'
-          }`}
+          aria-label={resolvedLabel}
+          className={`relative ${currentSize.container} rounded-full flex flex-col items-center justify-center shadow-lg transition-all duration-200 z-10 cursor-pointer active:scale-95 ${orbColors}`}
         >
-          {/* Dynamic Core Icon */}
-          {state === 'examiner_speaking' && <Volume2 className={`${currentSize.icon} animate-bounce`} />}
+          {state === 'examiner_speaking' && <Volume2 className={currentSize.icon} />}
           {state === 'recording' && <Mic className={`${currentSize.icon} animate-pulse`} />}
           {state === 'thinking' && <Activity className={`${currentSize.icon} animate-spin`} />}
-          {state === 'feedback' && <Sparkles className={`${currentSize.icon} text-amber-300`} />}
-          {state === 'idle' && <Mic className={`${currentSize.icon} text-slate-300`} />}
+          {state === 'feedback' && <Sparkles className={currentSize.icon} />}
+          {state === 'idle' && <Mic className={`${currentSize.icon} text-white/90`} />}
 
-          {/* Sound wave bars underneath icon when speaking/recording */}
-          {(state === 'examiner_speaking' || state === 'recording') && (
+          {(state === 'examiner_speaking' || state === 'recording') && size !== 'sm' && (
             <div className="flex items-center gap-1 mt-2">
-              <span className="w-1 h-3 rounded-full bg-white/90 animate-pulse" />
-              <span className="w-1 h-5 rounded-full bg-white/90 animate-[pulse_0.6s_infinite]" />
-              <span className="w-1 h-4 rounded-full bg-white/90 animate-[pulse_0.8s_infinite]" />
+              <span className="w-1 h-2.5 rounded-full bg-white/90 animate-pulse" />
+              <span className="w-1 h-4 rounded-full bg-white/90 animate-[pulse_0.6s_infinite]" />
+              <span className="w-1 h-3 rounded-full bg-white/90 animate-[pulse_0.8s_infinite]" />
               <span className="w-1 h-2 rounded-full bg-white/90 animate-pulse" />
             </div>
           )}
@@ -128,26 +152,11 @@ export const SpeakingVoiceOrb: React.FC<SpeakingVoiceOrbProps> = ({
       </div>
 
       {/* Label and Sublabel */}
-      <div className="space-y-1 mt-2 max-w-sm">
-        <div className="flex items-center justify-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              state === 'examiner_speaking'
-                ? 'bg-blue-500 animate-ping'
-                : state === 'recording'
-                ? 'bg-emerald-500 animate-pulse'
-                : state === 'thinking'
-                ? 'bg-indigo-500 animate-spin'
-                : state === 'feedback'
-                ? 'bg-amber-500'
-                : 'bg-slate-400'
-            }`}
-          />
-          <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
-            {resolvedLabel}
-          </h4>
-        </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-snug">
+      <div className="space-y-0.5 mt-2 max-w-[220px]">
+        <h4 className="text-xs sm:text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1] tracking-tight">
+          {resolvedLabel}
+        </h4>
+        <p className="text-[11px] text-[#566664] dark:text-[#9AAEA9] leading-snug">
           {resolvedSublabel}
         </p>
       </div>

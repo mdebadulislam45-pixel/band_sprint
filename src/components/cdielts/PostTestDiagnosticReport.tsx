@@ -29,17 +29,39 @@ import {
 import { QuestionItem } from '../../data/mockExams';
 import { addMistake } from '../../utils/vaultStorage';
 import { speakBritish } from '../../utils/britishVoice';
+import {
+  ComprehensiveWritingEvaluation,
+  evaluateCDIELTSWritingSuite,
+  roundIELTSBand,
+  AnnotatedTextSegment
+} from '../../utils/cdieltsEvaluationEngine';
+import { evaluateRawScoreDetailed } from '../../utils/ieltsBandConversion';
+import { SprintTRFModal, TRFScoreData } from './SprintTRFModal';
+import { PrintablePracticeReportModal } from '../reports/PrintablePracticeReportModal';
 
 export interface SubmittedResultsPayload {
   listeningCorrect: number;
   listeningTotal: number;
-  listeningBand: number;
+  listeningBand?: number | null;
   readingCorrect: number;
   readingTotal: number;
-  readingBand: number;
-  writingBand: number;
-  overallBand: number;
+  readingBand?: number | null;
+  writingBand?: number | null;
+  overallBand?: number | null;
   wordCount: number;
+  task1WordCount?: number;
+  task1Essay?: string;
+  task2Essay?: string;
+  task1Prompt?: string;
+  writingPrompt?: string;
+  writingEvaluation?: ComprehensiveWritingEvaluation;
+  examType?: 'full_mock' | 'listening_only' | 'partial_lrw' | 'reading_only' | 'writing_only' | 'speaking_only';
+  completedSkills?: {
+    listening?: boolean;
+    reading?: boolean;
+    writing?: boolean;
+    speaking?: boolean;
+  };
 }
 
 interface PostTestDiagnosticReportProps {
@@ -59,45 +81,34 @@ interface PostTestDiagnosticReportProps {
 }
 
 /**
- * Authentic IELTS Band Conversion Logic with Official Rounding (.25 -> .5; .75 -> next whole)
+ * Practice band estimate from a raw score (approximate IELTS-style conversion).
+ * This is an estimate only — never an official IELTS score.
  */
-export function calculateOfficialIELTSBand(correct: number, total: number): { band: number; cefr: string } {
-  if (total === 0) return { band: 0, cefr: 'N/A' };
+export function calculateEstimatedPracticeBand(correct: number, total: number): { band: number | null; cefr: string } {
+  if (total <= 0 || typeof correct !== 'number' || isNaN(correct) || correct < 0) {
+    return { band: null, cefr: 'N/A' };
+  }
 
-  let band = 0;
-  // Official 40-question boundary conversion table for Listening/Reading
+  let band: number | null = null;
   if (total === 40) {
-    if (correct >= 39) band = 9.0;
-    else if (correct >= 37) band = 8.5;
-    else if (correct >= 35) band = 8.0;
-    else if (correct >= 33) band = 7.5;
-    else if (correct >= 30) band = 7.0;
-    else if (correct >= 27) band = 6.5;
-    else if (correct >= 23) band = 6.0;
-    else if (correct >= 19) band = 5.5;
-    else if (correct >= 15) band = 5.0;
-    else if (correct >= 13) band = 4.5;
-    else if (correct >= 10) band = 4.0;
-    else band = 3.5;
+    const evalRes = evaluateRawScoreDetailed(correct, 'reading', { edition: 'Academic', isAttempted: true });
+    band = evalRes.band;
   } else {
-    // For 10-question practice drills: ratio-based conversion with official IELTS rounding
-    const rawRatio = (correct / total) * 9;
-    const intPart = Math.floor(rawRatio);
-    const decimal = rawRatio - intPart;
-
-    if (decimal < 0.25) band = intPart;
-    else if (decimal < 0.75) band = intPart + 0.5;
-    else band = intPart + 1.0;
-    band = Math.min(9.0, Math.max(1.0, band));
+    // Benchmark scaled ratio for non-40 question practice drills
+    const scaled = Math.min(40, Math.max(0, Math.round((correct / total) * 40)));
+    const evalRes = evaluateRawScoreDetailed(scaled, 'reading', { edition: 'Academic', isAttempted: true });
+    band = evalRes.band;
   }
 
   let cefr = 'C2 - Native Mastery';
-  if (band >= 8.5) cefr = 'C2 - Expert Operational';
+  if (band === null) cefr = 'A1/A2 - Floor / Unassessed';
+  else if (band >= 8.5) cefr = 'C2 - Expert Operational';
   else if (band >= 7.5) cefr = 'C1 - Advanced Operational';
   else if (band >= 6.5) cefr = 'B2 - Competent Upper-Intermediate';
   else if (band >= 5.5) cefr = 'B2 - Intermediate User';
   else if (band >= 4.5) cefr = 'B1 - Modest User';
-  else cefr = 'A2 - Basic User';
+  else if (band >= 1.0) cefr = 'A2 - Basic User';
+  else cefr = 'A1/A2 - Non-user';
 
   return { band, cefr };
 }
@@ -158,6 +169,23 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
   const [locatedQuestion, setLocatedQuestion] = useState<QuestionItem | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<number | null>(null);
   const [savedToVaultIds, setSavedToVaultIds] = useState<Set<number>>(new Set());
+  const [selectedAuditTask, setSelectedAuditTask] = useState<1 | 2>(2);
+  const [activeSegmentTooltip, setActiveSegmentTooltip] = useState<AnnotatedTextSegment | null>(null);
+  const [showTRFModal, setShowTRFModal] = useState<boolean>(false);
+  const [showPrintableReport, setShowPrintableReport] = useState<boolean>(false);
+
+  // Compute or retrieve full 4-criterion Writing & Speaking evaluation
+  const writingEval: ComprehensiveWritingEvaluation = React.useMemo(() => {
+    if (results.writingEvaluation) return results.writingEvaluation;
+    return evaluateCDIELTSWritingSuite(
+      results.task1Essay || '',
+      results.task2Essay || '',
+      results.task1Prompt || 'Summarise the main features of the chart and make comparisons where relevant.',
+      results.writingPrompt || 'Discuss both views and give your own opinion.'
+    );
+  }, [results]);
+
+  const activeTaskAudit = selectedAuditTask === 1 ? writingEval.task1Audit : writingEval.task2Audit;
 
   const totalQuestions = questions.length;
   let correctCount = 0;
@@ -173,7 +201,11 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
   });
 
   const accuracyPercent = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
-  const { band: officialBand, cefr } = calculateOfficialIELTSBand(correctCount, totalQuestions);
+  const { band: objectiveBand, cefr } = calculateEstimatedPracticeBand(correctCount, totalQuestions);
+  const estimatedBand =
+    results.overallBand && results.overallBand > 0
+      ? roundIELTSBand(results.overallBand)
+      : null;
 
   // Question Categories Grouping for Weakness Radar
   const categoryStats: Record<string, { total: number; correct: number; questions: QuestionItem[] }> = {};
@@ -246,7 +278,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
       title: `Q${q.id}: ${q.prompt}`,
       userAnswer: userVal,
       correctAnswer: q.correctAnswer,
-      explanation: q.explanation || 'Review official Cambridge distractor cue.',
+      explanation: q.explanation || 'Review the practice distractor cue.',
       trapExplanationBn: getBilingualBengaliTrapExplanation(q),
       sourceContext: testTitle
     });
@@ -269,7 +301,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
           title: `Q${q.id}: ${q.prompt}`,
           userAnswer: (userAnswers[q.id] || '').trim() || '(Unanswered)',
           correctAnswer: q.correctAnswer,
-          explanation: q.explanation || 'Review official Cambridge distractor cue.',
+          explanation: q.explanation || 'Review the practice distractor cue.',
           trapExplanationBn: getBilingualBengaliTrapExplanation(q),
           sourceContext: testTitle
         });
@@ -293,7 +325,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-xs font-mono font-bold text-blue-400 uppercase tracking-widest">
             <Sparkles className="w-4 h-4 text-blue-400" />
-            IELTS SPRINT · PSYCHOMETRIC PERFORMANCE REPORT
+            BandSprint · PSYCHOMETRIC PERFORMANCE REPORT
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-white">
             Exam Performance & Diagnostic Report
@@ -314,11 +346,20 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
             </button>
           )}
           <button
-            onClick={() => window.print()}
+            onClick={() => setShowTRFModal(true)}
+            className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md"
+            title="View & Download Practice Test Report Form (TRF)"
+          >
+            <Award className="w-4 h-4 text-slate-950" />
+            <span>Practice TRF Report</span>
+          </button>
+          <button
+            onClick={() => setShowPrintableReport(true)}
             className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Open printable BandSprint Practice Score Report (PDF)"
           >
             <Printer className="w-4 h-4 text-emerald-400" />
-            <span>Print Statement</span>
+            <span>Practice Score Report (PDF)</span>
           </button>
           <button
             onClick={onRetake}
@@ -337,7 +378,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
         </div>
       </div>
 
-      {/* SECTION 1: OFFICIAL IELTS BAND SCORE CERTIFICATION CARD */}
+      {/* SECTION 1: ESTIMATED PRACTICE BAND SCORE CARD */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900/90 to-blue-950/80 border-2 border-blue-500/30 p-6 sm:p-8 shadow-2xl space-y-6">
         {/* Background Decorative Seals */}
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -348,11 +389,12 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
           <div className="space-y-3 max-w-xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider">
               <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-              Official IELTS Sprint Band Conversion · Verified
+              IELTS-style rounding (.25 → .5, .75 → next whole) · Practice estimate
             </div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-serif">
               Statement of Results
             </h2>
+            <p className="text-[11px] text-slate-400">Practice estimate only — not an official IELTS score.</p>
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-slate-300 font-mono">
               <div>
                 <span className="text-slate-500 block">Candidate:</span>
@@ -363,7 +405,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
                 <span className="font-bold text-white text-sm truncate block max-w-xs">{testTitle}</span>
               </div>
               <div>
-                <span className="text-slate-500 block">Verification ID:</span>
+                <span className="text-slate-500 block">Practice Reference:</span>
                 <span className="font-bold text-blue-400">IS-894021-{testSetId}</span>
               </div>
               <div>
@@ -373,13 +415,15 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
             </div>
           </div>
 
-          {/* Official Large Band Badge */}
+          {/* Estimated Band Badge */}
           <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-950/80 border border-blue-500/40 text-center space-y-2 min-w-[200px] shadow-inner">
             <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest">
-              Overall Band Score
+              {estimatedBand !== null ? 'Overall Estimated Band' : 'Objective Practice Score'}
             </span>
             <div className="text-5xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-amber-300 font-mono">
-              Band {officialBand.toFixed(1)}
+              {(estimatedBand ?? objectiveBand) !== null
+                ? `Band ${(estimatedBand ?? objectiveBand)!.toFixed(1)}`
+                : 'Band N/A'}
             </div>
             <span className="px-3 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs font-bold font-mono">
               {cefr}
@@ -390,24 +434,289 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
         {/* Stats Summary Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-slate-800/80 relative z-10 text-center">
           <div className="p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Raw Marks</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Listening / Reading Marks</span>
             <span className="text-xl font-black text-white font-mono">{correctCount} / {totalQuestions}</span>
           </div>
           <div className="p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Accuracy</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Objective Accuracy</span>
             <span className={`text-xl font-black font-mono ${accuracyPercent >= 80 ? 'text-emerald-400' : accuracyPercent >= 60 ? 'text-blue-400' : 'text-amber-400'}`}>
               {accuracyPercent}%
             </span>
           </div>
           <div className="p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Pacing Efficiency</span>
-            <span className="text-xl font-black text-white font-mono">
-              {(timeElapsedSec / Math.max(1, totalQuestions)).toFixed(0)}s / q
+            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Writing Band (Weighted)</span>
+            <span className="text-xl font-black text-amber-300 font-mono">
+              Band {(writingEval.overallWritingBand || results.writingBand || 0).toFixed(1)}
             </span>
           </div>
           <div className="p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Status</span>
-            <span className="text-xl font-black text-emerald-400 font-mono">GRADED</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Speaking Profile</span>
+            <span className="text-xl font-black text-emerald-400 font-mono">
+              Band {writingEval.speakingAudit.overallSpeakingBand.toFixed(1)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 1B: CRITERION-BASED AI EVALUATION ENGINE & SIDE-BY-SIDE EXAMINER AUDIT */}
+      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
+              <Award className="w-4 h-4" />
+              Practice Set 4-Criterion Assessment Engine
+            </div>
+            <h3 className="text-xl sm:text-2xl font-black text-white">
+              Writing & Speaking Criterion-Based Examiner Audit
+            </h3>
+            <p className="text-xs text-slate-400">
+              Evaluated on the 0.0–9.0 scale in 0.5 increments with statutory word-count & memorized-template penalty enforcement.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+            <button
+              onClick={() => setSelectedAuditTask(1)}
+              className={`px-3.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                selectedAuditTask === 1 ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Writing Task 1 ({writingEval.task1Audit.wordCount}/150w)
+            </button>
+            <button
+              onClick={() => setSelectedAuditTask(2)}
+              className={`px-3.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                selectedAuditTask === 2 ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Writing Task 2 ({writingEval.task2Audit.wordCount}/250w)
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Criterion Sub-Score Cards for Active Writing Task */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {activeTaskAudit.criteria.map((crit) => (
+            <div
+              key={crit.code}
+              className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-slate-300">{crit.label}</span>
+                <span className="px-2.5 py-1 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-black text-sm">
+                  {crit.band.toFixed(1)}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">{crit.justification}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Strict Penalty Alerts (Under-length or Memorized Content) */}
+        {(activeTaskAudit.isUnderLength || activeTaskAudit.isMemorizedOrOffTopic) && (
+          <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div className="space-y-1 text-xs">
+                <span className="font-bold text-rose-200 uppercase font-mono block">
+                  Statutory Examiner Penalty Triggered (Task {activeTaskAudit.taskNumber})
+                </span>
+                {activeTaskAudit.isUnderLength && (
+                  <p className="text-rose-300">
+                    • <strong>Under-Length Script Penalty (-{activeTaskAudit.underLengthPenalty.toFixed(1)} Band on {activeTaskAudit.taskNumber === 1 ? 'TA' : 'TR'}):</strong> Submitted {activeTaskAudit.wordCount} words against the mandatory {activeTaskAudit.minWordsRequired}-word threshold.
+                  </p>
+                )}
+                {activeTaskAudit.isMemorizedOrOffTopic && activeTaskAudit.memorizedReason && (
+                  <p className="text-rose-300">
+                    • <strong>Memorized Template / Tangential Content Flag:</strong> {activeTaskAudit.memorizedReason}
+                  </p>
+                )}
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 font-mono font-bold text-xs">
+              Task {activeTaskAudit.taskNumber} Final: Band {activeTaskAudit.finalBand.toFixed(1)}
+            </span>
+          </div>
+        )}
+
+        {/* Side-by-Side Examiner Audit Card */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* LEFT: Candidate's Submitted Response with Interactive Highlight Tags */}
+          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-4">
+            <div className="space-y-2 border-b border-slate-800 pb-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold uppercase text-blue-400">
+                  Candidate Submitted Script · Task {selectedAuditTask}
+                </span>
+                <span className="text-xs font-mono text-slate-400">
+                  Word Count: <strong className="text-white">{activeTaskAudit.wordCount}</strong> / {activeTaskAudit.minWordsRequired} min
+                </span>
+              </div>
+              {/* Legend for Interactive Highlights */}
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+                  ■ Green: Sophisticated Lexis / Collocation
+                </span>
+                <span className="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300">
+                  ■ Red: Grammar / Spelling / Register Slip
+                </span>
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                  ■ Amber: Mechanical Connector / Cliché
+                </span>
+              </div>
+            </div>
+
+            <div className="text-sm leading-relaxed font-serif text-slate-200 whitespace-pre-wrap min-h-[220px] max-h-[380px] overflow-y-auto pr-1">
+              {activeTaskAudit.annotatedSegments.map((seg, idx) => {
+                if (seg.type === 'normal') {
+                  return <span key={idx}>{seg.text}</span>;
+                }
+                const badgeStyle =
+                  seg.type === 'lexis_sophisticated'
+                    ? 'bg-emerald-500/25 text-emerald-200 border-b-2 border-emerald-400'
+                    : seg.type === 'grammar_error'
+                    ? 'bg-rose-500/25 text-rose-200 border-b-2 border-rose-400'
+                    : 'bg-amber-500/25 text-amber-200 border-b-2 border-amber-400';
+
+                return (
+                  <mark
+                    key={idx}
+                    onClick={() => setActiveSegmentTooltip(seg)}
+                    className={`${badgeStyle} px-1 py-0.5 rounded-xs cursor-pointer transition hover:opacity-90`}
+                    title={`${seg.tooltip || ''}${seg.correction ? ` → Suggestion: ${seg.correction}` : ''}`}
+                  >
+                    {seg.text}
+                  </mark>
+                );
+              })}
+            </div>
+
+            {activeSegmentTooltip && (
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-700 text-xs space-y-1">
+                <div className="flex items-center justify-between font-mono font-bold">
+                  <span className="text-amber-300">Examiner Annotation: "{activeSegmentTooltip.text}"</span>
+                  <button
+                    onClick={() => setActiveSegmentTooltip(null)}
+                    className="text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-slate-300">{activeSegmentTooltip.tooltip}</p>
+                {activeSegmentTooltip.correction && (
+                  <p className="text-emerald-400 font-mono">
+                    Recommended Revision: {activeSegmentTooltip.correction}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: Criterion-by-Criterion Examiner Justification & Speaking Matrix */}
+          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <span className="text-xs font-mono font-bold uppercase text-amber-400">
+                Examiner Criterion-by-Criterion Justification
+              </span>
+              <span className="text-xs font-mono font-bold text-white">
+                Task {selectedAuditTask} Score: Band {activeTaskAudit.finalBand.toFixed(1)}
+              </span>
+            </div>
+
+            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+              {activeTaskAudit.criteria.map((crit) => (
+                <div key={crit.code} className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between font-mono font-bold">
+                    <span className="text-white">{crit.label}</span>
+                    <span className="text-blue-400">Band {crit.band.toFixed(1)}</span>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed">{crit.justification}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-mono uppercase text-emerald-400 block">Strengths:</span>
+                      {crit.strengths.map((s, i) => (
+                        <div key={i} className="text-slate-300 flex items-start gap-1">
+                          <span className="text-emerald-400">+</span>
+                          <span>{s}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {crit.weaknesses.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono uppercase text-rose-400 block">Target Fixes:</span>
+                        {crit.weaknesses.map((w, i) => (
+                          <div key={i} className="text-slate-300 flex items-start gap-1">
+                            <span className="text-rose-400">!</span>
+                            <span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Speaking 4-Criterion Breakdown Summary */}
+              <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 space-y-2 text-xs">
+                <div className="flex items-center justify-between font-mono font-bold text-indigo-300">
+                  <span>Speaking 4-Criterion Rubric Profile</span>
+                  <span>Band {writingEval.speakingAudit.overallSpeakingBand.toFixed(1)}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono pt-1">
+                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Fluency (FC)</span>
+                    <span className="font-bold text-white">{writingEval.speakingAudit.fcBand.toFixed(1)}</span>
+                  </div>
+                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Lexical (LR)</span>
+                    <span className="font-bold text-white">{writingEval.speakingAudit.lrBand.toFixed(1)}</span>
+                  </div>
+                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Grammar (GRA)</span>
+                    <span className="font-bold text-white">{writingEval.speakingAudit.graBand.toFixed(1)}</span>
+                  </div>
+                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Pronun. (P)</span>
+                    <span className="font-bold text-white">{writingEval.speakingAudit.pBand.toFixed(1)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Band 8.5+ Exemplar Model Answer Card */}
+        <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-950 to-blue-950/40 border border-blue-500/30 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <h4 className="text-base font-black text-white">
+                Band {activeTaskAudit.exemplarModelAnswer.band.toFixed(1)} Exemplar Model Response · Task {selectedAuditTask}
+              </h4>
+            </div>
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-bold">
+              Practice Senior Examiner Benchmark
+            </span>
+          </div>
+
+          <p className="text-sm font-serif leading-relaxed text-slate-200 whitespace-pre-line">
+            {activeTaskAudit.exemplarModelAnswer.essay}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+            {activeTaskAudit.exemplarModelAnswer.highlights.map((hl, i) => (
+              <div key={i} className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1 text-xs">
+                <span className="text-[10px] font-mono font-bold uppercase text-emerald-400 block">
+                  {hl.category === 'structure'
+                    ? 'Structural Feature'
+                    : hl.category === 'collocation'
+                    ? 'C2 Academic Collocation'
+                    : 'Syntactic Range'}
+                </span>
+                <p className="font-serif italic text-white">"{hl.phrase}"</p>
+                <p className="text-slate-400 text-[11px]">{hl.note}</p>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -658,7 +967,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
                   {q.prompt}
                 </p>
 
-                {/* Candidate Input vs Official Correct Answer */}
+                {/* Candidate Input vs Correct Answer */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
                   {/* Candidate Input */}
                   <div
@@ -679,10 +988,10 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
                     )}
                   </div>
 
-                  {/* Official Correct Answer */}
+                  {/* Correct Answer */}
                   <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-200 flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] text-slate-400 block uppercase">Official Correct Answer:</span>
+                      <span className="text-[10px] text-slate-400 block uppercase">Correct Answer:</span>
                       <span className="font-bold text-sm text-emerald-300">{q.correctAnswer}</span>
                     </div>
                     <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -694,10 +1003,10 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
                   <div className="flex items-center justify-between font-mono font-bold text-slate-400">
                     <span className="flex items-center gap-1.5 text-amber-400">
                       <Sparkles className="w-3.5 h-3.5" />
-                      {lang === 'bn' ? '🇧🇩 বাংলা ট্র্যাপ বিশ্লেষণ (Distractor Note)' : '🇬🇧 Official English Explanation'}
+                      {lang === 'bn' ? '🇧🇩 বাংলা ট্র্যাপ বিশ্লেষণ (Distractor Note)' : '🇬🇧 English Explanation'}
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-                      {lang === 'bn' ? 'Bengali Notes' : 'Cambridge Calibrated'}
+                      {lang === 'bn' ? 'Bengali Notes' : 'Practice Calibrated'}
                     </span>
                   </div>
 
@@ -813,6 +1122,47 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
           </div>
         </div>
       )}
+
+      {/* Practice Test Report Form (TRF) Modal */}
+      <SprintTRFModal
+        isOpen={showTRFModal}
+        onClose={() => setShowTRFModal(false)}
+        data={{
+          candidateName,
+          testTitle,
+          listeningBand: results.listeningBand ?? null,
+          readingBand: results.readingBand ?? null,
+          writingBand: results.writingBand ?? null,
+          speakingBand: writingEval.speakingAudit?.overallSpeakingBand ?? null,
+          overallBand: estimatedBand,
+          examType: results.examType || 'partial_lrw',
+          completedSkills: results.completedSkills || {
+            listening: results.listeningTotal > 0,
+            reading: results.readingTotal > 0,
+            writing: true,
+            speaking: false
+          }
+        }}
+        onLaunchOSR={(mod) => {
+          onShowToast(`One Skill Retake (OSR) unlocked for IELTS ${mod.toUpperCase()}. Restarting module session...`);
+          onRetake();
+        }}
+      />
+
+      {/* Editorial Printable Practice Score & Readiness Report (PDF) */}
+      <PrintablePracticeReportModal
+        isOpen={showPrintableReport}
+        onClose={() => setShowPrintableReport(false)}
+        latestMockOverride={{
+          testTitle,
+          overallBand: estimatedBand,
+          listeningBand: results.listeningBand ?? null,
+          readingBand: results.readingBand ?? null,
+          writingBand: results.writingBand ?? null,
+          speakingBand: writingEval.speakingAudit?.overallSpeakingBand ?? null
+        }}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 };

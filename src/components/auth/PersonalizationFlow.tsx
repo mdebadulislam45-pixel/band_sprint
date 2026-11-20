@@ -11,7 +11,7 @@ import {
   Sparkles,
   Target
 } from 'lucide-react';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { BandSprintLogo } from '../common/BandSprintLogo';
 import { UserProfile } from '../../types';
 import { updateCurrentUserProfile } from '../../utils/userStorage';
 
@@ -77,7 +77,7 @@ export const PersonalizationFlow: React.FC<PersonalizationFlowProps> = ({ user, 
             <div className="w-8" />
           )}
 
-          <IELTSSprintLogo variant="full" size="sm" className="brightness-125" />
+          <BandSprintLogo variant="full" size="sm" className="brightness-125" />
 
           {currentStep < 5 ? (
             <span className="text-xs font-mono font-bold text-slate-400">

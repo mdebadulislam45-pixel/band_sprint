@@ -18,14 +18,14 @@ export interface RouteGuardRequirement {
 }
 
 /**
- * Route-level access rules for IELTS Sprint features
+ * Route-level access rules for BandSprint features
  */
 export const RESTRICTED_ROUTES: Record<string, RouteGuardRequirement> = {
   // Premium AI Examiner & Live Mock Simulations (Unlocked via isPro: true during Launch Beta)
-  livemock: { requireAuth: true, minPlan: 'pro', featureName: 'Authentic 40-Question Timed Live Mock Test' },
-  voice_examiner: { requireAuth: true, minPlan: 'pro', featureName: 'AI Cambridge British Voice Examiner' },
+  livemock: { requireAuth: true, minPlan: 'pro', featureName: 'Realistic 40-Question Timed Live Mock Test' },
+  voice_examiner: { requireAuth: true, minPlan: 'pro', featureName: 'AI Sprint British Voice Examiner' },
   shadowing: { requireAuth: true, minPlan: 'free', featureName: 'British Shadowing & Pronunciation Lab' },
-  modelanswers: { requireAuth: true, minPlan: 'pro', featureName: 'Band 9 Official Cambridge Model Answers' },
+  modelanswers: { requireAuth: true, minPlan: 'pro', featureName: 'Band 9 BandSprint Model Answers' },
   aitools: { requireAuth: true, minPlan: 'free', featureName: 'AI Diagnostic Tools Suite' },
   // Core Practice & Diagnostic Labs (Free for all registered candidates)
   listening: { requireAuth: true, minPlan: 'free', featureName: 'IELTS Listening Lab & Practice' },
@@ -102,7 +102,6 @@ export function useAuthGuard(options: UseAuthGuardOptions = {}): UseAuthGuardRes
           setSubscription(statusRes.subscription);
         }
       } catch (err) {
-        console.warn('[useAuthGuard] Subscription verification background warning:', err);
       }
     } else {
       setSubscription(null);

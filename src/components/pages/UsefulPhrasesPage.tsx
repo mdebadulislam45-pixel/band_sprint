@@ -55,7 +55,7 @@ export const UsefulPhrasesPage: React.FC<UsefulPhrasesPageProps> = ({ onBack, on
           meaning_bn: p.banglaMeaning,
           category: p.category,
           example: p.exampleSentence,
-          explanation: p.explanation || 'Authentic Band 8+ conversational and academic discourse device.',
+          explanation: p.explanation || 'Band 8+ conversational and academic discourse device.',
           situation: p.situation || 'IELTS Speaking Part 3 and Academic Writing Task 2 discussion.',
           formality: p.formality || 'Formal / Neutral',
           ielts_speaking: p.ieltsSpeakingUsefulness || 'Prevents hesitation pauses and demonstrates natural conversational rhythm.',
@@ -401,12 +401,12 @@ export const UsefulPhrasesPage: React.FC<UsefulPhrasesPageProps> = ({ onBack, on
               </div>
             </div>
 
-            {/* Cambridge Context & Deep IELTS Details */}
+            {/* Practice Context & Deep IELTS Details */}
             <div className="space-y-2.5 text-xs max-h-[48vh] overflow-y-auto pr-1">
-              {/* Cambridge Example */}
+              {/* Practice Example */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1 font-mono">
-                  Cambridge Example in Context
+                  Practice Example in Context
                 </span>
                 <p className="text-slate-800 italic font-serif leading-relaxed text-xs sm:text-sm">
                   "{selectedPhrase.example}"
@@ -419,7 +419,7 @@ export const UsefulPhrasesPage: React.FC<UsefulPhrasesPageProps> = ({ onBack, on
                   📖 Academic English Nuance & Purpose
                 </span>
                 <p className="text-slate-800 leading-relaxed font-medium">
-                  {selectedPhrase.explanation || 'Authentic Band 7.5–9 discourse marker to maintain coherence and analytical sophistication.'}
+                  {selectedPhrase.explanation || 'Band 7.5–9 discourse marker to maintain coherence and analytical sophistication.'}
                 </p>
               </div>
 

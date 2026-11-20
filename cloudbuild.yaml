@@ -1,0 +1,30 @@
+# Cloud Build: build the BandSprint image and deploy it to Cloud Run.
+# Run from Cloud Shell (or `gcloud builds submit`) after editing the values below.
+# Env vars (GEMINI_API_KEY, ALLOWED_ORIGINS, APP_URL) are set on the Cloud Run
+# service itself, NOT in this file — never commit API keys here.
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'asia-south1-docker.pkg.dev/$PROJECT_ID/bandsprint/bandsprint-server:$SHORT_SHA', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-south1-docker.pkg.dev/$PROJECT_ID/bandsprint/bandsprint-server:$SHORT_SHA']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'bandsprint-server'
+      - '--image'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/bandsprint/bandsprint-server:$SHORT_SHA'
+      - '--region'
+      - 'asia-south1'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '8080'
+      - '--memory'
+      - '512Mi'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '2'
+options:
+  logging: CLOUD_LOGGING_ONLY

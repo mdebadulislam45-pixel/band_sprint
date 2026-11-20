@@ -3,5 +3,10 @@
 .gitignore
 node_modules/
 .audio_cache/
+.aistudio/
+public/assets/aistudio/
+build/
+out/
 *.log
+*.zip
 .DS_Store

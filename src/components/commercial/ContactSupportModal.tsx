@@ -45,7 +45,7 @@ export const ContactSupportModal: React.FC<ContactSupportModalProps> = ({
       setIsSubmitting(false);
       setIsSubmitted(true);
       soundManager.playSuccess();
-      onShowToast('Thank you! Your inquiry has been logged with IELTS Sprint Support.');
+      onShowToast('Thank you! Your inquiry has been logged with BandSprint Support.');
 
       // Persist feedback submission to local logs
       try {
@@ -94,7 +94,7 @@ export const ContactSupportModal: React.FC<ContactSupportModalProps> = ({
                 Contact & Candidate Support
               </h2>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Official IELTS Sprint™ Helpdesk
+                BandSprint™ Helpdesk
               </div>
             </div>
           </div>
@@ -121,7 +121,7 @@ export const ContactSupportModal: React.FC<ContactSupportModalProps> = ({
               Inquiry Dispatched Successfully!
             </h3>
             <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
-              Our Cambridge pedagogical team typically reviews student queries within 24 hours. A copy has been dispatched to <strong>{email}</strong>.
+              Our Practice pedagogical team typically reviews student queries within 24 hours. A copy has been dispatched to <strong>{email}</strong>.
             </p>
             <div className="pt-2">
               <button
@@ -212,7 +212,7 @@ export const ContactSupportModal: React.FC<ContactSupportModalProps> = ({
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
               <span className="flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-blue-500" />
-                <span>support@ieltssprint.com</span>
+                <span>support@bandsprint.app</span>
               </span>
               <span>Dhaka • London • Toronto</span>
             </div>

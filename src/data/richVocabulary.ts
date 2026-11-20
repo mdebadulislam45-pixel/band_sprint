@@ -616,7 +616,7 @@ export const EXTENDED_VOCAB_DATABASE: VocabCard[] = [
 
 /**
  * Large Structured IELTS Phrases Database
- * Authentic British conversational and academic idioms/phrases
+ * Realistic British conversational and academic idioms/phrases
  */
 export const RICH_PHRASES_DATABASE: RichPhrase[] = [
   // ==================== 1. SPEAKING FILLERS & BUYING TIME ====================

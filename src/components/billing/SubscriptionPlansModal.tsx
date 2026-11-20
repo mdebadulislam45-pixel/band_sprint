@@ -99,7 +99,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
             <div className="text-center space-y-2 max-w-xl mx-auto">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-bold">
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>Cambridge Band 8.0+ Academic Upgrade</span>
+                <span>Practice Band 8.0+ Academic Upgrade</span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                 Unlock Full AI Voice Examiner & Band 9 Suite
@@ -240,7 +240,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                      <span>Band 9 Cambridge Model Answers</span>
+                      <span>Band 9 Practice Model Answers</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
@@ -304,7 +304,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>Full Timed Cambridge Live Mock Tests</span>
+                      <span>Full Timed Practice Live Mock Tests</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -316,7 +316,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>Cambridge Band 8.5+ Verified Certificate</span>
+                      <span>Practice Band 8.5+ Verified Certificate</span>
                     </div>
                   </div>
                 </div>
@@ -363,7 +363,7 @@ export const SubscriptionPlansModal: React.FC<SubscriptionPlansModalProps> = ({
                   <span>Cancel Anytime in 1-Click</span>
                 </span>
               </div>
-              <span>IELTS Sprint Candidate Entitlements</span>
+              <span>BandSprint Candidate Entitlements</span>
             </div>
           </div>
         </motion.div>

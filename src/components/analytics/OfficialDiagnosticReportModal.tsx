@@ -32,15 +32,31 @@ export const OfficialDiagnosticReportModal: React.FC<OfficialDiagnosticReportMod
   const examHistory = user.progress.examHistory || [];
   const latestExam = examHistory.length > 0 ? examHistory[examHistory.length - 1] : null;
 
-  const listeningBand = latestExam?.listeningBand ?? 7.0;
-  const readingBand = latestExam?.readingBand ?? 7.5;
-  const writingBand = latestExam?.writingBand ?? 6.5;
-  const speakingBand = (latestExam as any)?.speakingBand ?? 7.0;
+  // Genuine scores: only set if candidate actually attempted and scored the module
+  const listeningBand = typeof latestExam?.listeningBand === 'number' && latestExam.listeningBand > 0 ? latestExam.listeningBand : null;
+  const readingBand = typeof latestExam?.readingBand === 'number' && latestExam.readingBand > 0 ? latestExam.readingBand : null;
+  const writingBand = typeof latestExam?.writingBand === 'number' && latestExam.writingBand > 0 ? latestExam.writingBand : null;
+  const speakingBand = typeof (latestExam as any)?.speakingBand === 'number' && (latestExam as any).speakingBand > 0 ? (latestExam as any).speakingBand : null;
 
-  const overallBand = latestExam?.overallBand ?? 7.0;
+  const validSubBands = [listeningBand, readingBand, writingBand, speakingBand].filter((b): b is number => b !== null);
+  
+  // Calculate genuine overall band using IELTS rounding
+  let overallBand: number | null = null;
+  if (typeof latestExam?.overallBand === 'number' && latestExam.overallBand > 0) {
+    overallBand = latestExam.overallBand;
+  } else if (validSubBands.length > 0) {
+    const rawAvg = validSubBands.reduce((a, b) => a + b, 0) / validSubBands.length;
+    const decimal = rawAvg - Math.floor(rawAvg);
+    let band = Math.floor(rawAvg);
+    if (decimal >= 0.75) band += 1.0;
+    else if (decimal >= 0.25) band += 0.5;
+    overallBand = band;
+  }
+
   const targetBand = user.progress.targetBand || 7.5;
 
-  const getCefrLevel = (band: number) => {
+  const getCefrLevel = (band: number | null) => {
+    if (band === null || band <= 0) return 'Unassessed';
     if (band >= 8.5) return 'C2 Mastery';
     if (band >= 7.0) return 'C1 Operational Proficiency';
     if (band >= 5.5) return 'B2 Independent User';
@@ -60,7 +76,7 @@ export const OfficialDiagnosticReportModal: React.FC<OfficialDiagnosticReportMod
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Official Diagnostic Verification
+              Diagnostic Verification
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -80,12 +96,12 @@ export const OfficialDiagnosticReportModal: React.FC<OfficialDiagnosticReportMod
           </div>
         </div>
 
-        {/* ================= OFFICIAL CAMBRIDGE CERTIFICATE HEADER ================= */}
+        {/* ================= BANDSPRINT DIAGNOSTIC REPORT HEADER ================= */}
         <div className="border-2 border-slate-900/80 dark:border-slate-700 p-6 rounded-2xl space-y-6 print:border-black">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
             <div>
               <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-blue-700 dark:text-blue-400">
-                CAMBRIDGE ASSESSMENT & IELTS SPRINT SYSTEM
+                BandSprint Diagnostic System
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1">
                 Candidate Diagnostic Performance Profile
@@ -125,12 +141,18 @@ export const OfficialDiagnosticReportModal: React.FC<OfficialDiagnosticReportMod
           <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex items-center justify-between shadow-md print:bg-black">
             <div>
               <div className="text-xs font-mono font-bold uppercase tracking-wider text-blue-200">Overall Estimated Band</div>
-              <div className="text-3xl sm:text-4xl font-mono font-black mt-1">Band {overallBand.toFixed(1)}</div>
+              <div className="text-3xl sm:text-4xl font-mono font-black mt-1">
+                {overallBand !== null ? `Band ${overallBand.toFixed(1)}` : 'Unassessed'}
+              </div>
               <div className="text-xs text-blue-100 mt-1 font-medium">{getCefrLevel(overallBand)}</div>
             </div>
             <div className="text-right">
               <span className="px-3 py-1 rounded-full bg-white/20 text-white font-mono font-bold text-xs">
-                {overallBand >= targetBand ? 'Target Achieved' : `Gap: ${(targetBand - overallBand).toFixed(1)} Bands`}
+                {overallBand !== null
+                  ? overallBand >= targetBand
+                    ? 'Target Achieved'
+                    : `Gap: ${(targetBand - overallBand).toFixed(1)} Bands`
+                  : 'Assessment Required'}
               </span>
             </div>
           </div>
@@ -143,23 +165,39 @@ export const OfficialDiagnosticReportModal: React.FC<OfficialDiagnosticReportMod
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
                 <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Listening</div>
-                <div className="text-2xl font-mono font-black text-blue-600 dark:text-blue-400 mt-1">{listeningBand.toFixed(1)}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Section 1–4 Audio</div>
+                <div className="text-2xl font-mono font-black text-blue-600 dark:text-blue-400 mt-1">
+                  {listeningBand !== null ? listeningBand.toFixed(1) : '—'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {listeningBand !== null ? 'Section 1–4 Audio' : 'Not Attempted'}
+                </div>
               </div>
               <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
                 <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Reading</div>
-                <div className="text-2xl font-mono font-black text-emerald-600 dark:text-emerald-400 mt-1">{readingBand.toFixed(1)}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Passage 1–3 Academic</div>
+                <div className="text-2xl font-mono font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                  {readingBand !== null ? readingBand.toFixed(1) : '—'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {readingBand !== null ? 'Passage 1–3 Academic' : 'Not Attempted'}
+                </div>
               </div>
               <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
                 <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Writing</div>
-                <div className="text-2xl font-mono font-black text-purple-600 dark:text-purple-400 mt-1">{writingBand.toFixed(1)}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Task 1 & Task 2</div>
+                <div className="text-2xl font-mono font-black text-purple-600 dark:text-purple-400 mt-1">
+                  {writingBand !== null ? writingBand.toFixed(1) : '—'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {writingBand !== null ? 'Task 1 & Task 2' : 'Not Attempted'}
+                </div>
               </div>
               <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
                 <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Speaking</div>
-                <div className="text-2xl font-mono font-black text-rose-600 dark:text-rose-400 mt-1">{speakingBand.toFixed(1)}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Part 1, 2, 3 Monologue</div>
+                <div className="text-2xl font-mono font-black text-rose-600 dark:text-rose-400 mt-1">
+                  {speakingBand !== null ? speakingBand.toFixed(1) : '—'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {speakingBand !== null ? 'Part 1, 2, 3 Monologue' : 'Not Attempted'}
+                </div>
               </div>
             </div>
           </div>
@@ -171,14 +209,16 @@ export const OfficialDiagnosticReportModal: React.FC<OfficialDiagnosticReportMod
               <span>Official Examiner Prescription for Band {targetBand.toFixed(1)}+</span>
             </div>
             <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-              Your strongest performance is demonstrated in <strong>Reading (Band {readingBand.toFixed(1)})</strong>. To close the {(targetBand - writingBand).toFixed(1)}-band differential in Writing, prioritize <em>Grammatical Range & Accuracy (GRA)</em> by integrating inverted conditionals and nominalized noun phrases in Task 2 body paragraphs.
+              {overallBand !== null
+                ? `Based on verified assessment history, your current trajectory is Band ${overallBand.toFixed(1)}. To achieve your target Band ${targetBand.toFixed(1)}+, focus on balancing all 4 test modules with consistent practice drills and review common errors in the Mistake Vault.`
+                : `Complete a verified mock exam or module test in Listening, Reading, Writing, or Speaking to generate your tailored Practice assessment prescription.`}
             </p>
           </div>
         </div>
 
         {/* Footer Note */}
         <div className="text-center text-[10px] text-slate-400 dark:text-slate-500">
-          This diagnostic profile reflects authenticated performance telemetry calibrated against Cambridge IELTS Band Descriptors.
+          This diagnostic profile reflects authenticated performance telemetry calibrated against IELTS Band Descriptors.
         </div>
       </div>
     </div>

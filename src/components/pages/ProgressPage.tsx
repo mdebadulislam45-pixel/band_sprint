@@ -1,751 +1,373 @@
 import React, { useState } from 'react';
 import {
-  TrendingUp,
-  Award,
-  Headphones,
-  BookOpen,
-  Mic,
-  PenTool,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowRight,
-  Archive,
-  Calendar,
-  Sparkles,
-  Target,
   BarChart3,
-  Zap,
-  Flame,
-  Trophy,
-  Brain
+  History,
+  BookmarkCheck,
+  Calendar,
+  ArrowRight,
+  Target,
+  Printer,
+  LucideIcon
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend
-} from 'recharts';
-import { UserProfile, ExamHistoryRecord } from '../../types';
-import { questionEngine } from '../../services/QuestionEngine';
+import { motion, AnimatePresence } from 'framer-motion';
 import { soundManager } from '../../utils/audioEffects';
-import { getMistakes, getVaultRetentionStats, seedHighYieldMistakes } from '../../utils/vaultStorage';
-import { isFullMockExamRecord } from '../../utils/userStorage';
-
+import { UserProfile } from '../../types';
+import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
+import { PrintablePracticeReportModal } from '../reports/PrintablePracticeReportModal';
 import {
-  evaluateAchievements,
-  getGamificationStats,
-  AchievementBadge
-} from '../../services/achievementService';
-import { AchievementsSection } from '../progress/AchievementsSection';
-import { IELTSSpeedBlitzModal } from '../progress/IELTSSpeedBlitzModal';
+  AnimatedNumber,
+  StaggerGroup,
+  StaggerItem,
+  SPRING_SNAPPY,
+  EASE_EDITORIAL
+} from '../common/MotionPrimitives';
 
-interface ProgressPageProps {
-  user?: UserProfile | null;
-  mistakeCount: number;
-  onNavigate: (page: string) => void;
-  onOpenVault: () => void;
-  onOpenBandModal: () => void;
+// Embedded Performance & Quick-Tool Widgets
+import { AIBandScorecard } from '../home/AIBandScorecard';
+import { AISpeakingPartnerCard } from '../home/AISpeakingPartnerCard';
+import { AIWritingQuickEvaluator } from '../home/AIWritingQuickEvaluator';
+import { ProgressDonutCard } from '../home/ProgressDonutCard';
+import { SkillMasteryMatrix } from '../home/SkillMasteryMatrix';
+import { BandProjectorCard } from '../home/BandProjectorCard';
+import { MistakeVaultWidget } from '../home/MistakeVaultWidget';
+import { ExamPacingStrategyCard } from '../home/ExamPacingStrategyCard';
+import { AcademicCollocationFinder } from '../home/AcademicCollocationFinder';
+import { PracticeHeatmap } from '../home/PracticeHeatmap';
+import { AITutorWidget } from '../home/AITutorWidget';
+import { SmartRecommendationBanner } from '../home/SmartRecommendationBanner';
+
+interface ProgressItem {
+  id: string;
+  path: string;
+  title: string;
+  shortName: string;
+  description: string;
+  icon: LucideIcon;
+  meta: string;
 }
 
+interface ProgressPageProps {
+  onNavigate: (path: string) => void;
+  onShowToast: (msg: string) => void;
+  onOpenBandModal: () => void;
+  onOpenVault?: () => void;
+  user?: UserProfile | null;
+  mistakeCount?: number;
+}
+
+type ProgressTab = 'readiness' | 'skills' | 'tools';
+
 export const ProgressPage: React.FC<ProgressPageProps> = ({
-  user,
-  mistakeCount,
   onNavigate,
+  onShowToast,
+  onOpenBandModal,
   onOpenVault,
-  onOpenBandModal
+  user,
+  mistakeCount = 0
 }) => {
-  const [isBlitzOpen, setIsBlitzOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<ProgressTab>('readiness');
+  const [showPrintReport, setShowPrintReport] = useState(false);
+  const diagnostic = loadDiagnosticResult();
 
-  // Compute live achievement badges and user gamification XP/levels
-  const badges: AchievementBadge[] = React.useMemo(() => {
-    return evaluateAchievements(user, mistakeCount);
-  }, [user, mistakeCount, refreshKey]);
-
-  const gamification = React.useMemo(() => {
-    return getGamificationStats(badges, user);
-  }, [badges, user]);
-  // recordExamAttempt() prepends with unshift(), so index 0 is the newest attempt
-  const history: ExamHistoryRecord[] = user?.progress?.examHistory || [];
-  const fullMockHistory = history.filter((h) => isFullMockExamRecord(h));
-  const latestFullExam = fullMockHistory.length > 0 ? fullMockHistory[0] : null;
-  const latestListeningExam =
-    history.find((h) => typeof h.listeningBand === 'number' && h.listeningBand > 0) || null;
-  const latestReadingExam =
-    fullMockHistory.find((h) => typeof h.readingBand === 'number' && h.readingBand > 0) || null;
-  const latestWritingExam =
-    fullMockHistory.find((h) => typeof h.writingBand === 'number' && h.writingBand > 0) || null;
-  const latestSpeakingExam =
-    history.find((h) => typeof h.speakingBand === 'number' && h.speakingBand > 0) || null;
-
-  // Retrieve real attempts and stats from QuestionEngine
-  const qAttempts = questionEngine.getHistory();
-  const listeningStats = questionEngine.getModuleStats('listening');
-  const readingStats = questionEngine.getModuleStats('reading');
-  const speakingStats = questionEngine.getModuleStats('speaking');
-  const writingStats = questionEngine.getModuleStats('writing');
-
-  // Total questions from both mock exams and practice labs
-  const mockQuestionsCount = history.reduce((acc, h) => acc + (h.totalQuestions || 0), 0);
-  const mockCorrectCount = history.reduce((acc, h) => acc + (h.correctCount || 0), 0);
-  const practiceQuestionsCount = qAttempts.length;
-  const practiceCorrectCount = qAttempts.filter((a) => a.isCorrect).length;
-
-  const totalQuestionsAnswered = mockQuestionsCount + practiceQuestionsCount;
-  const totalCorrect = mockCorrectCount + practiceCorrectCount;
-  const hasAnyAttempts = totalQuestionsAnswered > 0;
-
-  const accuracy = hasAnyAttempts ? Math.round((totalCorrect / totalQuestionsAnswered) * 100) : 0;
-
-  // Calculate real skill band estimates without treating Listening-only attempts as fake 0 Reading/Writing scores
-  const listeningBand =
-    latestListeningExam?.listeningBand ??
-    (listeningStats.totalAttempted > 0 ? listeningStats.estimatedBand : null);
-  const readingBand =
-    latestReadingExam?.readingBand ??
-    (readingStats.totalAttempted > 0 ? readingStats.estimatedBand : null);
-  const writingBand =
-    latestWritingExam?.writingBand ??
-    (writingStats.totalAttempted > 0 ? writingStats.estimatedBand : null);
-  const speakingBand =
-    latestSpeakingExam?.speakingBand ??
-    (speakingStats.totalAttempted > 0 ? speakingStats.estimatedBand : null);
-
-  const availableBands = [listeningBand, readingBand, writingBand, speakingBand].filter(
-    (b): b is number => typeof b === 'number'
-  );
-  // Only display an overall IELTS band when a full mock exam was completed or all 4 skills have bands
-  const overallBand =
-    latestFullExam && typeof latestFullExam.overallBand === 'number' && latestFullExam.overallBand > 0
-      ? latestFullExam.overallBand
-      : availableBands.length === 4
-      ? Math.round((availableBands.reduce((a, b) => a + b, 0) / 4) * 2) / 2
-      : null;
-
+  const examMode = user?.progress?.intendedFormat || 'Academic';
   const targetBand = user?.progress?.targetBand || 7.5;
+  const streakDays = user?.progress?.streakDays || 1;
+  const estimatedBand = diagnostic ? diagnostic.scores.overall : 0;
 
-  const skills = [
+  const destinations: ProgressItem[] = [
     {
-      name: 'Listening',
-      band: listeningBand,
-      attempted: listeningStats.totalAttempted,
-      accuracy: listeningStats.overallAccuracy,
-      icon: Headphones,
-      color: 'text-blue-600',
-      bg: 'bg-blue-500',
-      route: 'listening'
+      id: 'analytics',
+      path: '/progress/analytics',
+      title: 'Candidate Analytics',
+      shortName: 'Analytics',
+      description: 'Skill-by-skill score breakdown across Listening, Reading, Writing & Speaking.',
+      icon: BarChart3,
+      meta: 'Band Trends'
     },
     {
-      name: 'Reading',
-      band: readingBand,
-      attempted: readingStats.totalAttempted,
-      accuracy: readingStats.overallAccuracy,
-      icon: BookOpen,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-500',
-      route: 'reading'
+      id: 'history',
+      path: '/progress/history',
+      title: 'Practice History',
+      shortName: 'History',
+      description: 'Archive of completed mock exams, drills, and AI evaluation feedback.',
+      icon: History,
+      meta: 'Attempt Log'
     },
     {
-      name: 'Writing',
-      band: writingBand,
-      attempted: writingStats.totalAttempted,
-      accuracy: writingStats.overallAccuracy,
-      icon: PenTool,
-      color: 'text-purple-600',
-      bg: 'bg-purple-500',
-      route: 'writing'
+      id: 'saved',
+      path: '/progress/saved',
+      title: 'Mistake Vault',
+      shortName: 'Vault',
+      description: 'Spaced-repetition review queue of missed questions and weak grammar patterns.',
+      icon: BookmarkCheck,
+      meta: mistakeCount > 0 ? `${mistakeCount} Unmastered` : 'All Clear'
     },
     {
-      name: 'Speaking',
-      band: speakingBand,
-      attempted: speakingStats.totalAttempted,
-      accuracy: speakingStats.overallAccuracy,
-      icon: Mic,
-      color: 'text-rose-600',
-      bg: 'bg-rose-500',
-      route: 'speaking'
+      id: 'calendar',
+      path: '/progress/calendar',
+      title: 'Sprint Calendar',
+      shortName: 'Calendar',
+      description: 'Daily study activity log, active streak history, and exam countdown.',
+      icon: Calendar,
+      meta: `${streakDays}d Streak`
     }
   ];
 
-  const testedSkills = skills.filter((s) => typeof s.band === 'number');
-  const sortedSkills = [...testedSkills].sort((a, b) => (a.band || 0) - (b.band || 0));
-  const weakestSkill = sortedSkills.length > 0 ? sortedSkills[0] : skills[0];
-  const strongestSkill = sortedSkills.length > 0 ? sortedSkills[sortedSkills.length - 1] : skills[skills.length - 1];
-
-  // Real Question-Type Performance Matrix
-  const questionTypeStats = React.useMemo(() => {
-    const defaultTypes = [
-      { type: 'Multiple Choice (Distractor Traps)', module: 'listening', route: 'listening' },
-      { type: 'True / False / Not Given', module: 'reading', route: 'reading' },
-      { type: 'Matching Headings & Summary', module: 'reading', route: 'reading' },
-      { type: 'Directional Map Labelling', module: 'listening', route: 'listening' },
-      { type: 'Task 2 PESTLE Essay Matrix', module: 'writing', route: 'writing' },
-      { type: 'Part 2 Cue Card Monologue', module: 'speaking', route: 'speaking' }
-    ];
-
-    const typeMap: Record<string, { attempted: number; correct: number; module: string; route: string }> = {};
-    defaultTypes.forEach((t) => {
-      typeMap[t.type] = { attempted: 0, correct: 0, module: t.module, route: t.route };
-    });
-
-    qAttempts.forEach((att) => {
-      const key = att.questionType || 'Standard Item';
-      if (!typeMap[key]) {
-        typeMap[key] = { attempted: 0, correct: 0, module: att.module, route: att.module };
-      }
-      typeMap[key].attempted++;
-      if (att.isCorrect) typeMap[key].correct++;
-    });
-
-    return Object.entries(typeMap).map(([name, data]) => {
-      const rate = data.attempted > 0 ? Math.round((data.correct / data.attempted) * 100) : null;
-      return {
-        name,
-        attempted: data.attempted,
-        correct: data.correct,
-        accuracy: rate,
-        module: data.module,
-        route: data.route
-      };
-    });
-  }, [qAttempts]);
-
-  // Real Mistake Vault Categorization & SM-2 Retention Stats
-  const vaultMistakes = React.useMemo(() => getMistakes(), [refreshKey, mistakeCount]);
-  const sm2Stats = React.useMemo(() => getVaultRetentionStats(), [refreshKey, mistakeCount]);
-  const unmasteredList = React.useMemo(() => vaultMistakes.filter((m) => !m.mastered), [vaultMistakes]);
-
-  const mistakesByCategory = React.useMemo(() => {
-    const cats: Record<string, { count: number; sampleTitle: string; route: string }> = {};
-    unmasteredList.forEach((m) => {
-      const category = m.module.toUpperCase();
-      if (!cats[category]) {
-        cats[category] = { count: 0, sampleTitle: m.title, route: m.module };
-      }
-      cats[category].count++;
-    });
-    return cats;
-  }, [unmasteredList]);
-
-  // 30-Day Recharts Data for Weakness Trends by Question Type
-  const weaknessTrendsData = React.useMemo(() => {
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const recent = vaultMistakes.filter((m) => m.timestamp >= thirtyDaysAgo);
-    const typeCounts: Record<string, { questionType: string; totalMistakes: number; masteredCount: number; dueCount: number }> = {};
-
-    recent.forEach((m) => {
-      const rawLabel = m.questionType || m.module.toUpperCase() || 'General Practice';
-      const shortLabel = rawLabel.length > 24 ? `${rawLabel.slice(0, 22)}…` : rawLabel;
-      if (!typeCounts[shortLabel]) {
-        typeCounts[shortLabel] = {
-          questionType: shortLabel,
-          totalMistakes: 0,
-          masteredCount: 0,
-          dueCount: 0
-        };
-      }
-      typeCounts[shortLabel].totalMistakes += 1;
-      if (m.mastered) {
-        typeCounts[shortLabel].masteredCount += 1;
-      } else if (!m.nextReviewAt || m.nextReviewAt <= Date.now()) {
-        typeCounts[shortLabel].dueCount += 1;
-      }
-    });
-
-    return Object.values(typeCounts)
-      .sort((a, b) => b.totalMistakes - a.totalMistakes)
-      .slice(0, 6);
-  }, [vaultMistakes]);
-
+  const tabs: Array<{ id: ProgressTab; label: string }> = [
+    { id: 'readiness', label: 'Band & Readiness' },
+    { id: 'skills', label: 'Skills & Activity' },
+    { id: 'tools', label: 'Quick AI & Drills' }
+  ];
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6 animate-fade-in pb-16">
-      {/* Top Banner */}
-      <div className="bg-[#101B32] text-white p-6 sm:p-8 rounded-3xl shadow-md border border-slate-700/80">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-mono font-bold uppercase tracking-wider mb-2 inline-block border border-blue-400/30">
-              PERFORMANCE ANALYTICS
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black text-white">
-              My IELTS Progress
+    <div className="w-full max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
+      {/* Unified BandSprint Pine Header */}
+      <section className="rounded-2xl bg-[#0F4C45] text-white p-5 sm:p-7 border border-[#0B3833] space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="text-[11px] font-mono uppercase tracking-wider text-[#F4A62A] font-semibold">
+              Progress &amp; Diagnostics · {examMode}
+            </div>
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-white">
+              Track your gap to Band {targetBand.toFixed(1)}
             </h1>
-            <p className="text-xs sm:text-sm text-blue-200 mt-1 max-w-md">
-              Comprehensive analytics, band score breakdown, and personalized recommendations based on your test history.
+            <p className="text-xs sm:text-sm text-[#EEF3F1]/80 leading-relaxed">
+              Review score trends, revisit logged mistakes in your spaced-repetition vault, and keep daily momentum steady.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="p-3 bg-white/10 rounded-2xl border border-white/10 text-center min-w-[140px]">
-              <div className="text-[10px] uppercase font-bold text-blue-200">
-                {overallBand ? 'Current Estimated Band' : 'Baseline Uncalibrated'}
-              </div>
-              <div className="text-lg sm:text-2xl font-black text-amber-300 font-mono mt-0.5">
-                {overallBand ? `Band ${overallBand.toFixed(1)}` : 'Band: Not Yet Assessed'}
-              </div>
-              <div className="text-[9px] text-blue-200/80 mt-0.5">
-                {overallBand ? 'Calibrated Diagnostic' : 'Complete a Diagnostic Mock'}
-              </div>
-            </div>
-            <div className="p-3 bg-white/10 rounded-2xl border border-white/10 text-center min-w-[90px]">
-              <div className="text-[10px] uppercase font-bold text-blue-200">Target Band</div>
-              <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono">
-                {targetBand.toFixed(1)}
-              </div>
-              <div className="text-[9px] text-blue-200/80 mt-0.5">Goal</div>
-            </div>
-          </div>
-        </div>
-
-        {!overallBand && (
-          <div className="mt-5 pt-4 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <p className="text-xs text-blue-100">
-              Your baseline band is currently uncalibrated. Complete a full diagnostic mock test to reveal your official Cambridge band estimate.
-            </p>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <button
-              onClick={() => onNavigate('mocktest')}
-              className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition shrink-0 cursor-pointer shadow-xs"
+              type="button"
+              onClick={() => {
+                soundManager.playBeep(620, 0.035);
+                setShowPrintReport(true);
+              }}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E] font-bold text-xs transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              Take 15-Minute Diagnostic Mock to Reveal Your Band →
+              <Printer className="w-4 h-4" />
+              <span>Export Practice Report (PDF)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playBeep(600, 0.035);
+                onOpenBandModal();
+              }}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-semibold text-xs transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <Target className="w-4 h-4 text-[#F4A62A]" />
+              <span>Update Target Band</span>
             </button>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* 4 Skill Performance Bars */}
-      <div className="bg-white dark:bg-[#101B32] rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
+        {/* Clean Tabular Summary Strip */}
+        <div className="pt-4 border-t border-white/15 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div>
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-              <BarChart3 className="w-4 h-4 text-blue-600" />
-              Skill-by-Skill Band Estimates
-            </h2>
-            <p className="text-xs text-slate-500">Based on recent simulations and diagnostic tests</p>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#EEF3F1]/65">
+              Target Band
+            </div>
+            <div className="font-mono font-bold text-base text-[#F4A62A] tabular-nums">
+              <AnimatedNumber value={targetBand} decimals={1} />
+            </div>
           </div>
 
-          <button
-            onClick={onOpenBandModal}
-            className="text-xs font-bold text-blue-600 hover:text-blue-800 transition"
-          >
-            OSR Calculator →
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-          {skills.map((skill) => {
-            const Icon = skill.icon;
-            const hasBand = typeof skill.band === 'number';
-            const percentage = hasBand ? (skill.band! / 9.0) * 100 : 0;
-            return (
-              <div
-                key={skill.name}
-                onClick={() => onNavigate(skill.route)}
-                className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 hover:border-slate-300 transition cursor-pointer space-y-2 group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-white text-slate-800 flex items-center justify-center shadow-2xs">
-                      <Icon className={`w-4 h-4 ${skill.color}`} />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">{skill.name}</span>
-                      <span className="text-[10px] text-slate-400">
-                        {skill.attempted > 0 ? `${skill.attempted} practice items` : 'No attempts yet'}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="font-mono font-black text-sm text-slate-900">
-                    {hasBand ? `Band ${skill.band!.toFixed(1)}` : 'Untested'}
-                  </span>
-                </div>
-
-                <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${skill.bg} rounded-full transition-all duration-700`}
-                    style={{ width: `${Math.max(percentage, 5)}%` }}
-                  ></div>
-                </div>
-
-                <div className="text-[10px] text-slate-400 flex justify-between font-mono pt-0.5">
-                  <span>Band 0.0</span>
-                  <span>Target: {targetBand.toFixed(1)}</span>
-                  <span>Band 9.0</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Stats Counter Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-4 bg-white dark:bg-[#101B32] rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xs text-center space-y-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-            Tests Done
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white font-mono">
-            {fullMockHistory.length}
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400">Full mock tests</div>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-[#101B32] rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xs text-center space-y-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-            Questions Answered
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-blue-700 dark:text-blue-400 font-mono">
-            {totalQuestionsAnswered}
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400">Listening & Reading</div>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-[#101B32] rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xs text-center space-y-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-            Accuracy Rate
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-            {accuracy}%
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400">Correct answers</div>
-        </div>
-
-        <div
-          onClick={onOpenVault}
-          className="p-4 bg-amber-50/80 hover:bg-amber-100/70 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 rounded-2xl border border-amber-200 dark:border-amber-800 shadow-2xs text-center space-y-1 cursor-pointer transition"
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 font-mono">
-            Mistake Vault
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-amber-900 dark:text-amber-200 font-mono">
-            {mistakeCount}
-          </div>
-          <div className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold">Saved traps & mistakes →</div>
-        </div>
-      </div>
-
-      {/* QUESTION-TYPE ACCURACY MATRIX */}
-      <div className="bg-white dark:bg-[#101B32] rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <Target className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              Question-Type Accuracy Matrix
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Direct breakdown across Cambridge format types. Tap any type to launch targeted practice.
-            </p>
-          </div>
-          <span className="text-[10px] font-mono text-slate-400 uppercase">
-            {qAttempts.length} Total Logs
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {questionTypeStats.map((item) => (
-            <button
-              key={item.name}
-              onClick={() => onNavigate(item.route)}
-              className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 text-left transition flex flex-col justify-between space-y-2 group cursor-pointer"
-            >
-              <div className="flex items-start justify-between gap-2 w-full">
-                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1">
-                  {item.name}
-                </span>
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 uppercase shrink-0">
-                  {item.module}
-                </span>
-              </div>
-
-              <div className="space-y-1 w-full">
-                <div className="flex items-center justify-between text-[11px] font-mono">
-                  <span className="text-slate-500 dark:text-slate-400">Accuracy</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-200">
-                    {item.accuracy !== null ? `${item.accuracy}%` : 'Untested'}
-                  </span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      item.accuracy === null
-                        ? 'bg-slate-300 dark:bg-slate-600'
-                        : item.accuracy >= 75
-                        ? 'bg-emerald-500'
-                        : item.accuracy >= 50
-                        ? 'bg-amber-500'
-                        : 'bg-rose-500'
-                    }`}
-                    style={{ width: `${item.accuracy !== null ? Math.max(item.accuracy, 8) : 0}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-700/60 w-full">
-                <span>{item.attempted} attempts ({item.correct} correct)</span>
-                <span className="text-blue-600 dark:text-blue-400 font-bold group-hover:underline">
-                  Practice →
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* WEAKNESS TRENDS (LAST 30 DAYS) RECHARTS VISUALIZATION & SM-2 TELEMETRY */}
-      <div className="bg-white dark:bg-[#101B32] rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5" />
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#EEF3F1]/65">
+              Diagnostic Est.
             </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                Weakness Trends by Question Type (Last 30 Days)
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Recharts diagnostic comparing logged mistakes vs. SuperMemo SM-2 mastered traps over the past 30 days
-              </p>
+            <div className="font-mono font-bold text-base text-white tabular-nums">
+              {estimatedBand > 0 ? <AnimatedNumber value={estimatedBand} decimals={1} /> : 'Not taken'}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
-              <Brain className="w-3 h-3" />
-              <span>SM-2 Retention: {sm2Stats.retentionRate}%</span>
-            </span>
-            <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20">
-              30-Day Analytics
-            </span>
-          </div>
-        </div>
-
-        {/* SM-2 Memory Retention Summary Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono">
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
-            <span className="text-[10px] uppercase text-slate-400 block font-bold">Total Logged (30d)</span>
-            <span className="text-base font-black text-slate-900 dark:text-white">{sm2Stats.total} Traps</span>
-          </div>
-          <div className="p-3 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40">
-            <span className="text-[10px] uppercase text-rose-600 dark:text-rose-400 block font-bold">Due Today (SM-2)</span>
-            <span className="text-base font-black text-rose-600 dark:text-rose-400">{sm2Stats.dueCount} Cards</span>
-          </div>
-          <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/40">
-            <span className="text-[10px] uppercase text-emerald-600 dark:text-emerald-400 block font-bold">SM-2 Mastered</span>
-            <span className="text-base font-black text-emerald-600 dark:text-emerald-400">{sm2Stats.masteredCount} Cards</span>
-          </div>
-          <div className="p-3 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/40">
-            <span className="text-[10px] uppercase text-blue-600 dark:text-blue-400 block font-bold">Memory Retention</span>
-            <span className="text-base font-black text-blue-600 dark:text-blue-400">{sm2Stats.retentionRate}%</span>
-          </div>
-        </div>
-
-        {/* Interactive Recharts BarChart */}
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
-          {weaknessTrendsData.length > 0 ? (
-            <div className="w-full h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={weaknessTrendsData}
-                  margin={{ top: 12, right: 16, left: -12, bottom: 20 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
-                  <XAxis
-                    dataKey="questionType"
-                    tick={{ fontSize: 11, fill: '#64748b' }}
-                    interval={0}
-                    angle={-12}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0f172a',
-                      borderColor: '#334155',
-                      borderRadius: '12px',
-                      color: '#f8fafc',
-                      fontSize: '12px'
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
-                  <Bar
-                    dataKey="totalMistakes"
-                    name="Logged Mistakes (30d)"
-                    fill="#f43f5e"
-                    radius={[6, 6, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="masteredCount"
-                    name="SM-2 Mastered"
-                    fill="#10b981"
-                    radius={[6, 6, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#EEF3F1]/65">
+              Mistake Vault
             </div>
-          ) : (
-            <div className="text-center py-8 space-y-3">
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                No mistakes logged in the last 30 days yet. The Mistake Vault strictly logs real errors from your test attempts. You may optionally preview the vault in Tutorial / Walkthrough Mode:
-              </p>
+            <div className="font-mono font-bold text-base text-white tabular-nums">
+              <AnimatedNumber value={mistakeCount} decimals={0} /> {mistakeCount === 1 ? 'item' : 'items'}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#EEF3F1]/65">
+              Current Streak
+            </div>
+            <div className="font-mono font-bold text-base text-white tabular-nums">
+              <AnimatedNumber value={streakDays} decimals={0} /> {streakDays === 1 ? 'day' : 'days'}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4 Dedicated Progress Views */}
+      <StaggerGroup className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5" stagger={0.055}>
+        {destinations.map((item) => {
+          const Icon = item.icon;
+          return (
+            <StaggerItem key={item.id}>
               <button
+                type="button"
                 onClick={() => {
-                  soundManager.playSuccess();
-                  seedHighYieldMistakes();
-                  setRefreshKey((k) => k + 1);
+                  soundManager.playBeep(600, 0.035);
+                  onNavigate(item.path);
                 }}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="w-full h-full p-4 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45] dark:hover:border-[#F4A62A]/70 card-interactive text-left flex flex-col justify-between space-y-3 group cursor-pointer min-h-[136px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F4C45]"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Tutorial / Walkthrough Mode: Load Sample Traps</span>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* MISTAKE HEATMAP & PRIORITY REVISION */}
-      <div className="bg-white dark:bg-[#101B32] rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Archive className="w-4 h-4 text-amber-600" />
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                Recurring Error Heatmap ({unmasteredList.length} Items to Master)
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Spaced repetition review prioritized by failure frequency
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onOpenVault}
-            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline transition"
-          >
-            Open Vault →
-          </button>
-        </div>
-
-        {Object.keys(mistakesByCategory).length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {Object.entries(mistakesByCategory).map(([cat, info]) => (
-              <div
-                key={cat}
-                className="p-4 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/50 space-y-2 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-amber-900 dark:text-amber-200 uppercase font-mono">
-                      {cat}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 font-mono font-bold text-[10px]">
-                      {info.count} error{info.count > 1 ? 's' : ''}
-                    </span>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-[#EEF3F1] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 flex items-center justify-center text-[#0F4C45] dark:text-[#F4A62A]">
+                    <Icon className="w-4 h-4" />
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
-                    Recent: "{info.sampleTitle}"
+                  <span className="text-[11px] font-mono font-semibold text-[#566664] dark:text-slate-400 tabular-nums">
+                    {item.meta}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <h2 className="font-display text-sm font-bold text-[#0E1F1E] dark:text-white group-hover:text-[#0F4C45] dark:group-hover:text-[#F4A62A] transition">
+                    {item.title}
+                  </h2>
+                  <p className="text-xs text-[#566664] dark:text-slate-400 leading-relaxed line-clamp-2">
+                    {item.description}
                   </p>
                 </div>
-
-                <button
-                  onClick={() => onNavigate(info.route)}
-                  className="w-full mt-2 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition text-center"
-                >
-                  Drill {cat} Mistakes →
-                </button>
               </div>
-            ))}
+              <div className="text-xs font-semibold text-[#0F4C45] dark:text-[#F4A62A] flex items-center gap-1">
+                <span>View {item.shortName}</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+              </button>
+            </StaggerItem>
+          );
+        })}
+      </StaggerGroup>
+
+      {/* Segmented Workspace for Embedded Diagnostic Widgets */}
+      <section className="space-y-5 pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D3DDDA] dark:border-[#1F8A70]/25 pb-3">
+          <h2 className="font-display text-base font-bold text-[#0E1F1E] dark:text-white">
+            Diagnostic Workspace
+          </h2>
+          <div className="inline-flex rounded-xl bg-[#EEF3F1] dark:bg-[#0B1514] p-1 border border-[#D3DDDA] dark:border-[#1F8A70]/25">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    soundManager.playBeep(560, 0.03);
+                    setActiveTab(tab.id);
+                  }}
+                  className={`relative px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? 'text-white'
+                      : 'text-[#566664] dark:text-slate-300 hover:text-[#0E1F1E] dark:hover:text-white'
+                  }`}
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="progress-workspace-tab-pill"
+                      transition={SPRING_SNAPPY}
+                      className="absolute inset-0 rounded-lg bg-[#0F4C45]"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="relative z-10">{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
-        ) : (
-          <div className="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 text-center space-y-1">
-            <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400 mx-auto" />
-            <div className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-              Mistake Vault is 100% Clear!
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2, ease: EASE_EDITORIAL }}
+          >
+
+        {activeTab === 'readiness' && (
+          <div className="space-y-5 animate-fade-in">
+            <SmartRecommendationBanner
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
+              targetBand={targetBand}
+              estimatedBand={estimatedBand}
+            />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <ProgressDonutCard onNavigate={onNavigate} />
+              <AIBandScorecard
+                onNavigate={onNavigate}
+                onOpenBandModal={onOpenBandModal}
+              />
             </div>
-            <p className="text-[11px] text-emerald-700 dark:text-emerald-300 max-w-sm mx-auto">
-              You have mastered all previously saved traps. Continue practicing to discover fresh edge cases.
-            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <BandProjectorCard
+                currentTargetBand={targetBand}
+                examMode={examMode}
+                onOpenBandModal={onOpenBandModal}
+              />
+              <MistakeVaultWidget
+                onNavigate={onNavigate}
+                onOpenVault={onOpenVault || (() => onNavigate('/progress/saved'))}
+              />
+            </div>
           </div>
         )}
-      </div>
 
-      {/* ACHIEVEMENTS & VIRTUAL BADGES SECTION */}
-      <AchievementsSection
-
-        badges={badges}
-        gamification={gamification}
-        onNavigate={onNavigate}
-        onRefreshBadges={() => setRefreshKey((k) => k + 1)}
-        onOpenSpeedBlitz={() => setIsBlitzOpen(true)}
-      />
-
-      {/* Weakness & Recommended Practice */}
-      <div className="bg-gradient-to-br from-indigo-50 to-blue-50/50 rounded-3xl border border-indigo-100 p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-indigo-600" />
-          <h2 className="text-base font-bold text-slate-900">
-            Recommended Practice Plan
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-xs space-y-2">
-            <div className="flex items-center gap-2 text-rose-700">
-              <AlertTriangle className="w-4 h-4" />
-              <span className="text-xs font-bold uppercase">Focus Area: {weakestSkill.name}</span>
-            </div>
-            <p className="text-xs text-slate-600">
-              Your lowest current estimated score is in <strong>{weakestSkill.name} ({typeof weakestSkill.band === 'number' ? `Band ${weakestSkill.band.toFixed(1)}` : 'Untested'})</strong>. Dedicated practice will give you the quickest jump toward Band {targetBand.toFixed(1)}.
-            </p>
-            <button
-              onClick={() => onNavigate(weakestSkill.route)}
-              className="mt-1 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition inline-flex items-center gap-1.5"
-            >
-              Start {weakestSkill.name} Lab →
-            </button>
+        {activeTab === 'skills' && (
+          <div className="space-y-5 animate-fade-in">
+            <SkillMasteryMatrix onNavigate={onNavigate} examMode={examMode} />
+            <PracticeHeatmap onNavigate={onNavigate} />
+            <ExamPacingStrategyCard
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
+            />
           </div>
+        )}
 
-          <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-xs space-y-2">
-            <div className="flex items-center gap-2 text-emerald-700">
-              <CheckCircle2 className="w-4 h-4" />
-              <span className="text-xs font-bold uppercase">Strongest Area: {strongestSkill.name}</span>
+        {activeTab === 'tools' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <AISpeakingPartnerCard
+                onNavigate={onNavigate}
+                onShowToast={onShowToast}
+              />
+              <AIWritingQuickEvaluator
+                onNavigate={onNavigate}
+                onShowToast={onShowToast}
+              />
             </div>
-            <p className="text-xs text-slate-600">
-              You are performing best in <strong>{strongestSkill.name} ({typeof strongestSkill.band === 'number' ? `Band ${strongestSkill.band.toFixed(1)}` : 'Untested'})</strong>. Maintain momentum by solving full-length mock tests.
-            </p>
-            <button
-              onClick={() => onNavigate('mocktest')}
-              className="mt-1 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition inline-flex items-center gap-1.5"
-            >
-              Take Full Mock Exam →
-            </button>
+
+            <AcademicCollocationFinder
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
+            />
+
+            <AITutorWidget
+              userName={user?.name || 'Candidate'}
+              onNavigateToAITools={() => onNavigate('/practice/ai-tools')}
+              onShowToast={onShowToast}
+            />
           </div>
-        </div>
+        )}
+          </motion.div>
+        </AnimatePresence>
+      </section>
 
-        {/* Question History & Spaced Review Button */}
-        <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-indigo-200/60">
-          <span className="text-xs text-indigo-900 font-medium">
-            Review every past answer, check accuracy, and practice spaced review questions:
-          </span>
-          <button
-            onClick={() => onNavigate('history')}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5"
-          >
-            <span>Question Attempt History ({qAttempts.length}) →</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Speed Blitz & Daily Examiner Trivia Modal */}
-      <IELTSSpeedBlitzModal
-        isOpen={isBlitzOpen}
-        onClose={() => setIsBlitzOpen(false)}
-        onRewardXp={() => {
-          setRefreshKey((k) => k + 1);
-        }}
+      <PrintablePracticeReportModal
+        isOpen={showPrintReport}
+        onClose={() => setShowPrintReport(false)}
+        user={user}
+        onShowToast={onShowToast}
       />
     </div>
   );

@@ -192,12 +192,12 @@ export const SentenceTransformerStudio: React.FC = () => {
           </div>
         </div>
 
-        {/* Tier 3: Band 9.0 (Cambridge Mastery) */}
+        {/* Tier 3: Band 9.0 (Practice Mastery) */}
         <div className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-blue-50 via-indigo-50/30 to-purple-50/20 dark:from-[#101B32] dark:via-[#162340] dark:to-[#1a2035] border-2 border-blue-500/80 shadow-md space-y-4">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-black font-mono shadow-xs">
               <Award className="w-3.5 h-3.5 text-amber-300" />
-              <span>Band 9.0 Cambridge Mastery</span>
+              <span>Band 9.0 Practice Mastery</span>
             </span>
             <div className="flex items-center gap-1.5">
               <button

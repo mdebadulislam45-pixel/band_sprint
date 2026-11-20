@@ -206,10 +206,9 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
         }
       }
     } catch (err) {
-      console.warn('[AIMockSuite] Server evaluation error, switching to diagnostic engine:', err);
     }
 
-    // If server was unreachable or in offline mode, execute the calibrated Cambridge Diagnostic Evaluation Algorithm
+    // If server was unreachable or in offline mode, execute the calibrated Practice Diagnostic Evaluation Algorithm
     if (!result) {
       result = generateDiagnosticEvaluation(essayText, testType, wordCount, targetWords);
     }
@@ -221,7 +220,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
     onShowToast(`Evaluation complete! Assessed at Band ${result.overallBand}.`);
   };
 
-  // Local Cambridge algorithmic scorecard generator
+  // Local Practice algorithmic scorecard generator
   const generateDiagnosticEvaluation = (
     text: string,
     type: string,
@@ -240,26 +239,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
     const advancedVocab = ['predominance', 'trajectory', 'mitigate', 'resilience', 'biodiversity', 'disparity', 'accelerated', 'disproportionate', 'paradigm', 'imperative'];
     const vocabCount = advancedVocab.filter(v => lower.includes(v)).length;
 
-    // Base sub-scores
-    let tr = Math.max(5.0, 7.5 - penalty);
-    let cc = Math.min(8.5, 6.0 + Math.min(linkerCount * 0.4, 2.0));
-    let lr = Math.min(8.5, 6.0 + Math.min(vocabCount * 0.4, 2.0));
-    let gra = 7.0;
-
-    // Rounding to nearest 0.5
-    const roundHalf = (num: number) => Math.round(num * 2) / 2;
-    tr = roundHalf(tr);
-    cc = roundHalf(cc);
-    lr = roundHalf(lr);
-    gra = roundHalf(gra);
-
-    const rawAvg = (tr + cc + lr + gra) / 4;
-    // Cambridge arithmetic rounding
-    const remainder = rawAvg - Math.floor(rawAvg);
-    let overall = Math.floor(rawAvg);
-    if (remainder >= 0.75) overall += 1.0;
-    else if (remainder >= 0.25) overall += 0.5;
-
+    // Base sub-scores calculated authentically
     const grammarErrors: { observed: string; corrected: string; explanation: string; ruleCategory: string }[] = [];
     if (/it make\b/i.test(text)) {
       grammarErrors.push({
@@ -302,6 +282,48 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       });
     }
 
+    let tr = Math.max(4.5, 7.5 - penalty);
+    let cc = Math.min(8.5, 6.0 + Math.min(linkerCount * 0.4, 2.0));
+    let lr = Math.min(8.5, 5.5 + Math.min(vocabCount * 0.4, 2.5));
+    let rawGra = 6.5 - grammarErrors.length * 0.5 + (/, (which|while|whereas|although)\b/i.test(text) ? 0.5 : 0);
+    if (!hasEnoughWords) rawGra -= 0.5;
+    let gra = Math.max(4.0, Math.min(9.0, rawGra));
+
+    // Rounding to nearest 0.5
+    const roundHalf = (num: number) => Math.round(num * 2) / 2;
+    tr = roundHalf(tr);
+    cc = roundHalf(cc);
+    lr = roundHalf(lr);
+    gra = roundHalf(gra);
+
+    const rawAvg = (tr + cc + lr + gra) / 4;
+    // Practice arithmetic rounding (.25 -> .5, .75 -> next whole)
+    const remainder = rawAvg - Math.floor(rawAvg);
+    let overall = Math.floor(rawAvg);
+    if (remainder >= 0.75) overall += 1.0;
+    else if (remainder >= 0.25) overall += 0.5;
+
+    const candidateVocabOpportunities = [
+      { regex: /\b(big impact|large impact)\b/i, original: 'big impact', upgraded: 'profound repercussion / far-reaching consequence', explanation: 'Band 8.5 academic collocation for cause-and-effect.' },
+      { regex: /\bgood idea\b/i, original: 'good idea', upgraded: 'viable proposition / pragmatic initiative', explanation: 'Elevates colloquial informal phrasing to formal register.' },
+      { regex: /\b(shows clearly|clearly shows)\b/i, original: 'shows clearly', upgraded: 'readily delineates / distinctly illustrates', explanation: 'Essential reporting phrase for high-band lexical precision.' },
+      { regex: /\ba lot of\b/i, original: 'a lot of', upgraded: 'a substantial volume of / an extensive proportion of', explanation: 'Replaces informal quantifier with formal academic phrasing.' },
+      { regex: /\bvery important\b/i, original: 'very important', upgraded: 'of paramount importance / imperative', explanation: 'Replaces weak modifier with high-impact C1 adjective.' },
+      { regex: /\bbig problem\b/i, original: 'big problem', upgraded: 'pressing dilemma / acute impediment', explanation: 'Replaces basic noun phrase with precise C1 academic terminology.' },
+      { regex: /\bvery good\b/i, original: 'very good', upgraded: 'exceptionally advantageous / commendable', explanation: 'Replaces colloquial modifier with academic register.' },
+      { regex: /\bhelp\b/i, original: 'help', upgraded: 'facilitate / expedite / bolster', explanation: 'Elevates basic action verb to C1 precision.' }
+    ];
+    const verifiedVocabUpgrades = candidateVocabOpportunities
+      .filter(item => item.regex.test(text))
+      .map(item => ({ original: item.original, upgraded: item.upgraded, explanation: item.explanation }));
+
+    const dynamicStrengths: string[] = [];
+    if (hasEnoughWords) dynamicStrengths.push(`Satisfied recommended length target (${words}/${target} words).`);
+    if (linkerCount >= 3) dynamicStrengths.push(`Deployed ${linkerCount} clear discourse markers bridging logical flow.`);
+    if (grammarErrors.length === 0) dynamicStrengths.push('High grammatical accuracy with no major subject-verb or verb form slips.');
+    if (vocabCount >= 2) dynamicStrengths.push('Included targeted C1/C2 academic lexical items.');
+    if (dynamicStrengths.length === 0) dynamicStrengths.push('Communicated core message with understandable phrasing.');
+
     const modelBand8 = testType === 'task2'
       ? `In contemporary socio-economic discourse, the democratization of tertiary education remains a fiercely contested topic. While detractors contend that state-funded university tuition imposes an unsustainable burden upon public coffers, I firmly maintain that free higher education constitutes an indispensable civic investment. Primarily, removing tuition barriers unlocks social mobility for underprivileged students, ensuring merit rather than wealth determines intellectual achievement. Furthermore, highly trained graduates generate substantial economic returns through innovation, research, and augmented tax revenues, thereby yielding dividends that far outstrip initial public expenditure. Consequently, governments ought to treat tertiary education not as a fiscal liability, but as a catalyst for collective national prosperity.`
       : testType === 'task1'
@@ -318,25 +340,17 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       lrScore: lr,
       lrComment: vocabCount >= 2 ? 'Commendable usage of academic collocations and domain-specific lexicon.' : 'Occasional reliance on high-frequency everyday vocabulary.',
       graScore: gra,
-      graComment: 'Adequate variety of compound and complex clauses with few punctuation errors.',
-      strengths: [
-        'Clear organizational structure adhering to Cambridge task criteria.',
-        'Logical development of key premises with relevant supporting details.',
-        'Appropriate formal academic tone devoid of informal colloquialisms.'
-      ],
+      graComment: grammarErrors.length === 0 ? 'Good control of clause structures with error-free sentence construction.' : `Identified ${grammarErrors.length} grammatical issue(s) needing refinement.`,
+      strengths: dynamicStrengths,
       weaknesses: [
         !hasEnoughWords ? 'Expand on supporting arguments to satisfy the mandatory word threshold.' : 'Vary introductory sentence connectors to avoid repetitive pattern.',
         'Integrate more C1/C2 collocations instead of simple adjectives.',
         'Ensure passive voice constructions are deployed naturally for objective reports.'
       ],
-      vocabUpgrades: [
-        { original: 'big impact', upgraded: 'profound repercussion', explanation: 'Band 8.5 academic collocation for cause-and-effect.' },
-        { original: 'good idea', upgraded: 'viable proposition', explanation: 'Elevates colloquial informal phrasing to formal register.' },
-        { original: 'shows clearly', upgraded: 'readily delineates', explanation: 'Essential Task 1 reporting verb for high-band lexical resource.' }
-      ],
+      vocabUpgrades: verifiedVocabUpgrades,
       grammaticalErrors: grammarErrors,
       betterAnswerBand8: modelBand8,
-      verdict: `A commendable performance demonstrating strong foundational IELTS competence. Address the priority weaknesses above to consolidate your target Band ${Math.min(9.0, overall + 0.5)}.`
+      verdict: `Assessed ${words} words against IELTS criteria. Overall Band ${overall.toFixed(1)}.`
     };
   };
 
@@ -401,7 +415,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">
-            <Sparkles className="w-3.5 h-3.5" /> Cambridge Rubric Diagnostic & Gemini AI Examiner
+            <Sparkles className="w-3.5 h-3.5" /> Practice Rubric Diagnostic & Gemini AI Examiner
           </div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1">
             Module 9: AI Mock Exam Suite with Syntax & Cohesion Heatmap
@@ -520,7 +534,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
             <div className="text-xs text-slate-500">
               <span className="text-blue-700 font-semibold flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                Cambridge 4-Criteria Diagnostic Engine (TR · CC · LR · GRA)
+                Practice Set 4-Criteria Diagnostic Engine (TR · CC · LR · GRA)
               </span>
             </div>
 
@@ -639,7 +653,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
             <>
               <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                 <div>
-                  <span className="text-xs font-bold uppercase tracking-widest text-amber-400 font-mono">Official Cambridge Scorecard</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-amber-400 font-mono">Practice Scorecard</span>
                   <h3 className="text-2xl sm:text-3xl font-extrabold mt-1">{evaluation.proficiencyTitle}</h3>
                   <p className="text-xs sm:text-sm text-blue-200 mt-2 max-w-xl leading-relaxed">{evaluation.verdict}</p>
                 </div>
@@ -766,7 +780,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                     <h4 className="font-bold text-slate-900 text-base">Examiner Grammatical Errors & Corrections</h4>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Cambridge rubric corrections with underlying grammatical rule principles. Save directly to your Mistake Vault.
+                    Practice rubric corrections with underlying grammatical rule principles. Save directly to your Mistake Vault.
                   </p>
                 </div>
                 <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-mono font-bold">
@@ -828,7 +842,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                     <span className="text-xs text-blue-200 font-mono">Senior Examiner Model</span>
                   </div>
                   <h4 className="text-lg sm:text-xl font-extrabold text-white mt-1">
-                    Authentic Cambridge Better Answer Demonstration
+                    Practice Better Answer Demonstration
                   </h4>
                   <p className="text-xs text-slate-300">
                     Observe high-level cohesive discourse, natural topic collocations, and grammatical range.

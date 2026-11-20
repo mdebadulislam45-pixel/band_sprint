@@ -1,5 +1,5 @@
 /**
- * IELTS Sprint - Candidate Name Sanitizer
+ * BandSprint - Candidate Name Sanitizer
  *
  * Ensures candidate display names are always clean, professional, and personal.
  * Sanitizes raw emails, database IDs (usr_123), numeric suffixes (Imran001),

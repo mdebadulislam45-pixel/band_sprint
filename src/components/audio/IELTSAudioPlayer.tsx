@@ -16,6 +16,7 @@ import {
   Globe
 } from 'lucide-react';
 import { audioService, AudioPlaybackState, IELTS_SPEAKERS } from '../../services/audioService';
+import { audioManager } from '../../services/AudioManager';
 import { zeroRepetitionEngine } from '../../services/ZeroRepetitionEngine';
 import {
   IELTS_ACCENTS,
@@ -49,7 +50,7 @@ function formatTime(seconds: number): string {
 
 export const IELTSAudioPlayer: React.FC<IELTSAudioPlayerProps> = ({
   title = 'IELTS Listening Practice Audio',
-  subtitle = 'Original Practice Audio · British RP Studio Synthesis (Cambridge-Calibrated)',
+  subtitle = 'Original Practice Audio · British RP Studio Synthesis (IELTS-style)',
   audioId,
   questionId,
   provenanceBadge,
@@ -119,7 +120,6 @@ export const IELTSAudioPlayer: React.FC<IELTSAudioPlayerProps> = ({
       onPause?.();
     } else if (state.isPaused) {
       audioService.resume();
-      onPlay?.();
     } else if (customOfficialFileUrl) {
       audioService.playAuthorizedAudioUrl(customOfficialFileUrl);
     } else {
@@ -232,7 +232,7 @@ export const IELTSAudioPlayer: React.FC<IELTSAudioPlayerProps> = ({
                 ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300'
                 : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
             }`}
-            title="Have a legally licensed Cambridge IELTS official audio file (.mp3/.wav)? Attach it here for authentic playback."
+            title="Have a legally licensed IELTS official audio file (.mp3/.wav)? Attach it here for authentic playback."
           >
             {customOfficialFileUrl ? (
               <>
@@ -474,7 +474,7 @@ export const IELTSAudioPlayer: React.FC<IELTSAudioPlayerProps> = ({
 
           <button
             type="button"
-            onClick={() => audioService.stop()}
+            onClick={() => audioManager.stopAll()}
             className="min-w-[38px] min-h-[38px] rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center transition cursor-pointer"
             title="Reset / Stop Audio"
             aria-label="Reset Audio"

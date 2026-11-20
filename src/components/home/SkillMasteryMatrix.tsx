@@ -122,7 +122,7 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
             Core IELTS Modules
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Four official Cambridge exam components with diagnostic scoring
+            Four official Practice exam components with diagnostic scoring
           </p>
         </div>
         <button
@@ -208,7 +208,7 @@ export const SkillMasteryMatrix: React.FC<SkillMasteryMatrixProps> = ({
                 {activeSkill.name} Structure & Sections
               </span>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Official Cambridge format · Evaluation criteria
+                Practice format · Evaluation criteria
               </p>
             </div>
           </div>

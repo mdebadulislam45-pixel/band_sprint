@@ -20,6 +20,9 @@ export interface PersistentTestProgress {
   answers?: Record<string | number, string>;
   flagged?: Record<string | number, boolean>;
   essayText?: string;
+  task1Text?: string;
+  speakingAnswers?: any[];
+  submissionReason?: 'timer' | 'manual';
   timeLeftSeconds?: number;
   isTimerRunning?: boolean;
   status: 'intro' | 'active' | 'review' | 'instruction' | 'in_progress' | 'checking' | 'submitted';
@@ -53,11 +56,9 @@ class TestPersistenceService {
           };
 
           request.onerror = (err) => {
-            console.warn('[TestPersistenceService] IndexedDB open error:', err);
             resolve(null);
           };
         } catch (e) {
-          console.warn('[TestPersistenceService] IndexedDB init exception:', e);
           resolve(null);
         }
       });

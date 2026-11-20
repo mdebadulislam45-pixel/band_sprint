@@ -183,7 +183,7 @@ export class SpeechRecognitionService {
           pitchVarianceHz = Math.round(Math.sqrt(variance));
         }
 
-        // Optimal Cambridge intonation variance is ~22-55 Hz std dev
+        // Optimal Sprint intonation variance is ~22-55 Hz std dev
         const expressivenessScore =
           this.pitchSamples.length < 3
             ? 68
@@ -252,7 +252,7 @@ export class SpeechRecognitionService {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-GB'; // Standard Cambridge English recognition
+      recognition.lang = 'en-GB'; // Standard Sprint English recognition
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
@@ -361,6 +361,10 @@ export class SpeechRecognitionService {
   public getElapsedTimeSec(): number {
     if (!this.speechStartTime) return 0;
     return Math.max(0, Math.floor((Date.now() - this.speechStartTime) / 1000));
+  }
+
+  public getAnalyserNode(): AnalyserNode | null {
+    return this.analyserNode;
   }
 }
 

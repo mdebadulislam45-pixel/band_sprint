@@ -1,5 +1,5 @@
 /**
- * IELTS Sprint — Milestone & Achievement Badges System
+ * BandSprint — Milestone & Achievement Badges System
  * Rewards users with virtual badges, XP, levels, and celebratory milestones
  */
 
@@ -286,7 +286,7 @@ export function evaluateAchievements(
       id: 'vocab_1000',
       title: 'Lexical Legend',
       subtitle: '1,000 Vocabulary Words',
-      description: 'The pinnacle of Cambridge Lexical Resource: 1,000 advanced words and idioms.',
+      description: 'The pinnacle of Sprint Lexical Resource: 1,000 advanced words and idioms.',
       category: 'vocabulary',
       tier: 'diamond',
       iconName: 'Gem',
@@ -302,7 +302,7 @@ export function evaluateAchievements(
       id: 'perfect_listening',
       title: 'Aural Prodigy',
       subtitle: 'Perfect Listening Score',
-      description: 'Achieve an impeccable Band 9.0 in Authentic IELTS Listening with zero margin of error.',
+      description: 'Achieve an impeccable Band 9.0 in Realistic IELTS-style Listening with zero margin of error.',
       category: 'listening',
       tier: 'diamond',
       iconName: 'Headphones',
@@ -325,7 +325,7 @@ export function evaluateAchievements(
       currentValue: highestListeningBand,
       unit: 'Band',
       xpReward: 400,
-      howToEarn: 'Attain Band 8.0 or higher in a full Listening test or Cambridge Section 1-4 practice.'
+      howToEarn: 'Attain Band 8.0 or higher in a full Listening test or Sprint Section 1-4 practice.'
     },
 
     // 3. Speaking & Pronunciation
@@ -349,7 +349,7 @@ export function evaluateAchievements(
       id: 'essay_architect',
       title: 'Task 2 Scribe',
       subtitle: '1,000 Words Written',
-      description: 'Draft over 1,000 words across timed Cambridge Task 1 reports and Task 2 opinion essays.',
+      description: 'Draft over 1,000 words across timed Sprint Task 1 reports and Task 2 opinion essays.',
       category: 'writing',
       tier: 'silver',
       iconName: 'PenTool',
@@ -373,7 +373,7 @@ export function evaluateAchievements(
       currentValue: streakDays,
       unit: 'days',
       xpReward: 600,
-      howToEarn: 'Study every day for 7 consecutive days in IELTS Sprint.'
+      howToEarn: 'Study every day for 7 consecutive days in BandSprint.'
     },
     {
       id: 'streak_30',
@@ -426,7 +426,7 @@ export function evaluateAchievements(
       id: 'mock_graduate',
       title: 'Exam Veteran',
       subtitle: 'First Full Mock Exam',
-      description: 'Sit through and complete your very first authentic 4-skill Cambridge simulated test.',
+      description: 'Sit through and complete your very first authentic 4-skill Sprint simulated test.',
       category: 'mastery',
       tier: 'bronze',
       iconName: 'Award',
@@ -437,8 +437,8 @@ export function evaluateAchievements(
       howToEarn: 'Complete a full mock exam in the Mock Test center.'
     },
     {
-      id: 'cambridge_elite',
-      title: 'Cambridge Elite',
+      id: 'sprint_elite',
+      title: 'Sprint Elite',
       subtitle: 'Overall Band 8.0+',
       description: 'Earn an overall composite Band 8.0 or higher across all 4 IELTS test components.',
       category: 'mastery',
@@ -520,7 +520,7 @@ export function getGamificationStats(
     { level: 4, minXp: 1600, maxXp: 2600, title: 'Band 7.5 Scholar' },
     { level: 5, minXp: 2600, maxXp: 4000, title: 'Band 8.0 Virtuoso' },
     { level: 6, minXp: 4000, maxXp: 6000, title: 'Band 8.5 Master' },
-    { level: 7, minXp: 6000, maxXp: 10000, title: 'Cambridge Grandmaster (Band 9.0)' }
+    { level: 7, minXp: 6000, maxXp: 10000, title: 'Sprint Grandmaster (Band 9.0)' }
   ];
 
   let currentLevel = levels[0];

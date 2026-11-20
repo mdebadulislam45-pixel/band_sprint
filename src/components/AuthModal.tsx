@@ -250,7 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Register in Firebase Auth if password >= 6 chars
+      // 1. Register in Firebase Auth if password >= 6 chars (automatically bridges ID token to Express session with identical UID)
       if (regPass && regPass.length >= 6) {
         try {
           const fbProfile = await firebaseSyncService.registerWithEmail(
@@ -262,15 +262,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             regCountry,
             regDate
           );
-          // Also register on Express backend for session token compatibility
-          await registerCandidateWithServer({
-            name: regName.trim(),
-            email: regEmail.trim(),
-            password: regPass,
-            targetBand: regBand,
-            intendedFormat: regFormat,
-            targetCountry: regCountry
-          }).catch(() => {});
 
           setIsLoading(false);
           setUser(fbProfile);
@@ -285,6 +276,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onShowToast('An account with this email already exists. Please switch to Sign In.');
             setActiveTab('login');
             setLoginEmail(regEmail.trim());
+            return;
+          }
+          // If Firebase Email Auth is unreachable, fall back to Express server registration
+          const srvReg = await registerCandidateWithServer({
+            name: regName.trim(),
+            email: regEmail.trim(),
+            password: regPass,
+            targetBand: regBand,
+            intendedFormat: regFormat,
+            targetCountry: regCountry
+          });
+          if (srvReg.success && srvReg.user) {
+            setIsLoading(false);
+            setUser(srvReg.user);
+            setActiveTab('profile');
+            soundManager.playSuccess();
+            onShowToast(srvReg.message || `Account created! Welcome, ${srvReg.user.name}.`);
             return;
           }
         }
@@ -416,7 +424,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
             <div className="text-center space-y-1">
               <h4 className="font-extrabold text-base">{loadingText}</h4>
-              <p className="text-xs text-slate-400">Synchronizing Cambridge Secure Candidate Profile...</p>
+              <p className="text-xs text-slate-400">Synchronizing Practice Secure Candidate Profile...</p>
             </div>
           </div>
         )}
@@ -436,7 +444,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg sm:text-xl font-black">{activeUser ? activeUser.name : 'IELTS Sprint Global'}</h3>
+                <h3 className="text-lg sm:text-xl font-black">{activeUser ? activeUser.name : 'BandSprint Global'}</h3>
                 {activeUser && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-bold font-mono">
                     <Flame className="w-3 h-3 text-amber-400" />
@@ -501,7 +509,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <Target className="w-3.5 h-3.5 text-blue-600" />
                 </div>
                 <div className="font-mono text-2xl font-black text-blue-950 dark:text-blue-100 mt-1">
-                  Band {(activeUser.progress.targetBand || 7.5).toFixed(1)}
+                  Band {typeof activeUser.progress.targetBand === 'number' ? activeUser.progress.targetBand.toFixed(1) : '7.5'}
                 </div>
                 <button
                   onClick={() => setEditingGoal(!editingGoal)}
@@ -556,7 +564,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Select Target IELTS Band Score:</span>
-                  <span className="font-mono font-black text-blue-600 dark:text-blue-400 text-sm">{tempTargetBand.toFixed(1)}</span>
+                  <span className="font-mono font-black text-blue-600 dark:text-blue-400 text-sm">{typeof tempTargetBand === 'number' ? tempTargetBand.toFixed(1) : '7.5'}</span>
                 </div>
                 <input
                   type="range"
@@ -627,14 +635,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                          L: {rec.listeningBand.toFixed(1)} | R: {rec.readingBand.toFixed(1)} | W: {rec.writingBand.toFixed(1)} ({rec.wordCount}w)
+                          L: {typeof rec.listeningBand === 'number' ? rec.listeningBand.toFixed(1) : '—'} | R: {typeof rec.readingBand === 'number' ? rec.readingBand.toFixed(1) : '—'} | W: {typeof rec.writingBand === 'number' ? rec.writingBand.toFixed(1) : '—'}{typeof rec.speakingBand === 'number' ? ` | S: ${rec.speakingBand.toFixed(1)}` : ''} {typeof rec.wordCount === 'number' ? `(${rec.wordCount}w)` : ''}
                         </div>
                       </div>
 
                       <div className="text-right">
                         <span className="text-[10px] uppercase font-bold text-slate-400 block">Overall</span>
                         <span className="font-mono text-lg font-black text-amber-500">
-                          Band {rec.overallBand.toFixed(1)}
+                          {typeof rec.overallBand === 'number' ? `Band ${rec.overallBand.toFixed(1)}` : 'Completed'}
                         </span>
                       </div>
                     </div>
@@ -714,7 +722,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="space-y-1">
               <h4 className="font-black text-slate-900 dark:text-white text-lg">Candidate Sign In (লগইন)</h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Enter your registered candidate email or name to resume your IELTS Sprint training.
+                Enter your registered candidate email or name to resume your BandSprint training.
               </p>
             </div>
 
@@ -831,7 +839,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="space-y-1">
               <h4 className="font-black text-slate-900 dark:text-white text-lg">Create Candidate Profile (রেজিস্ট্রেশন)</h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Setup your target band and country to unlock personalized Cambridge AI diagnostic milestones.
+                Setup your target band and country to unlock personalized Practice AI diagnostic milestones.
               </p>
             </div>
 

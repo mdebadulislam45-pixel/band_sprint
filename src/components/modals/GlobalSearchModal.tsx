@@ -20,10 +20,12 @@ import {
   Layers,
   Check
 } from 'lucide-react';
-import { ALL_COMBINED_VOCAB } from '../VocabDeck';
+import { VocabCard } from '../../types';
 import { soundManager } from '../../utils/audioEffects';
 import { useTheme } from '../../context/ThemeContext';
 import { getMistakes } from '../../utils/vaultStorage';
+
+let cachedCombinedVocab: VocabCard[] | null = null;
 
 interface GlobalSearchModalProps {
   isOpen: boolean;
@@ -38,10 +40,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [vocabItems, setVocabItems] = useState<VocabCard[]>(() => cachedCombinedVocab || []);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { resolvedTheme, toggleTheme } = useTheme();
 
-  const mistakes = getMistakes();
+  const mistakes = React.useMemo(() => (isOpen ? getMistakes() : []), [isOpen]);
   const unmasteredMistakes = mistakes.filter((m) => !m.mastered);
 
   useEffect(() => {
@@ -52,6 +55,22 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !query.trim() || cachedCombinedVocab) return;
+    let active = true;
+    import('../VocabDeck')
+      .then((mod) => {
+        cachedCombinedVocab = mod.ALL_COMBINED_VOCAB;
+        if (active) {
+          setVocabItems(mod.ALL_COMBINED_VOCAB);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen, query]);
+
   if (!isOpen) return null;
 
   const q = query.trim().toLowerCase();
@@ -60,7 +79,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   const quickCommands = [
     {
       id: 'cmd_tutor',
-      title: 'Ask Cambridge AI Tutor',
+      title: 'Ask IELTS AI Tutor',
       sub: 'Open contextual IELTS tutor for questions & advice',
       icon: GraduationCap,
       action: () => {
@@ -86,7 +105,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     {
       id: 'cmd_listening',
       title: 'Listening Lab',
-      sub: '40 Questions · Authentic British Audio · Auto-Check',
+      sub: '40 Questions · Realistic British Audio · Auto-Check',
       icon: Headphones,
       action: () => {
         onNavigate('listening');
@@ -183,9 +202,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       c.category.toLowerCase().includes(q)
   );
 
-  // Search lexical database
+  // Search lexical database (loaded lazily on query)
   const matchedVocab = q
-    ? ALL_COMBINED_VOCAB.filter(
+    ? vocabItems.filter(
         (item) =>
           item.item.toLowerCase().includes(q) ||
           item.banglaMeaning.toLowerCase().includes(q) ||

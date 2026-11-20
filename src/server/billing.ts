@@ -49,7 +49,7 @@ export const SUBSCRIPTION_PLANS: Record<'free' | 'pro' | 'master', SubscriptionP
   pro: {
     id: 'pro',
     name: 'Sprint Premium',
-    tagline: 'Interactive 1-on-1 AI voice examiner & unlimited Cambridge evaluations',
+    tagline: 'Interactive 1-on-1 AI voice examiner & unlimited Sprint evaluations',
     priceMonthly: 150,
     priceYearly: 1500,
     currency: 'BDT',
@@ -58,7 +58,7 @@ export const SUBSCRIPTION_PLANS: Record<'free' | 'pro' | 'master', SubscriptionP
       'Interactive 1-on-1 Voice Examiner (British Male Voices)',
       'Unlimited Speaking Fluency & Grammar Diagnostics',
       'Task 1 & Task 2 Writing Band Evaluator',
-      'Band 9 Official Cambridge Model Answers',
+      'Band 9 BandSprint Model Answers',
       'Comprehensive Mistake Vault with Spaced Repetition',
       'Advanced Academic Collocation & C1 Idiom Labs'
     ],
@@ -85,7 +85,7 @@ export const SUBSCRIPTION_PLANS: Record<'free' | 'pro' | 'master', SubscriptionP
       'Deep AI Examiner Diagnostic Breakdown across all 4 Criteria',
       'Priority High-Fidelity Audio Streaming',
       'Customized 30-Day Band 8.5 Study Plan',
-      'Verified Cambridge Band Certificate of Completion'
+      'Verified Sprint Band Certificate of Completion'
     ],
     limits: {
       speakingEvaluationsPerDay: 9999,
@@ -128,7 +128,7 @@ export async function createCheckoutSession(params: {
         success_url: `${params.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: params.cancelUrl,
         'line_items[0][price_data][currency]': plan.currency.toLowerCase(),
-        'line_items[0][price_data][product_data][name]': `IELTS Sprint ${plan.name}`,
+        'line_items[0][price_data][product_data][name]': `BandSprint ${plan.name}`,
         'line_items[0][price_data][product_data][description]': plan.tagline,
         'line_items[0][price_data][unit_amount]': unitAmountCents.toString(),
         'line_items[0][price_data][recurring][interval]': params.billingInterval === 'yearly' ? 'year' : 'month',
@@ -282,10 +282,45 @@ export function processStripeWebhookEvent(event: any): { processed: boolean; rea
 
 export function checkUserEntitlement(
   userId: string,
-  requiredFeature?: string
+  requiredFeature?: string,
+  options?: { dateStr?: string; nowMs?: number }
 ): { hasAccess: boolean; planId: string; status: string; reason?: string } {
+  if (!userId || typeof userId !== 'string' || !userId.trim()) {
+    return {
+      hasAccess: false,
+      planId: 'free',
+      status: 'invalid',
+      reason: 'Authentication required to verify subscription entitlement.'
+    };
+  }
+
   const sub = serverDb.getSubscription(userId);
-  const plan = SUBSCRIPTION_PLANS[sub.planId] || SUBSCRIPTION_PLANS.free;
+  if (!sub || typeof sub !== 'object' || !(sub.planId in SUBSCRIPTION_PLANS)) {
+    return {
+      hasAccess: false,
+      planId: String((sub as any)?.planId || 'unknown'),
+      status: String((sub as any)?.status || 'invalid'),
+      reason: 'Invalid or unrecognized subscription plan.'
+    };
+  }
+
+  const refNow = typeof options?.nowMs === 'number' && Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  if (sub.status === 'active' && sub.planId !== 'free' && typeof sub.currentPeriodEnd === 'number' && refNow > sub.currentPeriodEnd) {
+    return {
+      hasAccess: false,
+      planId: sub.planId,
+      status: 'expired',
+      reason: 'Subscription is currently expired. Please renew your subscription to access premium features.'
+    };
+  }
+  if (sub.status === 'trialing' && typeof sub.trialEnd === 'number' && refNow > sub.trialEnd) {
+    return {
+      hasAccess: false,
+      planId: sub.planId,
+      status: 'expired',
+      reason: 'Trial period has expired. Please upgrade your subscription to continue.'
+    };
+  }
 
   if (sub.status !== 'active' && sub.status !== 'trialing') {
     return {
@@ -295,6 +330,8 @@ export function checkUserEntitlement(
       reason: `Subscription is currently ${sub.status}. Please renew your subscription to access premium features.`
     };
   }
+
+  const plan = SUBSCRIPTION_PLANS[sub.planId];
 
   // Check boolean feature limits
   if (requiredFeature && requiredFeature in plan.limits) {
@@ -309,10 +346,33 @@ export function checkUserEntitlement(
     }
   }
 
+  // Check monthly numeric quota for AI mock exam generation (DEF-ENTITLE-01)
+  if (requiredFeature === 'mockExamsPerMonth') {
+    const monthlyLimit = plan.limits.mockExamsPerMonth;
+    if (typeof monthlyLimit !== 'number' || !Number.isFinite(monthlyLimit) || monthlyLimit <= 0) {
+      return {
+        hasAccess: false,
+        planId: sub.planId,
+        status: sub.status,
+        reason: 'Mock exam generation is not enabled for your current subscription plan.'
+      };
+    }
+    const effectiveDateStr = options?.dateStr || new Date(refNow).toISOString().split('T')[0];
+    const { mockExamsPerMonth: usedThisMonth } = serverDb.getMonthlyUsage(userId, effectiveDateStr);
+    if (usedThisMonth >= monthlyLimit) {
+      return {
+        hasAccess: false,
+        planId: sub.planId,
+        status: sub.status,
+        reason: `You have reached your monthly limit of ${monthlyLimit} AI Mock Exam generation(s) on the ${plan.name} plan. Upgrade to Sprint Premium (৳150/month) for higher monthly limits.`
+      };
+    }
+  }
+
   // Check daily rate limits for speaking evaluations
   if (requiredFeature === 'speakingEvaluationsPerDay') {
     const dailyLimit = plan.limits.speakingEvaluationsPerDay;
-    const todayUsage = serverDb.getDailyUsage(userId).speakingEvaluations || 0;
+    const todayUsage = serverDb.getDailyUsage(userId, options?.dateStr).speakingEvaluations || 0;
     if (todayUsage >= dailyLimit) {
       return {
         hasAccess: false,
@@ -326,7 +386,7 @@ export function checkUserEntitlement(
   // Check daily rate limits for writing evaluations
   if (requiredFeature === 'writingEvaluationsPerDay') {
     const dailyLimit = plan.limits.writingEvaluationsPerDay;
-    const todayUsage = serverDb.getDailyUsage(userId).writingEvaluations || 0;
+    const todayUsage = serverDb.getDailyUsage(userId, options?.dateStr).writingEvaluations || 0;
     if (todayUsage >= dailyLimit) {
       return {
         hasAccess: false,

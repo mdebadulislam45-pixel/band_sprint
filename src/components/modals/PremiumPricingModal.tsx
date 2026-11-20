@@ -219,7 +219,7 @@ export const PremiumPricingModal: React.FC<PremiumPricingModalProps> = ({
     {
       icon: PenTool,
       title: 'Task 1 & Task 2 Writing AI Evaluator',
-      description: 'Deep Cambridge criteria scoring across Task Response, Coherence, Lexical Resource, and GRA.'
+      description: 'Deep Practice criteria scoring across Task Response, Coherence, Lexical Resource, and GRA.'
     },
     {
       icon: Award,
@@ -264,7 +264,7 @@ export const PremiumPricingModal: React.FC<PremiumPricingModalProps> = ({
             <div className="text-center space-y-2 max-w-lg mx-auto">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-bold font-mono">
                 <Crown className="w-3.5 h-3.5 text-amber-500" />
-                <span>IELTS SPRINT PREMIUM</span>
+                <span>BandSprint PREMIUM</span>
               </div>
 
               <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
@@ -272,7 +272,7 @@ export const PremiumPricingModal: React.FC<PremiumPricingModalProps> = ({
               </h2>
 
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                Full access to Cambridge AI Voice Examiner, unlimited speaking/writing diagnostics, and Band 9 model answer vaults.
+                Full access to Practice AI Voice Examiner, unlimited speaking/writing diagnostics, and Band 9 model answer vaults.
               </p>
             </div>
 

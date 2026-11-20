@@ -35,11 +35,13 @@ import {
   exportStudyPlanToICS
 } from '../../services/aiStudyPlanService';
 import { soundManager } from '../../utils/audioEffects';
+import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
 
 interface StudyPlanPageProps {
   onBack: () => void;
   onNavigateToModule: (module: string) => void;
   onShowToast: (msg: string) => void;
+  onOpenDiagnostic?: () => void;
 }
 
 const STORAGE_COMPLETED_DAYS = 'ielts_study_plan_completed_days_v2';
@@ -48,7 +50,8 @@ const STORAGE_COMPLETED_SUBTASKS = 'ielts_study_plan_completed_subtasks_v2';
 export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
   onBack,
   onNavigateToModule,
-  onShowToast
+  onShowToast,
+  onOpenDiagnostic
 }) => {
   // Navigation tabs: 'curriculum' (30-Day Master) | 'ai-generator' (Diagnostic Calibrator) | 'weekly' (Gantt Schedule)
   const [activeTab, setActiveTab] = useState<'curriculum' | 'ai-generator' | 'weekly'>('curriculum');
@@ -82,6 +85,17 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
   const [planConfig, setPlanConfig] = useState<StudyPlanConfig>(() => getSavedPlanConfig());
   const [customPlan, setCustomPlan] = useState<GeneratedCustomPlan | null>(() => getSavedStudyPlan());
   const [isGenerating, setIsGenerating] = useState(false);
+  const [diagnostic, setDiagnostic] = useState(() => loadDiagnosticResult());
+
+  useEffect(() => {
+    const refreshDiagnostic = () => setDiagnostic(loadDiagnosticResult());
+    window.addEventListener('bandsprint_cloud_sync_updated', refreshDiagnostic);
+    window.addEventListener('bandsprint_diagnostic_saved', refreshDiagnostic);
+    return () => {
+      window.removeEventListener('bandsprint_cloud_sync_updated', refreshDiagnostic);
+      window.removeEventListener('bandsprint_diagnostic_saved', refreshDiagnostic);
+    };
+  }, []);
 
   // Sync state to LocalStorage
   useEffect(() => {
@@ -178,7 +192,7 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
       onShowToast(`Custom AI Study Plan generated for Band ${planConfig.targetBand}!`);
       setActiveTab('curriculum');
     } catch {
-      onShowToast('Plan generation updated with standard Cambridge roadmap.');
+      onShowToast('Plan generation updated with standard Practice roadmap.');
     } finally {
       setIsGenerating(false);
     }
@@ -250,6 +264,32 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
         </div>
       </div>
 
+      {/* Diagnostic result banner — your plan is built from your real starting band */}
+      {diagnostic ? (
+        <div className="rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide">Built from your diagnostic test</div>
+            <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">
+              Starting band <strong>{diagnostic.scores.overall.toFixed(1)}</strong> · target Band {diagnostic.targetBand.toFixed(1)} · weakest skill:{' '}
+              <strong>{diagnostic.weakest === 'listening' ? 'Listening' : diagnostic.weakest === 'reading' ? 'Reading' : diagnostic.weakest === 'writing' ? 'Writing' : 'Speaking'}</strong> — this plan gives that skill extra time every week.
+              Taken {new Date(diagnostic.createdAt).toLocaleDateString()}.
+            </p>
+          </div>
+          {onOpenDiagnostic && (
+            <button type="button" onClick={onOpenDiagnostic} className="shrink-0 min-h-[44px] px-4 py-2.5 rounded-xl bg-[#0F4C45] text-white text-sm font-bold cursor-pointer">Retake diagnostic</button>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-2xl bg-white dark:bg-[#11201E] border border-slate-200 dark:border-[#1F8A70]/40 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <p className="text-sm text-slate-700 dark:text-slate-200">
+            <strong>No diagnostic yet.</strong> Take the 10-minute test and this plan will be rebuilt around your real starting band and weakest skill.
+          </p>
+          {onOpenDiagnostic && (
+            <button type="button" onClick={onOpenDiagnostic} className="shrink-0 min-h-[44px] px-4 py-2.5 rounded-xl bg-[#0F4C45] text-white text-sm font-bold cursor-pointer">Take the diagnostic</button>
+          )}
+        </div>
+      )}
+
       {/* Executive Hero Banner */}
       <div className="relative overflow-hidden bg-slate-900 text-white rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-xs">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -266,7 +306,7 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
             </h1>
 
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Engineered with Cambridge rubrics, balanced daily cognitive load, and distractor defense.
+              Engineered with Practice rubrics, balanced daily cognitive load, and distractor defense.
               Follow structured morning routines, evening drills, and automated Mistake Vault reviews.
             </p>
           </div>
@@ -615,7 +655,7 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs text-slate-700">
                     <div className="flex items-center gap-1.5 font-bold text-slate-900 uppercase font-mono">
                       <Award className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Cambridge Rubric Insight</span>
+                      <span>Practice Rubric Insight</span>
                     </div>
                     <p className="leading-relaxed font-medium">
                       {activeTask.examinerInsight}
@@ -691,7 +731,7 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
                 <option value={7.5}>Band 7.5 (Competitive Postgrad)</option>
                 <option value={8.0}>Band 8.0 (Very Good User)</option>
                 <option value={8.5}>Band 8.5 (Near Native Authority)</option>
-                <option value={9.0}>Band 9.0 (Expert Cambridge Native)</option>
+                <option value={9.0}>Band 9.0 (Expert Practice Native)</option>
               </select>
             </div>
 
@@ -794,7 +834,7 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
               {isGenerating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-slate-300" />
-                  <span>Synthesizing Cambridge Schedule...</span>
+                  <span>Synthesizing Practice Schedule...</span>
                 </>
               ) : (
                 <>
@@ -901,7 +941,7 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
                 week: 4,
                 phase: 'Phase 4: Full Exam Simulation',
                 days: 'Days 22–30',
-                focus: 'Full 2h 45m Cambridge Mocks + Mistake Vault Purge + Examiner Shadowing + Taper',
+                focus: 'Full 2h 45m Practice Mocks + Mistake Vault Purge + Examiner Shadowing + Taper',
                 milestone: 'Final Exam Readiness',
                 color: 'border-amber-200 bg-amber-50/30 text-amber-900'
               }

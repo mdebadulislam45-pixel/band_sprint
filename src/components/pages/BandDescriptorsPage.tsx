@@ -52,7 +52,7 @@ export const BandDescriptorsPage: React.FC<BandDescriptorsPageProps> = ({ onBack
       <div className="bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 text-white p-6 sm:p-7 rounded-3xl shadow-md border border-purple-800/40">
         <div className="flex flex-wrap items-center gap-2 mb-2">
           <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-mono font-bold uppercase tracking-wider border border-purple-400/30">
-            OFFICIAL IDP & BRITISH COUNCIL CRITERIA
+            OFFICIAL IDP & Coach CRITERIA
           </span>
           <span className="text-[11px] text-purple-200">
             Learn How Examiners Score

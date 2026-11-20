@@ -1,76 +1,298 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to verify authentication
-    function isAuthenticated() {
+    // 1. Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Reusable Hardened Primitives
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    // Helper function to verify user identity matches path
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == 'mdebadulislam45@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Validate UserProfile document fields and reasonable size bounds
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidStateId(stateId) {
+      return stateId in ['diagnostic', 'examSetup', 'spellingProgress'];
+    }
+
+    // 3. Entity Validation Blueprints (called on BOTH create and update)
     function isValidUserProfile(data, userId) {
-      return (!('uid' in data) || data.uid == userId)
-        && (!('email' in data) || (data.email is string && data.email.size() <= 254))
+      return data.keys().hasAll(['uid', 'email'])
+        && data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'photoURL',
+          'targetBand', 'testDate', 'streakDays', 'createdAt', 'updatedAt'
+        ])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.email is string && data.email.size() <= 254
         && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 120))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1024))
         && (!('targetBand' in data) || (data.targetBand is number && data.targetBand >= 0 && data.targetBand <= 9.0))
-        && (!('streakDays' in data) || (data.streakDays is number && data.streakDays >= 0));
+        && (!('testDate' in data) || (data.testDate is string && data.testDate.size() <= 32))
+        && (!('streakDays' in data) || (data.streakDays is number && data.streakDays >= 0 && data.streakDays <= 36500))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
-    // Validate MistakeVaultItem document fields
-    function isValidMistake(data, userId) {
-      return (!('userId' in data) || data.userId == userId)
-        && (!('item' in data) || (data.item is string && data.item.size() <= 2000))
-        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 5000));
+    function isValidMistake(data, userId, mistakeId) {
+      return data.keys().hasAll(['id', 'userId', 'module', 'item'])
+        && data.keys().hasOnly([
+          'id', 'userId', 'module', 'item', 'category', 'questionType',
+          'userAnswer', 'correctAnswer', 'notes', 'trapExplanationBn',
+          'sourceContext', 'mastered', 'repetition', 'intervalDays',
+          'easeFactor', 'nextReviewAt', 'lastReviewedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == mistakeId && isValidId(data.id)
+        && data.userId is string && data.userId == userId
+        && data.module in ['listening', 'reading', 'writing', 'speaking', 'vocab']
+        && data.item is string && data.item.size() >= 1 && data.item.size() <= 2000
+        && (!('category' in data) || (data.category is string && data.category.size() <= 120))
+        && (!('questionType' in data) || (data.questionType is string && data.questionType.size() <= 120))
+        && (!('userAnswer' in data) || (data.userAnswer is string && data.userAnswer.size() <= 2000))
+        && (!('correctAnswer' in data) || (data.correctAnswer is string && data.correctAnswer.size() <= 2000))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 5000))
+        && (!('trapExplanationBn' in data) || (data.trapExplanationBn is string && data.trapExplanationBn.size() <= 3000))
+        && (!('sourceContext' in data) || (data.sourceContext is string && data.sourceContext.size() <= 2000))
+        && (!('mastered' in data) || data.mastered is bool)
+        && (!('repetition' in data) || (data.repetition is number && data.repetition >= 0 && data.repetition <= 1000))
+        && (!('intervalDays' in data) || (data.intervalDays is number && data.intervalDays >= 0 && data.intervalDays <= 3650))
+        && (!('easeFactor' in data) || (data.easeFactor is number && data.easeFactor >= 1.0 && data.easeFactor <= 5.0))
+        && (!('nextReviewAt' in data) || data.nextReviewAt is number)
+        && (!('lastReviewedAt' in data) || data.lastReviewedAt is number)
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
-    // Validate TestSubmission document fields
-    function isValidSubmission(data, userId) {
-      return (!('userId' in data) || data.userId == userId)
-        && (!('bandScore' in data) || (data.bandScore is number && data.bandScore >= 0 && data.bandScore <= 9.0));
+    function isValidSubmission(data, userId, submissionId) {
+      return data.keys().hasAll(['id', 'userId', 'module', 'bandScore'])
+        && data.keys().hasOnly([
+          'id', 'userId', 'module', 'testId', 'bandScore',
+          'correctCount', 'totalQuestions', 'timeSpentSec', 'createdAt'
+        ])
+        && data.id is string && data.id == submissionId && isValidId(data.id)
+        && data.userId is string && data.userId == userId
+        && data.module in ['listening', 'reading', 'writing', 'speaking', 'full_mock']
+        && (!('testId' in data) || (data.testId is string && data.testId.size() <= 128))
+        && data.bandScore is number && data.bandScore >= 0 && data.bandScore <= 9.0
+        && (!('correctCount' in data) || (data.correctCount is number && data.correctCount >= 0 && data.correctCount <= 200))
+        && (!('totalQuestions' in data) || (data.totalQuestions is number && data.totalQuestions >= 0 && data.totalQuestions <= 200))
+        && (!('timeSpentSec' in data) || (data.timeSpentSec is number && data.timeSpentSec >= 0 && data.timeSpentSec <= 86400))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
     }
 
-    // Validate ChatSession document fields
-    function isValidChat(data, userId) {
-      return (!('userId' in data) || data.userId == userId)
-        && (!('userMessage' in data) || (data.userMessage is string && data.userMessage.size() <= 4000))
-        && (!('aiReply' in data) || (data.aiReply is string && data.aiReply.size() <= 8000));
+    function isValidChat(data, userId, chatId) {
+      return data.keys().hasAll(['id', 'userId', 'userMessage', 'aiReply'])
+        && data.keys().hasOnly([
+          'id', 'userId', 'persona', 'model', 'userMessage', 'aiReply', 'module', 'createdAt'
+        ])
+        && data.id is string && data.id == chatId && isValidId(data.id)
+        && data.userId is string && data.userId == userId
+        && (!('persona' in data) || (data.persona is string && data.persona.size() <= 120))
+        && (!('model' in data) || (data.model is string && data.model.size() <= 120))
+        && data.userMessage is string && data.userMessage.size() <= 4000
+        && data.aiReply is string && data.aiReply.size() <= 8000
+        && (!('module' in data) || (data.module is string && data.module.size() <= 64))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
     }
 
-    // Candidate user profile and subcollections
+    function isValidStudyStatePayload(kind, payload) {
+      return payload is map
+        && payload.keys().size() <= 20
+        && (
+          (kind == 'examSetup'
+            && payload.keys().hasOnly(['targetBand', 'examDate', 'examMode', 'mockSetId', 'scope'])
+            && (!('targetBand' in payload) || (payload.targetBand is number && payload.targetBand >= 4.0 && payload.targetBand <= 9.0))
+            && (!('examDate' in payload) || payload.examDate == null || (payload.examDate is string && payload.examDate.size() <= 32))
+            && (!('examMode' in payload) || payload.examMode in ['Academic', 'General Training'])
+            && (!('mockSetId' in payload) || (payload.mockSetId is string && payload.mockSetId.size() <= 64))
+            && (!('scope' in payload) || payload.scope in ['full', 'listening', 'reading', 'writing', 'speaking']))
+          || (kind == 'diagnostic'
+            && payload.keys().hasOnly([
+              'id', 'createdAt', 'targetBand', 'examDate', 'dailyMinutes',
+              'examType', 'scores', 'correct', 'weakest', 'writingWords', 'speakingRecorded'
+            ])
+            && (!('id' in payload) || (payload.id is string && payload.id.size() <= 128))
+            && (!('createdAt' in payload) || payload.createdAt is number)
+            && (!('targetBand' in payload) || (payload.targetBand is number && payload.targetBand >= 4.0 && payload.targetBand <= 9.0))
+            && (!('examDate' in payload) || (payload.examDate is string && payload.examDate.size() <= 32))
+            && (!('dailyMinutes' in payload) || (payload.dailyMinutes is number && payload.dailyMinutes >= 5 && payload.dailyMinutes <= 600))
+            && (!('examType' in payload) || payload.examType in ['Academic', 'General Training'])
+            && (!('scores' in payload) || payload.scores is map)
+            && (!('correct' in payload) || payload.correct is map)
+            && (!('weakest' in payload) || payload.weakest in ['listening', 'reading', 'writing', 'speaking'])
+            && (!('writingWords' in payload) || (payload.writingWords is number && payload.writingWords >= 0 && payload.writingWords <= 5000))
+            && (!('speakingRecorded' in payload) || payload.speakingRecorded is bool))
+          || (kind == 'spellingProgress'
+            && payload.keys().hasOnly(['correctCount', 'attemptedCount', 'masteredWords', 'wrongWords'])
+            && (!('correctCount' in payload) || (payload.correctCount is number && payload.correctCount >= 0 && payload.correctCount <= 100000))
+            && (!('attemptedCount' in payload) || (payload.attemptedCount is number && payload.attemptedCount >= 0 && payload.attemptedCount <= 100000))
+            && (!('masteredWords' in payload) || (payload.masteredWords is list && payload.masteredWords.size() <= 750 && (payload.masteredWords.size() == 0 || payload.masteredWords[0] is string)))
+            && (!('wrongWords' in payload) || (payload.wrongWords is list && payload.wrongWords.size() <= 750 && (payload.wrongWords.size() == 0 || payload.wrongWords[0] is string))))
+        );
+    }
+
+    function isValidStudyState(data, userId, stateId) {
+      return data.keys().hasAll(['id', 'userId', 'kind', 'payload', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'kind', 'payload', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == stateId && isValidStateId(data.id)
+        && data.userId is string && data.userId == userId
+        && data.kind is string && data.kind == stateId
+        && isValidStudyStatePayload(data.kind, data.payload)
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidVerifiedQuestion(data, questionSetId) {
+      return data.keys().hasAll([
+          'id', 'createdBy', 'module', 'examTrack', 'questionType', 'topic',
+          'targetBand', 'title', 'prompt', 'qualityScore', 'verificationStatus',
+          'reportCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'createdBy', 'module', 'examTrack', 'questionType', 'topic',
+          'targetBand', 'title', 'passageOrScript', 'prompt', 'modelAnswer',
+          'keyVocab', 'questions', 'chartData', 'qualityScore',
+          'verificationStatus', 'verificationNotes', 'reportCount',
+          'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == questionSetId && isValidId(data.id)
+        && data.createdBy is string && isValidId(data.createdBy)
+        && data.module in ['reading', 'listening', 'writing', 'speaking']
+        && data.examTrack in ['Academic', 'General Training']
+        && data.questionType is string && data.questionType.size() >= 1 && data.questionType.size() <= 120
+        && data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 120
+        && data.targetBand is number && data.targetBand >= 4.0 && data.targetBand <= 9.0
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 220
+        && (!('passageOrScript' in data) || (data.passageOrScript is string && data.passageOrScript.size() <= 12000))
+        && data.prompt is string && data.prompt.size() >= 1 && data.prompt.size() <= 3000
+        && (!('modelAnswer' in data) || (data.modelAnswer is string && data.modelAnswer.size() <= 8000))
+        && (!('keyVocab' in data) || (data.keyVocab is list && data.keyVocab.size() <= 15 && (data.keyVocab.size() == 0 || data.keyVocab[0] is string)))
+        && (!('questions' in data) || (data.questions is list && data.questions.size() <= 15 && (data.questions.size() == 0 || data.questions[0] is map)))
+        && (!('chartData' in data) || (data.chartData == null || (data.chartData is map && data.chartData.keys().size() <= 12)))
+        && data.qualityScore is number && data.qualityScore >= 0 && data.qualityScore <= 100
+        && data.verificationStatus == 'blind-verified'
+        && (!('verificationNotes' in data) || (data.verificationNotes is string && data.verificationNotes.size() <= 1000))
+        && data.reportCount is number && data.reportCount >= 0 && data.reportCount <= 10000
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    // 4. Candidate Private Profile & Subcollections
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create, update: if isOwner(userId) && isValidUserProfile(request.resource.data, userId);
-      allow delete: if isOwner(userId);
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId);
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt)
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'email', 'displayName', 'photoURL', 'targetBand', 'testDate', 'streakDays', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) && isValidId(userId);
 
-      // Candidate's private mistake vault
+      // Private Mistake Vault
       match /mistakes/{mistakeId} {
-        allow read: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidMistake(request.resource.data, userId);
-        allow delete: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(mistakeId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(mistakeId) && isValidMistake(incoming(), userId, mistakeId);
+        allow update: if isOwner(userId)
+          && isValidId(mistakeId)
+          && isValidMistake(incoming(), userId, mistakeId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'module', 'item', 'category', 'questionType', 'userAnswer',
+            'correctAnswer', 'notes', 'trapExplanationBn', 'sourceContext',
+            'mastered', 'repetition', 'intervalDays', 'easeFactor',
+            'nextReviewAt', 'lastReviewedAt', 'updatedAt'
+          ]);
+        allow delete: if isOwner(userId) && isValidId(mistakeId);
       }
 
-      // Candidate's test and practice submissions
+      // Test & Practice Submissions
       match /submissions/{submissionId} {
-        allow read: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidSubmission(request.resource.data, userId);
-        allow delete: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(submissionId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(submissionId) && isValidSubmission(incoming(), userId, submissionId);
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(submissionId);
       }
 
-      // Candidate's multi-turn AI chat and live voice transcripts
+      // Multi-Turn AI Tutor & Live Voice Transcripts
       match /chats/{chatId} {
-        allow read: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidChat(request.resource.data, userId);
-        allow delete: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(chatId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(chatId) && isValidChat(incoming(), userId, chatId);
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(chatId);
+      }
+
+      // Cross-Device Study State (Diagnostic, Exam Setup, Spelling Mastery)
+      match /studyState/{stateId} {
+        allow get: if isOwner(userId) && isValidStateId(stateId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidStateId(stateId) && isValidStudyState(incoming(), userId, stateId);
+        allow update: if isOwner(userId)
+          && isValidStateId(stateId)
+          && isValidStudyState(incoming(), userId, stateId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().kind == existing().kind
+          && (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt)
+          && incoming().diff(existing()).affectedKeys().hasOnly(['payload', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidStateId(stateId);
       }
     }
 
-    // Default deny all other paths
-    match /{document=**} {
-      allow read, write: if false;
+    // 5. Shared Blind-Verified IELTS Practice Question Sets (Zero PII)
+    match /verifiedQuestions/{questionSetId} {
+      allow get: if isSignedIn() && isValidId(questionSetId) && existing().verificationStatus == 'blind-verified';
+      allow list: if isSignedIn() && resource.data.verificationStatus == 'blind-verified';
+      allow create: if isSignedIn()
+        && isValidId(questionSetId)
+        && isValidVerifiedQuestion(incoming(), questionSetId)
+        && incoming().createdBy == request.auth.uid
+        && incoming().reportCount == 0;
+      allow update: if isSignedIn()
+        && isValidId(questionSetId)
+        && isValidVerifiedQuestion(incoming(), questionSetId)
+        && incoming().id == existing().id
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && (
+          isAdmin()
+          || (
+            incoming().diff(existing()).affectedKeys().hasOnly(['reportCount', 'updatedAt'])
+            && incoming().reportCount == existing().reportCount + 1
+          )
+        );
+      allow delete: if isSignedIn()
+        && isValidId(questionSetId)
+        && (existing().createdBy == request.auth.uid || isAdmin());
     }
   }
 }

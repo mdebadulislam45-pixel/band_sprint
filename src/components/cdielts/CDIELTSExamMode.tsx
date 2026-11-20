@@ -4,7 +4,6 @@ import {
   Flag,
   Highlighter,
   FileText,
-  ZoomIn,
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
@@ -12,25 +11,87 @@ import {
   X,
   Volume2,
   VolumeX,
-  MessageSquare,
   HelpCircle,
   StickyNote,
-  Play,
-  Square,
-  Award,
   BookOpen,
   PenTool,
-  Headphones
+  Headphones,
+  Maximize2,
+  Minimize2,
+  Mic,
+  Play,
+  Square,
+  RotateCcw,
+  Radio,
+  Sliders,
+  Sparkles,
+  ArrowRight
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { getCurrentUser, recordExamAttempt } from '../../utils/userStorage';
-import { MOCK_EXAM_SETS, MockExamSet, QuestionItem } from '../../data/mockExams';
-import { speakBritish, stopSpeech } from '../../utils/britishVoice';
+import { MOCK_EXAM_SETS, MockExamSet, QuestionItem, getExamListeningSection, ListeningSectionDetail } from '../../data/mockExams';
 import { audioManager } from '../../services/AudioManager';
-import { audioService, DialogueLine } from '../../services/audioService';
-import { addMistake } from '../../utils/vaultStorage';
-import { firebaseSyncService } from '../../services/firebaseSyncService';
+import { audioService } from '../../services/audioService';
 import { PostTestDiagnosticReport } from './PostTestDiagnosticReport';
+import {
+  loadExamSetup,
+  daysUntilExam,
+  formatExamDate,
+  correctAnswersNeeded,
+  type ExamSetup
+} from '../../services/examSetupService';
+import { useCDIELTSAutoSave } from '../../hooks/useCDIELTSAutoSave';
+import {
+  evaluateCDIELTSWritingSuite,
+  roundIELTSBand,
+  saveListeningAudioState,
+  loadListeningAudioState,
+  clearListeningAudioState,
+  PersistedListeningAudioState,
+  CDIELTS_PRE_READ_SECONDS,
+  CDIELTS_SECTION_REVIEW_SECONDS,
+  CDIELTS_FINAL_CHECK_SECONDS,
+  SPRINT_18_PART_AUDIO_SECONDS,
+  EXAM_SECTION_AUDIO_DURATIONS,
+  getExamSectionAudioDurations,
+  CDIELTS_LISTENING_EXACT_TOTAL_SECONDS,
+  CDIELTS_LISTENING_INITIAL_CLOCK_SECONDS,
+  CDIELTSListeningTimerState,
+  calculateListeningTotalDurationSec,
+  getCDIELTSSkillDurationSec,
+  calculateSynchronizedListeningRemainingSec,
+  createInitialListeningTimerState,
+  stepListeningPhaseState,
+  completeListeningSectionAudioState,
+  skipListeningPreReadState,
+  advanceListeningSectionState,
+  submitListeningExamOnce
+} from '../../utils/cdieltsEvaluationEngine';
+
+export {
+  CDIELTS_PRE_READ_SECONDS,
+  CDIELTS_SECTION_REVIEW_SECONDS,
+  CDIELTS_FINAL_CHECK_SECONDS,
+  SPRINT_18_PART_AUDIO_SECONDS,
+  CDIELTS_LISTENING_EXACT_TOTAL_SECONDS,
+  CDIELTS_LISTENING_INITIAL_CLOCK_SECONDS,
+  calculateListeningTotalDurationSec,
+  getCDIELTSSkillDurationSec,
+  calculateSynchronizedListeningRemainingSec,
+  createInitialListeningTimerState,
+  stepListeningPhaseState,
+  completeListeningSectionAudioState,
+  skipListeningPreReadState,
+  advanceListeningSectionState,
+  submitListeningExamOnce
+};
+import {
+  evaluateRawScoreDetailed
+} from '../../utils/ieltsBandConversion';
+import { isListeningAnswerCorrect } from '../../utils/listeningAnswerEvaluator';
+import { deriveActiveReadingHeading, extractActiveReadingPassage } from '../../utils/mockExamScoring';
+import { speakBritish, stopSpeech } from '../../utils/britishVoice';
+import { CDIELTSSVGMap, CDIELTSMatchingHeadingsPicker } from './CDIELTSInteractiveVisuals';
 
 interface NoteItem {
   id: string;
@@ -42,244 +103,256 @@ interface NoteItem {
 interface CDIELTSExamModeProps {
   onExit: () => void;
   onShowToast: (msg: string) => void;
+  candidateName?: string;
+  candidateId?: string;
+  initialSkill?: 'reading' | 'listening' | 'writing' | 'full_mock';
+  onNavigateToSpeaking?: () => void;
+  customPilotSet?: MockExamSet | null;
 }
 
-type ColorScheme = 'standard' | 'yellow-on-black' | 'cream';
-type ZoomLevel = '100%' | '125%' | '150%';
+export type ColorScheme = 'standard' | 'black-on-yellow' | 'yellow-on-black' | 'white-on-black';
+export type ZoomLevel = '100%' | '125%' | '150%';
+export type ListeningAudioPhase = 'pre_read' | 'playing' | 'section_check' | 'end_of_test_buffer' | 'completed';
 
 export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   onExit,
-  onShowToast
+  onShowToast,
+  candidateName: propCandidateName,
+  candidateId: propCandidateId,
+  initialSkill,
+  onNavigateToSpeaking,
+  customPilotSet
 }) => {
   const activeUser = getCurrentUser();
-  const candidateName = activeUser?.name || 'Candidate Student';
-  const candidateId = activeUser?.id ? activeUser.id.slice(-6).toUpperCase() : '894021';
+  const candidateName = propCandidateName || activeUser?.name || 'Candidate Student';
+  const candidateId = propCandidateId || (activeUser?.id ? activeUser.id.slice(-6).toUpperCase() : '482910');
 
-  // Load cached exam state from local storage if valid
+  // Exam Room setup (aim band / exam date / mode) chosen in ExamSetup.
+  // Read once on mount — the exam room is a fixed session, not a live form.
+  const [examSetup] = useState<ExamSetup>(() => loadExamSetup());
+  const [showBarnabyGuide, setShowBarnabyGuide] = useState(false);
+  const examDaysLeft = daysUntilExam(examSetup.examDate);
+
+  // Load cached session state (skip cached set/answers when launching an isolated customPilotSet)
   const cachedState = React.useMemo(() => {
+    if (customPilotSet) return null;
     try {
       const saved = localStorage.getItem('cdielts_session_data');
       if (saved) return JSON.parse(saved);
     } catch {
-      // ignore JSON parse errors
+      // ignore
     }
     return null;
-  }, []);
+  }, [customPilotSet]);
 
   // Practice Exam Set Selector
   const [selectedSetIdx, setSelectedSetIdx] = useState<number>(() => cachedState?.selectedSetIdx ?? 0);
-  const currentSet: MockExamSet = MOCK_EXAM_SETS[selectedSetIdx] || MOCK_EXAM_SETS[0];
+  const currentSet: MockExamSet = customPilotSet || MOCK_EXAM_SETS[selectedSetIdx] || MOCK_EXAM_SETS[0];
 
-  // Test State
-  const [activeSkill, setActiveSkill] = useState<'reading' | 'listening' | 'writing'>(() => cachedState?.activeSkill ?? 'reading');
+  // Resolve initial skill module from prop or cache
+  const resolveInitialSkill = (): 'reading' | 'listening' | 'writing' => {
+    if (initialSkill === 'listening' || initialSkill === 'full_mock') return 'listening';
+    if (initialSkill === 'writing') return 'writing';
+    if (initialSkill === 'reading') return 'reading';
+    return cachedState?.activeSkill ?? 'listening';
+  };
+
+  // Active Skill Module & Navigation
+  const [activeSkill, setActiveSkill] = useState<'reading' | 'listening' | 'writing'>(resolveInitialSkill);
   const [mobilePane, setMobilePane] = useState<'left' | 'right'>('left');
   const [activeQuestionIdx, setActiveQuestionIdx] = useState(0);
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<number>>(() => new Set(cachedState?.flaggedQuestions || []));
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>(() => cachedState?.userAnswers || {});
+  
+  // Writing Module State
   const [task1Essay, setTask1Essay] = useState<string>(() => cachedState?.task1Essay || '');
   const [task2Essay, setTask2Essay] = useState<string>(() => cachedState?.task2Essay || '');
   const [activeWritingTask, setActiveWritingTask] = useState<1 | 2>(2);
+  const [lastAutoSavedTime, setLastAutoSavedTime] = useState<string>('Just now');
 
-  const initialTimerSec = cachedState?.timeRemainingSec ?? 60 * 60;
+  // Exam Countdown Timer State (skill-aware: exam-specific Listening duration, 60m [3600s] for Reading/Writing)
+  const currentExamAudioDurations = getExamSectionAudioDurations(currentSet?.id);
+  const defaultSkillTimerSec = getCDIELTSSkillDurationSec(activeSkill, currentExamAudioDurations);
+  const initialTimerSec =
+    cachedState?.activeSkill === activeSkill &&
+    typeof cachedState?.timeRemainingSec === 'number' &&
+    cachedState.timeRemainingSec > 0 &&
+    cachedState.timeRemainingSec <= defaultSkillTimerSec
+      ? cachedState.timeRemainingSec
+      : defaultSkillTimerSec;
   const [timeRemainingSec, setTimeRemainingSec] = useState<number>(initialTimerSec);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
   const [isTimeHidden, setIsTimeHidden] = useState<boolean>(false);
-
-  // Target timestamp ref for unthrottled Date.now() timer countdown
+  const [isAudioNetworkStalled, setIsAudioNetworkStalled] = useState<boolean>(false);
   const endTimeRef = useRef<number>(Date.now() + initialTimerSec * 1000);
+  const hasSubmittedRef = useRef<boolean>(false);
 
-  // Session storage sync
+  // Audio Playback & Live Stream State
+  const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
+  const [hasTestedHeadset, setHasTestedHeadset] = useState<boolean>(false);
+  const [isSoundCheckPlaying, setIsSoundCheckPlaying] = useState<boolean>(false);
+  const [currentSpokenLine, setCurrentSpokenLine] = useState<string>('');
+
+  // Text Selection, Underlines & Margin Notes State
   const [highlights, setHighlights] = useState<string[]>(() => cachedState?.highlights || []);
+  const [underlines, setUnderlines] = useState<string[]>(() => (cachedState as any)?.underlines || []);
   const [selectionMenu, setSelectionMenu] = useState<{ x: number; y: number; text: string } | null>(null);
   const [notes, setNotes] = useState<NoteItem[]>(() => cachedState?.notes || []);
   const [newNoteInput, setNewNoteInput] = useState('');
   const [activeQuote, setActiveQuote] = useState('');
+  const leftPaneScrollRef = useRef<HTMLDivElement | null>(null);
+  const rightPaneScrollRef = useRef<HTMLDivElement | null>(null);
+  const passageScrollPosRef = useRef<number>(0);
+  const questionsScrollPosRef = useRef<number>(0);
 
-  // Save session state to localStorage on state changes
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'cdielts_session_data',
-        JSON.stringify({
-          selectedSetIdx,
-          activeSkill,
-          userAnswers,
-          flaggedQuestions: Array.from(flaggedQuestions),
-          task1Essay,
-          task2Essay,
-          timeRemainingSec,
-          highlights,
-          notes
-        })
-      );
-    } catch {
-      // ignore storage quota errors
-    }
-  }, [selectedSetIdx, activeSkill, userAnswers, flaggedQuestions, task1Essay, task2Essay, timeRemainingSec, highlights, notes]);
-
-  // Cached Listening Session Persistence
-  const cachedListeningState = React.useMemo(() => {
-    try {
-      const saved = localStorage.getItem('cdielts_listening_session');
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // ignore
-    }
-    return null;
-  }, []);
-
-  // Multi-Speaker Listening Engine State & Visualizer
-  const [listeningSection, setListeningSection] = useState<1 | 2 | 3 | 4>(() => cachedListeningState?.currentSection || 1);
-  const [useMp3Stream, setUseMp3Stream] = useState<boolean>(true);
-  const activeAudioSrc = currentSet.audioSrc
-    ? currentSet.audioSrc.replace(/Track%200\d/, `Track%200${listeningSection}`)
-    : `https://ia801503.us.archive.org/15/items/insightintoielts0000jake_o7m2/Track%200${listeningSection}.mp3`;
-  const [isListeningReadingPhase, setIsListeningReadingPhase] = useState<boolean>(() => cachedListeningState?.isReadingPhase ?? false);
-  const [listeningReadingSec, setListeningReadingSec] = useState<number>(30);
-  const [listeningPlaybackTimeSec, setListeningPlaybackTimeSec] = useState<number>(() => cachedListeningState?.playbackTimeSec || 0);
-  const [listeningVolume, setListeningVolume] = useState<number>(() => cachedListeningState?.volume ?? 0.85);
-  const [isListeningMuted, setIsListeningMuted] = useState<boolean>(() => cachedListeningState?.isMuted ?? false);
-  const [currentSpeaker, setCurrentSpeaker] = useState<{ name: string; role: string; accent: string; text: string } | null>(null);
-  
-  // Voice Persona Distinction & Captions
-  const [activeSpeakerPersona, setActiveSpeakerPersona] = useState<'persona_a' | 'persona_b' | 'narrator'>('persona_a');
-  const [showCaptions, setShowCaptions] = useState<boolean>(true);
-  const [currentSubtitleText, setCurrentSubtitleText] = useState<string>('');
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const lastPersonaRef = useRef<'persona_a' | 'persona_b' | 'narrator' | null>(null);
-
-  // System Voices Population State
-  const [systemVoices, setSystemVoices] = useState<{
-    voiceA: SpeechSynthesisVoice | null;
-    voiceB: SpeechSynthesisVoice | null;
-    isSingleVoice: boolean;
-  }>({ voiceA: null, voiceB: null, isSingleVoice: true });
-
-  // Register speechSynthesis.onvoiceschanged to populate system voices reliably
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    const populateVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      if (!voices || voices.length === 0) return;
-
-      // Persona A: UK Admissions Officer (en-GB / UK / British / Female)
-      const voiceA =
-        voices.find(
-          (v) =>
-            v.lang.toLowerCase().includes('en-gb') ||
-            v.name.toLowerCase().includes('uk') ||
-            v.name.toLowerCase().includes('british') ||
-            v.name.toLowerCase().includes('female') ||
-            v.name.toLowerCase().includes('charlotte') ||
-            v.name.toLowerCase().includes('serena') ||
-            v.name.toLowerCase().includes('hazel')
-        ) || voices[0];
-
-      // Persona B: Australian / International Candidate (en-AU / en-US / Male or distinct URI)
-      let voiceB = voices.find(
-        (v) =>
-          v.voiceURI !== voiceA.voiceURI &&
-          (v.lang.toLowerCase().includes('en-au') ||
-           v.lang.toLowerCase().includes('en-us') ||
-           v.name.toLowerCase().includes('australian') ||
-           v.name.toLowerCase().includes('male') ||
-           v.name.toLowerCase().includes('daniel') ||
-           v.name.toLowerCase().includes('george') ||
-           v.name.toLowerCase().includes('arthur'))
-      );
-
-      if (!voiceB) {
-        voiceB = voices.find((v) => v.voiceURI !== voiceA.voiceURI) || null;
-      }
-
-      const isSingleVoice = !voiceB || voiceA.voiceURI === voiceB.voiceURI;
-      setSystemVoices({ voiceA, voiceB: voiceB || voiceA, isSingleVoice });
-    };
-
-    populateVoices();
-    window.speechSynthesis.onvoiceschanged = populateVoices;
-
-    return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null;
-      }
-    };
-  }, []);
-
-  // Sync listening session state to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'cdielts_listening_session',
-        JSON.stringify({
-          currentSection: listeningSection,
-          playbackTimeSec: listeningPlaybackTimeSec,
-          isReadingPhase: isListeningReadingPhase,
-          volume: listeningVolume,
-          isMuted: isListeningMuted,
-          userAnswers
-        })
-      );
-    } catch {
-      // ignore
-    }
-  }, [listeningSection, listeningPlaybackTimeSec, isListeningReadingPhase, listeningVolume, isListeningMuted, userAnswers]);
-
-  // Audio playback state for Listening Lab
-  const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
-  const [hasPlayedListeningOnce, setHasPlayedListeningOnce] = useState<boolean>(false);
-
-  // Post-Submission Results Modal State
-  const [submittedResults, setSubmittedResults] = useState<{
-    listeningCorrect: number;
-    listeningTotal: number;
-    listeningBand: number;
-    readingCorrect: number;
-    readingTotal: number;
-    readingBand: number;
-    writingBand: number;
-    overallBand: number;
-    wordCount: number;
-  } | null>(null);
-
-  // Resizable Split-Screen Pane state (percentage width of left passage, default 50%)
-  const [leftPanePercent, setLeftPanePercent] = useState<number>(50);
-  const [isDraggingSplitter, setIsDraggingSplitter] = useState<boolean>(false);
-  const splitContainerRef = useRef<HTMLDivElement | null>(null);
-
-  // CD-IELTS Display Options
+  // CD-IELTS Display Options (Color Schemes & Typography Controls)
   const [colorScheme, setColorScheme] = useState<ColorScheme>('standard');
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('100%');
   const [showPalette, setShowPalette] = useState<boolean>(true);
   const [showNotesDrawer, setShowNotesDrawer] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
-  // Warnings tracking (10m and 5m warnings per official British Council rules)
+  // Warning Modals (10-minute and 5-minute mandatory alerts)
   const [hasShown10mWarning, setHasShown10mWarning] = useState(false);
   const [hasShown5mWarning, setHasShown5mWarning] = useState(false);
   const [warningModalText, setWarningModalText] = useState<string | null>(null);
 
-  // Listening transfer review phase (2 minutes at the end)
-  const [isListeningTransferPhase, setIsListeningTransferPhase] = useState(false);
-  const [listeningTransferSec, setListeningTransferSec] = useState(120);
+  // Strict Listening Audio State Machine (IndexedDB persisted)
+  const [listeningSection, setListeningSection] = useState<1 | 2 | 3 | 4>(1);
+  const [listeningVolume, setListeningVolume] = useState<number>(0.85);
+  const [isListeningMuted, setIsListeningMuted] = useState<boolean>(false);
+  const [listeningPhase, setListeningPhase] = useState<ListeningAudioPhase>('pre_read');
+  const [phaseCountdownSec, setPhaseCountdownSec] = useState<number>(35);
+  const [audioPlaybackSec, setAudioPlaybackSec] = useState<number>(0);
+  const [completedListeningParts, setCompletedListeningParts] = useState<Record<number, number>>({});
+  const [isListeningLocked, setIsListeningLocked] = useState<boolean>(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const hasHydratedAudioStateRef = useRef<boolean>(false);
+  const [listeningAudioError, setListeningAudioError] = useState<{
+    sectionNum: 1 | 2 | 3 | 4;
+    message: string;
+    isUnavailable: boolean;
+    canRetry?: boolean;
+  } | null>(null);
+  const activePlaybackTokenRef = useRef<number>(0);
+  const audioRetryCountRef = useRef<Record<number, number>>({});
 
-  const passageRef = useRef<HTMLDivElement | null>(null);
+  // Resizable Split Pane Width (percentage for left pane)
+  const [leftPanePercent, setLeftPanePercent] = useState<number>(50);
+  const [isDraggingSplitter, setIsDraggingSplitter] = useState<boolean>(false);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Global Audio Killswitch: kills lingering speech synthesis & pauses/resets HTML5 audio
-  const stopAllActiveAudio = useCallback(() => {
-    audioManager.killAllAudio(audioRef.current);
-  }, []);
+  // Post-Test Diagnostic Report State
+  const [submittedResults, setSubmittedResults] = useState<any | null>(null);
 
-  // Stop any playing speech and reset audio elements on unmount
+  // Hydrate Listening Audio State from IndexedDB on mount (prevents audio track restart on refresh)
   useEffect(() => {
+    let mounted = true;
+    loadListeningAudioState().then((saved) => {
+      if (!mounted || !saved) {
+        hasHydratedAudioStateRef.current = true;
+        return;
+      }
+      const validPart = ([1, 2, 3, 4].includes(saved.partIndex) ? saved.partIndex : 1) as 1 | 2 | 3 | 4;
+      setListeningSection(validPart);
+      // If a previous session left phase in 'playing' (where no audio element is actively playing on fresh mount)
+      // or 'completed', reset to 'pre_read' so the candidate is never stuck in a silent broadcast or locked test.
+      let hydratedPhase: ListeningAudioPhase = 'pre_read';
+      let hydratedCountdown = CDIELTS_PRE_READ_SECONDS;
+      let hydratedAudioPos = 0;
+      if (saved.phase === 'playing' || saved.phase === 'completed') {
+        setListeningPhase('pre_read');
+        setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
+        setAudioPlaybackSec(0);
+        setIsListeningLocked(false);
+      } else {
+        hydratedPhase = saved.phase;
+        hydratedCountdown = saved.phaseRemainingSeconds > 0 ? saved.phaseRemainingSeconds : CDIELTS_PRE_READ_SECONDS;
+        hydratedAudioPos = saved.audioPlaybackPositionSec || 0;
+        setListeningPhase(hydratedPhase);
+        setPhaseCountdownSec(hydratedCountdown);
+        setAudioPlaybackSec(hydratedAudioPos);
+      }
+      if (activeSkill === 'listening') {
+        const syncedSec = calculateSynchronizedListeningRemainingSec({
+          section: validPart,
+          phase: hydratedPhase,
+          phaseCountdownSec: hydratedCountdown,
+          audioPlaybackSec: hydratedAudioPos,
+          sectionAudioDurations: currentExamAudioDurations
+        });
+        setTimeRemainingSec(syncedSec);
+        endTimeRef.current = Date.now() + syncedSec * 1000;
+      }
+      setCompletedListeningParts(saved.completedParts || {});
+      hasHydratedAudioStateRef.current = true;
+    });
     return () => {
-      audioManager.killAllAudio(audioRef.current);
+      mounted = false;
     };
   }, []);
 
-  // Filter questions by skill or show all questions in current set
+  // Persist Listening Audio State to IndexedDB whenever section/phase/countdown updates
+  useEffect(() => {
+    if (!hasHydratedAudioStateRef.current || submittedResults) return;
+    const payload: PersistedListeningAudioState = {
+      partIndex: listeningSection,
+      phase: listeningPhase,
+      phaseRemainingSeconds: phaseCountdownSec,
+      audioPlaybackPositionSec: audioPlaybackSec,
+      completedParts: completedListeningParts,
+      updatedAt: Date.now()
+    };
+    saveListeningAudioState(payload);
+  }, [listeningSection, listeningPhase, phaseCountdownSec, audioPlaybackSec, completedListeningParts, submittedResults]);
+
+  // Hide the floating Barnaby bubble while the exam runs (the exam has its own Barnaby panel).
+  useEffect(() => {
+    window.dispatchEvent(new Event('barnaby-float-hide'));
+    return () => {
+      window.dispatchEvent(new Event('barnaby-float-show'));
+    };
+  }, []);
+
+  // 30-Second Background Auto-Save Hook (Preserves questions, essays, timer, and notes against accidental refreshes)
+  const { saveNow } = useCDIELTSAutoSave(
+    {
+      selectedSetIdx,
+      activeSkill,
+      userAnswers,
+      flaggedQuestions: Array.from(flaggedQuestions),
+      task1Essay,
+      task2Essay,
+      timeRemainingSec,
+      highlights,
+      underlines,
+      notes
+    },
+    {
+      intervalMs: 30000,
+      enabled: isTimerRunning && !submittedResults,
+      onAutoSaveSuccess: (timeFormatted) => {
+        setLastAutoSavedTime(timeFormatted);
+      }
+    }
+  );
+
+  // Global beforeunload Navigation Interceptor while exam timer is active
+  useEffect(() => {
+    if (!isTimerRunning || submittedResults) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      saveNow();
+      e.preventDefault();
+      e.returnValue = 'You have an exam session in progress. Leaving now will submit your current answers.';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isTimerRunning, submittedResults, saveNow]);
+
+  // Questions filtered by active module skill
   const skillQuestions: QuestionItem[] =
     activeSkill === 'listening'
       ? currentSet.questions.filter((q) => q.section === 'listening')
@@ -292,7 +365,721 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
 
   const activeQuestionId = activeQuestionObj?.id || 1;
 
-  // Alt+P (Previous) and Alt+N (Next) Keyboard Hotkey Navigation
+  // Keep endTimeRef synchronized when pausing/resuming or switching skills
+  useEffect(() => {
+    endTimeRef.current = Date.now() + timeRemainingSec * 1000;
+  }, [isAudioNetworkStalled, isTimerRunning, activeSkill]);
+
+  // Reading & Writing Wall-Clock Timer Countdown (Listening countdown is synchronized with the phase state machine below)
+  useEffect(() => {
+    if (activeSkill === 'listening') return;
+    if (!isTimerRunning || isAudioNetworkStalled) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const diffSec = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      setTimeRemainingSec(diffSec);
+
+      if (diffSec <= 0) {
+        setIsTimerRunning(false);
+        soundManager.playBeep(440, 0.4);
+        setWarningModalText('TIME EXPIRED: The official test duration has concluded. Please submit your responses.');
+      } else if (diffSec <= 600 && diffSec > 598 && !hasShown10mWarning) {
+        setHasShown10mWarning(true);
+        setIsTimeHidden(false);
+        soundManager.playBeep(520, 0.2);
+        setWarningModalText('10-MINUTE WARNING: 10 minutes remaining. Check all flagged questions before time expires.');
+      } else if (diffSec <= 300 && diffSec > 298 && !hasShown5mWarning) {
+        setHasShown5mWarning(true);
+        setIsTimeHidden(false);
+        soundManager.playBeep(580, 0.25);
+        setWarningModalText('5-MINUTE WARNING: 5 minutes remaining. No additional transfer time is provided.');
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [activeSkill, isTimerRunning, isAudioNetworkStalled, hasShown10mWarning, hasShown5mWarning]);
+
+  // Helper to extract authentic section dialogue - guarantees Sections 2-4 never fall back to Section 1 or paragraph fragments
+  const getSectionDialogueText = useCallback((sectionNum: 1 | 2 | 3 | 4): string => {
+    const sectionDetail = getExamListeningSection(currentSet, sectionNum);
+    if (!sectionDetail.isAvailable || !sectionDetail.script) {
+      return '';
+    }
+    const raw = sectionDetail.script.trim();
+    if (!raw) return '';
+
+    // getExamListeningSection returns an isolated section script; return it directly to avoid closing-sentence truncation
+    if (sectionDetail.sectionNumber === sectionNum && raw.length > 20) {
+      return raw;
+    }
+
+    const sectionRegex = new RegExp(`(?:Section|Part)\\s*${sectionNum}[.:]?[\\s\\S]*?(?=(?:Section|Part)\\s*${sectionNum + 1}|$|That is the end of (?:Section|Part) ${sectionNum})`, 'i');
+    const match = raw.match(sectionRegex);
+    if (match && match[0].trim().length > 30) {
+      return match[0].trim();
+    }
+    return raw;
+  }, [currentSet]);
+
+  // Audio Playback trigger using multi-speaker sequential dialogue and British RP voices
+  // Enforces failure safety: playback failure NEVER marks section completed or advances examination
+  const startListeningPlayback = useCallback((sectionNum: 1 | 2 | 3 | 4) => {
+    const playbackToken = ++activePlaybackTokenRef.current;
+    let hasCompletedOrFailed = false;
+
+    // Phase 1 Safety Check: Verify section availability in the practice exam
+    const secDetail = getExamListeningSection(currentSet, sectionNum);
+    if (!secDetail.isAvailable || !secDetail.script) {
+      setIsAudioPlaying(false);
+      setListeningAudioError({
+        sectionNum,
+        message: secDetail.missingReason || `Realistic listening recording for Section ${sectionNum} is not available in this practice set.`,
+        isUnavailable: true,
+        canRetry: false
+      });
+      setCurrentSpokenLine(`Section ${sectionNum} Audio Unavailable (Content Not in Practice Set)`);
+      return;
+    }
+
+    const sectionText = getSectionDialogueText(sectionNum);
+    if (!sectionText) {
+      setIsAudioPlaying(false);
+      setListeningAudioError({
+        sectionNum,
+        message: `Realistic listening dialogue for Section ${sectionNum} is unavailable in this practice set.`,
+        isUnavailable: true,
+        canRetry: false
+      });
+      setCurrentSpokenLine(`Section ${sectionNum} Audio Unavailable`);
+      return;
+    }
+
+    try {
+      audioService.unlockAudio();
+      stopSpeech();
+      setIsAudioPlaying(true);
+      setListeningAudioError(null);
+      soundManager.playBeep(620, 0.08);
+
+      let parsedDialogue = audioManager.parseMultiSpeakerScript(sectionText);
+
+      // Duplicate callback protection: ensure handleSectionAudioSuccess is called at most once
+      const handleSectionAudioSuccess = () => {
+        if (activePlaybackTokenRef.current !== playbackToken) return;
+        if (hasCompletedOrFailed) return;
+        const transitionRes = completeListeningSectionAudioState(
+          listeningTimerStateRef.current,
+          sectionNum,
+          Date.now()
+        );
+        if (!transitionRes.transitioned) return;
+        hasCompletedOrFailed = true;
+
+        listeningTimerStateRef.current = transitionRes.nextState;
+        setIsAudioPlaying(false);
+        setCompletedListeningParts(transitionRes.nextState.completedParts);
+        setAudioPlaybackSec(0);
+        setListeningPhase(transitionRes.nextState.phase);
+        setPhaseCountdownSec(transitionRes.nextState.phaseCountdownSec);
+        setTimeRemainingSec(transitionRes.nextState.timeRemainingSec);
+        soundManager.playBeep(520, 0.08);
+        onShowToast(`Section ${sectionNum} audio completed. You now have 60 seconds to check your answers.`);
+      };
+
+      // Playback failure safety: NEVER mark section completed on audio failure
+      const handleSectionAudioFailure = (errorMessage?: string) => {
+        if (activePlaybackTokenRef.current !== playbackToken) return;
+        if (hasCompletedOrFailed) return;
+        hasCompletedOrFailed = true;
+
+        setIsAudioPlaying(false);
+        const retryCount = audioRetryCountRef.current[sectionNum] || 0;
+        const canRetry = retryCount < 2;
+
+        setListeningAudioError({
+          sectionNum,
+          message: errorMessage || `Playback encountered an error during Section ${sectionNum}. You may retry or continue without audio.`,
+          isUnavailable: false,
+          canRetry
+        });
+        setCurrentSpokenLine(`Section ${sectionNum} Playback Interrupted`);
+        soundManager.playBeep(320, 0.15);
+      };
+
+      setCurrentSpokenLine(`Section ${sectionNum} Broadcast: ${currentSet.listeningTitle}`);
+
+      if (parsedDialogue.length < 2 && sectionText) {
+        const lines = sectionText.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 10);
+        if (lines.length >= 2) {
+          // Single-speaker monologue (e.g. Section 2 guide or Section 4 academic lecture)
+          const monologueFemale = sectionNum === 2;
+          parsedDialogue = lines.map((lineText) => ({
+            speakerId: monologueFemale ? 'speaker_05' : 'speaker_04',
+            speakerName: monologueFemale ? 'Dr. Clara Sterling' : 'Prof. Arthur Pendelton',
+            gender: monologueFemale ? ('female' as const) : ('male' as const),
+            text: lineText.trim(),
+            pauseAfterMs: 320
+          }));
+        }
+      }
+
+      if (parsedDialogue.length >= 2) {
+        const fullDialogue = [
+          {
+            speakerId: 'speaker_04',
+            speakerName: 'Announcer (Arthur)',
+            gender: 'male' as const,
+            text: `Section ${sectionNum}.`,
+            pauseAfterMs: 400
+          },
+          ...parsedDialogue
+        ];
+
+        audioService.playDialogueSequentially(fullDialogue, {
+          rate: 1.0,
+          onStart: () => {
+            if (activePlaybackTokenRef.current === playbackToken) {
+              setIsAudioPlaying(true);
+            }
+          },
+          onLineStart: (_index, line) => {
+            if (activePlaybackTokenRef.current === playbackToken) {
+              setIsAudioPlaying(true);
+              setCurrentSpokenLine(`${line.speakerName || 'Speaker'}: "${line.text}"`);
+            }
+          },
+          onComplete: handleSectionAudioSuccess,
+          onError: (err) => {
+            handleSectionAudioFailure(err?.message || 'Sequential dialogue stream error');
+          }
+        });
+        return;
+      }
+
+      const textToSpeak = sectionText.toLowerCase().includes(`section ${sectionNum}`)
+        ? sectionText
+        : `Section ${sectionNum}. ${sectionText}`;
+
+      audioService.speakText(textToSpeak, 'speaker_04', {
+        rate: 1.0,
+        gender: 'male',
+        onStart: () => {
+          if (activePlaybackTokenRef.current === playbackToken) {
+            setIsAudioPlaying(true);
+          }
+        },
+        onEnd: handleSectionAudioSuccess,
+        onError: (err) => {
+          // Fallback to browser Web Speech API British RP voice
+          speakBritish(textToSpeak, {
+            rate: 1.0,
+            onStart: () => {
+              if (activePlaybackTokenRef.current === playbackToken) {
+                setIsAudioPlaying(true);
+              }
+            },
+            onEnd: handleSectionAudioSuccess,
+            onError: (fallbackErr) => {
+              handleSectionAudioFailure(
+                (fallbackErr as any)?.message || err?.message || 'British speech synthesis error'
+              );
+            }
+          });
+        }
+      });
+    } catch (e: any) {
+      if (activePlaybackTokenRef.current === playbackToken) {
+        setIsAudioPlaying(false);
+        setListeningAudioError({
+          sectionNum,
+          message: e?.message || 'Could not start audio playback.',
+          isUnavailable: false,
+          canRetry: true
+        });
+      }
+    }
+  }, [getSectionDialogueText, currentSet, onShowToast]);
+
+  // Practice Sound Check Handler
+  const handleRunSoundCheck = useCallback(() => {
+    try {
+      audioService.unlockAudio();
+      stopSpeech();
+      setIsSoundCheckPlaying(true);
+      soundManager.playBeep(650, 0.04);
+      const testPrompt = "This is an audio check for your IELTS-style Listening practice test. If you can hear this clearly through your headphones, your audio is working.";
+      setCurrentSpokenLine("Sound Check Active: Verifying Practice Audio Stream");
+
+      let finished = false;
+      const handleCheckSuccess = () => {
+        if (finished) return;
+        finished = true;
+        setIsSoundCheckPlaying(false);
+        setHasTestedHeadset(true);
+        setCurrentSpokenLine("Sound Check Complete: Practice Audio Stream Verified");
+        onShowToast('✓ Headset sound check verified. Audio stream is functional.');
+      };
+
+      const handleCheckFailure = (reason: string) => {
+        if (finished) return;
+        finished = true;
+        stopSpeech();
+        setIsSoundCheckPlaying(false);
+        setHasTestedHeadset(false);
+        setCurrentSpokenLine(`Sound Check Failed: ${reason}`);
+        onShowToast(`⚠ ${reason}`);
+      };
+
+      const watchdog = window.setTimeout(() => {
+        handleCheckFailure('Sound check playback timed out. Please check your volume and try again.');
+      }, 10000);
+
+      speakBritish(testPrompt, {
+        speakerId: 'speaker_04',
+        gender: 'male',
+        rate: 1.0,
+        onStart: () => setIsSoundCheckPlaying(true),
+        onEnd: () => {
+          window.clearTimeout(watchdog);
+          handleCheckSuccess();
+        },
+        onError: () => {
+          window.clearTimeout(watchdog);
+          handleCheckFailure('Sound check audio playback failed or was blocked by your browser.');
+        }
+      });
+    } catch {
+      setIsSoundCheckPlaying(false);
+      setHasTestedHeadset(false);
+      onShowToast('⚠ Unable to start sound check audio playback.');
+    }
+  }, [onShowToast]);
+
+  // Skip Pre-Read Buffer and Start Audio Immediately
+  const handleSkipPreReadAndStartAudio = useCallback(() => {
+    const res = skipListeningPreReadState(listeningTimerStateRef.current);
+    if (!res.transitioned) return;
+    listeningTimerStateRef.current = res.nextState;
+    setListeningPhase(res.nextState.phase);
+    setPhaseCountdownSec(res.nextState.phaseCountdownSec);
+    setAudioPlaybackSec(0);
+    setTimeRemainingSec(res.nextState.timeRemainingSec);
+    startListeningPlayback(res.nextState.section);
+  }, [startListeningPlayback]);
+
+  // Advance Section Manually or from Timer
+  const handleAdvanceSection = useCallback(() => {
+    activePlaybackTokenRef.current += 1;
+    stopSpeech();
+    audioService.stop();
+    setIsAudioPlaying(false);
+    setListeningAudioError(null);
+    const res = advanceListeningSectionState(listeningTimerStateRef.current);
+    if (res.action === 'none') return;
+    listeningTimerStateRef.current = res.nextState;
+    setListeningSection(res.nextState.section);
+    setListeningPhase(res.nextState.phase);
+    setPhaseCountdownSec(res.nextState.phaseCountdownSec);
+    setAudioPlaybackSec(0);
+    setTimeRemainingSec(res.nextState.timeRemainingSec);
+    if (res.action === 'next_section_pre_read') {
+      soundManager.playBeep(580, 0.08);
+    } else if (res.action === 'start_final_check') {
+      soundManager.playBeep(660, 0.12);
+      onShowToast('End of Part 4: You have exactly 2 minutes to check your answers.');
+    }
+  }, [onShowToast]);
+
+  // Module Progression Handlers
+  const handleProceedToReading = useCallback(() => {
+    stopSpeech();
+    audioService.stop();
+    setIsAudioPlaying(false);
+    setActiveSkill('reading');
+    setActiveQuestionIdx(0);
+    setMobilePane('left');
+    const readingDur = getCDIELTSSkillDurationSec('reading');
+    setTimeRemainingSec(readingDur);
+    endTimeRef.current = Date.now() + readingDur * 1000;
+    soundManager.playSuccess();
+    onShowToast('Listening complete! Commencing 60-minute Academic Reading module.');
+  }, [onShowToast]);
+
+  const handleProceedToWriting = useCallback(() => {
+    stopSpeech();
+    audioService.stop();
+    setIsAudioPlaying(false);
+    setActiveSkill('writing');
+    setActiveWritingTask(1);
+    setMobilePane('left');
+    const writingDur = getCDIELTSSkillDurationSec('writing');
+    setTimeRemainingSec(writingDur);
+    endTimeRef.current = Date.now() + writingDur * 1000;
+    soundManager.playSuccess();
+    onShowToast('Reading complete! Commencing 60-minute Academic Writing module.');
+  }, [onShowToast]);
+
+  // Mobile Pane Switcher — on small screens both panes stay visible (stacked split),
+  // so these buttons are "jump to" shortcuts that scroll to the chosen pane.
+  const handleSwitchMobilePane = useCallback((target: 'left' | 'right') => {
+    setMobilePane(target);
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      const el = target === 'left' ? leftPaneScrollRef.current : rightPaneScrollRef.current;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
+  // Switch Module Tab in Workstation Bar
+  const handleSwitchModule = useCallback((skill: 'listening' | 'reading' | 'writing') => {
+    if (skill === activeSkill) return;
+    if (activeSkill === 'listening') {
+      activePlaybackTokenRef.current += 1;
+      stopSpeech();
+      audioService.stop();
+      setIsAudioPlaying(false);
+      setListeningAudioError(null);
+    }
+    setActiveSkill(skill);
+    setActiveQuestionIdx(0);
+    setMobilePane('left');
+    if (skill === 'listening') {
+      const synced = calculateSynchronizedListeningRemainingSec({
+        section: listeningSection,
+        phase: listeningPhase,
+        phaseCountdownSec,
+        audioPlaybackSec,
+        sectionAudioDurations: currentExamAudioDurations
+      });
+      setTimeRemainingSec(synced);
+      endTimeRef.current = Date.now() + synced * 1000;
+    } else {
+      const dur = getCDIELTSSkillDurationSec(skill);
+      setTimeRemainingSec(dur);
+      endTimeRef.current = Date.now() + dur * 1000;
+    }
+    soundManager.playBeep(600, 0.03);
+    onShowToast(`Active Module: IELTS ${skill.toUpperCase()}`);
+  }, [activeSkill, listeningSection, listeningPhase, phaseCountdownSec, audioPlaybackSec, onShowToast, currentExamAudioDurations]);
+
+  // Cleanup audio when switching or unmounting
+  useEffect(() => {
+    return () => {
+      activePlaybackTokenRef.current += 1;
+      stopSpeech();
+      audioService.stop();
+    };
+  }, []);
+
+  // Android Browser Interruption & Background Tab Visibility Guard
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (isAudioPlaying) {
+          activePlaybackTokenRef.current += 1;
+          stopSpeech();
+          audioService.stop();
+          setIsAudioPlaying(false);
+          setListeningAudioError({
+            sectionNum: listeningSection,
+            message: 'Audio playback was paused because the examination tab was minimized or hidden.',
+            isUnavailable: false,
+            canRetry: true
+          });
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isAudioPlaying, listeningSection]);
+
+  // Live refs for countdown interval so closure never reads stale audio/error/phase state or resets the 1s tick
+  const isAudioPlayingRef = useRef(isAudioPlaying);
+  isAudioPlayingRef.current = isAudioPlaying;
+  const listeningAudioErrorRef = useRef(listeningAudioError);
+  listeningAudioErrorRef.current = listeningAudioError;
+  const listeningTimerStateRef = useRef<CDIELTSListeningTimerState>({
+    section: listeningSection,
+    phase: listeningPhase,
+    phaseCountdownSec,
+    audioPlaybackSec,
+    timeRemainingSec,
+    completedParts: completedListeningParts,
+    isListeningLocked,
+    hasSubmitted: hasSubmittedRef.current,
+    submissionCount: hasSubmittedRef.current ? 1 : 0,
+    sectionAudioDurations: currentExamAudioDurations
+  });
+  listeningTimerStateRef.current = {
+    section: listeningSection,
+    phase: listeningPhase,
+    phaseCountdownSec,
+    audioPlaybackSec,
+    timeRemainingSec,
+    completedParts: completedListeningParts,
+    isListeningLocked,
+    hasSubmitted: hasSubmittedRef.current,
+    submissionCount: hasSubmittedRef.current ? 1 : 0,
+    sectionAudioDurations: currentExamAudioDurations
+  };
+
+  // Strict Listening Audio Lifecycle State Machine (Pre-read 35s -> Event-Driven Complete Audio -> Check-time 60s -> End-of-Test 120s Buffer)
+  useEffect(() => {
+    if (activeSkill !== 'listening' || !isTimerRunning || submittedResults || isAudioNetworkStalled) return;
+    if (listeningPhase === 'completed') return;
+
+    const tick = setInterval(() => {
+      const currentState = listeningTimerStateRef.current;
+      if (currentState.phase === 'completed') return;
+
+      const svcState = audioService.getState();
+      const isAudioActiveOrLoading =
+        Boolean(isAudioPlayingRef.current) || Boolean(svcState.isPlaying) || Boolean(svcState.isLoading);
+      const hasAudioError = Boolean(listeningAudioErrorRef.current);
+
+      const stepRes = stepListeningPhaseState(currentState, {
+        isAudioActiveOrLoading,
+        hasAudioError
+      });
+      const next = stepRes.nextState;
+      listeningTimerStateRef.current = next;
+
+      setListeningSection(next.section);
+      setListeningPhase(next.phase);
+      setPhaseCountdownSec(next.phaseCountdownSec);
+      setAudioPlaybackSec(next.audioPlaybackSec);
+      setTimeRemainingSec(next.timeRemainingSec);
+      endTimeRef.current = Date.now() + next.timeRemainingSec * 1000;
+
+      if (next.timeRemainingSec === 600 && !hasShown10mWarning) {
+        setHasShown10mWarning(true);
+        setIsTimeHidden(false);
+        soundManager.playBeep(520, 0.2);
+        setWarningModalText('10-MINUTE WARNING: 10 minutes remaining. Check all flagged questions before time expires.');
+      } else if (next.timeRemainingSec === 300 && !hasShown5mWarning) {
+        setHasShown5mWarning(true);
+        setIsTimeHidden(false);
+        soundManager.playBeep(580, 0.25);
+        setWarningModalText('5-MINUTE WARNING: 5 minutes remaining. No additional transfer time is provided.');
+      }
+
+      if (stepRes.action === 'start_audio') {
+        startListeningPlayback(stepRes.section);
+      } else if (stepRes.action === 'next_section_pre_read') {
+        soundManager.playBeep(580, 0.08);
+      } else if (stepRes.action === 'start_final_check') {
+        soundManager.playBeep(660, 0.12);
+        onShowToast('End of Part 4: You now have exactly 2 minutes to check your answers.');
+      } else if (stepRes.action === 'complete_and_submit') {
+        setIsListeningLocked(true);
+        setIsTimerRunning(false);
+        soundManager.playBeep(440, 0.4);
+        onShowToast('Listening test completed. Answers are now locked.');
+      }
+    }, 1000);
+
+    return () => clearInterval(tick);
+  }, [
+    activeSkill,
+    isTimerRunning,
+    submittedResults,
+    isAudioNetworkStalled,
+    listeningPhase,
+    hasShown10mWarning,
+    hasShown5mWarning,
+    startListeningPlayback,
+    onShowToast
+  ]);
+
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const toggleFlag = useCallback((qId: number) => {
+    let willBeFlagged = false;
+    setFlaggedQuestions((prev) => {
+      const next = new Set(prev);
+      if (next.has(qId)) {
+        next.delete(qId);
+        willBeFlagged = false;
+      } else {
+        next.add(qId);
+        willBeFlagged = true;
+      }
+      return next;
+    });
+    setTimeout(() => {
+      onShowToast(willBeFlagged ? `Question ${qId} flagged for review` : `Question ${qId} unflagged`);
+    }, 0);
+    soundManager.playBeep(640, 0.03);
+  }, [onShowToast]);
+
+  const toggleHighlight = (text: string) => {
+    let isRemoved = false;
+    setHighlights((prev) => {
+      if (prev.includes(text)) {
+        isRemoved = true;
+        return prev.filter((h) => h !== text);
+      } else {
+        isRemoved = false;
+        return [...prev, text];
+      }
+    });
+    setSelectionMenu(null);
+    setTimeout(() => {
+      onShowToast(isRemoved ? 'Highlight removed' : 'Text highlighted in yellow');
+    }, 0);
+    soundManager.playBeep(680, 0.03);
+  };
+
+  const toggleUnderline = (text: string) => {
+    let isRemoved = false;
+    setUnderlines((prev) => {
+      if (prev.includes(text)) {
+        isRemoved = true;
+        return prev.filter((u) => u !== text);
+      } else {
+        isRemoved = false;
+        return [...prev, text];
+      }
+    });
+    setSelectionMenu(null);
+    setTimeout(() => {
+      onShowToast(isRemoved ? 'Underline removed' : 'Text underlined');
+    }, 0);
+    soundManager.playBeep(670, 0.03);
+  };
+
+  const handleTextSelection = (e: React.MouseEvent | React.TouchEvent) => {
+    if (typeof window === 'undefined') return;
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length >= 3) {
+      const text = selection.toString().trim();
+      try {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        setSelectionMenu({
+          x: rect.left + rect.width / 2,
+          y: Math.max(10, rect.top - 8),
+          text
+        });
+        setActiveQuote(text);
+      } catch {
+        setActiveQuote(text);
+      }
+    } else {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.selection-tooltip-menu')) {
+        setSelectionMenu(null);
+      }
+    }
+  };
+
+  const renderParagraphWithHighlights = (paragraph: string) => {
+    const hasHighlights = highlights && highlights.length > 0;
+    const hasUnderlines = underlines && underlines.length > 0;
+    if (!hasHighlights && !hasUnderlines) return paragraph;
+
+    type TextChunk = { text: string; isHighlight?: boolean; isUnderline?: boolean };
+    let parts: TextChunk[] = [{ text: paragraph }];
+
+    // Apply Highlights
+    if (hasHighlights) {
+      const activeHighlights = highlights
+        .filter((h) => h && paragraph.includes(h))
+        .sort((a, b) => b.length - a.length);
+
+      activeHighlights.forEach((hl) => {
+        const nextParts: TextChunk[] = [];
+        parts.forEach((p) => {
+          if (p.isHighlight) {
+            nextParts.push(p);
+          } else {
+            const chunks = p.text.split(hl);
+            chunks.forEach((chunk, idx) => {
+              if (chunk) nextParts.push({ text: chunk, isUnderline: p.isUnderline });
+              if (idx < chunks.length - 1) {
+                nextParts.push({ text: hl, isHighlight: true, isUnderline: p.isUnderline });
+              }
+            });
+          }
+        });
+        parts = nextParts;
+      });
+    }
+
+    // Apply Underlines
+    if (hasUnderlines) {
+      const activeUnderlines = underlines
+        .filter((u) => u && paragraph.includes(u))
+        .sort((a, b) => b.length - a.length);
+
+      activeUnderlines.forEach((u) => {
+        const nextParts: TextChunk[] = [];
+        parts.forEach((p) => {
+          if (p.isUnderline) {
+            nextParts.push(p);
+          } else {
+            const chunks = p.text.split(u);
+            chunks.forEach((chunk, idx) => {
+              if (chunk) nextParts.push({ text: chunk, isHighlight: p.isHighlight });
+              if (idx < chunks.length - 1) {
+                nextParts.push({ text: u, isHighlight: p.isHighlight, isUnderline: true });
+              }
+            });
+          }
+        });
+        parts = nextParts;
+      });
+    }
+
+    return parts.map((part, idx) => {
+      let className = '';
+      if (part.isHighlight && part.isUnderline) {
+        className = 'bg-[#FFEB3B] text-black underline decoration-2 decoration-[#002F6C] font-semibold cursor-pointer px-1 py-0.5';
+      } else if (part.isHighlight) {
+        className = 'bg-[#FFEB3B] text-black rounded-none px-1 py-0.5 font-medium cursor-pointer';
+      } else if (part.isUnderline) {
+        className = 'underline decoration-2 decoration-[#002F6C] text-[#0F172A] font-semibold cursor-pointer';
+      }
+
+      if (className) {
+        return (
+          <span
+            key={idx}
+            className={className}
+            onClick={() => {
+              if (part.isHighlight) toggleHighlight(part.text);
+              else if (part.isUnderline) toggleUnderline(part.text);
+            }}
+            title="Click to remove highlight/underline"
+          >
+            {part.text}
+          </span>
+        );
+      }
+      return <span key={idx}>{part.text}</span>;
+    });
+  };
+
+  const handleAddNote = () => {
+    if (!newNoteInput.trim()) return;
+    const item: NoteItem = {
+      id: 'note_' + Date.now(),
+      text: newNoteInput.trim(),
+      selectedQuote: activeQuote,
+      timestamp: formatTimer(timeRemainingSec)
+    };
+    setNotes((prev) => [item, ...prev]);
+    setNewNoteInput('');
+    setActiveQuote('');
+    soundManager.playSuccess();
+    onShowToast('Note saved to Margin Notes');
+  };
+
+  // Official CD-IELTS Keyboard Navigation:
+  // Alt+N (Next), Alt+P (Previous), Alt+R (Toggle Review Flag), Alt+V (Toggle Margin Notes & Highlighter Panel)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === 'p' || e.key === 'P')) {
@@ -303,11 +1090,18 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         e.preventDefault();
         setActiveQuestionIdx((prev) => Math.min(skillQuestions.length - 1, prev + 1));
         soundManager.playBeep(520, 0.03);
+      } else if (e.altKey && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        toggleFlag(activeQuestionId);
+      } else if (e.altKey && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        setShowNotesDrawer((prev) => !prev);
+        soundManager.playBeep(560, 0.03);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [skillQuestions.length]);
+  }, [skillQuestions.length, activeQuestionId, toggleFlag]);
 
   // Split-Screen Drag Handlers
   const handleSplitterMouseDown = useCallback((e: React.MouseEvent) => {
@@ -342,1640 +1136,1434 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     };
   }, [isDraggingSplitter]);
 
-  // Unthrottled Timer Countdown using Date.now() timestamp differentials
-  useEffect(() => {
-    if (!isTimerRunning) return;
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const diffSec = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
-      setTimeRemainingSec(diffSec);
-
-      if (diffSec <= 0) {
-        setIsTimerRunning(false);
-        soundManager.playBeep(440, 0.4);
-        setWarningModalText('TIME EXPIRED: The test duration has concluded. Please submit your responses for grading.');
-      } else if (diffSec <= 600 && diffSec > 598 && !hasShown10mWarning) {
-        setHasShown10mWarning(true);
-        setIsTimeHidden(false);
-        soundManager.playBeep(520, 0.2);
-        setWarningModalText('10-MINUTE WARNING: You have 10 minutes remaining. Check all flagged questions before time expires.');
-      } else if (diffSec <= 300 && diffSec > 298 && !hasShown5mWarning) {
-        setHasShown5mWarning(true);
-        setIsTimeHidden(false);
-        soundManager.playBeep(580, 0.25);
-        setWarningModalText('5-MINUTE WARNING: You have 5 minutes remaining. No extra transfer time is provided in Computer-Delivered Reading.');
-      }
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [isTimerRunning, hasShown10mWarning, hasShown5mWarning]);
-
-  // Listening 2-minute transfer review countdown
-  useEffect(() => {
-    let interval: any = null;
-    if (isListeningTransferPhase && listeningTransferSec > 0) {
-      interval = setInterval(() => {
-        setListeningTransferSec((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setIsListeningTransferPhase(false);
-            soundManager.playBeep(440, 0.4);
-            setWarningModalText('2-MINUTE CHECK CONCLUDED: Please submit your test.');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isListeningTransferPhase, listeningTransferSec]);
-
-  const formatTimer = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const toggleFlag = (qId: number) => {
-    setFlaggedQuestions((prev) => {
-      const next = new Set(prev);
-      if (next.has(qId)) {
-        next.delete(qId);
-        onShowToast(`Question ${qId} unflagged`);
-      } else {
-        next.add(qId);
-        onShowToast(`Question ${qId} flagged for review`);
-      }
-      return next;
-    });
-    soundManager.playBeep(640, 0.03);
-  };
-
-  const toggleHighlight = (text: string) => {
-    setHighlights((prev) => {
-      if (prev.includes(text)) {
-        onShowToast('Highlight removed');
-        return prev.filter((h) => h !== text);
-      } else {
-        onShowToast('Highlighted selection in yellow');
-        soundManager.playBeep(680, 0.03);
-        return [...prev, text];
-      }
-    });
-    setSelectionMenu(null);
-  };
-
-  const handleTextSelection = (e: React.MouseEvent) => {
-    if (typeof window === 'undefined') return;
-    const selection = window.getSelection();
-    if (selection && selection.toString().trim().length >= 3) {
-      const text = selection.toString().trim();
-      try {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        setSelectionMenu({
-          x: rect.left + rect.width / 2,
-          y: Math.max(10, rect.top - 8),
-          text
-        });
-        setActiveQuote(text);
-      } catch {
-        setActiveQuote(text);
-      }
-    } else {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.selection-tooltip-menu')) {
-        setSelectionMenu(null);
-      }
-    }
-  };
-
-  const renderParagraphWithHighlights = (paragraph: string) => {
-    if (!highlights || highlights.length === 0) return paragraph;
-    const activeHighlights = highlights
-      .filter((h) => h && paragraph.includes(h))
-      .sort((a, b) => b.length - a.length);
-    if (activeHighlights.length === 0) return paragraph;
-
-    let parts: { text: string; isHighlight: boolean }[] = [{ text: paragraph, isHighlight: false }];
-
-    activeHighlights.forEach((hl) => {
-      const nextParts: typeof parts = [];
-      parts.forEach((p) => {
-        if (p.isHighlight) {
-          nextParts.push(p);
-        } else {
-          const chunks = p.text.split(hl);
-          chunks.forEach((chunk, idx) => {
-            if (chunk) nextParts.push({ text: chunk, isHighlight: false });
-            if (idx < chunks.length - 1) {
-              nextParts.push({ text: hl, isHighlight: true });
-            }
-          });
-        }
-      });
-      parts = nextParts;
-    });
-
-    return parts.map((part, idx) =>
-      part.isHighlight ? (
-        <mark
-          key={idx}
-          onClick={() => toggleHighlight(part.text)}
-          className="bg-yellow-200 dark:bg-yellow-800/80 text-slate-900 dark:text-yellow-100 rounded-xs px-1 py-0.5 font-medium cursor-pointer shadow-2xs hover:bg-yellow-300 dark:hover:bg-yellow-700 transition"
-          title="Click to remove highlight"
-        >
-          {part.text}
-        </mark>
-      ) : (
-        <span key={idx}>{part.text}</span>
-      )
-    );
-  };
-
-  const handleAddNote = () => {
-    if (!newNoteInput.trim()) return;
-    const item: NoteItem = {
-      id: 'note_' + Date.now(),
-      text: newNoteInput.trim(),
-      selectedQuote: activeQuote,
-      timestamp: formatTimer(timeRemainingSec)
-    };
-    setNotes((prev) => [item, ...prev]);
-    setNewNoteInput('');
-    setActiveQuote('');
-    soundManager.playSuccess();
-    onShowToast('Note saved to candidate scratchpad');
-  };
-
-  // 30-Second Silent Reading Preview Timer Effect
-  useEffect(() => {
-    let interval: any = null;
-    if (isListeningReadingPhase && listeningReadingSec > 0) {
-      interval = setInterval(() => {
-        setListeningReadingSec((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setIsListeningReadingPhase(false);
-            handleStartMultiSpeakerAudio();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isListeningReadingPhase, listeningReadingSec]);
-
-  // Speaker Profiles Map for Multi-Character IELTS Listening
-  const LISTENING_SPEAKERS: Record<string, { name: string; role: string; accent: string; avatarColor: string; persona: 'persona_a' | 'persona_b' }> = {
-    'Admissions Officer': {
-      name: 'Arthur Davies',
-      role: 'University Admissions Officer',
-      accent: 'British RP (UK)',
-      avatarColor: 'bg-blue-600',
-      persona: 'persona_a'
-    },
-    'Liam': {
-      name: 'Liam Henderson',
-      role: 'Postgraduate Candidate',
-      accent: 'Australian (AU)',
-      avatarColor: 'bg-emerald-600',
-      persona: 'persona_b'
-    },
-    'George Higgins': {
-      name: 'George Higgins',
-      role: 'Community Arts Coordinator',
-      accent: 'British RP (UK)',
-      avatarColor: 'bg-blue-600',
-      persona: 'persona_a'
-    },
-    'Beatrice': {
-      name: 'Beatrice Kensington',
-      role: 'Festival Visitor',
-      accent: 'Scottish (UK)',
-      avatarColor: 'bg-emerald-600',
-      persona: 'persona_b'
-    },
-    'Professor': {
-      name: 'Dr. Aris Thorne',
-      role: 'Senior Academic Lecturer',
-      accent: 'British Academic (UK)',
-      avatarColor: 'bg-indigo-600',
-      persona: 'persona_a'
-    },
-    'Sarah': {
-      name: 'Sarah Jenkins',
-      role: 'Student Researcher',
-      accent: 'North American (US)',
-      avatarColor: 'bg-rose-600',
-      persona: 'persona_b'
-    }
-  };
-
-  const parseScriptLines = (script: string) => {
-    const lines = script.split('\n').map((l) => l.trim()).filter(Boolean);
-    const result: { speakerKey: string; speakerName: string; text: string; role: string; accent: string; persona: 'persona_a' | 'persona_b' }[] = [];
-
-    lines.forEach((line) => {
-      const match = line.match(/^([A-Za-z0-9\s]+):\s*"(.*)"$/) || line.match(/^([A-Za-z0-9\s]+):\s*(.*)$/);
-      if (match) {
-        const name = match[1].trim();
-        const text = match[2].trim().replace(/^"/, '').replace(/"$/, '');
-        const profile = LISTENING_SPEAKERS[name] || {
-          name,
-          role: 'Examiner Speaker',
-          accent: 'British RP (UK)',
-          avatarColor: 'bg-slate-600',
-          persona: name === 'Liam' || name === 'Beatrice' || name === 'Sarah' ? 'persona_b' : 'persona_a'
-        };
-        result.push({
-          speakerKey: name,
-          speakerName: profile.name,
-          role: profile.role,
-          accent: profile.accent,
-          persona: profile.persona,
-          text
-        });
-      } else {
-        result.push({
-          speakerKey: 'Narrator',
-          speakerName: 'Cambridge Voiceover',
-          role: 'Official Audio Guidance',
-          accent: 'Standard British (UK)',
-          persona: 'persona_a',
-          text: line
-        });
-      }
-    });
-    return result;
-  };
-
-  const startListeningSectionWithPreview = (sec: 1 | 2 | 3 | 4) => {
-    stopAllActiveAudio();
-    setIsAudioPlaying(false);
-    setListeningSection(sec);
-    setIsListeningReadingPhase(true);
-    setListeningReadingSec(30);
-    soundManager.playBeep(520, 0.04);
-    onShowToast(`Section ${sec}: 30-second silent question preview started`);
-  };
-
-  const handleStartMultiSpeakerAudio = async () => {
-    if (isAudioPlaying) {
-      stopAllActiveAudio();
-      setIsAudioPlaying(false);
-      return;
-    }
-
-    stopAllActiveAudio();
-
-    // Direct Real MP3 Audio Stream Playback (with studio engine fallback if stream is blocked/unsupported)
-    if (activeAudioSrc && useMp3Stream) {
-      if (audioRef.current) {
-        audioRef.current.volume = isListeningMuted ? 0 : listeningVolume;
-        try {
-          await audioRef.current.play();
-          setIsAudioPlaying(true);
-          setHasPlayedListeningOnce(true);
-          setIsListeningReadingPhase(false);
-          onShowToast(`Playing authentic Cambridge MP3 audio stream (Section ${listeningSection})...`);
-          return;
-        } catch (err) {
-          console.warn('Audio stream playback error, switching to studio engine:', err);
-          setUseMp3Stream(false);
-        }
-      }
-    }
-
-    setIsAudioPlaying(true);
-    setHasPlayedListeningOnce(true);
-    setIsListeningReadingPhase(false);
-
-    const parsedLines = parseScriptLines(currentSet.listeningScript);
-
-    // Map parsed script turns to rich DialogueLine objects for studio-grade neural streaming
-    const dialogueLines: DialogueLine[] = parsedLines.map((line) => {
-      let speakerId = 'speaker_04'; // Default Arthur UK RP Male
-      const nameLower = line.speakerKey.toLowerCase();
-      if (nameLower.includes('admissions') || nameLower.includes('george') || nameLower.includes('arthur')) {
-        speakerId = 'speaker_04'; // Arthur UK RP Baritone
-      } else if (nameLower.includes('professor') || nameLower.includes('thorne')) {
-        speakerId = 'speaker_03'; // Dr Sterling
-      } else if (nameLower.includes('liam') || nameLower.includes('william')) {
-        speakerId = 'speaker_06'; // William (AU Male)
-      } else if (nameLower.includes('beatrice') || nameLower.includes('charlotte')) {
-        speakerId = 'speaker_05'; // Charlotte (UK RP Female)
-      } else if (nameLower.includes('sarah') || nameLower.includes('jenny')) {
-        speakerId = 'speaker_10'; // Jenny (US Female)
-      } else if (line.persona === 'persona_b') {
-        speakerId = 'speaker_05';
-      }
-
-      return {
-        speakerId,
-        speakerName: line.speakerName,
-        speaker: line.speakerName,
-        gender: line.persona === 'persona_b' ? 'female' : 'male',
-        accent: line.accent,
-        text: line.text,
-        pauseAfterMs: line.persona === 'persona_b' ? 380 : 250
-      };
-    });
-
-    try {
-      await audioService.playDialogueSequentially(dialogueLines, {
-        examId: currentSet.id,
-        onLineStart: (idx) => {
-          const current = parsedLines[idx] || parsedLines[0];
-          setActiveSpeakerPersona(current.persona);
-          setCurrentSpeaker({
-            name: current.speakerName,
-            role: current.role,
-            accent: current.accent,
-            text: current.text
-          });
-          setCurrentSubtitleText(current.text);
-          setListeningPlaybackTimeSec((prev) => prev + 4);
-        },
-        onComplete: () => {
-          setIsAudioPlaying(false);
-          setIsListeningTransferPhase(true);
-          setListeningTransferSec(120);
-          onShowToast('Listening audio recording finished. 2-minute answer check started.');
-        },
-        onError: (err) => {
-          console.warn('Dialogue playback error:', err);
-          setIsAudioPlaying(false);
-        }
-      });
-    } catch (err) {
-      console.warn('Studio dialogue engine error:', err);
-      setIsAudioPlaying(false);
-    }
-  };
-
-  const normalizeAnswer = (val: string) =>
-    val.trim().toUpperCase().replace(/\s+/g, ' ');
-
-  const isQuestionCorrect = (q: QuestionItem, rawUserVal?: string): boolean => {
-    if (!rawUserVal) return false;
-    const u = normalizeAnswer(rawUserVal);
-    const c = normalizeAnswer(q.correctAnswer);
-    if (u === c) return true;
-    // Also handle stripped spaces for phone numbers/postcodes
-    if (u.replace(/\s+/g, '') === c.replace(/\s+/g, '')) return true;
-    return false;
-  };
-
-  const computeBandFromRatio = (correct: number, total: number): number => {
-    if (total === 0) return 0;
-    const ratio = correct / total;
-    if (ratio >= 0.95) return 9.0;
-    if (ratio >= 0.85) return 8.5;
-    if (ratio >= 0.75) return 8.0;
-    if (ratio >= 0.65) return 7.5;
-    if (ratio >= 0.55) return 7.0;
-    if (ratio >= 0.45) return 6.5;
-    if (ratio >= 0.35) return 6.0;
-    if (ratio >= 0.25) return 5.5;
-    if (ratio > 0) return 5.0;
-    return 0;
-  };
-
-  const countWords = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return 0;
-    return trimmed.split(/\s+/).length;
-  };
-
-  const handleFinalSubmit = () => {
-    stopSpeech();
-    setIsAudioPlaying(false);
-    setIsTimerRunning(false);
-    setShowReviewModal(false);
-
-    const listeningQs = currentSet.questions.filter((q) => q.section === 'listening');
-    const readingQs = currentSet.questions.filter((q) => q.section === 'reading');
-
-    let listeningCorrect = 0;
-    listeningQs.forEach((q) => {
-      const userVal = userAnswers[q.id];
-      if (isQuestionCorrect(q, userVal)) {
-        listeningCorrect++;
-      } else {
-        const wrongVal = userVal && userVal.trim() ? userVal.trim() : 'Skipped / Unanswered';
-        addMistake({
-          module: 'listening',
-          title: `${currentSet.title} · Q${q.id}`,
-          prompt: q.prompt,
-          questionType: q.type || 'Listening Trap',
-          userAnswer: wrongVal,
-          userWrongAnswer: wrongVal,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
-          trapExplanationEn: q.explanation,
-          trapExplanationBn: `অডিওটি মনোযোগ দিয়ে শুনে এবং প্রশ্নোত্তরের গ্রামার সামঞ্জস্য বজায় রেখে লিখুন।`
-        });
-      }
-    });
-
-    let readingCorrect = 0;
-    readingQs.forEach((q) => {
-      const userVal = userAnswers[q.id];
-      if (isQuestionCorrect(q, userVal)) {
-        readingCorrect++;
-      } else {
-        const wrongVal = userVal && userVal.trim() ? userVal.trim() : 'Skipped / Unanswered';
-        addMistake({
-          module: 'reading',
-          title: `${currentSet.title} · Q${q.id}`,
-          prompt: q.prompt,
-          questionType: q.type || 'Reading Trap',
-          userAnswer: wrongVal,
-          userWrongAnswer: wrongVal,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
-          trapExplanationEn: q.explanation,
-          trapExplanationBn: `প্যাসেজের সমার্থক শব্দ (Synonyms) ও অনুচ্ছেদ সম্পর্কিত ব্যাকরণগত অর্থ মিলিয়ে দেখুন।`
-        });
-      }
-    });
-
-    const listeningBand = computeBandFromRatio(listeningCorrect, listeningQs.length);
-    const readingBand = computeBandFromRatio(readingCorrect, readingQs.length);
-
-    const t1Words = countWords(task1Essay);
-    const t2Words = countWords(task2Essay);
-    const totalWords = t1Words + t2Words;
-
-    let writingBand = 0;
-    if (totalWords >= 380) writingBand = 7.5;
-    else if (totalWords >= 250) writingBand = 7.0;
-    else if (totalWords >= 150) writingBand = 6.5;
-    else if (totalWords >= 60) writingBand = 5.5;
-    else if (totalWords > 0) writingBand = 5.0;
-
-    const activeBands = [listeningBand, readingBand, writingBand].filter((b) => b > 0);
-    const rawAvg =
-      activeBands.length > 0
-        ? activeBands.reduce((acc, b) => acc + b, 0) / activeBands.length
-        : 0;
-    const overallBand = rawAvg > 0 ? Math.round(rawAvg * 2) / 2 : 0;
-
-    // Persist attempt if user answered at least 1 question or wrote an essay
-    if (overallBand > 0) {
-      recordExamAttempt({
-        examType: readingBand > 0 && writingBand > 0 ? 'full_mock' : 'listening_only',
-        overallBand,
-        listeningBand: listeningBand || overallBand,
-        readingBand: readingBand || overallBand,
-        writingBand: writingBand || overallBand,
-        wordCount: totalWords,
-        submissionType: 'manual',
-        correctCount: listeningCorrect + readingCorrect,
-        totalQuestions: currentSet.questions.length
-      });
-
-      firebaseSyncService
-        .recordTestSubmission(
-          activeSkill,
-          currentSet.id,
-          overallBand,
-          listeningCorrect + readingCorrect,
-          currentSet.questions.length,
-          Math.max(60, 3600 - timeRemainingSec)
-        )
-        .catch(() => {});
-    }
-
-    soundManager.playSuccess();
-    setSubmittedResults({
-      listeningCorrect,
-      listeningTotal: listeningQs.length,
-      listeningBand,
-      readingCorrect,
-      readingTotal: readingQs.length,
-      readingBand,
-      writingBand,
-      overallBand,
-      wordCount: totalWords
-    });
-    onShowToast('Test graded! Review your official answer breakdown below.');
-  };
-
-  // Color scheme class resolver
-  const getColorSchemeClasses = () => {
+  // Color Scheme Styling Resolution (Practice CD-IELTS Workstation Specification)
+  const getThemeClasses = () => {
     switch (colorScheme) {
+      case 'black-on-yellow':
+        return {
+          bg: 'bg-[#FFF100] text-black',
+          headerBg: 'bg-black text-[#FFF100]',
+          subHeaderBg: 'bg-[#181818] text-[#FFF100]',
+          border: 'border-black',
+          borderStrong: 'border-black',
+          cardBg: 'bg-[#FFF888]',
+          inputBg: 'bg-white text-black',
+          accentBtn: 'bg-black text-[#FFF100] hover:bg-neutral-900 border-2 border-black',
+          activeTile: 'bg-black text-[#FFF100] border-2 border-black',
+          flaggedTile: 'bg-[#FFF888] text-black border-2 border-black'
+        };
       case 'yellow-on-black':
-        return 'bg-black text-yellow-300 border-yellow-500';
-      case 'cream':
-        return 'bg-[#FFFDF7] text-[#2C2416] border-[#E8DFC8]';
+        return {
+          bg: 'bg-black text-[#FFF100]',
+          headerBg: 'bg-[#111111] text-[#FFF100]',
+          subHeaderBg: 'bg-[#1a1a1a] text-[#FFF100]',
+          border: 'border-[#FFF100]',
+          borderStrong: 'border-[#FFF100]',
+          cardBg: 'bg-[#111111]',
+          inputBg: 'bg-[#222222] text-[#FFF100]',
+          accentBtn: 'bg-[#FFF100] text-black hover:bg-yellow-400 border-2 border-[#FFF100]',
+          activeTile: 'bg-[#FFF100] text-black border-2 border-[#FFF100]',
+          flaggedTile: 'bg-[#333300] text-[#FFF100] border-2 border-[#FFF100]'
+        };
+      case 'white-on-black':
+        return {
+          bg: 'bg-black text-white',
+          headerBg: 'bg-[#111111] text-white',
+          subHeaderBg: 'bg-[#1a1a1a] text-white',
+          border: 'border-white',
+          borderStrong: 'border-white',
+          cardBg: 'bg-[#181818]',
+          inputBg: 'bg-[#262626] text-white',
+          accentBtn: 'bg-white text-black hover:bg-gray-200 border-2 border-white',
+          activeTile: 'bg-white text-black border-2 border-white',
+          flaggedTile: 'bg-neutral-800 text-white border-2 border-white'
+        };
       case 'standard':
       default:
-        return 'bg-[#F4F5F7] text-[#1E293B] border-[#D1D5DB]';
+        return {
+          bg: 'bg-[#EEF2F6] text-[#0F172A]',
+          headerBg: 'bg-[#002F6C] text-white',
+          subHeaderBg: 'bg-[#001F4D] text-slate-200',
+          border: 'border-[#CBD5E1]',
+          borderStrong: 'border-[#002F6C]',
+          cardBg: 'bg-white',
+          inputBg: 'bg-white text-[#0F172A]',
+          accentBtn: 'bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D]',
+          activeTile: 'bg-[#002F6C] text-white border-2 border-[#001F4D]',
+          flaggedTile: 'bg-[#FEF08A] text-[#713F12] border-2 border-[#CA8A04]'
+        };
     }
   };
 
-  const getZoomClass = () => {
+  const theme = getThemeClasses();
+
+  // Typography Size Resolution
+  const getFontSizeClass = () => {
     switch (zoomLevel) {
       case '125%':
-        return 'text-[17px] leading-relaxed';
+        return 'text-lg';
       case '150%':
-        return 'text-[19px] leading-loose';
+        return 'text-xl';
       case '100%':
       default:
-        return 'text-sm sm:text-base leading-relaxed';
+        return 'text-base';
     }
   };
 
-  const totalQuestions = currentSet.questions.length;
-  const answeredCount = currentSet.questions.filter((q) => Boolean(userAnswers[q.id]?.trim())).length;
-  const unansweredCount = totalQuestions - answeredCount;
-  const task1WordCount = countWords(task1Essay);
-  const task2WordCount = countWords(task2Essay);
+  const task1WordCount = task1Essay.trim() ? task1Essay.trim().split(/\s+/).length : 0;
+  const task2WordCount = task2Essay.trim() ? task2Essay.trim().split(/\s+/).length : 0;
+
+  const answeredCount = skillQuestions.filter((q) => Boolean(userAnswers[q.id]?.trim())).length;
+  const totalQuestions = skillQuestions.length;
+
+  // Final Test Submission Handler with Official 4-Criterion AI Evaluation & Rounding (executes at most once per attempt)
+  const handleFinalSubmit = () => {
+    if (hasSubmittedRef.current) return;
+    hasSubmittedRef.current = true;
+    setShowReviewModal(false);
+    setShowExitConfirmModal(false);
+    setIsTimerRunning(false);
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
+    // Calculate Listening & Reading scores
+    let listeningCorrect = 0;
+    let readingCorrect = 0;
+
+    currentSet.questions.forEach((q) => {
+      const userAns = userAnswers[q.id] || '';
+      const isCorrect = isListeningAnswerCorrect(q as any, userAns);
+
+      if (q.section === 'listening' && isCorrect) listeningCorrect++;
+      if (q.section === 'reading' && isCorrect) readingCorrect++;
+    });
+
+    const listeningTotal = currentSet.questions.filter((q) => q.section === 'listening').length || 40;
+    const readingTotal = currentSet.questions.filter((q) => q.section === 'reading').length || 40;
+
+    const examEdition = currentSet.format === 'General Training' ? 'General Training' : 'Academic';
+
+    const lEval = evaluateRawScoreDetailed(listeningCorrect, 'listening', {
+      edition: examEdition,
+      isAttempted: listeningTotal > 0
+    });
+    const rEval = evaluateRawScoreDetailed(readingCorrect, 'reading', {
+      edition: examEdition,
+      isAttempted: readingTotal > 0
+    });
+
+    const lBand = lEval.band;
+    const rBand = rEval.band;
+
+    const writingEvaluation = evaluateCDIELTSWritingSuite(
+      task1Essay,
+      task2Essay,
+      currentSet.task1Prompt || 'Summarise the main features of the statistical chart and make comparisons where relevant. Write at least 150 words.',
+      currentSet.writingPrompt
+    );
+
+    const wBand =
+      writingEvaluation.overallWritingBand > 0
+        ? writingEvaluation.overallWritingBand
+        : null;
+
+    const results = {
+      listeningCorrect,
+      listeningTotal,
+      listeningBand: lBand,
+      readingCorrect,
+      readingTotal,
+      readingBand: rBand,
+      writingBand: wBand,
+      overallBand: null,
+      wordCount: task2WordCount,
+      task1WordCount,
+      task1Essay,
+      task2Essay,
+      task1Prompt: currentSet.task1Prompt || 'Summarise the main features of the statistical chart and make comparisons where relevant. Write at least 150 words.',
+      writingPrompt: currentSet.writingPrompt,
+      writingEvaluation,
+      examType: 'partial_lrw' as const,
+      completedSkills: {
+        listening: listeningTotal > 0,
+        reading: readingTotal > 0,
+        writing: true,
+        speaking: false
+      }
+    };
+
+    setSubmittedResults(results);
+    // In CDIELTSExamMode, the candidate completes Listening, Reading, and Writing.
+    // Speaking is not taken in this computer exam, so this must be recorded as a
+    // partial L/R/W attempt rather than a completed four-skill full_mock with overallBand.
+    recordExamAttempt({
+      overallBand: null, // MANDATORY: 3-skill L/R/W attempt must NEVER be recorded as 4-skill full_mock overallBand!
+      readingBand: rBand,
+      listeningBand: lBand,
+      writingBand: wBand,
+      speakingBand: null,
+      wordCount: task2WordCount + task1WordCount,
+      submissionType: 'manual',
+      correctCount: listeningCorrect + readingCorrect,
+      totalQuestions: listeningTotal + readingTotal,
+      examType: 'partial_lrw',
+      completedSkills: {
+        listening: listeningTotal > 0,
+        reading: readingTotal > 0,
+        writing: true,
+        speaking: false
+      }
+    });
+    soundManager.playSuccess();
+  };
 
   if (submittedResults) {
+    const targetBand = examSetup.targetBand;
+    const moduleBands: { label: string; band: number | null }[] = [
+      { label: 'Listening', band: typeof submittedResults.listeningBand === 'number' ? submittedResults.listeningBand : null },
+      { label: 'Reading', band: typeof submittedResults.readingBand === 'number' ? submittedResults.readingBand : null },
+      { label: 'Writing', band: typeof submittedResults.writingBand === 'number' ? submittedResults.writingBand : null },
+    ];
+    const scored = moduleBands.filter((m): m is { label: string; band: number } => m.band !== null);
+    const weakest = scored.length > 0 ? scored.reduce((a, b) => (b.band < a.band ? b : a)) : null;
+    const openStudyPlan = () => {
+      window.history.pushState({}, '', '/learn/study-plan');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      window.scrollTo(0, 0);
+    };
     return (
+      <div className="min-h-screen w-full bg-slate-950 text-slate-100 font-sans">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-5">
+          <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 text-slate-900 p-4 sm:p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base sm:text-lg font-black tracking-tight">
+                How you did against your target — Band {targetBand.toFixed(1)}
+              </h2>
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                Estimates, not official scores
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {moduleBands.map((m) => {
+                const gap = m.band === null ? null : Math.round((m.band - targetBand) * 2) / 2;
+                return (
+                  <div key={m.label} className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-700">{m.label}</span>
+                    <span className="text-right">
+                      <span className="block font-mono font-black text-sm text-slate-900">
+                        {m.band === null ? '—' : m.band.toFixed(1)}
+                      </span>
+                      <span className={`block text-[11px] font-bold ${gap === null ? 'text-slate-400' : gap >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {gap === null ? 'Not scored' : gap >= 0 ? 'On target' : `${Math.abs(gap).toFixed(1)} below target`}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-slate-700 leading-relaxed">
+              <span className="font-black text-[#0F4C45]">Barnaby: </span>
+              {weakest && weakest.band < targetBand
+                ? `your ${weakest.label} is ${Math.abs(Math.round((weakest.band - targetBand) * 2) / 2).toFixed(1)} below your target — that is your next focus. Every mistake makes you stronger.`
+                : 'you are at or above your target in every scored module — keep it up with one timed mock a week.'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={openStudyPlan}
+                className="px-4 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0d3d38] text-white text-xs font-black transition inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                Build my study plan
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={onExit}
+                className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 text-xs font-bold transition cursor-pointer"
+              >
+                Back to Practice
+              </button>
+            </div>
+          </div>
+        </div>
       <PostTestDiagnosticReport
         candidateName={candidateName}
-        testTitle={`${currentSet.title} (${currentSet.listeningTitle})`}
+        testTitle={currentSet.title}
         testSetId={currentSet.id}
         activeSkill={activeSkill}
         results={submittedResults}
-        questions={skillQuestions}
+        questions={currentSet.questions}
         userAnswers={userAnswers}
         listeningScript={currentSet.listeningScript}
         readingPassage={currentSet.readingPassage}
-        timeElapsedSec={Math.max(60, 3600 - timeRemainingSec)}
+        timeElapsedSec={Math.max(0, getCDIELTSSkillDurationSec(activeSkill, currentExamAudioDurations) - timeRemainingSec)}
         onRetake={() => {
+          hasSubmittedRef.current = false;
+          clearListeningAudioState();
           setSubmittedResults(null);
+          const retakeDur = getCDIELTSSkillDurationSec(activeSkill, currentExamAudioDurations);
+          setTimeRemainingSec(retakeDur);
+          endTimeRef.current = Date.now() + retakeDur * 1000;
+          setIsTimerRunning(true);
           setUserAnswers({});
           setFlaggedQuestions(new Set());
-          setTimeRemainingSec(60 * 60);
-          endTimeRef.current = Date.now() + 60 * 60 * 1000;
-          setIsTimerRunning(true);
-          setActiveQuestionIdx(0);
-          stopAllActiveAudio();
-          onShowToast('Test session reset. Best of luck on your retake!');
+          setListeningSection(1);
+          setListeningPhase('pre_read');
+          setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
+          setAudioPlaybackSec(0);
+          setCompletedListeningParts({});
+          setIsListeningLocked(false);
         }}
-        onBackToDashboard={() => {
-          stopAllActiveAudio();
-          onExit();
-        }}
+        onBackToDashboard={onExit}
         onShowToast={onShowToast}
       />
+      </div>
     );
   }
 
+  const { badge: activeReadingBadge, title: activeReadingTitle } = deriveActiveReadingHeading(currentSet, activeQuestionObj);
+  const { activePassageText } = extractActiveReadingPassage(currentSet, activeQuestionObj);
+
+  // Barnaby's target-band guidance for the section the student is sitting now.
+  const barnabySectionGuide =
+    activeSkill === 'listening'
+      ? {
+          title: `Listening — Part ${listeningSection} of 4`,
+          need: `For Band ${examSetup.targetBand.toFixed(1)} you need approximately ${correctAnswersNeeded(examSetup.targetBand)} correct out of 40 in Listening.`,
+          time: '30 minutes of audio + 2 minutes to check your answers. The audio plays ONCE — there are no replays.',
+          trap: 'Most common trap: spelling. Write exactly what you hear — numbers, dates and names are where marks disappear.',
+        }
+      : activeSkill === 'reading'
+      ? {
+          title: 'Reading — 3 passages',
+          need:
+            examSetup.examMode === 'General Training'
+              ? `For Band ${examSetup.targetBand.toFixed(1)} you need about ${correctAnswersNeeded(examSetup.targetBand)} correct out of 40 in Reading. GT Reading uses a different scale — these are approximate Academic-scale guide numbers.`
+              : `For Band ${examSetup.targetBand.toFixed(1)} you need about ${correctAnswersNeeded(examSetup.targetBand)} correct out of 40 in Reading (Academic scale, approximate).`,
+          time: '60 minutes for 3 passages — aim for about 20 minutes per passage. Never leave a question blank.',
+          trap: 'Most common trap: True / False / Not Given. "Not Given" means the passage never says it — not that it is false.',
+        }
+      : {
+          title: `Writing — Task ${activeWritingTask} of 2`,
+          need: `Writing has no fixed "correct answers" — for Band ${examSetup.targetBand.toFixed(1)} your essay needs a clear position, organised paragraphs and a range of vocabulary and grammar.`,
+          time: '60 minutes in total: Task 1 in 20 minutes (150+ words), Task 2 in 40 minutes (250+ words). Task 2 counts double.',
+          trap: 'Most common trap: answering only half the question. Read the Task 2 question twice and cover every part of it.',
+        };
+
   return (
-    <div className={`min-h-screen w-full flex flex-col select-none transition-colors duration-150 ${getColorSchemeClasses()}`}>
-      {/* ================= 1. OFFICIAL CD-IELTS TOP TEST HEADER ================= */}
-      <header className="sticky top-0 z-40 w-full border-b border-inherit px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 bg-inherit shadow-xs">
-        {/* Left: Candidate Details, Set Selector & Module Switcher */}
-        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="font-mono font-black text-xs tracking-wider uppercase px-2 py-0.5 rounded bg-blue-600 text-white">
-              CD-IELTS
-            </span>
-            <div className="hidden xl:block text-xs font-semibold">
-              <span className="font-bold">{candidateName}</span>
-              <span className="opacity-60 ml-1.5">ID: {candidateId}</span>
+    <div
+      className={`w-full h-screen flex flex-col ${theme.bg} ${getFontSizeClass()} font-sans select-none overflow-hidden`}
+      onMouseUp={handleTextSelection}
+    >
+      {/* Selection Micro-Popup for Text Highlighting, Underlining & Note Making */}
+      {selectionMenu && (
+        <div
+          className="fixed z-50 bg-[#001F4D] text-white text-xs font-mono font-bold py-1 px-2.5 rounded-none shadow-2xl flex items-center gap-2 border-2 border-white selection-tooltip-menu"
+          style={{
+            left: `${Math.min(Math.max(selectionMenu.x, 110), (typeof window !== 'undefined' ? window.innerWidth : 800) - 130)}px`,
+            top: `${selectionMenu.y}px`,
+            transform: 'translate(-50%, -100%)'
+          }}
+        >
+          <button
+            onClick={() => toggleHighlight(selectionMenu.text)}
+            className="hover:text-yellow-300 text-yellow-400 flex items-center gap-1 cursor-pointer px-1 py-0.5"
+            title="Highlight selected text in yellow"
+          >
+            <Highlighter className="w-3.5 h-3.5" />
+            <span>[ Highlight ]</span>
+          </button>
+          <span className="text-slate-500">|</span>
+          <button
+            onClick={() => toggleUnderline(selectionMenu.text)}
+            className="hover:text-sky-300 text-sky-200 flex items-center gap-1 cursor-pointer px-1 py-0.5 underline font-bold"
+            title="Underline selected text"
+          >
+            <span><u>U</u> [ Underline ]</span>
+          </button>
+          <span className="text-slate-500">|</span>
+          <button
+            onClick={() => {
+              setActiveQuote(selectionMenu.text);
+              setShowNotesDrawer(true);
+              setSelectionMenu(null);
+            }}
+            className="hover:text-emerald-300 text-emerald-200 flex items-center gap-1 cursor-pointer px-1 py-0.5"
+            title="Add margin note for this selection"
+          >
+            <StickyNote className="w-3.5 h-3.5" />
+            <span>[ Note ]</span>
+          </button>
+          <button
+            onClick={() => setSelectionMenu(null)}
+            className="text-slate-400 hover:text-white cursor-pointer ml-1 p-0.5"
+            title="Close menu"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
+      {/* ================= 1. OFFICIAL STANDARDIZED EXAM HEADER ================= */}
+      {/* Responsive Header: 2-Row Stack on mobile (<sm / <500px), 1-Row Bar on desktop (>=sm) */}
+      <header className={`w-full ${theme.headerBg} border-b-2 ${theme.borderStrong || 'border-[#001D43]'} shrink-0 flex flex-col font-mono select-none z-20 rounded-none shadow-none`}>
+        {customPilotSet && (
+          <div className="w-full px-3 sm:px-4 py-1.5 bg-emerald-950 text-emerald-100 border-b border-emerald-600/60 flex items-center justify-between gap-2 text-xs font-mono font-bold">
+            <div className="flex items-center gap-2 truncate">
+              <span className="uppercase tracking-wider text-emerald-300">
+                AI PILOT — APPROVED PRACTICE
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">{customPilotSet.title}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                stopSpeech();
+                audioService.stop();
+                onExit();
+              }}
+              className="px-2.5 py-0.5 bg-emerald-900 hover:bg-emerald-800 text-white border border-emerald-500 text-[11px] font-bold cursor-pointer shrink-0"
+            >
+              Exit AI Pilot
+            </button>
+          </div>
+        )}
+        {/* ROW 1: Candidate Details (Left) + Countdown Clock (Right) */}
+        <div className="w-full min-h-11 sm:h-12 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b-2 border-black/20">
+          {/* Candidate Info */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 font-mono text-xs">
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="opacity-75 hidden min-[420px]:inline uppercase">Candidate:</span>
+              <span className="font-bold tracking-tight truncate max-w-[96px] min-[420px]:max-w-[200px] sm:max-w-none text-white border-b border-white/60">
+                {candidateName.toUpperCase()}
+              </span>
+              <span className="text-[11px] font-mono text-sky-200 shrink-0">
+                [ID: {candidateId}]
+              </span>
+              <span className="text-[11px] font-mono text-sky-300 hidden md:inline shrink-0">
+                [DESK: CD-04]
+              </span>
+            </div>
+
+            {/* Official Module Badge (Desktop) */}
+            <div className="hidden lg:flex items-center gap-1.5 ml-2 pl-3 border-l-2 border-white/30">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-sky-200">
+                {activeSkill === 'reading'
+                  ? `[ MODULE: ${activeReadingBadge.toUpperCase()} ]`
+                  : activeSkill === 'listening'
+                  ? `[ MODULE: IELTS LISTENING — PART ${listeningSection}/4 ]`
+                  : `[ MODULE: IELTS ACADEMIC WRITING — TASK ${activeWritingTask}/2 ]`}
+              </span>
+            </div>
+
+            {/* Exam Room setup chips — aim band & exam date (from ExamSetup) */}
+            <div className="hidden md:flex items-center gap-1.5 ml-2 pl-3 border-l-2 border-white/30">
+              <span className="px-2 py-0.5 bg-amber-400 text-black text-[11px] font-mono font-black rounded-none whitespace-nowrap">
+                TARGET BAND {examSetup.targetBand.toFixed(1)}
+              </span>
+              <span className="px-2 py-0.5 bg-white/10 text-white text-[11px] font-mono font-bold border border-white/30 rounded-none whitespace-nowrap">
+                {examSetup.examDate
+                  ? `EXAM ${formatExamDate(examSetup.examDate).toUpperCase()} · ${examDaysLeft === null ? 'DATE PASSED' : examDaysLeft === 0 ? 'TODAY' : `${examDaysLeft}D LEFT`}`
+                  : 'NO EXAM DATE'}
+              </span>
             </div>
           </div>
 
-          {/* Exam Set Selector */}
-          <select
-            value={selectedSetIdx}
-            onChange={(e) => {
-              const idx = Number(e.target.value);
-              stopSpeech();
-              setIsAudioPlaying(false);
-              setSelectedSetIdx(idx);
-              setActiveQuestionIdx(0);
-              setUserAnswers({});
-              setFlaggedQuestions(new Set());
-              setSubmittedResults(null);
-            }}
-            aria-label="Select Practice Test Set"
-            className="text-xs font-bold px-2.5 py-1.5 rounded-lg border border-inherit bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 outline-none"
-          >
-            {MOCK_EXAM_SETS.map((s, idx) => (
-              <option key={s.id} value={idx}>
-                {s.title} ({s.format})
-              </option>
-            ))}
-          </select>
+          {/* Official Countdown Timer */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 font-mono">
+            <div
+              className={`flex items-center gap-2 font-mono font-bold text-xs sm:text-sm px-3 py-1 border-2 rounded-none ${
+                timeRemainingSec <= 300
+                  ? 'bg-rose-950 text-rose-200 border-rose-500 animate-pulse'
+                  : 'bg-black/40 text-white border-sky-400/40'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+              <span className="tabular-nums tracking-wide">
+                {isAudioNetworkStalled ? (
+                  <>
+                    <span className="hidden sm:inline">BUFFERING </span>[{formatTimer(timeRemainingSec)}]
+                  </>
+                ) : isTimeHidden ? (
+                  'CLOCK: [HIDDEN]'
+                ) : (
+                  <>
+                    <span className="hidden sm:inline">CLOCK: </span>
+                    {formatTimer(timeRemainingSec)}
+                  </>
+                )}
+              </span>
+            </div>
 
-          {/* Module Switcher */}
-          <div className="flex items-center gap-1 text-xs bg-slate-500/10 p-1 rounded-lg">
             <button
-              onClick={() => {
-                setActiveSkill('reading');
-                setActiveQuestionIdx(0);
-                soundManager.playBeep(520, 0.03);
-              }}
-              className={`px-2.5 py-1 rounded-md font-bold transition flex items-center gap-1 ${
-                activeSkill === 'reading'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'hover:bg-slate-500/10'
-              }`}
+              onClick={() => setIsTimeHidden(!isTimeHidden)}
+              className="text-[11px] font-mono hover:bg-white/10 px-2 py-1 text-slate-200 border border-white/30 cursor-pointer hidden md:block rounded-none"
             >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>Reading</span>
+              {isTimeHidden ? '[SHOW]' : '[HIDE]'}
             </button>
+
+            {/* Barnaby guide — target-band help for this section */}
             <button
-              onClick={() => {
-                setActiveSkill('listening');
-                setActiveQuestionIdx(0);
-                soundManager.playBeep(520, 0.03);
-              }}
-              className={`px-2.5 py-1 rounded-md font-bold transition flex items-center gap-1 ${
-                activeSkill === 'listening'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'hover:bg-slate-500/10'
+              onClick={() => setShowBarnabyGuide((v) => !v)}
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono font-black border cursor-pointer rounded-none ${
+                showBarnabyGuide
+                  ? 'bg-amber-400 text-black border-amber-500'
+                  : 'bg-amber-400/15 text-amber-300 border-amber-400/50 hover:bg-amber-400/25'
               }`}
+              title="Barnaby's guide for your target band"
             >
-              <Headphones className="w-3.5 h-3.5" />
-              <span>Listening</span>
+              <Sparkles className="w-3.5 h-3.5" />
+              BARNABY
             </button>
+
+            {/* IELTS Practice Set Selector (hidden when running an isolated AI Pilot) */}
+            {!customPilotSet && (
+              <select
+                value={selectedSetIdx}
+                onChange={(e) => {
+                  activePlaybackTokenRef.current += 1;
+                  setListeningAudioError(null);
+                  const idx = parseInt(e.target.value, 10);
+                  setSelectedSetIdx(idx);
+                  setActiveQuestionIdx(0);
+                  stopSpeech();
+                  audioService.stop();
+                  setIsAudioPlaying(false);
+                  setCompletedListeningParts({});
+                  setListeningSection(1);
+                  setListeningPhase('pre_read');
+                  setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
+                  setAudioPlaybackSec(0);
+                  if (activeSkill === 'listening') {
+                    const targetExamId = MOCK_EXAM_SETS[idx]?.id;
+                    const targetDurations = getExamSectionAudioDurations(targetExamId);
+                    const initListSec = getCDIELTSSkillDurationSec('listening', targetDurations);
+                    setTimeRemainingSec(initListSec);
+                    endTimeRef.current = Date.now() + initListSec * 1000;
+                  }
+                  soundManager.playBeep(550, 0.04);
+                  onShowToast(`Loaded ${MOCK_EXAM_SETS[idx]?.title}`);
+                }}
+                className="bg-black/50 text-white text-[11px] font-mono font-bold px-2 py-1 border-2 border-slate-600 outline-none cursor-pointer hidden md:block rounded-none max-w-[190px] truncate"
+                title="Select IELTS Practice Set"
+              >
+                {MOCK_EXAM_SETS.map((s, idx) => (
+                  <option key={s.id} value={idx}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Desktop Quick Finish Button */}
             <button
-              onClick={() => {
-                setActiveSkill('writing');
-                soundManager.playBeep(520, 0.03);
-              }}
-              className={`px-2.5 py-1 rounded-md font-bold transition flex items-center gap-1 ${
-                activeSkill === 'writing'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'hover:bg-slate-500/10'
-              }`}
+              onClick={() => setShowReviewModal(true)}
+              className="hidden sm:flex items-center px-3.5 py-1 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-mono font-bold text-xs tracking-wider uppercase border-2 border-[#7F1D1D] rounded-none shadow-none cursor-pointer ml-1"
             >
-              <PenTool className="w-3.5 h-3.5" />
-              <span>Writing</span>
+              Finish Test
             </button>
           </div>
         </div>
 
-        {/* Center: Countdown Clock with [Hide Time] per British Council Specs */}
-        <div className="flex items-center gap-2">
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-inherit font-mono font-black text-xs sm:text-sm tracking-widest ${
-              timeRemainingSec < 600
-                ? 'bg-rose-500/10 text-rose-600 border-rose-500/30 animate-pulse'
-                : 'bg-white/80 dark:bg-slate-800/80'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>{isTimeHidden ? '--:--' : formatTimer(timeRemainingSec)}</span>
+        {/* ROW 2 (Accessibility & Station Controls Toolbar) */}
+        <div className={`w-full min-h-9 sm:h-10 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 ${theme.subHeaderBg || 'bg-[#001F4D] text-slate-200'} text-xs font-mono border-b-2 border-black/30 rounded-none`}>
+          {/* Left: Mobile stage title or font resizer */}
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="sm:hidden text-[11px] font-bold text-sky-200 uppercase tracking-tight truncate">
+              {activeSkill === 'reading'
+                ? `[${activeReadingBadge.toUpperCase()}]`
+                : activeSkill === 'listening'
+                ? `[LISTENING · SEC ${listeningSection}/4]`
+                : `[WRITING · TASK ${activeWritingTask}]`}
+            </span>
+
+            {/* Font Resizer (Desktop/Tablet) */}
+            <div className="hidden sm:flex items-center border-2 border-slate-600 font-mono text-[11px] font-bold rounded-none bg-black/20">
+              <button
+                onClick={() => setZoomLevel('100%')}
+                className={`px-2.5 py-0.5 cursor-pointer rounded-none ${zoomLevel === '100%' ? 'bg-sky-600 text-white font-black' : 'hover:bg-white/10 text-slate-300'}`}
+                title="Standard Font Size (16px)"
+              >
+                16px
+              </button>
+              <span className="text-slate-500">|</span>
+              <button
+                onClick={() => setZoomLevel('125%')}
+                className={`px-2.5 py-0.5 cursor-pointer rounded-none ${zoomLevel === '125%' ? 'bg-sky-600 text-white font-black' : 'hover:bg-white/10 text-slate-300'}`}
+                title="Large Font Size (18px)"
+              >
+                18px
+              </button>
+              <span className="text-slate-500">|</span>
+              <button
+                onClick={() => setZoomLevel('150%')}
+                className={`px-2.5 py-0.5 cursor-pointer rounded-none ${zoomLevel === '150%' ? 'bg-sky-600 text-white font-black' : 'hover:bg-white/10 text-slate-300'}`}
+                title="Extra Large Font Size (20px)"
+              >
+                20px
+              </button>
+            </div>
           </div>
 
-          <button
-            onClick={() => {
-              setIsTimeHidden(!isTimeHidden);
-              soundManager.playBeep(550, 0.02);
-            }}
-            className="px-2 py-1 rounded border border-inherit text-[11px] font-bold hover:bg-slate-500/10"
-            title={isTimeHidden ? 'Show Time' : 'Hide Time'}
-          >
-            {isTimeHidden ? 'Show' : 'Hide'}
-          </button>
-        </div>
+          {/* Right: Accessibility Controls (Contrast Switcher, Notes, Help, Exit, Mobile Finish) */}
+          <div className="flex items-center gap-1.5 shrink-0 font-mono">
+            {/* Contrast Switcher */}
+            <select
+              value={colorScheme}
+              onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
+              className="bg-black/50 text-white text-[11px] font-mono font-bold px-2 py-0.5 border-2 border-slate-600 outline-none cursor-pointer max-w-[110px] min-[420px]:max-w-[140px] sm:max-w-none truncate rounded-none"
+              title="Switch Color Contrast Mode"
+            >
+              <option value="standard">Standard (Practice Blue)</option>
+              <option value="black-on-yellow">Black on Yellow</option>
+              <option value="yellow-on-black">Yellow on Black</option>
+              <option value="white-on-black">White on Black</option>
+            </select>
 
-        {/* Right: Accessibility, Help, Review & Exit */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Zoom Level Toggle */}
-          <button
-            onClick={() => {
-              const levels: ZoomLevel[] = ['100%', '125%', '150%'];
-              const nextIdx = (levels.indexOf(zoomLevel) + 1) % levels.length;
-              setZoomLevel(levels[nextIdx]);
-              soundManager.playBeep(600, 0.03);
-            }}
-            className="hidden md:flex px-2 py-1 rounded border border-inherit text-xs font-mono font-bold items-center gap-1"
-            title="Adjust text magnification"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-            <span>{zoomLevel}</span>
-          </button>
+            {/* Notes Drawer Toggle (Alt+V) */}
+            <button
+              onClick={() => setShowNotesDrawer((prev) => !prev)}
+              className={`px-2.5 py-0.5 border-2 border-slate-600 text-[11px] font-mono font-bold flex items-center gap-1.5 cursor-pointer rounded-none ${
+                showNotesDrawer ? 'bg-amber-400 text-black border-amber-500' : 'hover:bg-white/10 text-slate-200'
+              }`}
+              title="Toggle Margin Notes & Highlights (Alt+V)"
+            >
+              <StickyNote className="w-3 h-3" />
+              <span className="hidden min-[420px]:inline">[NOTES: {notes.length}]</span>
+            </button>
 
-          {/* Color Schemes */}
-          <div className="hidden lg:flex items-center gap-1 border-l border-inherit pl-2">
+            {/* Instructions / Help Modal */}
             <button
-              onClick={() => setColorScheme('standard')}
-              className={`px-2 py-1 rounded text-[11px] font-bold border ${colorScheme === 'standard' ? 'bg-blue-600 text-white' : 'border-slate-300'}`}
-              title="Standard"
+              onClick={() => setShowHelpModal(true)}
+              className="px-2 py-0.5 hover:bg-white/10 border-2 border-slate-600 text-slate-300 cursor-pointer rounded-none font-mono text-[11px] font-bold"
+              title="Exam Instructions & Shortcuts"
             >
-              Standard
+              [HELP]
             </button>
+
+            {/* In-App Exit Session Guard Button */}
             <button
-              onClick={() => setColorScheme('cream')}
-              className={`px-2 py-1 rounded text-[11px] font-bold border ${colorScheme === 'cream' ? 'bg-[#5A4A32] text-white' : 'border-[#E8DFC8]'}`}
-              title="Soft Cream"
+              onClick={() => setShowExitConfirmModal(true)}
+              className="px-2.5 py-0.5 border-2 border-slate-600 hover:bg-white/10 text-slate-200 font-mono font-bold text-[11px] cursor-pointer rounded-none"
+              title="Exit Exam Session"
             >
-              Cream
+              [EXIT]
             </button>
+
+            {/* Mobile-Only Finish Test Button in Toolbar */}
             <button
-              onClick={() => setColorScheme('yellow-on-black')}
-              className={`px-2 py-1 rounded text-[11px] font-bold border ${colorScheme === 'yellow-on-black' ? 'bg-yellow-400 text-black' : 'border-yellow-500'}`}
-              title="High Contrast"
+              onClick={() => setShowReviewModal(true)}
+              className="sm:hidden px-2.5 py-0.5 bg-[#B91C1C] text-white font-mono font-bold text-[11px] uppercase tracking-wider border-2 border-[#7F1D1D] rounded-none cursor-pointer"
             >
-              Contrast
+              SUBMIT
             </button>
           </div>
-
-          {/* Help Dialog Button */}
-          <button
-            onClick={() => setShowHelpModal(true)}
-            className="p-1.5 rounded-lg border border-inherit hover:bg-slate-500/10"
-            title="CD-IELTS Instructions & Help"
-          >
-            <HelpCircle className="w-4 h-4 text-blue-600" />
-          </button>
-
-          {/* Margin Notes */}
-          <button
-            onClick={() => setShowNotesDrawer(!showNotesDrawer)}
-            className="px-2.5 py-1.5 rounded-lg border border-inherit text-xs font-bold flex items-center gap-1 hover:bg-slate-500/10"
-          >
-            <StickyNote className="w-4 h-4 text-amber-500" />
-            <span className="hidden sm:inline">Notes ({notes.length})</span>
-          </button>
-
-          {/* Exit Exam */}
-          <button
-            onClick={() => {
-              stopSpeech();
-              onExit();
-            }}
-            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1"
-          >
-            <X className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Exit</span>
-          </button>
         </div>
       </header>
 
-      {/* ================= MOBILE (< 768px) PANE SWITCHER ================= */}
-      <div className="flex md:hidden border-b border-inherit bg-slate-500/5 p-1.5 gap-1.5">
-        <button
-          onClick={() => setMobilePane('left')}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${
-            mobilePane === 'left'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'hover:bg-slate-500/10'
-          }`}
-        >
-          {activeSkill === 'reading'
-            ? '1. Reading Passage'
-            : activeSkill === 'listening'
-            ? '1. Audio Player'
-            : '1. Writing Prompt'}
-        </button>
-        <button
-          onClick={() => setMobilePane('right')}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${
-            mobilePane === 'right'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'hover:bg-slate-500/10'
-          }`}
-        >
-          {activeSkill === 'writing'
-            ? `2. Essay Editor (${activeWritingTask === 1 ? task1WordCount : task2WordCount}w)`
-            : `2. Questions (${answeredCount}/${totalQuestions})`}
-        </button>
-      </div>
-
-      {/* ================= 2. MAIN RESIZABLE SPLIT SCREEN ================= */}
-      <div
-        ref={splitContainerRef}
-        className="flex-1 flex flex-col md:flex-row overflow-hidden relative"
-      >
-        {/* Left Column: Passage / Audio Stream / Writing Prompt */}
-        <div
-          ref={passageRef}
-          onMouseUp={handleTextSelection}
-          style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${leftPanePercent}%` : '100%' }}
-          className={`${
-            mobilePane === 'left' ? 'block' : 'hidden md:block'
-          } h-full p-5 sm:p-8 overflow-y-auto border-r border-inherit scrollbar-thin ${getZoomClass()}`}
-        >
-          <div className="max-w-2xl mx-auto space-y-5">
-            {activeSkill === 'reading' && (
-              <>
-                <div className="border-b border-inherit pb-3">
-                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-600">
-                    {currentSet.badge} · ACADEMIC READING PASSAGE
-                  </span>
-                  <h1 className="text-xl sm:text-2xl font-black mt-1">
-                    {currentSet.readingTitle}
-                  </h1>
-                  <p className="text-xs opacity-75 mt-1 italic">
-                    Read the passage below and answer the questions in the right-hand panel. Select any text to save a margin note.
-                  </p>
-                </div>
-
-                <div className="space-y-4 text-justify">
-                  {currentSet.readingPassage
-                    .split('\n\n')
-                    .filter((para) => para.trim().length > 0)
-                    .map((para, i) => (
-                      <p key={i} className="leading-relaxed">
-                        {renderParagraphWithHighlights(para)}
-                      </p>
-                    ))}
-                </div>
-              </>
-            )}
-
-            {activeSkill === 'listening' && (
-              <>
-                <div className="border-b border-inherit pb-3 flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-600">
-                      {currentSet.source} · MULTI-SPEAKER LISTENING SIMULATOR
-                    </span>
-                    <h1 className="text-xl sm:text-2xl font-black mt-1">
-                      {currentSet.listeningTitle}
-                    </h1>
-                  </div>
-
-                  {/* Listening Section Navigation Tabs */}
-                  <div className="flex items-center gap-1">
-                    {([1, 2, 3, 4] as const).map((sec) => (
-                      <button
-                        key={sec}
-                        onClick={() => startListeningSectionWithPreview(sec)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition border cursor-pointer ${
-                          listeningSection === sec
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                            : 'border-inherit opacity-75 hover:opacity-100 hover:bg-slate-500/10'
-                        }`}
-                      >
-                        Sec {sec}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 30-Second Silent Question Preview Banner */}
-                {isListeningReadingPhase && (
-                  <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 space-y-2 animate-fade-in">
-                    <div className="flex items-center justify-between text-xs font-mono font-bold">
-                      <span className="flex items-center gap-1.5 uppercase">
-                        <Clock className="w-4 h-4 text-amber-500 animate-spin" />
-                        30-Second Question Preview Phase (Section {listeningSection})
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-600 font-mono text-sm font-black">
-                        00:{listeningReadingSec.toString().padStart(2, '0')}
-                      </span>
-                    </div>
-                    <p className="text-xs opacity-90">
-                      You have 30 seconds to review Questions 1 to 5. The multi-character audio recording will commence automatically when countdown reaches 00:00.
-                    </p>
-                    <div className="w-full h-1.5 rounded-full bg-amber-200 dark:bg-amber-900/60 overflow-hidden">
-                      <div
-                        className="h-full bg-amber-500 transition-all duration-1000"
-                        style={{ width: `${(listeningReadingSec / 30) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Multi-Speaker Audio Player & Synchronized Live Speaker Visualizer */}
-                <div className="p-5 sm:p-6 rounded-2xl border border-inherit bg-slate-500/5 space-y-5">
-                  {/* Native HTML5 Audio Bar with Controls for Direct MP3 Audio Stream */}
-                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-700 space-y-2 shadow-inner">
-                    <div className="flex items-center justify-between flex-wrap gap-2 text-xs font-mono">
-                      <span className="flex items-center gap-2 text-blue-400 font-bold">
-                        <Headphones className="w-4 h-4" />
-                        🇬🇧 Official Cambridge MP3 Audio Stream · Section {listeningSection}
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        Insight Into IELTS (Official Recording)
-                      </span>
-                    </div>
-                    <audio
-                      ref={audioRef}
-                      src={activeAudioSrc}
-                      controls
-                      preload="auto"
-                      className="h-10 text-xs accent-blue-600 rounded-lg w-full bg-slate-800 border border-slate-700"
-                      onPlay={() => {
-                        setIsAudioPlaying(true);
-                        setHasPlayedListeningOnce(true);
-                        setIsListeningReadingPhase(false);
-                      }}
-                      onPause={() => setIsAudioPlaying(false)}
-                      onError={() => {
-                        console.warn(`Audio stream failed to load for source: ${activeAudioSrc}`);
-                        setUseMp3Stream(false);
-                      }}
-                      onTimeUpdate={() => {
-                        if (audioRef.current) {
-                          const curr = Math.floor(audioRef.current.currentTime);
-                          const dur = audioRef.current.duration || 330;
-                          setListeningPlaybackTimeSec(curr);
-
-                          // Sync live speaker card & subtitles based on MP3 playback progress
-                          const parsed = parseScriptLines(currentSet.listeningScript);
-                          if (parsed.length > 0 && dur > 0) {
-                            const progress = audioRef.current.currentTime / dur;
-                            const idx = Math.min(parsed.length - 1, Math.floor(progress * parsed.length));
-                            const curLine = parsed[idx];
-                            if (curLine) {
-                              setActiveSpeakerPersona(curLine.persona);
-                              setCurrentSpeaker({
-                                name: curLine.speakerName,
-                                role: curLine.role,
-                                accent: curLine.accent,
-                                text: curLine.text
-                              });
-                              setCurrentSubtitleText(curLine.text);
-                            }
-                          }
-                        }
-                      }}
-                      onEnded={() => {
-                        setIsAudioPlaying(false);
-                        setIsListeningTransferPhase(true);
-                        setListeningTransferSec(120);
-                        onShowToast('Listening audio recording finished. 2-minute answer check started.');
-                      }}
-                    />
-                  </div>
-
-                  {/* Synchronized Live Speaker Visualizer Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Card 1: Persona A (🇬🇧 Admissions Officer / Arthur Davies) */}
-                    <div
-                      className={`p-4 rounded-xl transition-all duration-300 relative overflow-hidden ${
-                        isAudioPlaying && activeSpeakerPersona === 'persona_a'
-                          ? 'bg-slate-900 border-2 border-blue-500 shadow-lg shadow-blue-500/25 opacity-100 scale-100'
-                          : 'bg-slate-900/80 border border-slate-800 opacity-50 scale-98 hover:opacity-75'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shadow-md transition-transform ${
-                              isAudioPlaying && activeSpeakerPersona === 'persona_a' ? 'bg-blue-600 ring-2 ring-blue-400 scale-105' : 'bg-slate-700'
-                            }`}
-                          >
-                            🇬🇧
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-black text-white">Arthur Davies</span>
-                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                                UK RP
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-400 block">Admissions Officer</span>
-                          </div>
-                        </div>
-
-                        {/* Animated Equalizer or Speaking Badge */}
-                        {isAudioPlaying && activeSpeakerPersona === 'persona_a' ? (
-                          <div className="flex items-center gap-1.5 bg-blue-500/20 border border-blue-500/40 text-blue-300 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold">
-                            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                            <span>SPEAKING</span>
-                            <div className="flex items-end gap-0.5 h-3 ml-1">
-                              <span className="w-0.5 bg-blue-400 h-full animate-bounce" />
-                              <span className="w-0.5 bg-blue-400 h-2/3 animate-bounce [animation-delay:0.2s]" />
-                              <span className="w-0.5 bg-blue-400 h-4/5 animate-bounce [animation-delay:0.4s]" />
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-mono text-slate-500 uppercase">
-                            {isAudioPlaying ? 'LISTENING' : 'READY'}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-slate-300 italic line-clamp-2 min-h-[32px] font-serif">
-                        {isAudioPlaying && activeSpeakerPersona === 'persona_a'
-                          ? `"${currentSpeaker?.text || currentSubtitleText}"`
-                          : 'Awaiting turn in dialogue...'}
-                      </div>
-                    </div>
-
-                    {/* Card 2: Persona B (🇦🇺 Liam Henderson) */}
-                    <div
-                      className={`p-4 rounded-xl transition-all duration-300 relative overflow-hidden ${
-                        isAudioPlaying && activeSpeakerPersona === 'persona_b'
-                          ? 'bg-slate-900 border-2 border-emerald-500 shadow-lg shadow-emerald-500/25 opacity-100 scale-100'
-                          : 'bg-slate-900/80 border border-slate-800 opacity-50 scale-98 hover:opacity-75'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shadow-md transition-transform ${
-                              isAudioPlaying && activeSpeakerPersona === 'persona_b' ? 'bg-emerald-600 ring-2 ring-emerald-400 scale-105' : 'bg-slate-700'
-                            }`}
-                          >
-                            🇦🇺
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-black text-white">Liam Henderson</span>
-                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                AU ACCENT
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-400 block">Postgraduate Candidate</span>
-                          </div>
-                        </div>
-
-                        {/* Animated Equalizer or Speaking Badge */}
-                        {isAudioPlaying && activeSpeakerPersona === 'persona_b' ? (
-                          <div className="flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>SPEAKING</span>
-                            <div className="flex items-end gap-0.5 h-3 ml-1">
-                              <span className="w-0.5 bg-emerald-400 h-full animate-bounce" />
-                              <span className="w-0.5 bg-emerald-400 h-2/3 animate-bounce [animation-delay:0.2s]" />
-                              <span className="w-0.5 bg-emerald-400 h-4/5 animate-bounce [animation-delay:0.4s]" />
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-mono text-slate-500 uppercase">
-                            {isAudioPlaying ? 'LISTENING' : 'READY'}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-slate-300 italic line-clamp-2 min-h-[32px] font-serif">
-                        {isAudioPlaying && activeSpeakerPersona === 'persona_b'
-                          ? `"${currentSpeaker?.text || currentSubtitleText}"`
-                          : 'Awaiting turn in dialogue...'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Real-time Closed Caption Subtitle Strip */}
-                  {showCaptions && (
-                    <div className="p-4 rounded-xl bg-slate-900/90 text-white border border-slate-700/80 space-y-1.5 shadow-md">
-                      <div className="flex items-center justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
-                        <span className="flex items-center gap-1.5 text-blue-400">
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          💬 Live Closed Captions
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                            {activeSpeakerPersona === 'persona_a' ? '🇬🇧 Arthur Davies (UK)' : activeSpeakerPersona === 'persona_b' ? '🇦🇺 Liam Henderson (AU)' : 'Narrator'}
-                          </span>
-                          <button
-                            onClick={() => setShowCaptions(false)}
-                            className="text-[10px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
-                          >
-                            Hide
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs sm:text-sm font-medium italic text-slate-100 font-serif leading-relaxed">
-                        {currentSpeaker?.text || currentSubtitleText || 'Audio playback is ready. Press play to begin Section 1 audio.'}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Pacing & Volume Controls */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <button
-                      onClick={handleStartMultiSpeakerAudio}
-                      className={`px-6 py-3 rounded-xl font-bold text-xs text-white shadow-md transition inline-flex items-center gap-2 cursor-pointer ${
-                        isAudioPlaying
-                          ? 'bg-rose-600 hover:bg-rose-700'
-                          : 'bg-blue-600 hover:bg-blue-700'
-                      }`}
-                    >
-                      {isAudioPlaying ? (
-                        <>
-                          <Square className="w-4 h-4 fill-current" />
-                          <span>Pause Recording</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 fill-current" />
-                          <span>{hasPlayedListeningOnce ? 'Replay Section Audio' : 'Play Multi-Speaker Recording'}</span>
-                        </>
-                      )}
-                    </button>
-
-                    {/* Anti-Scrubbing Read-Only Timestamp Bar */}
-                    <div className="flex-1 max-w-xs space-y-1">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                        <span>Progress (No Seeking in Exam)</span>
-                        <span>{formatTimer(listeningPlaybackTimeSec)} / 05:30</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-300 dark:bg-slate-700 overflow-hidden">
-                        <div
-                          className="h-full bg-blue-600 transition-all duration-500"
-                          style={{ width: `${Math.min(100, (listeningPlaybackTimeSec / 330) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Volume & Mute & Caption Controls */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setShowCaptions(!showCaptions)}
-                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-mono font-bold transition flex items-center gap-1 cursor-pointer ${
-                          showCaptions
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'border-inherit hover:bg-slate-500/10 text-slate-400'
-                        }`}
-                        title="Toggle Live Subtitles / Closed Captions"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>{showCaptions ? 'Captions ON' : 'Captions OFF'}</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsListeningMuted(!isListeningMuted);
-                          soundManager.playBeep(600, 0.02);
-                        }}
-                        className="p-2 rounded-lg border border-inherit hover:bg-slate-500/10 cursor-pointer"
-                        title={isListeningMuted ? 'Unmute Audio' : 'Mute Audio'}
-                      >
-                        {isListeningMuted ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4 text-blue-600" />}
-                      </button>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={isListeningMuted ? 0 : listeningVolume}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          setListeningVolume(val);
-                          if (val === 0) setIsListeningMuted(true);
-                          else setIsListeningMuted(false);
-                        }}
-                        className="w-20 accent-blue-600 cursor-pointer"
-                        title="Adjust Master Volume"
-                      />
-                    </div>
-                  </div>
-
-                  {isListeningTransferPhase && (
-                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 font-mono text-xs font-bold text-center">
-                      ⏳ 2-Minute Post-Audio Answer Check: {formatTimer(listeningTransferSec)} remaining
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {activeSkill === 'writing' && (
-              <>
-                <div className="border-b border-inherit pb-3 flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-600">
-                      ACADEMIC WRITING MODULE · TASK {activeWritingTask}
-                    </span>
-                    <h1 className="text-xl sm:text-2xl font-black mt-1">
-                      {activeWritingTask === 1
-                        ? 'Writing Task 1 (Report · Min 150 Words)'
-                        : 'Writing Task 2 (Essay · Min 250 Words)'}
-                    </h1>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => setActiveWritingTask(1)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
-                        activeWritingTask === 1
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'border-inherit hover:bg-slate-500/10'
-                      }`}
-                    >
-                      Task 1
-                    </button>
-                    <button
-                      onClick={() => setActiveWritingTask(2)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
-                        activeWritingTask === 2
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'border-inherit hover:bg-slate-500/10'
-                      }`}
-                    >
-                      Task 2
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-5 rounded-2xl border border-inherit bg-slate-500/5 space-y-3">
-                  <div className="text-xs font-mono font-bold uppercase text-blue-600">
-                    Prompt Instructions:
-                  </div>
-                  <p className="text-sm sm:text-base font-bold leading-relaxed">
-                    {activeWritingTask === 1
-                      ? currentSet.task1Prompt ||
-                        'Summarise the main features of the statistical chart and make comparisons where relevant. Write at least 150 words.'
-                      : currentSet.writingPrompt}
-                  </p>
-                  <p className="text-xs opacity-75">
-                    {activeWritingTask === 1
-                      ? 'You should spend about 20 minutes on this task. Write at least 150 words.'
-                      : 'You should spend about 40 minutes on this task. Write at least 250 words.'}
-                  </p>
-                </div>
-              </>
-            )}
-
-            <div className="p-3.5 rounded-xl border border-dashed border-inherit bg-slate-500/5 text-xs">
-              <div className="flex items-center gap-2 font-bold mb-1">
-                <Highlighter className="w-4 h-4 text-amber-500" />
-                <span>Text Selection & Margin Notes Active</span>
+      {/* Barnaby guide panel — target-band help for the section in progress */}
+      {showBarnabyGuide && (
+        <div className="fixed top-0 right-0 bottom-0 w-full max-w-[340px] z-50 bg-white text-slate-900 shadow-2xl border-l-4 border-amber-400 overflow-y-auto font-sans">
+          <div className="sticky top-0 bg-[#0F4C45] text-white px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-9 h-9 rounded-full bg-amber-400 text-slate-950 font-black flex items-center justify-center text-base shrink-0">
+                B
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-black leading-tight">Barnaby&apos;s exam guide</div>
+                <div className="text-[11px] text-teal-100 leading-tight">Your little dragon, your big IELTS dreams</div>
               </div>
-              <p className="opacity-80">
-                Select any text in the passage or prompt to save a quote to your scratchpad notes.
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowBarnabyGuide(false)}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-white cursor-pointer shrink-0"
+              aria-label="Close Barnaby's guide"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="p-4 space-y-4">
+            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200">
+              <div className="text-[11px] font-black uppercase tracking-wider text-amber-800">Your aim</div>
+              <div className="text-lg font-black text-slate-900 mt-0.5">
+                Band {examSetup.targetBand.toFixed(1)} · {examSetup.examMode}
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed mt-1">
+                {examSetup.examDate && examDaysLeft !== null
+                  ? examDaysLeft === 0
+                    ? 'Your exam is today — stay calm, trust your practice.'
+                    : `Your exam is in ${examDaysLeft} day${examDaysLeft === 1 ? '' : 's'} (${formatExamDate(examSetup.examDate)}).`
+                  : 'No exam date set — Barnaby is pacing you by your target band.'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-black text-slate-900">{barnabySectionGuide.title}</h3>
+              <p className="text-xs text-slate-700 leading-relaxed">{barnabySectionGuide.need}</p>
+              <p className="text-xs text-slate-700 leading-relaxed flex gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#0F4C45] shrink-0 mt-0.5" />
+                <span>{barnabySectionGuide.time}</span>
+              </p>
+              <p className="text-xs text-slate-700 leading-relaxed flex gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <span>{barnabySectionGuide.trap}</span>
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#0F4C45]/5 border border-[#0F4C45]/20">
+              <p className="text-xs text-slate-700 leading-relaxed">
+                <span className="font-black text-[#0F4C45]">Every mistake makes you stronger.</span>{' '}
+                If a question is hard, flag it and move on — you can come back to it in the review time.
+                Guessing is always better than leaving a blank.
               </p>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Draggable Vertical Splitter Handle (Desktop) */}
-        <div
-          onMouseDown={handleSplitterMouseDown}
-          className={`hidden md:flex w-2 hover:w-3 bg-slate-300 dark:bg-slate-700 cursor-col-resize items-center justify-center transition-all ${
-            isDraggingSplitter ? 'bg-blue-600 w-3' : ''
-          }`}
-          title="Drag to resize passage and questions"
-        >
-          <div className="w-0.5 h-8 bg-slate-400 dark:bg-slate-500 rounded" />
+      {/* ================= 2. ACTIVE TEST STAGE BAR & MODULE SWITCHER ================= */}
+      <div className={`w-full px-3 sm:px-4 py-2 border-b-2 ${theme.border} flex flex-wrap items-center justify-between gap-2.5 shrink-0 bg-[#E2E8F0] text-[#002F6C] font-mono select-none rounded-none`}>
+        {/* Practice Module Switcher Navigation Tabs */}
+        <div className="flex items-center gap-1.5 font-mono text-xs overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => handleSwitchModule('listening')}
+            className={`px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeSkill === 'listening'
+                ? 'bg-[#002F6C] text-white border-[#001F4D] shadow-inner'
+                : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+            }`}
+          >
+            <Headphones className="w-3.5 h-3.5" />
+            <span>1. LISTENING</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchModule('reading')}
+            className={`px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeSkill === 'reading'
+                ? 'bg-[#002F6C] text-white border-[#001F4D] shadow-inner'
+                : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>2. READING</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchModule('writing')}
+            className={`px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeSkill === 'writing'
+                ? 'bg-[#002F6C] text-white border-[#001F4D] shadow-inner'
+                : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+            }`}
+          >
+            <PenTool className="w-3.5 h-3.5" />
+            <span>3. WRITING</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (onNavigateToSpeaking) {
+                stopSpeech();
+                audioService.stop();
+                onNavigateToSpeaking();
+              } else {
+                onShowToast('Speaking Interview module is opening.');
+              }
+            }}
+            className="px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer bg-white text-rose-700 border-slate-400 hover:border-rose-600 hover:bg-rose-50 whitespace-nowrap"
+            title="Open AI Speaking Practice Suite"
+          >
+            <Mic className="w-3.5 h-3.5 text-rose-600" />
+            <span>4. SPEAKING</span>
+          </button>
         </div>
 
-        {/* Right Column: Question Panel OR Writing Response Editor */}
+        {/* Stage Progression & Navigation Shortcuts */}
+        <div className="flex items-center gap-2 font-mono text-xs font-bold">
+          {activeSkill === 'listening' && (
+            <button
+              onClick={handleProceedToReading}
+              className="px-3 py-1 bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D] cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider"
+              title="Finish Listening and proceed to 60-minute Academic Reading"
+            >
+              <span>NEXT: READING (60M)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {activeSkill === 'reading' && (
+            <button
+              onClick={handleProceedToWriting}
+              className="px-3 py-1 bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D] cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider"
+              title="Finish Reading and proceed to 60-minute Academic Writing"
+            >
+              <span>NEXT: WRITING (60M)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {activeSkill === 'writing' && (
+            <button
+              onClick={() => setShowReviewModal(true)}
+              className="px-3 py-1 bg-[#B91C1C] hover:bg-[#991B1B] text-white border-2 border-[#7F1D1D] cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider"
+              title="Finish and submit test for official 4-criterion AI grading"
+            >
+              <span>FINISH TEST & GRADE</span>
+              <Sparkles className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Mobile Viewport Toggle (Passage/Prompt vs Questions) */}
+          <div className="flex md:hidden items-center gap-1.5 shrink-0 font-mono">
+            <button
+              onClick={() => handleSwitchMobilePane('left')}
+              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-1.5 ${
+                mobilePane === 'left' ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>{activeSkill === 'reading' ? 'PASSAGE' : 'PROMPT'}</span>
+            </button>
+            <button
+              onClick={() => handleSwitchMobilePane('right')}
+              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-1.5 ${
+                mobilePane === 'right' ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+              }`}
+            >
+              <span>QUESTIONS ({answeredCount}/{totalQuestions})</span>
+            </button>
+          </div>
+
+          <div className="hidden xl:flex items-center gap-1.5 px-2 py-0.5 bg-white border border-slate-400 text-slate-800 text-[11px]">
+            <span className="w-2 h-2 bg-emerald-600 rounded-none shrink-0" />
+            <span className="tabular-nums">SAVED: {lastAutoSavedTime}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ================= 2. WORKSTATION SPLIT PANE CONTAINER ================= */}
+      <div ref={splitContainerRef} className="flex-1 w-full flex flex-col md:flex-row overflow-hidden relative">
+        {/* Left Column: Passage / Listening Transcript / Writing Prompt */}
         <div
-          style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - leftPanePercent}%` : '100%' }}
-          className={`${
-            mobilePane === 'right' ? 'flex' : 'hidden md:flex'
-          } h-full p-5 sm:p-6 overflow-y-auto flex-col justify-between bg-inherit border-inherit`}
+          ref={leftPaneScrollRef}
+          style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${leftPanePercent}%` : '100%' }}
+          className={`flex basis-[45%] shrink-0 md:basis-auto md:shrink md:h-full p-4 sm:p-6 overflow-y-auto flex-col space-y-4 border-b md:border-b-0 md:border-r ${theme.border} bg-inherit`}
+          onMouseUp={handleTextSelection}
+          onTouchEnd={handleTextSelection}
         >
+          {activeSkill === 'reading' && (
+            <div className="space-y-4">
+              <div className="border-b-2 border-slate-300 pb-2 flex flex-wrap items-center justify-between gap-2 font-mono">
+                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
+                  [ READING PRACTICE SET {selectedSetIdx + 1} OF {MOCK_EXAM_SETS.length} ]
+                </span>
+                <div className="flex items-center gap-1 font-mono text-xs">
+                  {MOCK_EXAM_SETS.map((set, pIdx) => (
+                    <button
+                      key={set.id}
+                      onClick={() => {
+                        activePlaybackTokenRef.current += 1;
+                        setSelectedSetIdx(pIdx);
+                        setActiveQuestionIdx(0);
+                        if (leftPaneScrollRef.current) leftPaneScrollRef.current.scrollTop = 0;
+                        passageScrollPosRef.current = 0;
+                        soundManager.playBeep(540, 0.03);
+                        onShowToast(`Viewing ${MOCK_EXAM_SETS[pIdx]?.title || `Practice Set ${pIdx + 1}`}`);
+                      }}
+                      className={`px-3 py-1.5 min-h-[38px] border-2 rounded-none cursor-pointer font-bold ${
+                        selectedSetIdx === pIdx
+                          ? 'bg-[#002F6C] text-white border-[#001F4D]'
+                          : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                      }`}
+                    >
+                      SET {pIdx + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-slate-600 bg-slate-100 p-2 border border-slate-300">
+                <span>[ PASSAGE TOPIC: {activeReadingTitle} · {activeReadingBadge} ]</span>
+                <span>[ PASSAGE LENGTH: {(activePassageText || currentSet.readingPassage || '').trim().split(/\s+/).filter(Boolean).length} WORDS ]</span>
+              </div>
+
+              <h1 className="text-xl sm:text-2xl font-bold leading-tight text-[#002F6C] font-mono">
+                {activeReadingTitle}
+              </h1>
+
+              <div className="space-y-4 leading-relaxed font-sans text-justify text-slate-900 text-sm sm:text-base">
+                {(activePassageText || currentSet.readingPassage || '').split('\n\n').map((paragraph, pIdx) => (
+                  <p key={pIdx} className="indent-4 leading-relaxed">
+                    {renderParagraphWithHighlights(paragraph)}
+                  </p>
+                ))}
+              </div>
+
+              <div className="pt-4 border-t-2 border-slate-300 flex flex-wrap items-center justify-between gap-3 font-mono">
+                <span className="text-xs text-slate-600">
+                  Select text to highlight in yellow, underline, or record margin notes (Alt+V)
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleSwitchMobilePane('right')}
+                    className="md:hidden px-4 py-2 bg-[#002F6C] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] flex items-center gap-2 cursor-pointer shadow-sm active:scale-95 min-h-[44px]"
+                  >
+                    <span>GO TO QUESTIONS ({answeredCount}/{totalQuestions})</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={handleProceedToWriting}
+                    className="hidden sm:flex px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] items-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <span>PROCEED TO WRITING MODULE (60 MINS)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSkill === 'listening' && (
+            <div className="space-y-4">
+              {/* Section Header & Part Switcher */}
+              <div className="border-b-2 border-slate-300 pb-2 flex flex-wrap items-center justify-between gap-2 font-mono">
+                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
+                  [ LISTENING MODULE · SECTION {listeningSection} OF 4 (SINGLE-PLAY RULE) ]
+                </span>
+                <div className="flex items-center gap-1 font-mono text-xs">
+                  {[1, 2, 3, 4].map((s) => {
+                    const isCompleted = Boolean(completedListeningParts[s]);
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => {
+                          if (isCompleted) {
+                            onShowToast(`Section ${s} audio has already played once (Single-Play Rule). Viewing questions only.`);
+                          } else if (s !== listeningSection) {
+                            activePlaybackTokenRef.current += 1;
+                            stopSpeech();
+                            audioService.stop();
+                            setIsAudioPlaying(false);
+                            setListeningAudioError(null);
+                            setListeningPhase('pre_read');
+                            setPhaseCountdownSec(35);
+                          }
+                          setListeningSection(s as 1 | 2 | 3 | 4);
+                        }}
+                        className={`px-2.5 py-1 border-2 rounded-none flex items-center gap-1 cursor-pointer font-bold ${
+                          listeningSection === s
+                            ? 'bg-[#002F6C] text-white border-[#001F4D]'
+                            : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                        }`}
+                        title={
+                          isCompleted
+                            ? `Completed at ${new Date(completedListeningParts[s]).toLocaleTimeString()}`
+                            : `Section ${s}`
+                        }
+                      >
+                        <span>SEC {s}</span>
+                        {isCompleted && <CheckCircle2 className="w-3 h-3 text-emerald-500 inline" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Practice Device Sound Check Banner */}
+              <div className="p-3 border-2 border-slate-400 bg-slate-50 flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
+                <div className="flex items-center gap-2">
+                  <Headphones className="w-4 h-4 text-[#002F6C]" />
+                  <span className="font-bold text-[#002F6C]">
+                    SOUND CHECK: {hasTestedHeadset ? '✓ AUDIO VERIFIED & READY' : '⚠️ CLICK TEST TO CHECK HEADSET'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRunSoundCheck}
+                    disabled={isAudioPlaying}
+                    className="px-3 py-1 bg-white hover:bg-slate-200 text-[#002F6C] font-mono font-bold text-xs border border-slate-400 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-blue-700" />
+                    <span>{isSoundCheckPlaying ? 'Testing Sound...' : '[ 🎧 PLAY SOUND TEST ]'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Standardized Practice Section Transitions & Silence Buffers Banner */}
+              <div className="my-2 p-4 sm:p-5 border-2 border-[#002F6C]/40 bg-white space-y-3.5 shadow-none rounded-none font-mono">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono font-bold">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        isAudioPlaying || listeningPhase === 'playing'
+                          ? 'bg-rose-600 animate-ping'
+                          : listeningPhase === 'completed'
+                          ? 'bg-gray-500'
+                          : 'bg-amber-500 animate-pulse'
+                      }`}
+                    />
+                    <span className="uppercase text-[11px] sm:text-xs">
+                      {listeningPhase === 'pre_read' && `PRE-READ SILENCE BUFFER · PART ${listeningSection} OF 4`}
+                      {listeningPhase === 'playing' && `SINGLE-PLAY BROADCAST ACTIVE · PART ${listeningSection} OF 4`}
+                      {listeningPhase === 'section_check' && `POST-SECTION CHECK BUFFER · PART ${listeningSection} OF 4`}
+                      {listeningPhase === 'end_of_test_buffer' && `FINAL 2-MINUTE END-OF-TEST CHECK BUFFER`}
+                      {listeningPhase === 'completed' && `LISTENING BROADCAST CONCLUDED (LOCKED)`}
+                    </span>
+                  </div>
+
+                  <span className="px-2.5 py-0.5 bg-black text-white font-mono text-xs font-bold tracking-wider">
+                    {listeningPhase === 'completed' ? '00:00' : formatTimer(phaseCountdownSec)}
+                  </span>
+                </div>
+
+                <p className="text-xs font-sans font-bold leading-relaxed opacity-95">
+                  {listeningPhase === 'pre_read' &&
+                    `"You will have some time (${phaseCountdownSec}s) to look at questions ${(listeningSection - 1) * 10 + 1} to ${listeningSection * 10} before the recording begins."`}
+                  {listeningPhase === 'playing' &&
+                    `Audio is playing strictly once (${audioPlaybackSec}s elapsed). Seek bar, pause controls, and speed multipliers are disabled per official CD-IELTS examination rules.`}
+                  {listeningPhase === 'section_check' &&
+                    `"You now have ${phaseCountdownSec} seconds to check your answers for Section ${listeningSection} before advancing to the next section."`}
+                  {listeningPhase === 'end_of_test_buffer' &&
+                    `Standard 2-Minute CD-IELTS Final Check Window (${formatTimer(phaseCountdownSec)} remaining). Review your responses across all questions before answers lock permanently.`}
+                  {listeningPhase === 'completed' &&
+                    `All 4 Listening sections and the 2-minute check period have concluded. Responses are locked for grading.`}
+                </p>
+
+                {/* Pre-Read Action Button (Skip Silence & Start Immediately) */}
+                {listeningPhase === 'pre_read' && (
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={handleSkipPreReadAndStartAudio}
+                      className="px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-white" />
+                      <span>START RECORDING NOW (SKIP PRE-READ)</span>
+                    </button>
+                    <span className="text-xs text-slate-600 font-mono">
+                      Recording starts automatically in {phaseCountdownSec}s
+                    </span>
+                  </div>
+                )}
+
+                {/* Candidate Error / Unavailable Audio Notification Banner */}
+                {listeningAudioError && listeningAudioError.sectionNum === listeningSection && (
+                  <div className="p-4 border-2 border-amber-500 bg-amber-50 text-amber-950 font-mono text-xs space-y-3">
+                    <div className="flex items-center gap-2 font-bold text-amber-900">
+                      <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>
+                        {listeningAudioError.isUnavailable
+                          ? `[ SECTION ${listeningSection} AUDIO UNAVAILABLE ]`
+                          : `[ SECTION ${listeningSection} AUDIO PLAYBACK ERROR ]`}
+                      </span>
+                    </div>
+                    <p className="font-sans text-xs leading-relaxed text-amber-900">
+                      {listeningAudioError.message}
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      {listeningAudioError.canRetry && (
+                        <button
+                          onClick={() => {
+                            const count = audioRetryCountRef.current[listeningSection] || 0;
+                            audioRetryCountRef.current[listeningSection] = count + 1;
+                            setListeningAudioError(null);
+                            startListeningPlayback(listeningSection);
+                          }}
+                          className="px-3 py-1.5 bg-[#002F6C] text-white font-mono font-bold text-xs uppercase hover:bg-[#001F4D] cursor-pointer flex items-center gap-1.5"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>RETRY PLAYBACK ({2 - (audioRetryCountRef.current[listeningSection] || 0)} RETRIES LEFT)</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setListeningAudioError(null);
+                          setListeningPhase('section_check');
+                          setPhaseCountdownSec(60);
+                          onShowToast(`Proceeding to Section ${listeningSection} questions without audio.`);
+                        }}
+                        className="px-3 py-1.5 bg-slate-200 text-slate-800 font-mono font-bold text-xs uppercase hover:bg-slate-300 border border-slate-400 cursor-pointer"
+                      >
+                        <span>CONTINUE TO QUESTIONS</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Live Broadcast Audio Feed Display */}
+                {listeningPhase === 'playing' && (!listeningAudioError || listeningAudioError.sectionNum !== listeningSection) && (
+                  <div className="p-3 bg-blue-50 border-2 border-blue-400 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-blue-900">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse" />
+                        <span>🔴 AUDIO BROADCAST STREAMING (NEURAL SPEECH)</span>
+                      </div>
+                      <span className="font-mono text-xs">{audioPlaybackSec}s Elapsed</span>
+                    </div>
+
+                    {currentSpokenLine && (
+                      <p className="text-xs font-mono font-medium text-blue-950 bg-white/70 p-2 border border-blue-200">
+                        {currentSpokenLine}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Section Review Buffer Action Button */}
+                {listeningPhase === 'section_check' && (
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={handleAdvanceSection}
+                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-emerald-900 flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                    >
+                      <span>ADVANCE TO {listeningSection < 4 ? `SECTION ${listeningSection + 1}` : 'END-OF-TEST CHECK'}</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs text-slate-600 font-mono">
+                      Auto-advances in {phaseCountdownSec}s
+                    </span>
+                  </div>
+                )}
+
+                {/* End-of-Test / Completed Buffer Action Button */}
+                {(listeningPhase === 'end_of_test_buffer' || listeningPhase === 'completed') && (
+                  <div className="pt-2 flex items-center gap-3">
+                    <button
+                      onClick={handleProceedToReading}
+                      className="px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] flex items-center gap-2 cursor-pointer shadow-sm"
+                    >
+                      <span>PROCEED TO READING MODULE (60 MINS)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Centered & Fully Responsive Headset Gain Controls (Zero Scrubbing / No Seek Bar / No Pause Button) */}
+                <div className="pt-3 border-t border-gray-400/60 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs">
+                  <div className="flex items-center gap-2 font-bold w-full sm:w-auto justify-between sm:justify-start">
+                    <span>🎧 Headset Gain: {isListeningMuted ? 'MUTED' : `${Math.round(listeningVolume * 100)}%`}</span>
+                    <span className="text-[10px] text-gray-500 font-normal sm:hidden">[Single-Play Lock]</span>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 w-full sm:w-auto sm:flex-1 max-w-sm justify-center">
+                    <button
+                      onClick={() => {
+                        const nextMuted = !isListeningMuted;
+                        setIsListeningMuted(nextMuted);
+                        audioService.setVolume(nextMuted ? 0 : listeningVolume);
+                        soundManager.playBeep(600, 0.02);
+                      }}
+                      className={`p-1.5 border ${theme.border} hover:opacity-80 cursor-pointer shrink-0`}
+                      title="Toggle Headset Mute"
+                    >
+                      {isListeningMuted ? <VolumeX className="w-4 h-4 text-rose-600" /> : <Volume2 className="w-4 h-4 text-sky-600" />}
+                    </button>
+
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={isListeningMuted ? 0 : listeningVolume}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setListeningVolume(val);
+                        audioService.setVolume(val);
+                        if (val === 0) setIsListeningMuted(true);
+                        else setIsListeningMuted(false);
+                      }}
+                      className="flex-1 w-full accent-sky-600 cursor-pointer h-2"
+                      aria-label="Listening Headset Volume"
+                    />
+
+                    <span className="font-bold w-9 text-right shrink-0">
+                      {Math.round(listeningVolume * 100)}%
+                    </span>
+                  </div>
+
+                  <span className="text-[11px] opacity-75 hidden sm:inline shrink-0">
+                    IELTS-Style Practice Engine (Neural Speech)
+                  </span>
+                </div>
+              </div>
+
+              {(() => {
+                const secDetail = getExamListeningSection(currentSet, listeningSection);
+                return (
+                  <div className="space-y-3">
+                    <h3 className="font-bold text-base border-b border-gray-300 pb-1">
+                      Section {listeningSection} Context & Reference:
+                    </h3>
+                    {secDetail.isAvailable && secDetail.script ? (
+                      <div className="space-y-3 font-sans text-sm sm:text-base leading-relaxed">
+                        {secDetail.script.split('\n\n').map((para, idx) => (
+                          <p key={idx} className="p-3 border border-gray-300 bg-white/5">
+                            {renderParagraphWithHighlights(para)}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 border-2 border-amber-300 bg-amber-50 text-amber-900 font-mono text-xs space-y-2">
+                        <div className="flex items-center gap-2 font-bold text-amber-900">
+                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>[ SECTION {listeningSection} CONTENT NOTICE ]</span>
+                        </div>
+                        <p className="font-sans text-sm leading-relaxed">
+                          {secDetail.missingReason || `Realistic listening recording and dialogue for Section ${listeningSection} are not available in this practice set.`}
+                        </p>
+                        <p className="text-[11px] text-amber-800">
+                          Per Phase 1 integrity rules, Section 1 dialogue is not reused as a substitute. You may inspect any available questions or advance to the next section.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {activeSkill === 'writing' && (
+            <div className="space-y-4">
+              <div className="border-b-2 border-slate-300 pb-2 flex items-center justify-between font-mono">
+                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
+                  [ ACADEMIC WRITING MODULE · TASK {activeWritingTask} ]
+                </span>
+                <div className="flex items-center gap-2 font-mono">
+                  <button
+                    onClick={() => setActiveWritingTask(1)}
+                    className={`px-3 py-1 text-xs font-mono font-bold border-2 rounded-none cursor-pointer ${
+                      activeWritingTask === 1 ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+                    }`}
+                  >
+                    Task 1 (Min 150w)
+                  </button>
+                  <button
+                    onClick={() => setActiveWritingTask(2)}
+                    className={`px-3 py-1 text-xs font-mono font-bold border-2 rounded-none cursor-pointer ${
+                      activeWritingTask === 2 ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+                    }`}
+                  >
+                    Task 2 (Min 250w)
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 border-2 border-[#002F6C]/40 bg-white space-y-2 rounded-none shadow-none font-mono">
+                <div className="text-xs font-mono font-bold uppercase text-[#002F6C]">
+                  [ OFFICIAL WRITING PROMPT · TASK {activeWritingTask} ]
+                </div>
+                <p className="font-bold leading-relaxed text-sm sm:text-base font-sans text-[#0F172A]">
+                  {activeWritingTask === 1
+                    ? currentSet.task1Prompt || 'Summarise the main features of the statistical chart and make comparisons where relevant. Write at least 150 words.'
+                    : currentSet.writingPrompt}
+                </p>
+                <p className="text-xs opacity-75 pt-2 border-t border-slate-200">
+                  {activeWritingTask === 1
+                    ? 'Recommended time: 20 minutes. Minimum length: 150 words. Under-length submissions incur automatic Task Achievement penalties.'
+                    : 'Recommended time: 40 minutes. Minimum length: 250 words. Under-length submissions incur automatic Task Response penalties.'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Draggable Vertical Splitter Handle */}
+        <div
+          onMouseDown={handleSplitterMouseDown}
+          className={`hidden md:flex w-2 hover:w-3 bg-gray-400 cursor-col-resize items-center justify-center transition-all ${
+            isDraggingSplitter ? 'bg-sky-600 w-3' : ''
+          }`}
+          title="Drag to resize passage and question panes"
+        >
+          <div className="w-0.5 h-8 bg-gray-600 rounded-none" />
+        </div>
+
+        {/* Right Column: Question Panel OR Writing Editor Area */}
+        <div
+          ref={rightPaneScrollRef}
+          style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - leftPanePercent}%` : '100%' }}
+          className={`flex flex-1 min-h-0 md:flex-none md:h-full p-5 sm:p-6 overflow-y-auto flex-col justify-between bg-inherit`}
+        >
+          {activeSkill === 'reading' && (
+            <div className="md:hidden mb-4 pb-2 border-b border-gray-300 flex items-center justify-between">
+              <button
+                onClick={() => handleSwitchMobilePane('left')}
+                className="min-h-[44px] px-3.5 py-2 bg-sky-800 text-white font-mono font-bold text-xs uppercase flex items-center gap-2 active:bg-sky-900 rounded-none shadow-sm cursor-pointer"
+                aria-label="Switch to Reading Passage"
+              >
+                <span>←</span>
+                <span>[ 📄 VIEW PASSAGE ]</span>
+              </button>
+              <span className="text-xs font-mono font-bold text-slate-700">
+                Passage 1 of 1
+              </span>
+            </div>
+          )}
           {activeSkill === 'writing' ? (
-            <div className="flex-1 flex flex-col space-y-4">
-              <div className="flex items-center justify-between border-b border-inherit pb-3">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-600">
-                  CANDIDATE RESPONSE · TASK {activeWritingTask}
+            <div className="flex-1 flex flex-col space-y-3 font-mono">
+              <div className="flex items-center justify-between border-b-2 border-slate-300 pb-2">
+                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
+                  [ CANDIDATE ESSAY RESPONSE AREA · TASK {activeWritingTask} ]
                 </span>
                 <span
-                  className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg border ${
-                    (activeWritingTask === 1 ? task1WordCount >= 150 : task2WordCount >= 250)
-                      ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
-                      : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
+                  className={`text-xs font-mono font-bold px-3 py-1 border-2 rounded-none tabular-nums ${
+                    (activeWritingTask === 1 ? task1WordCount < 150 : task2WordCount < 250)
+                      ? 'border-amber-600 text-amber-800 bg-amber-50'
+                      : 'border-emerald-600 text-emerald-800 bg-emerald-50'
                   }`}
                 >
-                  Word Count: {activeWritingTask === 1 ? task1WordCount : task2WordCount} /{' '}
-                  {activeWritingTask === 1 ? 150 : 250} min
+                  WORDS: {activeWritingTask === 1 ? task1WordCount : task2WordCount} / {activeWritingTask === 1 ? 150 : 250} MIN
                 </span>
               </div>
 
               <textarea
+                tabIndex={1}
                 value={activeWritingTask === 1 ? task1Essay : task2Essay}
                 onChange={(e) =>
                   activeWritingTask === 1
                     ? setTask1Essay(e.target.value)
                     : setTask2Essay(e.target.value)
                 }
-                placeholder={`Type your official Writing Task ${activeWritingTask} response here... (Auto-saved locally)`}
-                className="flex-1 min-h-[320px] w-full p-4 rounded-xl border border-inherit bg-white/70 dark:bg-slate-900/50 text-sm sm:text-base leading-relaxed outline-none focus:ring-2 focus:ring-blue-500 resize-none font-sans"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
+                placeholder={`Type your official Writing Task ${activeWritingTask} response here... (Auto-saved every 30s)`}
+                className="flex-1 min-h-[380px] w-full p-4 border-2 border-slate-400 focus:border-[#002F6C] bg-white text-[#0F172A] font-mono text-sm sm:text-base leading-relaxed outline-none rounded-none resize-none shadow-none"
               />
 
-              <div className="flex items-center justify-between pt-2">
-                <span className="text-xs opacity-75">
-                  Spellcheck and grammar autocomplete are disabled per CD-IELTS rules.
-                </span>
-                <button
-                  onClick={() => setShowReviewModal(true)}
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs"
-                >
-                  Review & Submit Test
-                </button>
+              <div className="flex flex-wrap items-center justify-between pt-1 text-xs opacity-85 font-mono border-t border-slate-300">
+                <span>[ SPELLCHECK: DISABLED PER OFFICIAL CD-IELTS RULES ]</span>
+                <span>[ 4-CRITERION AI EVALUATOR READY: TA/TR · CC · LR · GRA ]</span>
               </div>
             </div>
           ) : (
-            <>
-              <div className="space-y-5">
-                <div className="flex items-center justify-between border-b border-inherit pb-3">
-                  <div>
-                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-blue-600">
-                      Question {activeQuestionIdx + 1} of {skillQuestions.length} ({activeQuestionObj?.type})
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => toggleFlag(activeQuestionId)}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition ${
-                      flaggedQuestions.has(activeQuestionId)
-                        ? 'bg-amber-500 text-black border-amber-600'
-                        : 'border-inherit opacity-80 hover:opacity-100'
-                    }`}
+            <div className="flex-1 flex flex-col justify-between space-y-6 font-mono">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b-2 border-slate-300 pb-2 font-mono">
+                  <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
+                    [ QUESTION {activeQuestionIdx + 1} OF {skillQuestions.length} · {activeQuestionObj?.type.toUpperCase()} ]
+                  </span>
+
+                  {/* Flag for Review Checkbox (Alt+R) */}
+                  <label
+                    className="flex items-center gap-2 text-xs font-mono font-bold cursor-pointer px-2 py-0.5 border border-slate-400 bg-white hover:bg-slate-50 rounded-none"
+                    title="Flag question for review (Shortcut: Alt+R)"
                   >
-                    <Flag className="w-3.5 h-3.5 fill-current" />
-                    <span>{flaggedQuestions.has(activeQuestionId) ? 'Flagged' : 'Flag for Review'}</span>
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={flaggedQuestions.has(activeQuestionId)}
+                      onChange={() => toggleFlag(activeQuestionId)}
+                      className="accent-amber-500 w-4 h-4 cursor-pointer rounded-none"
+                    />
+                    <span>REVIEW (Alt+R)</span>
+                  </label>
                 </div>
 
-                {/* Current Question Stem & Interactive Renderers */}
+                {/* Current Active Question Display */}
                 {activeQuestionObj && (
-                  <div id={`q-${activeQuestionObj.id}`} className="space-y-4">
-                    <div className="p-4 rounded-xl border border-inherit bg-slate-500/5 text-sm sm:text-base space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-blue-600 uppercase">
-                          Question #{activeQuestionObj.id} · {activeQuestionObj.section.toUpperCase()}
-                        </span>
-                        <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                          {activeQuestionObj.type}
-                        </span>
+                  <div className="space-y-4 font-mono">
+                    <div className="p-4 border-2 border-slate-300 bg-white space-y-2 rounded-none shadow-none">
+                      <div className="flex items-center justify-between text-xs font-mono font-bold text-[#002F6C]">
+                        <span>[ QUESTION #{activeQuestionObj.id} ]</span>
+                        <span>[ TYPE: {activeQuestionObj.type.toUpperCase()} ]</span>
                       </div>
-                      <div className="font-bold leading-snug">{activeQuestionObj.prompt}</div>
+                      <div className="font-bold text-sm sm:text-base leading-snug text-[#0F172A] font-sans">
+                        {activeQuestionObj.prompt}
+                      </div>
                     </div>
 
-                    {/* INTERACTIVE SVG MAP / DIAGRAM FLOORPLAN LABELING WIDGET */}
-                    {activeQuestionObj.type.toLowerCase().includes('map') ||
-                    activeQuestionObj.prompt.toLowerCase().includes('map') ||
-                    activeQuestionObj.type.toLowerCase().includes('directional pin') ? (
-                      <div className="space-y-3 pt-1">
-                        <div className="p-4 rounded-2xl border border-inherit bg-slate-900/90 text-white space-y-3 shadow-xl">
-                          <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400">
-                            <span>🗺️ Interactive University Campus Map</span>
-                            <span>Click pin A–G to select location</span>
-                          </div>
+                    {/* Interactive Practice Visual Aids: Campus Map Labeling or Matching Headings */}
+                    {(activeQuestionObj.type.toLowerCase().includes('map') ||
+                      activeQuestionObj.prompt.toLowerCase().includes('located') ||
+                      activeQuestionObj.prompt.toLowerCase().includes('layout') ||
+                      activeQuestionObj.prompt.toLowerCase().includes('pin')) && (
+                      <CDIELTSSVGMap
+                        currentAnswer={userAnswers[activeQuestionId] || ''}
+                        onSelectPin={(pin) => {
+                          setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: pin }));
+                          soundManager.playBeep(560, 0.03);
+                        }}
+                        disabled={activeSkill === 'listening' && isListeningLocked}
+                      />
+                    )}
 
-                          <svg viewBox="0 0 500 280" className="w-full h-auto rounded-xl border border-slate-700 bg-slate-950">
-                            {/* Path and Grounds */}
-                            <rect x="10" y="10" width="480" height="260" fill="#0b1329" rx="10" stroke="#1e293b" strokeWidth="2" />
-                            <path d="M 50 140 L 450 140" stroke="#334155" strokeWidth="12" strokeDasharray="8 4" />
-                            <text x="250" y="135" fill="#64748b" fontSize="10" fontFamily="sans-serif" textAnchor="middle">Pedestrian Gravel Path (North)</text>
+                    {(activeQuestionObj.type.toLowerCase().includes('heading') ||
+                      activeQuestionObj.prompt.toLowerCase().includes('heading')) && (
+                      <CDIELTSMatchingHeadingsPicker
+                        currentAnswer={userAnswers[activeQuestionId] || ''}
+                        onSelectHeading={(roman) => {
+                          setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: roman }));
+                          soundManager.playBeep(560, 0.03);
+                        }}
+                        disabled={activeSkill === 'listening' && isListeningLocked}
+                      />
+                    )}
 
-                            {/* Buildings */}
-                            <rect x="40" y="30" width="90" height="50" fill="#1e293b" stroke="#3b82f6" strokeWidth="1.5" rx="5" />
-                            <text x="85" y="60" fill="#e2e8f0" fontSize="10" fontWeight="bold" textAnchor="middle">Clock Tower</text>
+                    {/* Question Input Paradigms (Tab / Shift+Tab Sequential Focus) */}
+                    {activeQuestionObj.options && activeQuestionObj.options.length > 0 ? (
+                      <div className="space-y-2 pt-1 font-mono">
+                        {activeQuestionObj.options.map((opt, optIdx) => {
+                          const optionLetter = opt.split('.')[0]?.trim() || opt;
+                          const isSelected =
+                            userAnswers[activeQuestionId] === opt ||
+                            userAnswers[activeQuestionId] === optionLetter;
+                          const isDisabled = activeSkill === 'listening' && isListeningLocked;
 
-                            <rect x="160" y="30" width="100" height="50" fill="#1e293b" stroke="#3b82f6" strokeWidth="1.5" rx="5" />
-                            <text x="210" y="60" fill="#e2e8f0" fontSize="10" fontWeight="bold" textAnchor="middle">Dining Hall</text>
-
-                            <rect x="290" y="30" width="110" height="50" fill="#1e293b" stroke="#3b82f6" strokeWidth="1.5" rx="5" />
-                            <text x="345" y="60" fill="#e2e8f0" fontSize="10" fontWeight="bold" textAnchor="middle">Central Library</text>
-
-                            <rect x="50" y="180" width="120" height="60" fill="#1e293b" stroke="#f59e0b" strokeWidth="1.5" rx="5" />
-                            <text x="110" y="215" fill="#e2e8f0" fontSize="10" fontWeight="bold" textAnchor="middle">North Auditorium</text>
-
-                            <rect x="210" y="180" width="130" height="60" fill="#0f172a" stroke="#10b981" strokeWidth="2" strokeDasharray="4 2" rx="5" />
-                            <text x="275" y="210" fill="#a7f3d0" fontSize="10" fontWeight="bold" textAnchor="middle">Language Lab</text>
-                            <text x="275" y="225" fill="#94a3b8" fontSize="8" textAnchor="middle">(Behind Auditorium)</text>
-
-                            <rect x="370" y="180" width="90" height="60" fill="#1e293b" stroke="#3b82f6" strokeWidth="1.5" rx="5" />
-                            <text x="415" y="215" fill="#e2e8f0" fontSize="10" fontWeight="bold" textAnchor="middle">Science Hub</text>
-
-                            {/* Interactive Letter Pins */}
-                            {[
-                              { id: 'A', x: 85, y: 25, label: 'A) Opposite the Clock Tower' },
-                              { id: 'B', x: 275, y: 170, label: 'B) Tucked behind the North Auditorium' },
-                              { id: 'C', x: 415, y: 170, label: 'C) South of Science Hub' }
-                            ].map((pin) => {
-                              const isSelected = userAnswers[activeQuestionId] === pin.label;
-                              return (
-                                <g
-                                  key={pin.id}
-                                  onClick={() => {
-                                    setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: pin.label }));
-                                    soundManager.playBeep(620, 0.03);
-                                  }}
-                                  className="cursor-pointer group"
-                                >
-                                  <circle
-                                    cx={pin.x}
-                                    cy={pin.y}
-                                    r="14"
-                                    fill={isSelected ? '#2563eb' : '#f59e0b'}
-                                    stroke="#ffffff"
-                                    strokeWidth="2"
-                                  />
-                                  <text
-                                    x={pin.x}
-                                    y={pin.y + 4}
-                                    fill="#ffffff"
-                                    fontSize="11"
-                                    fontWeight="black"
-                                    textAnchor="middle"
-                                  >
-                                    {pin.id}
-                                  </text>
-                                </g>
-                              );
-                            })}
-                          </svg>
-
-                          {userAnswers[activeQuestionId] && (
-                            <div className="p-2.5 rounded-lg bg-blue-500/20 text-blue-200 text-xs font-mono font-bold text-center">
-                              Selected Pin: {userAnswers[activeQuestionId]}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Standard Option List Fallback */}
-                        {activeQuestionObj.options && (
-                          <div className="space-y-2 pt-1">
-                            {activeQuestionObj.options.map((opt) => {
-                              const isSelected = userAnswers[activeQuestionId] === opt;
-                              return (
-                                <label
-                                  key={opt}
-                                  onClick={() => {
-                                    setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: opt }));
-                                    soundManager.playBeep(540, 0.03);
-                                  }}
-                                  className={`flex items-center gap-3 p-3 rounded-xl border border-inherit cursor-pointer transition ${
-                                    isSelected ? 'bg-blue-600 text-white font-bold' : 'hover:bg-slate-500/10 font-medium'
-                                  }`}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`q_${activeQuestionId}`}
-                                    checked={isSelected}
-                                    onChange={() => {}}
-                                    className="accent-blue-600 w-4 h-4"
-                                  />
-                                  <span className="text-xs sm:text-sm">{opt}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ) : activeQuestionObj.type.toLowerCase().includes('heading') ||
-                    activeQuestionObj.type.toLowerCase().includes('matching') ? (
-                      <div className="space-y-3 pt-1">
-                        <label className="block text-xs font-mono font-bold uppercase opacity-80">
-                          Select Correct Heading / Section Match:
-                        </label>
-                        <select
-                          value={userAnswers[activeQuestionId] || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: val }));
-                            soundManager.playBeep(540, 0.03);
-                          }}
-                          className="w-full p-3.5 rounded-xl border border-inherit bg-white/90 dark:bg-slate-900 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                        >
-                          <option value="">-- Choose Heading Numeral --</option>
-                          {['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'].map((num) => (
-                            <option key={num} value={num}>
-                              Heading {num}
-                            </option>
-                          ))}
-                        </select>
-                        {activeQuestionObj.options && activeQuestionObj.options.length > 0 && (
-                          <div className="p-3 rounded-xl border border-inherit bg-slate-500/5 text-xs space-y-1">
-                            <span className="font-bold block text-[10px] uppercase font-mono opacity-70">
-                              Heading List Reference:
-                            </span>
-                            {activeQuestionObj.options.map((opt) => (
-                              <div key={opt} className="opacity-90">{opt}</div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : activeQuestionObj.options && activeQuestionObj.options.length > 0 ? (
-                      /* MULTIPLE CHOICE (SINGLE OR MULTI-SELECT) */
-                      <div className="space-y-2.5 pt-1">
-                        {activeQuestionObj.prompt.toUpperCase().includes('CHOOSE TWO') ||
-                        activeQuestionObj.prompt.toUpperCase().includes('CHOOSE THREE') ? (
-                          /* Multi-Select Checkboxes */
-                          <div className="space-y-2">
-                            <span className="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400 block">
-                              ⚠️ MULTI-SELECT: {activeQuestionObj.prompt.toUpperCase().includes('CHOOSE THREE') ? 'Select THREE' : 'Select TWO'} letters
-                            </span>
-                            {activeQuestionObj.options.map((opt) => {
-                              const letter = opt.split('.')[0]?.trim() || opt;
-                              const currentSelected: string[] = (userAnswers[activeQuestionId] || '')
-                                .split(',')
-                                .map((s) => s.trim())
-                                .filter(Boolean);
-                              const isSelected = currentSelected.includes(letter);
-                              const maxChoice = activeQuestionObj.prompt.toUpperCase().includes('CHOOSE THREE') ? 3 : 2;
-
-                              return (
-                                <label
-                                  key={opt}
-                                  onClick={() => {
-                                    let updated: string[];
-                                    if (isSelected) {
-                                      updated = currentSelected.filter((item) => item !== letter);
-                                    } else {
-                                      if (currentSelected.length >= maxChoice) {
-                                        updated = [...currentSelected.slice(1), letter];
-                                      } else {
-                                        updated = [...currentSelected, letter];
-                                      }
-                                    }
-                                    setUserAnswers((prev) => ({
-                                      ...prev,
-                                      [activeQuestionId]: updated.join(', ')
-                                    }));
-                                    soundManager.playBeep(540, 0.03);
-                                  }}
-                                  className={`flex items-center gap-3 p-3.5 rounded-xl border border-inherit cursor-pointer transition ${
-                                    isSelected
-                                      ? 'bg-blue-600 text-white font-bold'
-                                      : 'hover:bg-slate-500/10 font-medium'
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => {}}
-                                    className="accent-blue-600 w-4 h-4 rounded"
-                                  />
-                                  <span className="text-xs sm:text-sm">{opt}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          /* Single-Choice Radio Cards */
-                          activeQuestionObj.options.map((opt) => {
-                            const optionLetter = opt.split('.')[0]?.trim() || opt;
-                            const isSelected =
-                              userAnswers[activeQuestionId] === opt ||
-                              userAnswers[activeQuestionId] === optionLetter;
-                            return (
-                              <label
-                                key={opt}
-                                onClick={() => {
-                                  setUserAnswers((prev) => ({
-                                    ...prev,
-                                    [activeQuestionId]: optionLetter
-                                  }));
-                                  soundManager.playBeep(540, 0.03);
-                                }}
-                                className={`flex items-center gap-3 p-3.5 rounded-xl border border-inherit cursor-pointer transition ${
-                                  isSelected
-                                    ? 'bg-blue-600 text-white font-bold'
-                                    : 'hover:bg-slate-500/10 font-medium'
-                                }`}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`q_${activeQuestionId}`}
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  className="accent-blue-600 w-4 h-4"
-                                />
-                                <span className="text-xs sm:text-sm">{opt}</span>
-                              </label>
-                            );
-                          })
-                        )}
-                      </div>
-                    ) : activeQuestionObj.type.toLowerCase().includes('true / false') ||
-                      activeQuestionObj.type.toLowerCase().includes('yes / no') ? (
-                      /* TRUE / FALSE / NOT GIVEN CARDS */
-                      <div className="space-y-2.5 pt-1">
-                        {(activeQuestionObj.type.toLowerCase().includes('yes / no')
-                          ? ['YES', 'NO', 'NOT GIVEN']
-                          : ['TRUE', 'FALSE', 'NOT GIVEN']
-                        ).map((opt) => {
-                          const isSelected = userAnswers[activeQuestionId] === opt;
                           return (
                             <label
                               key={opt}
                               onClick={() => {
-                                setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: opt }));
+                                if (isDisabled) return;
+                                setUserAnswers((prev) => ({
+                                  ...prev,
+                                  [activeQuestionId]: optionLetter
+                                }));
                                 soundManager.playBeep(540, 0.03);
                               }}
-                              className={`flex items-center gap-3 p-3.5 rounded-xl border border-inherit cursor-pointer transition ${
+                              className={`flex items-center gap-3 p-3.5 border-2 rounded-none font-mono transition-none ${
+                                isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                              } ${
                                 isSelected
-                                  ? 'bg-slate-900 text-white dark:bg-blue-600 font-black shadow-md border-slate-900'
-                                  : 'hover:bg-slate-500/10 font-medium'
+                                  ? 'bg-[#002F6C] text-white border-[#001F4D] font-bold'
+                                  : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300 font-medium'
                               }`}
                             >
                               <input
+                                tabIndex={optIdx + 1}
                                 type="radio"
+                                disabled={isDisabled}
                                 name={`q_${activeQuestionId}`}
                                 checked={isSelected}
                                 onChange={() => {}}
-                                className="accent-blue-600 w-4 h-4"
+                                className="w-4 h-4 accent-[#002F6C] cursor-pointer rounded-none shrink-0"
                               />
-                              <span className="text-xs sm:text-sm">{opt}</span>
+                              <span className="font-mono font-bold text-xs px-1.5 py-0.5 border border-current shrink-0">
+                                {optionLetter}
+                              </span>
+                              <span className="text-xs sm:text-sm font-sans">{opt.replace(/^[A-Z]\.\s*/, '')}</span>
                             </label>
                           );
                         })}
                       </div>
                     ) : (
-                      /* SUMMARY GAP-FILL / SHORT ANSWER INPUT */
-                      <div className="space-y-2 pt-2">
-                        <div className="flex items-center justify-between">
-                          <label className="block text-xs font-mono font-bold uppercase opacity-80">
-                            Type Exact Candidate Response:
-                          </label>
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                            NO MORE THAN TWO WORDS AND/OR A NUMBER
-                          </span>
-                        </div>
+                      /* Short Answer / Fill in the Blanks (Sequential Tab Focus) */
+                      <div className="space-y-2 pt-2 font-mono">
+                        <label className="block text-xs font-mono font-bold uppercase text-slate-700">
+                          [ TYPE EXACT RESPONSE ANSWER (TAB / SHIFT+TAB FOR NEXT BLANK) ]:
+                        </label>
                         <input
+                          tabIndex={1}
                           type="text"
+                          disabled={activeSkill === 'listening' && isListeningLocked}
                           value={userAnswers[activeQuestionId] || ''}
                           onChange={(e) =>
                             setUserAnswers((prev) => ({
@@ -1983,39 +2571,50 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                               [activeQuestionId]: e.target.value
                             }))
                           }
-                          placeholder="Type response here (e.g., PENNINGTON, 6 WEEKS)..."
-                          className="w-full p-3.5 rounded-xl border border-inherit bg-white/90 dark:bg-slate-900 text-sm sm:text-base font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Tab') {
+                              e.preventDefault();
+                              if (e.shiftKey) {
+                                setActiveQuestionIdx((q) => Math.max(0, q - 1));
+                              } else {
+                                setActiveQuestionIdx((q) => Math.min(skillQuestions.length - 1, q + 1));
+                              }
+                              soundManager.playBeep(500, 0.02);
+                            }
+                          }}
+                          placeholder={
+                            activeSkill === 'listening' && isListeningLocked
+                              ? 'Listening answers locked after 2-minute check period'
+                              : 'Type candidate answer here...'
+                          }
+                          className="w-full p-3 border-2 border-slate-400 focus:border-[#002F6C] bg-white text-[#0F172A] font-mono font-bold text-sm rounded-none outline-none shadow-none disabled:opacity-60"
                         />
-                        {userAnswers[activeQuestionId] && (
-                          <div className="text-[10px] font-mono text-slate-500">
-                            Word count: {userAnswers[activeQuestionId].trim().split(/\s+/).length} words
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* Bottom Question Navigation Buttons */}
-              <div className="pt-6 border-t border-inherit flex items-center justify-between gap-3 mt-6">
+              {/* Prev / Next Buttons flanking question */}
+              <div className="pt-4 border-t-2 border-slate-300 flex items-center justify-between gap-3 font-mono">
                 <button
                   disabled={activeQuestionIdx <= 0}
                   onClick={() => {
                     setActiveQuestionIdx((q) => Math.max(0, q - 1));
                     soundManager.playBeep(480, 0.03);
                   }}
-                  className="px-4 py-2.5 rounded-xl border border-inherit text-xs font-bold disabled:opacity-30 flex items-center gap-1"
+                  className="px-4 py-2 border-2 border-slate-400 bg-white hover:bg-slate-100 text-slate-800 text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer rounded-none"
+                  title="Previous Question (Alt+P)"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                  <span>Previous</span>
+                  <span>BACK [Alt+P]</span>
                 </button>
 
                 <button
                   onClick={() => setShowReviewModal(true)}
-                  className="px-3.5 py-2 rounded-xl border border-inherit text-xs font-mono font-bold hover:bg-slate-500/10"
+                  className="px-3.5 py-2 border-2 border-[#002F6C] bg-white hover:bg-slate-100 text-[#002F6C] text-xs font-mono font-bold rounded-none uppercase cursor-pointer"
                 >
-                  Review & Submit ({answeredCount}/{totalQuestions})
+                  [ REVIEW & SUBMIT ({answeredCount}/{totalQuestions}) ]
                 </button>
 
                 <button
@@ -2024,438 +2623,405 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     setActiveQuestionIdx((q) => Math.min(skillQuestions.length - 1, q + 1));
                     soundManager.playBeep(520, 0.03);
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold disabled:opacity-30 flex items-center gap-1"
+                  className="px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D] text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer rounded-none"
+                  title="Next Question (Alt+N)"
                 >
-                  <span>Next</span>
+                  <span>NEXT [Alt+N]</span>
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
-            </>
+            </div>
           )}
         </div>
+
+        {/* ================= 3. MARGIN NOTES & HIGHLIGHTER SIDE PANEL (Alt+V) ================= */}
+        {showNotesDrawer && (
+          <div className="w-80 sm:w-96 h-full border-l-2 border-black bg-white text-black flex flex-col justify-between p-4 shadow-2xl z-30">
+            <div className="space-y-4 overflow-y-auto pr-1">
+              <div className="flex items-center justify-between border-b-2 border-black pb-2">
+                <div className="flex items-center gap-1.5 font-mono font-bold text-xs uppercase">
+                  <StickyNote className="w-4 h-4 text-amber-600" />
+                  <span>Margin Notes & Highlights (Alt+V)</span>
+                </div>
+                <button
+                  onClick={() => setShowNotesDrawer(false)}
+                  className="p-1 hover:bg-gray-200 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* New Note Composer */}
+              <div className="space-y-2 p-3 border border-gray-400 bg-gray-50">
+                {activeQuote && (
+                  <div className="text-[11px] font-serif italic bg-yellow-100 p-2 border-l-2 border-yellow-500 text-gray-800">
+                    "{activeQuote}"
+                  </div>
+                )}
+                <textarea
+                  value={newNoteInput}
+                  onChange={(e) => setNewNoteInput(e.target.value)}
+                  placeholder="Write a margin note for this passage..."
+                  className="w-full p-2 border border-gray-400 bg-white text-black text-xs h-20 outline-none focus:border-black resize-none"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleAddNote}
+                    className="px-3 py-1 bg-black text-white font-mono font-bold text-xs cursor-pointer"
+                  >
+                    + Save Margin Note
+                  </button>
+                </div>
+              </div>
+
+              {/* Saved Notes List */}
+              <div className="space-y-2">
+                <span className="text-xs font-mono font-bold uppercase block text-gray-600">
+                  Saved Margin Notes ({notes.length})
+                </span>
+                {notes.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic">
+                    Select any text in the passage or press Alt+V to record margin notes.
+                  </p>
+                ) : (
+                  notes.map((n) => (
+                    <div key={n.id} className="p-2.5 border border-gray-300 bg-yellow-50/60 space-y-1 text-xs">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-gray-500">
+                        <span>Clock: {n.timestamp}</span>
+                        <button
+                          onClick={() => setNotes((prev) => prev.filter((item) => item.id !== n.id))}
+                          className="text-rose-600 hover:underline cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      {n.selectedQuote && (
+                        <div className="text-[11px] italic text-gray-700 border-l-2 border-amber-400 pl-2">
+                          "{n.selectedQuote}"
+                        </div>
+                      )}
+                      <p className="font-medium text-gray-900">{n.text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Active Highlights List */}
+              {highlights.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-gray-300">
+                  <span className="text-xs font-mono font-bold uppercase block text-gray-600">
+                    Active Yellow Highlights ({highlights.length})
+                  </span>
+                  {highlights.map((hl, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2 border border-yellow-400 bg-yellow-100 text-xs flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate font-serif">"{hl}"</span>
+                      <button
+                        onClick={() => toggleHighlight(hl)}
+                        className="text-[10px] font-mono text-rose-700 hover:underline shrink-0 cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Active Underlines List */}
+              {underlines.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-gray-300">
+                  <span className="text-xs font-mono font-bold uppercase block text-blue-800">
+                    Active Deep Blue Underlines ({underlines.length})
+                  </span>
+                  {underlines.map((ul, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2 border border-blue-400 bg-blue-50 text-xs flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate font-serif underline decoration-blue-600 decoration-2">"{ul}"</span>
+                      <button
+                        onClick={() => toggleUnderline(ul)}
+                        className="text-[10px] font-mono text-rose-700 hover:underline shrink-0 cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ================= 3. BOTTOM QUESTION PALETTE & STATUS BAR ================= */}
-      <footer className="w-full border-t border-inherit p-3 bg-inherit backdrop-blur-md">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 px-1 text-xs font-mono font-bold">
-          <div className="flex items-center gap-3 flex-wrap">
+      {/* ================= 4. OFFICIAL BOTTOM QUESTION NAVIGATION DOCK ================= */}
+      <footer className={`w-full border-t-2 ${theme.border} px-3 sm:px-4 py-2.5 shrink-0 bg-[#EEF2F6] select-none z-10 font-mono rounded-none`}>
+        {/* Dock Header: Response Metrics & Review Status */}
+        <div className="flex items-center justify-between gap-2 mb-2 text-xs font-mono font-bold">
+          {/* Status Metrics Legend */}
+          <div className="flex items-center gap-3 sm:gap-4 flex-wrap text-[11px] sm:text-xs">
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-blue-600" /> Answered ({answeredCount})
+              <span className="w-3.5 h-3.5 bg-[#002F6C] border-2 border-[#001F4D] rounded-none inline-block" />
+              <span>ANSWERED ({answeredCount})</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded border border-inherit" /> Unanswered ({unansweredCount})
+              <span className="w-3.5 h-3.5 bg-white border-2 border-slate-400 rounded-none inline-block" />
+              <span>UNANSWERED ({totalQuestions - answeredCount})</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-amber-500" /> Flagged ({flaggedQuestions.size})
+              <span className="w-3.5 h-3.5 bg-[#FEF08A] border-2 border-[#CA8A04] rounded-none inline-block" />
+              <span>FLAGGED ({flaggedQuestions.size})</span>
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Review Summary Trigger (Separated from Question Tiles Rail) */}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setShowReviewModal(true)}
-              className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition"
+              className="px-3 py-1 bg-white hover:bg-slate-100 text-[#002F6C] border-2 border-[#002F6C] text-[11px] sm:text-xs font-mono font-bold cursor-pointer rounded-none uppercase"
             >
-              Finish & Grade Test
+              [ REVIEW SUMMARY ({answeredCount}/{totalQuestions}) ]
             </button>
             <button
               onClick={() => setShowPalette(!showPalette)}
-              className="text-xs text-slate-500 hover:underline"
+              className="text-[11px] font-mono px-2 py-1 border border-slate-400 bg-white hover:bg-slate-100 cursor-pointer hidden min-[420px]:inline rounded-none text-slate-700"
             >
-              {showPalette ? 'Hide Palette' : 'Show Palette'}
+              {showPalette ? '[HIDE TILES]' : '[SHOW TILES]'}
             </button>
           </div>
         </div>
 
-        {/* Question Button Matrix (Questions 1 to 40) with CD-IELTS tab styling */}
+        {/* Clean, Horizontally Scrollable Question Tiles Rail (Fixed Height, No Stacking/Crowding) */}
         {showPalette && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-500 px-1 uppercase tracking-wider">
-              <span>Section 1 (1–5) · Section 2 (6–10)</span>
-              <span>Tap tab to scroll & jump</span>
-            </div>
-            <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-1 scrollbar-none">
-              {currentSet.questions.map((q) => {
+          <div className="w-full overflow-x-auto whitespace-nowrap scrollbar-thin py-2 px-1 flex items-center gap-1.5 border-2 border-[#CBD5E1] bg-white touch-pan-x rounded-none">
+            {activeSkill === 'writing' ? (
+              <div className="flex items-center gap-2 px-1">
+                <button
+                  onClick={() => {
+                    setActiveWritingTask(1);
+                    soundManager.playBeep(520, 0.02);
+                  }}
+                  className={`px-4 py-2 font-mono text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-2 ${
+                    activeWritingTask === 1
+                      ? 'bg-[#002F6C] text-white border-[#001F4D] ring-2 ring-[#002F6C]'
+                      : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                  }`}
+                >
+                  <span>TASK 1 (150 WORDS)</span>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-mono ${task1WordCount >= 150 ? 'bg-emerald-600 text-white' : 'bg-black/20 text-slate-800'}`}>
+                    {task1WordCount} words
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveWritingTask(2);
+                    soundManager.playBeep(520, 0.02);
+                  }}
+                  className={`px-4 py-2 font-mono text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-2 ${
+                    activeWritingTask === 2
+                      ? 'bg-[#002F6C] text-white border-[#001F4D] ring-2 ring-[#002F6C]'
+                      : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                  }`}
+                >
+                  <span>TASK 2 (250 WORDS)</span>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-mono ${task2WordCount >= 250 ? 'bg-emerald-600 text-white' : 'bg-black/20 text-slate-800'}`}>
+                    {task2WordCount} words
+                  </span>
+                </button>
+              </div>
+            ) : (
+              skillQuestions.map((q, idx) => {
                 const isAnswered = Boolean(userAnswers[q.id]?.trim());
                 const isFlagged = flaggedQuestions.has(q.id);
-                const isActive = activeQuestionId === q.id && activeSkill !== 'writing';
+                const isActive = activeQuestionIdx === idx;
+
+                let tileStyle = 'bg-white text-slate-800 border-2 border-slate-400 hover:border-[#002F6C]';
+                if (isAnswered) tileStyle = 'bg-[#002F6C] text-white border-2 border-[#001F4D] font-bold';
+                if (isFlagged) tileStyle = 'bg-[#FEF08A] text-[#713F12] border-2 border-[#CA8A04] font-black';
+
+                const isSectionDivider = idx > 0 && idx % 10 === 0;
 
                 return (
-                  <button
-                    key={q.id}
-                    onClick={() => {
-                      setActiveSkill(q.section);
-                      const sectionList = currentSet.questions.filter((item) => item.section === q.section);
-                      const idxInSection = sectionList.findIndex((item) => item.id === q.id);
-                      setActiveQuestionIdx(idxInSection >= 0 ? idxInSection : 0);
-                      setMobilePane('right');
-                      soundManager.playBeep(550, 0.025);
-
-                      // Smooth scroll to question element if present
-                      setTimeout(() => {
-                        document.getElementById(`q-${q.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      }, 50);
-                    }}
-                    className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl text-xs font-mono font-bold transition flex items-center justify-center border cursor-pointer ${
-                      isActive ? 'ring-2 ring-blue-500 scale-105 z-10' : ''
-                    } ${
-                      isAnswered
-                        ? 'bg-slate-900 text-white dark:bg-blue-600 border-slate-900 shadow-sm'
-                        : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                    title={`Question ${q.id} (${q.section.toUpperCase()})${isAnswered ? ' - Answered' : ' - Unanswered'}${isFlagged ? ' - Flagged' : ''}`}
-                  >
-                    <span>{q.id}</span>
-                    {isFlagged && (
-                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 border-2 border-white flex items-center justify-center text-[8px] text-black font-black">
-                        🚩
-                      </span>
+                  <React.Fragment key={q.id}>
+                    {/* Subtle Part/Section Boundary Marker */}
+                    {isSectionDivider && (
+                      <div
+                        className="px-2 py-1 bg-[#E2E8F0] text-[#002F6C] font-mono text-[10px] font-bold tracking-wider shrink-0 border border-slate-400 rounded-none select-none"
+                      >
+                        PART {Math.floor(idx / 10) + 1}
+                      </div>
                     )}
-                  </button>
+                    <button
+                      onClick={() => {
+                        setActiveQuestionIdx(idx);
+                        if (window.innerWidth < 768) handleSwitchMobilePane('right');
+                        soundManager.playBeep(520, 0.02);
+                      }}
+                      className={`w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center font-mono text-xs sm:text-sm font-bold border-2 transition-none cursor-pointer rounded-none relative ${tileStyle} ${
+                        isActive ? 'ring-2 ring-[#002F6C] ring-offset-2 ring-offset-white font-black z-10' : ''
+                      }`}
+                      title={`Question ${idx + 1} (${isAnswered ? 'Answered' : 'Unanswered'}${isFlagged ? ', Flagged' : ''})`}
+                    >
+                      {isFlagged && (
+                        <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-[#CA8A04]" title="Flagged" />
+                      )}
+                      {idx + 1}
+                    </button>
+                  </React.Fragment>
                 );
-              })}
-            </div>
+              })
+            )}
           </div>
         )}
       </footer>
 
-      {/* Floating Text Selection Annotation Tooltip Menu */}
-      {selectionMenu && (
-        <div
-          style={{
-            position: 'fixed',
-            left: `${selectionMenu.x}px`,
-            top: `${selectionMenu.y}px`,
-            transform: 'translate(-50%, -100%)'
-          }}
-          className="selection-tooltip-menu z-50 bg-slate-900 text-white rounded-xl shadow-2xl p-1.5 flex items-center gap-1.5 text-xs border border-slate-700 animate-fade-in"
-        >
-          <button
-            onClick={() => toggleHighlight(selectionMenu.text)}
-            className="px-2.5 py-1 rounded-lg bg-yellow-400 hover:bg-yellow-300 text-slate-900 font-bold transition flex items-center gap-1 cursor-pointer"
-          >
-            <Highlighter className="w-3.5 h-3.5" />
-            <span>{highlights.includes(selectionMenu.text) ? 'Clear Highlight' : 'Highlight (Yellow)'}</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveQuote(selectionMenu.text);
-              setShowNotesDrawer(true);
-              setSelectionMenu(null);
-            }}
-            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold transition flex items-center gap-1 cursor-pointer"
-          >
-            <StickyNote className="w-3.5 h-3.5" />
-            <span>Add Note</span>
-          </button>
-          <button
-            onClick={() => setSelectionMenu(null)}
-            className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-            title="Close toolbar"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* ================= 4. SLIDE-OUT NOTES DRAWER ================= */}
-      {showNotesDrawer && (
-        <aside className="fixed top-12 right-0 bottom-0 w-80 bg-inherit border-l border-inherit p-4 z-50 shadow-2xl flex flex-col justify-between animate-fade-in">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-inherit pb-2">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <StickyNote className="w-4 h-4 text-amber-500" />
-                <span>Candidate Notes Scratchpad</span>
-              </div>
-              <button
-                onClick={() => setShowNotesDrawer(false)}
-                className="p-1 rounded hover:bg-slate-500/10"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {activeQuote && (
-              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs">
-                <div className="font-bold text-[10px] uppercase font-mono text-amber-600">Selected Quote:</div>
-                <div className="italic mt-1 line-clamp-3">"{activeQuote}"</div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <textarea
-                value={newNoteInput}
-                onChange={(e) => setNewNoteInput(e.target.value)}
-                placeholder="Type note or synonym observation..."
-                className="w-full h-24 p-2.5 rounded-lg border border-inherit bg-transparent text-xs outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <button
-                onClick={handleAddNote}
-                className="w-full py-2 rounded-lg bg-blue-600 text-white text-xs font-bold transition hover:bg-blue-700"
-              >
-                Save Note
-              </button>
-            </div>
-
-            {/* List of saved notes */}
-            <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
-              {notes.map((n) => (
-                <div key={n.id} className="p-2 rounded-lg border border-inherit text-xs space-y-1">
-                  <div className="flex items-center justify-between font-mono text-[10px] opacity-70">
-                    <span>At {n.timestamp}</span>
-                  </div>
-                  {n.selectedQuote && (
-                    <div className="text-[11px] opacity-80 italic">"{n.selectedQuote}"</div>
-                  )}
-                  <div className="font-semibold">{n.text}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
-      )}
-
-      {/* ================= 5. HELP & INSTRUCTIONS MODAL ================= */}
+      {/* ================= 5. OFFICIAL HELP, REVIEW & ROUTE GUARD MODALS ================= */}
       {showHelpModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="w-full max-w-lg p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
-            <div className="flex items-center justify-between border-b border-inherit pb-2">
-              <h3 className="text-base font-bold flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-blue-600" />
-                <span>CD-IELTS Simulator Instructions</span>
-              </h3>
-              <button onClick={() => setShowHelpModal(false)} className="p-1 rounded hover:bg-slate-500/10">
-                <X className="w-4 h-4" />
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white text-black p-6 border-2 border-black max-w-xl w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b-2 border-black pb-2">
+              <h2 className="text-lg font-bold uppercase font-mono">OFFICIAL CD-IELTS EXAM INSTRUCTIONS & SHORTCUTS</h2>
+              <button onClick={() => setShowHelpModal(false)} className="p-1 hover:bg-gray-200 cursor-pointer">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="text-xs space-y-3 leading-relaxed text-slate-600 dark:text-slate-300">
-              <p>
-                <strong>Navigating Questions:</strong> Click any question number in the bottom palette or use the Previous/Next buttons to move across Listening, Reading, and Writing tasks.
-              </p>
-              <p>
-                <strong>Reviewing Questions:</strong> Click "Flag for Review" to mark a question with an amber indicator so you can return before submitting.
-              </p>
-              <p>
-                <strong>Highlighting & Notes:</strong> Select any text in the passage with your cursor to open the candidate notes scratchpad.
-              </p>
-              <p>
-                <strong>Instant Band Grading & Mistake Vault:</strong> When you click "Finish & Grade Test", your answers are evaluated against the Cambridge-aligned key, your Band Score is saved to your profile, and any incorrect answers are automatically added to your Mistake Vault.
-              </p>
+            <div className="text-xs leading-relaxed space-y-2 font-sans">
+              <p className="font-bold">1. Official Keyboard Shortcuts:</p>
+              <p>• <strong>Alt + N</strong>: Advance to the next question.</p>
+              <p>• <strong>Alt + P</strong>: Return to the previous question.</p>
+              <p>• <strong>Alt + R</strong>: Toggle the [ Review ] flag checkbox for the active question.</p>
+              <p>• <strong>Alt + V</strong>: Open or close the Margin Notes and Highlighter side panel.</p>
+              <p>• <strong>Tab / Shift + Tab</strong>: Move focus sequentially across completion blanks.</p>
+
+              <p className="font-bold">2. Strict Listening Audio Rules:</p>
+              <p>Audio tracks play strictly once with zero scrubbing. Includes a 35s pre-read countdown, 60s check buffer between sections, and a 2-minute final check buffer.</p>
+
+              <p className="font-bold">3. Highlighting & Margin Notes:</p>
+              <p>Select any text in the reading passage to trigger the [ Highlight ] and [ Make Note ] micro-popup.</p>
             </div>
 
-            <button
-              onClick={() => setShowHelpModal(false)}
-              className="w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-xs"
-            >
-              Return to Test
-            </button>
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setShowHelpModal(false)}
+                className="px-4 py-2 bg-black text-white font-bold text-xs cursor-pointer"
+              >
+                Close Instructions
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ================= 6. REVIEW STATUS & SUBMIT MODAL ================= */}
-      {showReviewModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
-            <div className="text-center space-y-1">
-              <h3 className="text-lg font-bold">Review Your Test Progress</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Check your unanswered or flagged items before grading {currentSet.title}.
-              </p>
+      {/* Accidental Navigation / Exit Route Guard Modal */}
+      {showExitConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+          <div className="bg-white text-black p-6 border-2 border-black max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b-2 border-black pb-2">
+              <div className="flex items-center gap-2 font-mono font-bold text-sm uppercase text-rose-700">
+                <AlertTriangle className="w-5 h-5" />
+                <span>ACTIVE EXAM SESSION GUARD</span>
+              </div>
+              <button onClick={() => setShowExitConfirmModal(false)} className="p-1 hover:bg-gray-200 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 py-2 text-center">
-              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                <div className="text-lg font-black text-blue-600 font-mono">{answeredCount}</div>
-                <div className="text-[10px] font-bold uppercase text-slate-500">Answered</div>
-              </div>
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                <div className="text-lg font-black text-amber-600 font-mono">{flaggedQuestions.size}</div>
-                <div className="text-[10px] font-bold uppercase text-slate-500">Flagged</div>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-500/10 border border-slate-500/20">
-                <div className="text-lg font-black text-slate-600 dark:text-slate-300 font-mono">{unansweredCount}</div>
-                <div className="text-[10px] font-bold uppercase text-slate-500">Unanswered</div>
-              </div>
-            </div>
+            <p className="text-xs font-bold leading-relaxed font-mono">
+              You have an exam session in progress. Leaving now will submit your current answers.
+            </p>
 
-            {unansweredCount > 0 && (
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>You have {unansweredCount} unanswered questions in this set.</span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
-                onClick={() => setShowReviewModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 font-bold text-xs"
+                onClick={() => setShowExitConfirmModal(false)}
+                className="px-3.5 py-2 border border-black font-bold text-xs cursor-pointer"
               >
-                Continue Test
+                Stay in Exam
               </button>
               <button
                 onClick={handleFinalSubmit}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md"
+                className="px-3.5 py-2 bg-rose-700 text-white font-bold text-xs hover:bg-rose-800 cursor-pointer"
               >
-                Grade & View Results
+                Submit Current Answers
+              </button>
+              <button
+                onClick={() => {
+                  saveNow();
+                  onExit();
+                }}
+                className="px-3 py-2 bg-gray-800 text-white font-bold text-xs hover:bg-black cursor-pointer"
+              >
+                Save Draft & Exit
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= 7. POST-SUBMISSION SCORECARD & EXPLANATION REVIEW MODAL ================= */}
-      {submittedResults && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="w-full max-w-3xl my-8 p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 shadow-2xl space-y-6 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center">
-                  <Award className="w-6 h-6" />
-                </div>
-                <div>
-                  <span className="text-[11px] font-mono font-bold uppercase text-emerald-600">
-                    CD-IELTS Diagnostic Report
-                  </span>
-                  <h3 className="text-xl font-black">{currentSet.title} — Results</h3>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] font-mono uppercase text-slate-500">Overall Band</div>
-                <div className="text-3xl font-black font-mono text-blue-600">
-                  {submittedResults.overallBand > 0 ? submittedResults.overallBand.toFixed(1) : 'N/A'}
-                </div>
-              </div>
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white text-black p-6 border-2 border-black max-w-lg w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b-2 border-black pb-2">
+              <h2 className="text-lg font-bold uppercase font-mono">CONFIRM TEST SUBMISSION</h2>
+              <button onClick={() => setShowReviewModal(false)} className="p-1 hover:bg-gray-200 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
-              <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">
-                <div className="text-xs font-bold text-slate-500 uppercase">Listening</div>
-                <div className="text-2xl font-black text-blue-600 font-mono mt-1">
-                  {submittedResults.listeningBand > 0 ? `Band ${submittedResults.listeningBand.toFixed(1)}` : '—'}
-                </div>
-                <div className="text-xs text-slate-500 mt-0.5">
-                  {submittedResults.listeningCorrect} / {submittedResults.listeningTotal} Correct
-                </div>
+            <div className="text-xs space-y-2 font-mono">
+              <p className="font-bold text-sm">Summary of Attempted Responses:</p>
+              <div className="p-3 border border-gray-400 bg-gray-100 space-y-1">
+                <div>Answered Questions: {answeredCount} of {totalQuestions}</div>
+                <div>Unanswered Questions: {totalQuestions - answeredCount}</div>
+                <div>Flagged for Review: {flaggedQuestions.size}</div>
+                <div>Writing Task 1 Words: {task1WordCount} (Min 150)</div>
+                <div>Writing Task 2 Words: {task2WordCount} (Min 250)</div>
               </div>
-
-              <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">
-                <div className="text-xs font-bold text-slate-500 uppercase">Academic Reading</div>
-                <div className="text-2xl font-black text-emerald-600 font-mono mt-1">
-                  {submittedResults.readingBand > 0 ? `Band ${submittedResults.readingBand.toFixed(1)}` : '—'}
-                </div>
-                <div className="text-xs text-slate-500 mt-0.5">
-                  {submittedResults.readingCorrect} / {submittedResults.readingTotal} Correct
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">
-                <div className="text-xs font-bold text-slate-500 uppercase">Academic Writing</div>
-                <div className="text-2xl font-black text-amber-600 font-mono mt-1">
-                  {submittedResults.writingBand > 0 ? `Band ${submittedResults.writingBand.toFixed(1)}` : '—'}
-                </div>
-                <div className="text-xs text-slate-500 mt-0.5">
-                  {submittedResults.wordCount} words written
-                </div>
-              </div>
+              <p className="text-rose-700 font-bold pt-1">
+                Once submitted, your answers will be locked and graded immediately using the 4-criterion Practice evaluation engine.
+              </p>
             </div>
 
-            {/* Detailed Question-by-Question Answer Key & Explanations */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
-                Answer Key & Examiner Explanations
-              </h4>
-              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                {currentSet.questions.map((q) => {
-                  const userVal = userAnswers[q.id] || '';
-                  const correct = isQuestionCorrect(q, userVal);
-                  return (
-                    <div
-                      key={q.id}
-                      className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
-                        correct
-                          ? 'bg-emerald-500/5 border-emerald-500/30'
-                          : 'bg-rose-500/5 border-rose-500/30'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 font-bold">
-                        <span>
-                          Q{q.id} ({q.section.toUpperCase()}): {q.prompt}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded font-mono text-[10px] uppercase ${
-                            correct
-                              ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-rose-500/20 text-rose-700 dark:text-rose-300'
-                          }`}
-                        >
-                          {correct ? 'Correct' : 'Review'}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-4 text-[11px]">
-                        <span>
-                          <strong>Your Answer:</strong> {userVal || 'Unanswered'}
-                        </span>
-                        <span>
-                          <strong>Correct Answer:</strong>{' '}
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                            {q.correctAnswer}
-                          </span>
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                        <strong>Examiner Note:</strong> {q.explanation}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
-                onClick={() => setSubmittedResults(null)}
-                className="px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 font-bold text-xs"
+                onClick={() => setShowReviewModal(false)}
+                className="px-4 py-2 border border-black font-bold text-xs cursor-pointer"
               >
-                Review Passage Again
+                Return to Test
               </button>
               <button
-                onClick={onExit}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md"
+                onClick={handleFinalSubmit}
+                className="px-4 py-2 bg-rose-700 text-white font-bold text-xs hover:bg-rose-800 cursor-pointer"
               >
-                Save & Return to Dashboard
+                Confirm & Grade
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= 8. OFFICIAL WARNING MODAL (10m / 5m) ================= */}
+      {/* 10-Minute & 5-Minute Warning Flash Alert Modal */}
       {warningModalText && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 shadow-2xl space-y-4 text-center">
-            <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6" />
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+          <div className="bg-amber-400 text-black p-6 border-4 border-black max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-2 font-mono font-black text-base border-b-2 border-black pb-2">
+              <AlertTriangle className="w-6 h-6 text-black" />
+              <span>OFFICIAL TEST TIME ALERT</span>
             </div>
-            <h3 className="text-base font-black text-slate-900 dark:text-white">
-              Test Administration Alert
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              {warningModalText}
-            </p>
-            <button
-              onClick={() => {
-                setWarningModalText(null);
-                soundManager.playBeep(640, 0.03);
-              }}
-              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition"
-            >
-              Acknowledge & Continue
-            </button>
+            <p className="text-xs font-bold leading-relaxed font-mono">{warningModalText}</p>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setWarningModalText(null)}
+                className="px-4 py-2 bg-black text-white font-bold text-xs cursor-pointer"
+              >
+                Acknowledge & Continue
+              </button>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 };
-

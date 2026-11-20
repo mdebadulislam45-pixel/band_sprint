@@ -1,5 +1,5 @@
 /**
- * IELTS Sprint - Structured Grammar Rules Database
+ * BandSprint - Structured Grammar Rules Database
  * File: src/data/grammarData.ts
  *
  * Stores comprehensive IELTS Grammatical Range and Accuracy (GRA) rules,

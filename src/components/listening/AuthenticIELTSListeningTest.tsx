@@ -28,6 +28,7 @@ import {
 import { questionEngine, IELTSQuestion } from '../../services/QuestionEngine';
 import { audioService, DialogueLine, AudioPlaybackState, IELTS_SPEAKERS } from '../../services/audioService';
 import { audioManager } from '../../services/AudioManager';
+import { ieltsAudioEngine } from '../../services/IELTSAudioEngine';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
 import { testPersistenceService } from '../../services/testPersistenceService';
@@ -47,11 +48,14 @@ import {
   IELTS_LISTENING_PARTS,
   getListeningPartMeta,
   getListeningQuestionProgress,
-  formatIELTSSpeechText
+  formatIELTSSpeechText,
+  buildListeningExamDialogue,
+  ListeningExamPacingMode
 } from '../../utils/listeningAnswerEvaluator';
 import { ListeningMapDiagram } from './ListeningMapDiagram';
 import { recordExamAttempt } from '../../utils/userStorage';
 import { addMistake } from '../../utils/vaultStorage';
+import { AskMentorContextualWidget } from '../common/AskMentorPanel';
 
 export const LISTENING_AUDIO_TIME = 1800; // 30 minutes in seconds
 export const ANSWER_CHECK_TIME = 120; // 2 minutes in seconds
@@ -61,12 +65,16 @@ const CD_LISTENING_STORAGE_KEY = 'ielts_cd_listening_exam_v2';
 export interface CDListeningState {
   testId: string;
   status: 'instruction' | 'in_progress' | 'checking' | 'submitted';
+  pacingMode?: ListeningExamPacingMode;
   startTime: number | null;
   checkStartTime: number | null;
   questions: IELTSQuestion[];
   userAnswers: Record<string, string>;
   flaggedQuestions: Record<string, boolean>;
   currentIndex: number;
+  currentAudioLineIndex?: number;
+  currentAudioElapsedSec?: number;
+  audioCompleted?: boolean;
   submittedAt: number | null;
   provenance?: AudioProvenanceType;
   registrationCommitted?: boolean;
@@ -113,13 +121,15 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
 }) => {
   // Test State
   const [testState, setTestState] = useState<CDListeningState>(() => {
-    // Attempt restoration from localStorage
+    // Attempt restoration from localStorage only for active, unsubmitted exams
     if (typeof window !== 'undefined') {
       try {
         const raw = localStorage.getItem(CD_LISTENING_STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as CDListeningState;
-          if (parsed && Array.isArray(parsed.questions) && parsed.questions.length === 40) {
+          if (parsed && parsed.status === 'submitted') {
+            localStorage.removeItem(CD_LISTENING_STORAGE_KEY);
+          } else if (parsed && Array.isArray(parsed.questions) && parsed.questions.length === 40) {
             return parsed;
           }
         }
@@ -131,20 +141,59 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
     return {
       testId: 'cd_test_' + Date.now(),
       status: 'instruction',
+      pacingMode: 'authentic',
       startTime: null,
       checkStartTime: null,
       questions: [],
       userAnswers: {},
       flaggedQuestions: {},
       currentIndex: 0,
+      currentAudioLineIndex: 0,
+      currentAudioElapsedSec: 0,
+      audioCompleted: false,
       submittedAt: null,
       scoreSummary: null
     };
   });
 
   // Centralized Timers
-  const [audioSecondsRemaining, setAudioSecondsRemaining] = useState<number>(LISTENING_AUDIO_TIME);
+  const [audioSecondsRemaining, setAudioSecondsRemaining] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(CD_LISTENING_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as CDListeningState;
+          if (parsed && parsed.status === 'in_progress') {
+            const elapsed = parsed.currentAudioElapsedSec || 0;
+            return Math.max(0, LISTENING_AUDIO_TIME - elapsed);
+          }
+        }
+      } catch {}
+    }
+    return LISTENING_AUDIO_TIME;
+  });
   const [checkSecondsRemaining, setCheckSecondsRemaining] = useState<number>(ANSWER_CHECK_TIME);
+
+  // Stale in-progress session restoration gate: requires explicit candidate choice
+  const [restoredSessionModalOpen, setRestoredSessionModalOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(CD_LISTENING_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as CDListeningState;
+          if (
+            parsed &&
+            parsed.status === 'in_progress' &&
+            Array.isArray(parsed.questions) &&
+            parsed.questions.length === 40
+          ) {
+            return true;
+          }
+        }
+      } catch {}
+    }
+    return false;
+  });
 
   // Audio status & live subscription to audioService
   const [playbackState, setPlaybackState] = useState<AudioPlaybackState>(audioService.getState());
@@ -156,14 +205,46 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
       setPlaybackState(s);
       setIsAudioPlaying(s.isPlaying);
     });
-    return unsub;
+    return () => {
+      unsub();
+      audioService.stop();
+      audioManager.killAllAudio();
+    };
   }, []);
 
   // Focus ref for input
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Sound check status
+  // Sound check status & tokenized watchdog timers
   const [isPlayingSoundCheck, setIsPlayingSoundCheck] = useState(false);
+  const soundCheckTokenRef = useRef<number>(0);
+  const soundCheckStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const soundCheckCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSoundCheckTimers = useCallback(() => {
+    if (soundCheckStartTimerRef.current) {
+      clearTimeout(soundCheckStartTimerRef.current);
+      soundCheckStartTimerRef.current = null;
+    }
+    if (soundCheckCompletionTimerRef.current) {
+      clearTimeout(soundCheckCompletionTimerRef.current);
+      soundCheckCompletionTimerRef.current = null;
+    }
+  }, []);
+
+  const stopSoundCheck = useCallback(() => {
+    soundCheckTokenRef.current += 1;
+    clearSoundCheckTimers();
+    setIsPlayingSoundCheck(false);
+    ieltsAudioEngine.stopCurrentOperation('sound_check_stopped');
+  }, [clearSoundCheckTimers]);
+
+  useEffect(() => {
+    return () => {
+      clearSoundCheckTimers();
+    };
+  }, [clearSoundCheckTimers]);
+
   const [examGenerationMeta, setExamGenerationMeta] = useState<UniqueExamGenerationResult | null>(null);
   const recordedExamIdRef = useRef<string | null>(
     testState.status === 'submitted' ? testState.testId : null
@@ -242,7 +323,11 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
 
   // 2. Centralized Timing Engine
   useEffect(() => {
-    if (testState.status === 'instruction' || testState.status === 'submitted') {
+    if (
+      testState.status === 'instruction' ||
+      testState.status === 'submitted' ||
+      restoredSessionModalOpen
+    ) {
       return;
     }
 
@@ -288,7 +373,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [testState.status, testState.startTime, testState.checkStartTime, onShowToast]);
+  }, [testState.status, testState.startTime, testState.checkStartTime, restoredSessionModalOpen, onShowToast]);
 
   // Review filter for submitted results screen
   const [reviewPartFilter, setReviewPartFilter] = useState<'all' | 1 | 2 | 3 | 4>('all');
@@ -326,197 +411,16 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
   }, [testState.questions, testState.userAnswers, testState.flaggedQuestions]);
 
   // Build dialogue lines for all 4 parts of the examination with strict deduplication & authentic speaker separation
-  const buildExamDialogue = useCallback((questions: IELTSQuestion[]): DialogueLine[] => {
-    if (!questions || questions.length === 0) return [];
-
-    const lines: DialogueLine[] = [];
-
-    const appendPartQuestions = (
-      partSlice: IELTSQuestion[],
-      defaultLabel: string,
-      sectionNum: 1 | 2 | 3 | 4 = 1
-    ) => {
-      const seenTexts = new Set<string>();
-      const collectedDialogue: Array<{
-        speaker?: string;
-        speakerId?: string;
-        gender?: 'male' | 'female';
-        text: string;
-        pauseAfterMs?: number;
-      }> = [];
-
-      let previousTopic: string | null = null;
-      const partStartQuestionNumber = (sectionNum - 1) * 10 + 1;
-      const partEndQuestionNumber = sectionNum * 10;
-
-      partSlice.forEach((q, sliceIdx) => {
-        const currentTopic = (q.topic || '').trim();
-        const absoluteQuestionNumber = partStartQuestionNumber + sliceIdx;
-
-        // If a part transitions to a second sub-topic (e.g., Questions 6-10), insert a natural examiner pause
-        if (
-          previousTopic &&
-          currentTopic &&
-          currentTopic !== previousTopic &&
-          sliceIdx >= 3 &&
-          sliceIdx <= 7
-        ) {
-          const transitionPrompt = `Before you hear the rest of Part ${sectionNum}, you have a moment to look at questions ${absoluteQuestionNumber} to ${partEndQuestionNumber}.`;
-          if (!seenTexts.has(transitionPrompt)) {
-            seenTexts.add(transitionPrompt);
-            collectedDialogue.push({
-              speaker: 'Cambridge Examiner (Arthur)',
-              speakerId: 'speaker_04',
-              gender: 'male',
-              text: transitionPrompt,
-              pauseAfterMs: 950
-            });
-          }
-        }
-        if (currentTopic) {
-          previousTopic = currentTopic;
-        }
-
-        if (q.dialogue && q.dialogue.length > 0) {
-          q.dialogue.forEach((d) => {
-            const clean = formatIELTSSpeechText((d.text || '').trim());
-            if (clean && !seenTexts.has(clean)) {
-              seenTexts.add(clean);
-              collectedDialogue.push({
-                speaker: d.speaker,
-                speakerId: d.speakerId,
-                gender: d.gender,
-                text: clean,
-                pauseAfterMs: d.pauseAfterMs || (sectionNum === 4 ? 720 : 620)
-              });
-            }
-          });
-        } else if (q.audioScript) {
-          const clean = formatIELTSSpeechText(q.audioScript.trim());
-          if (clean && !seenTexts.has(clean)) {
-            seenTexts.add(clean);
-            collectedDialogue.push({
-              speaker: defaultLabel,
-              speakerId: 'speaker_04',
-              gender: 'male',
-              text: clean,
-              pauseAfterMs: 750
-            });
-          }
-        } else if (q.prompt) {
-          const clean = formatIELTSSpeechText(q.prompt.trim());
-          if (clean && !seenTexts.has(clean)) {
-            seenTexts.add(clean);
-            collectedDialogue.push({
-              speaker: defaultLabel,
-              speakerId: 'speaker_04',
-              gender: 'male',
-              text: clean,
-              pauseAfterMs: 750
-            });
-          }
-        }
-      });
-
-      const resolvedPartLines = assignSectionDialogueSpeakers(
-        collectedDialogue,
-        sectionNum,
-        defaultLabel
-      );
-      resolvedPartLines.forEach((rl) => {
-        lines.push({
-          speakerId: rl.speakerId,
-          speakerName: rl.speakerName,
-          gender: rl.gender,
-          text: rl.text,
-          pauseAfterMs: rl.pauseAfterMs
-        });
-      });
-    };
-
-    // Official Cambridge Welcome & Test Opening
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'International English Language Testing System. Authentic Computer-Delivered Listening Examination. The test consists of four parts, with forty questions in total. You will hear each recording once only. Answer all questions as you listen. At the end of the test, you will have two minutes to check your answers.',
-      pauseAfterMs: 1100
-    });
-
-    // Part 1: Everyday Social Conversation (Two Speakers)
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'Part 1. You will hear a conversation between two speakers in an everyday social context. First, you have some time to look at questions 1 to 10.',
-      pauseAfterMs: 1100
-    });
-
-    appendPartQuestions(questions.slice(0, 10), 'Cambridge Speaker (Arthur)', 1);
-
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'That is the end of Part 1. You now have half a minute to check your answers to questions 1 to 10. Now turn to Part 2.',
-      pauseAfterMs: 1100
-    });
-
-    // Part 2: Everyday Social Monologue (Single Speaker)
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'Part 2. You will hear a talk by a single speaker about local community facilities and public arrangements. First, you have some time to look at questions 11 to 20.',
-      pauseAfterMs: 1100
-    });
-
-    appendPartQuestions(questions.slice(10, 20), 'Community Guide (Charlotte)', 2);
-
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'That is the end of Part 2. You now have half a minute to check your answers to questions 11 to 20. Now turn to Part 3.',
-      pauseAfterMs: 1100
-    });
-
-    // Part 3: Academic Discussion (Two to Four Speakers)
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'Part 3. You will hear an academic discussion between university students and their tutor. First, you have some time to look at questions 21 to 30.',
-      pauseAfterMs: 1100
-    });
-
-    appendPartQuestions(questions.slice(20, 30), 'Academic Tutor (Dr. Alistair)', 3);
-
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'That is the end of Part 3. You now have half a minute to check your answers to questions 21 to 30. Now turn to Part 4.',
-      pauseAfterMs: 1100
-    });
-
-    // Part 4: Academic Lecture Monologue (Single Speaker)
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'Part 4. You will hear an academic lecture by a single speaker on a university subject. First, you have some time to look at questions 31 to 40.',
-      pauseAfterMs: 1100
-    });
-
-    appendPartQuestions(questions.slice(30, 40), 'University Lecturer (Professor Arthur)', 4);
-
-    // Final Conclusion
-    lines.push({
-      speakerId: 'speaker_04',
-      speakerName: 'Cambridge Examiner (Arthur)',
-      text: 'That is the end of Part 4 and the end of the listening audio recording. You now have two minutes to check and finalize your answers across all four parts.',
-      pauseAfterMs: 1000
-    });
-
-    return lines;
-  }, []);
+  const buildExamDialogue = useCallback(
+    (questions: IELTSQuestion[], mode?: ListeningExamPacingMode): DialogueLine[] => {
+      return buildListeningExamDialogue(questions, mode || testState.pacingMode || 'authentic');
+    },
+    [testState.pacingMode]
+  );
 
   const fullExamDialogue = useMemo(() => {
-    return buildExamDialogue(testState.questions);
-  }, [testState.questions, buildExamDialogue]);
+    return buildExamDialogue(testState.questions, testState.pacingMode || 'authentic');
+  }, [testState.questions, testState.pacingMode, buildExamDialogue]);
 
   // Start the Listening Examination
   const handleStartExam = () => {
@@ -532,6 +436,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
       examGenerationMeta?.provenance.provenance ||
       testState.provenance ||
       'original_practice_synthesized';
+    const selectedPacingMode: ListeningExamPacingMode = testState.pacingMode || 'authentic';
 
     // Register exam questions as active/published when the candidate actually begins the test
     const combinedScript = qs.map((q) => extractQuestionScriptText(q)).join('\n');
@@ -557,12 +462,16 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
     const nextInProgressState: CDListeningState = {
       testId: activeTestId,
       status: 'in_progress',
+      pacingMode: selectedPacingMode,
       startTime,
       checkStartTime: null,
       questions: qs,
       userAnswers: initialAnswers,
       flaggedQuestions: initialFlags,
       currentIndex: 0,
+      currentAudioLineIndex: 0,
+      currentAudioElapsedSec: 0,
+      audioCompleted: false,
       submittedAt: null,
       scoreSummary: null,
       provenance: activeProvenance,
@@ -579,13 +488,30 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
     setCheckSecondsRemaining(ANSWER_CHECK_TIME);
 
     soundManager.playSuccess();
-    onShowToast('Listening Test Started. Part 1 (Questions 1–10) British RP audio is now playing.');
+    onShowToast(
+      selectedPacingMode === 'quick'
+        ? 'Listening Test Started (Quick Practice Pacing). Spoken audio plays at 1.0x with compressed pauses.'
+        : 'Listening Test Started (Authentic Test Pacing). Part 1 (Questions 1–10) British RP audio is now playing.'
+    );
 
-    startUnifiedAudioPlayback(qs, activeTestId);
+    startUnifiedAudioPlayback(qs, activeTestId, {
+      pacingMode: selectedPacingMode,
+      startIndex: 0,
+      initialElapsed: 0
+    });
   };
 
   // Play unified audio across the 40 questions using the locked British voice engine at official 1.0x speed
-  const startUnifiedAudioPlayback = (qs: IELTSQuestion[], activeExamId?: string) => {
+  const startUnifiedAudioPlayback = (
+    qs: IELTSQuestion[],
+    activeExamId?: string,
+    resumeOpts?: {
+      pacingMode?: ListeningExamPacingMode;
+      startIndex?: number;
+      initialElapsed?: number;
+    }
+  ) => {
+    stopSoundCheck();
     audioService.unlockAudio();
     if (playbackState.playbackRate !== 1.0) {
       audioService.setPlaybackRate(1.0);
@@ -594,50 +520,215 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
     setIsAudioPlaying(true);
     setAudioError(null);
 
-    const dialogueLines = buildExamDialogue(qs);
+    const modeToUse = resumeOpts?.pacingMode || testState.pacingMode || 'authentic';
+    const dialogueLines = buildExamDialogue(qs, modeToUse);
     if (!dialogueLines || dialogueLines.length === 0) {
       return;
     }
 
-    audioService.playDialogue(dialogueLines, {
-      testId: activeExamId || testState.testId || 'cd_listening_unified',
-      examId: activeExamId || testState.testId || 'cd_listening_unified',
-      onEnd: () => {
+    const safeStartIndex = Math.max(
+      0,
+      Math.min(dialogueLines.length - 1, resumeOpts?.startIndex ?? 0)
+    );
+
+    audioService
+      .playDialogue(dialogueLines, {
+        testId: activeExamId || testState.testId || 'cd_listening_unified',
+        examId: activeExamId || testState.testId || 'cd_listening_unified',
+        startIndex: safeStartIndex,
+        initialElapsed: resumeOpts?.initialElapsed,
+        onLineStart: (lineIdx) => {
+          const currentSec = audioService.getState().currentTime || 0;
+          setTestState((prev) => {
+            const nextState: CDListeningState = {
+              ...prev,
+              currentAudioLineIndex: lineIdx,
+              currentAudioElapsedSec: currentSec
+            };
+            try {
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(CD_LISTENING_STORAGE_KEY, JSON.stringify(nextState));
+              }
+            } catch {}
+            return nextState;
+          });
+        },
+        onComplete: () => {
+          setIsAudioPlaying(false);
+          setTestState((prev) => {
+            const nextState: CDListeningState = {
+              ...prev,
+              audioCompleted: true,
+              currentAudioLineIndex: dialogueLines.length
+            };
+            try {
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(CD_LISTENING_STORAGE_KEY, JSON.stringify(nextState));
+              }
+            } catch {}
+            return nextState;
+          });
+          onShowToast(
+            'All 4 Listening audio parts have concluded. You may review your answers or start the 2-minute final check.'
+          );
+        },
+        onEnd: () => {
+          setIsAudioPlaying(false);
+        },
+        onError: (err) => {
+          setIsAudioPlaying(false);
+          setAudioError(
+            typeof err?.message === 'string'
+              ? err.message
+              : 'Audio stream interrupted or blocked by browser. Tap Resume Audio to continue.'
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn('Audio playback warning:', err);
         setIsAudioPlaying(false);
-      }
-    }).catch((err) => {
-      console.warn('Audio playback warning:', err);
-      setIsAudioPlaying(false);
+        setAudioError(
+          typeof err?.message === 'string'
+            ? err.message
+            : 'Audio stream interrupted. Tap Resume Audio to continue.'
+        );
+      });
+  };
+
+  // Allow candidate to transition directly to the 2-minute checking phase once all 4 audio parts complete
+  const handleEnterCheckingPhaseNow = () => {
+    audioService.stop();
+    stopSpeech();
+    setIsAudioPlaying(false);
+    soundManager.playChime30s();
+    onShowToast('Entered 2-minute Final Answer Checking Period.');
+    setCheckSecondsRemaining(ANSWER_CHECK_TIME);
+    setTestState((prev) => {
+      const nextState: CDListeningState = {
+        ...prev,
+        status: 'checking',
+        audioCompleted: true,
+        checkStartTime: Date.now()
+      };
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(CD_LISTENING_STORAGE_KEY, JSON.stringify(nextState));
+        }
+      } catch {}
+      return nextState;
     });
   };
 
-  // In strict Exam Mode, if mobile browser interruption pauses the audio, allow the candidate to resume
+  // In strict Exam Mode, if mobile browser interruption pauses the audio, allow the candidate to resume from the exact line
   const handleResumeInterruptedExamAudio = () => {
+    if (testState.audioCompleted) {
+      return;
+    }
     audioService.unlockAudio();
+    setAudioError(null);
     if (playbackState.isPaused) {
       audioService.resume();
     } else if (!playbackState.isPlaying) {
+      const resumeIdx =
+        testState.currentAudioLineIndex ?? audioService.getCurrentPlaylistIndex() ?? 0;
+      const resumeElapsed =
+        testState.currentAudioElapsedSec && testState.currentAudioElapsedSec > 0
+          ? testState.currentAudioElapsedSec
+          : playbackState.currentTime > 0
+          ? playbackState.currentTime
+          : undefined;
       startUnifiedAudioPlayback(
         testState.questions.length > 0 ? testState.questions : initialize40Questions(false),
-        testState.testId
+        testState.testId,
+        {
+          pacingMode: testState.pacingMode || 'authentic',
+          startIndex: resumeIdx,
+          initialElapsed: resumeElapsed
+        }
       );
     }
   };
 
-  // Sound Check function (Plays short British Male sample)
+  // Handle candidate confirming resumption of a detected in-progress exam
+  const handleConfirmResumeExam = () => {
+    setRestoredSessionModalOpen(false);
+    const currentElapsed = testState.currentAudioElapsedSec || 0;
+    const adjustedStartTime = Date.now() - currentElapsed * 1000;
+    setTestState((prev) => ({
+      ...prev,
+      startTime: adjustedStartTime
+    }));
+    setAudioSecondsRemaining(Math.max(0, LISTENING_AUDIO_TIME - currentElapsed));
+    handleResumeInterruptedExamAudio();
+    onShowToast(`Listening Exam resumed at Part ${activePart}. Official British audio broadcast active.`);
+  };
+
+  // Handle candidate choosing to start completely fresh
+  const handleConfirmStartFresh = () => {
+    audioService.stop();
+    stopSpeech();
+    audioManager.reset('start_fresh_exam');
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(CD_LISTENING_STORAGE_KEY);
+      }
+    } catch {}
+    setRestoredSessionModalOpen(false);
+    setIsAudioPlaying(false);
+    setAudioSecondsRemaining(LISTENING_AUDIO_TIME);
+    setCheckSecondsRemaining(ANSWER_CHECK_TIME);
+
+    const freshQuestions = initialize40Questions(false);
+    const freshTestId = 'cd_listening_' + Date.now();
+    setTestState({
+      testId: freshTestId,
+      status: 'instruction',
+      pacingMode: 'authentic',
+      startTime: null,
+      checkStartTime: null,
+      questions: freshQuestions,
+      userAnswers: {},
+      flaggedQuestions: {},
+      currentIndex: 0,
+      currentAudioLineIndex: 0,
+      currentAudioElapsedSec: 0,
+      audioCompleted: false,
+      submittedAt: null,
+      scoreSummary: null
+    });
+    onShowToast('Previous listening session cleared. Ready to start fresh.');
+  };
+
+  // Sound Check function (Plays short British Male sample via unified IELTSAudioEngine)
   const handleSoundCheck = () => {
     if (isPlayingSoundCheck) return;
+    setAudioError(null);
     setIsPlayingSoundCheck(true);
     soundManager.playBeep(520, 0.1);
 
-    speakBritish(
-      'This is an authentic Cambridge IELTS sound check. If you can hear this recording clearly, your audio system is functioning correctly.',
-      {
-        speakerId: 'speaker_04',
-        onEnd: () => setIsPlayingSoundCheck(false),
-        onError: () => setIsPlayingSoundCheck(false)
+    const sampleText =
+      'This is an authentic Practice IELTS sound check. If you can hear this recording clearly, your audio system is functioning correctly.';
+
+    ieltsAudioEngine.playSoundCheck({
+      speakerId: 'speaker_04',
+      sampleText,
+      onStart: () => {
+        setIsPlayingSoundCheck(true);
+      },
+      onEnd: () => {
+        setIsPlayingSoundCheck(false);
+        setAudioError(null);
+      },
+      onError: (err) => {
+        setIsPlayingSoundCheck(false);
+        const reason =
+          typeof err?.message === 'string'
+            ? err.message
+            : 'Audio playback error or blocked by browser.';
+        setAudioError(`Sound check failed: ${reason}`);
+        onShowToast(`⚠ Sound check failed: ${reason}`);
       }
-    );
+    });
   };
 
   // Answer handler
@@ -744,7 +835,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
               title: `CD-IELTS Listening Q${idx + 1}: ${q.prompt}`,
               userAnswer: rawUserAns || '(blank)',
               correctAnswer: formatDisplayedCorrectAnswer(q),
-              explanation: q.explanation || 'Review Cambridge dialogue audio script.'
+              explanation: q.explanation || 'Review Practice dialogue audio script.'
             });
           } catch (vaultErr) {
             console.warn('Could not log mistake to vault:', vaultErr);
@@ -762,7 +853,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
             isCorrect,
             score: isCorrect ? 1 : 0,
             mistakeType: !isCorrect ? 'listening_comprehension' : undefined,
-            explanation: q.explanation || 'Review Cambridge dialogue audio script.',
+            explanation: q.explanation || 'Review Practice dialogue audio script.',
             skipMistakeVault: true
           });
         } catch (err) {
@@ -869,12 +960,16 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
     const nextRetakeState: CDListeningState = {
       testId: result.examId,
       status: 'instruction',
+      pacingMode: testState.pacingMode || 'authentic',
       startTime: null,
       checkStartTime: null,
       questions: result.questions,
       userAnswers: {},
       flaggedQuestions: {},
       currentIndex: 0,
+      currentAudioLineIndex: 0,
+      currentAudioElapsedSec: 0,
+      audioCompleted: false,
       submittedAt: null,
       scoreSummary: null,
       provenance: result.provenance.provenance,
@@ -947,21 +1042,121 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-              <div className="text-[11px] font-mono font-bold uppercase text-slate-500">Audio Duration</div>
-              <div className="text-2xl font-black text-slate-900">~30 Minutes</div>
-              <div className="text-xs text-slate-600">Plays once only (1.0x locked)</div>
+              <div className="text-[11px] font-mono font-bold uppercase text-slate-500">Exam Clock Window</div>
+              <div className="text-2xl font-black text-slate-900">30 Minutes</div>
+              <div className="text-xs text-slate-600">
+                {testState.pacingMode === 'quick'
+                  ? '~11–13m audio (compressed pauses)'
+                  : '~15–18m audio (full pauses)'}
+              </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
               <div className="text-[11px] font-mono font-bold uppercase text-slate-500">Answer Checking</div>
               <div className="text-2xl font-black text-slate-900">2 Minutes</div>
-              <div className="text-xs text-slate-600">Review & edit answers</div>
+              <div className="text-xs text-slate-600">Final review & edit window</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
               <div className="text-[11px] font-mono font-bold uppercase text-slate-500">Exam Controls</div>
-              <div className="text-2xl font-black text-slate-900">Strict CD-IELTS</div>
-              <div className="text-xs text-slate-600">No replay or transcript</div>
+              <div className="text-2xl font-black text-slate-900">Strict 1.0x</div>
+              <div className="text-xs text-slate-600">Single play · No transcript</div>
+            </div>
+          </div>
+
+          {/* Audio Pacing Mode Selector (Standard Pauses vs. Quick Practice) */}
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-slate-900 uppercase font-mono text-xs tracking-wider">
+                  Generated Practice Broadcast Pacing & CD-IELTS Timing Disclosure
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  This 40-question computer-delivered practice test runs inside a <strong>30:00 Exam Clock</strong> followed by the <strong>2:00 CD-IELTS Answer-Checking Phase</strong> (unlike paper-based IELTS, which uses a 10-minute transfer period). Because the 4-part practice script is synthesized (~1,350 words at 1.0x speed), the audio broadcast itself is shorter than a 30-minute official test recording:
+                </p>
+              </div>
+              <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-md bg-slate-900 text-white">
+                {testState.pacingMode === 'quick' ? 'Quick Practice Selected' : 'Standard Pauses Selected'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setTestState((prev) => ({
+                    ...prev,
+                    pacingMode: 'authentic'
+                  }))
+                }
+                className={`p-4 rounded-xl border text-left transition cursor-pointer ${
+                  (testState.pacingMode || 'authentic') === 'authentic'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                    : 'bg-white text-slate-900 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black uppercase tracking-wide">
+                    1. Standard Exam Pauses (Recommended)
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                      (testState.pacingMode || 'authentic') === 'authentic'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    ~15–18m Audio
+                  </span>
+                </div>
+                <p
+                  className={`text-xs mt-1.5 leading-relaxed ${
+                    (testState.pacingMode || 'authentic') === 'authentic'
+                      ? 'text-slate-300'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  Includes scheduled preview pauses (20s before each Part, 15s mid-part) and full{' '}
+                  <strong>30-second answer-checking pauses</strong> at the end of Parts 1, 2, and 3 (~15–18 min generated audio broadcast inside the 30:00 Exam Clock).
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setTestState((prev) => ({
+                    ...prev,
+                    pacingMode: 'quick'
+                  }))
+                }
+                className={`p-4 rounded-xl border text-left transition cursor-pointer ${
+                  testState.pacingMode === 'quick'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                    : 'bg-white text-slate-900 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black uppercase tracking-wide">
+                    2. Quick Practice Mode
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                      testState.pacingMode === 'quick'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200'
+                    }`}
+                  >
+                    ~11–13m Audio
+                  </span>
+                </div>
+                <p
+                  className={`text-xs mt-1.5 leading-relaxed ${
+                    testState.pacingMode === 'quick' ? 'text-slate-300' : 'text-slate-600'
+                  }`}
+                >
+                  Plays all 40 questions at normal 1.0x speech speed but compresses silent reading and checking pauses to ~1.1s between sections (~11–13 min generated audio broadcast inside the 30:00 Exam Clock).
+                </p>
+              </button>
             </div>
           </div>
 
@@ -1010,16 +1205,16 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
                 <strong>Single Continuous Broadcast:</strong> In Full-Test Exam Mode, the recording plays <strong>once only at 1.0x speed</strong> without rewind, scrubbing, or transcript display.
               </li>
               <li>
+                <strong>Independent Clocks:</strong> The <strong>30:00 Exam Clock</strong> tracks your overall test window, while the <strong>Audio Broadcast Bar</strong> tracks the exact duration of the 4-part voice recording and its scheduled pauses.
+              </li>
+              <li>
                 <strong>Four Organised Parts:</strong> Progress sequentially through Part 1 (Q1–10), Part 2 (Q11–20), Part 3 (Q21–30), and Part 4 (Q31–40).
               </li>
               <li>
                 <strong>Non-Interrupting Navigation:</strong> Switching between questions or parts updates your view immediately without restarting or regenerating audio.
               </li>
               <li>
-                <strong>Review Period:</strong> When all 4 parts conclude, the system enters a <strong>2-minute final answer-checking period</strong>, after which your test submits automatically.
-              </li>
-              <li>
-                <strong>Natural British Voice Separation:</strong> Parts 1 and 3 use clearly distinct British male and female voices; Parts 2 and 4 use single-speaker monologue delivery.
+                <strong>Review Period:</strong> When all 4 parts conclude, you can immediately enter the <strong>2-minute final answer-checking period</strong> or continue reviewing until the exam clock transitions automatically.
               </li>
             </ul>
           </div>
@@ -1081,7 +1276,8 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
           {/* Start Test Button */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-slate-200">
             <div className="text-xs text-slate-500 font-mono">
-              Ready to begin Part 1 (Questions 1–10) · 40 Unique Questions Verified
+              Ready to begin Part 1 (Questions 1–10) ·{' '}
+              {testState.pacingMode === 'quick' ? 'Quick Practice Pauses' : 'Authentic Test Pauses'}
             </div>
 
             <button
@@ -1089,7 +1285,11 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
               className="px-8 py-3.5 rounded-2xl bg-slate-900 hover:bg-black text-white text-sm font-black shadow-lg transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
             >
               <Radio className="w-4 h-4 text-rose-400" />
-              <span>Start Listening Test (30 Min Audio + 2 Min Check)</span>
+              <span>
+                {testState.pacingMode === 'quick'
+                  ? 'Start Listening Test (Quick Pacing · 30m Window)'
+                  : 'Start Listening Test (Authentic Pacing · 30m Window)'}
+              </span>
             </button>
           </div>
         </div>
@@ -1127,7 +1327,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
                 IELTS Listening Examination Result
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                Authentic 40-question examination performance across Parts 1–4 based on standard Cambridge conversion scales.
+                Authentic 40-question examination performance across Parts 1–4 based on standard Practice conversion scales.
               </p>
             </div>
 
@@ -1323,9 +1523,29 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
 
                   {q.explanation && (
                     <div className="mt-2.5 p-3 rounded-xl bg-white/70 border border-slate-200/80 text-xs text-slate-700">
-                      <strong>Cambridge Analysis:</strong> {q.explanation}
+                      <strong>Practice Analysis:</strong> {q.explanation}
                     </div>
                   )}
+
+                  <div className="mt-2.5">
+                    <AskMentorContextualWidget
+                      module="listening"
+                      questionPrompt={q.prompt}
+                      questionType={q.questionType}
+                      topic={`Part ${partNum}: ${q.topic || partMeta.shortTitle}`}
+                      evidenceContext={
+                        q.dialogue && q.dialogue.length > 0
+                          ? q.dialogue.map((d) => `${d.speaker || 'Speaker'}: ${d.text}`).join('\n')
+                          : q.audioScript || ''
+                      }
+                      userAnswer={userAns}
+                      correctAnswer={expectedAnsText}
+                      trapNote={q.explanation}
+                      isAnswerRevealed={true}
+                      buttonLabel="Ask Mentor"
+                      compact={true}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -1346,7 +1566,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
   const activeSpeakerDisplay =
     playbackState.currentSpeakerName ||
     IELTS_SPEAKERS[playbackState.currentSpeakerId]?.name ||
-    'Arthur (Cambridge Examiner)';
+    'Arthur (Practice Examiner)';
   const totalAnsweredOverall = Object.values(testState.userAnswers).filter((v) => String(v || '').trim().length > 0).length;
   const audioBroadcastProgressPct =
     playbackState.duration > 0
@@ -1355,6 +1575,76 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-4 animate-fade-in pb-20 select-none">
+      {/* Restored In-Progress Session Dialog */}
+      {restoredSessionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-5 text-left">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Resume In-Progress Exam?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  An unfinished Computer-Delivered IELTS Listening session was detected.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center text-slate-700 dark:text-slate-300">
+                <span>Questions Answered:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  {totalAnsweredOverall} / 40
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-slate-700 dark:text-slate-300">
+                <span>Active Section:</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                  Part {activePart} ({activePartMeta.shortTitle})
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-slate-700 dark:text-slate-300">
+                <span>Audio Progress:</span>
+                <span className="font-bold">
+                  Line {(testState.currentAudioLineIndex || 0) + 1}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-slate-700 dark:text-slate-300">
+                <span>Exam Clock Remaining:</span>
+                <span className="font-bold text-slate-900 dark:text-white">
+                  {formatTime(audioSecondsRemaining)}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Resuming will continue the official British studio audio broadcast from your current question line and synchronize the 30-minute exam clock.
+            </p>
+
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={handleConfirmStartFresh}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Start Fresh
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmResumeExam}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Resume Exam (Recommended)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. Official CD-IELTS Top Examination Header */}
       <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-md flex flex-wrap items-center justify-between gap-3 border border-slate-800">
         <div className="flex items-center gap-3">
@@ -1383,10 +1673,25 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
               <AlertTriangle className="w-4 h-4 text-amber-400 animate-pulse" />
               <span>Answer Checking Period (No Replay)</span>
             </span>
+          ) : testState.audioCompleted ? (
+            <span className="flex items-center gap-1.5 text-emerald-300 font-bold font-mono">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Audio Broadcast Complete · Review Active</span>
+            </span>
+          ) : playbackState.isInterLinePause ? (
+            <span className="flex items-center gap-1.5 text-amber-300 font-mono font-bold animate-pulse">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span>
+                Preparation Pause · {playbackState.pauseRemainingSec ?? 0}s Remaining
+              </span>
+            </span>
           ) : (
             <span className="flex items-center gap-1.5 text-slate-200 font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              <span>Single-Play Exam Broadcast · 1.0x</span>
+              <span>
+                Single-Play Audio · 1.0x (
+                {testState.pacingMode === 'quick' ? 'Quick Pauses' : 'Authentic Pauses'})
+              </span>
             </span>
           )}
         </div>
@@ -1401,11 +1706,12 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
                 ? 'bg-rose-950 text-rose-300 border-rose-600 animate-pulse'
                 : 'bg-slate-800 text-white border-slate-700'
             }`}
+            title="Independent 30-Minute Exam Window Clock"
           >
             <Clock className="w-4 h-4 text-amber-400" />
             <span>{formatTime(remainingSeconds)}</span>
             <span className="text-[10px] font-sans font-normal opacity-80">
-              {isCheckingPhase ? 'review left' : 'remaining'}
+              {isCheckingPhase ? 'review left' : 'exam clock'}
             </span>
           </div>
 
@@ -1477,7 +1783,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
         <div className="bg-white dark:bg-[#0B1224] rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 shadow-sm space-y-2.5 transition">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              {/* Broadcast Status / Emergency Resume if Browser Paused */}
+              {/* Broadcast Status / Post-Completion Action / Emergency Resume if Browser Paused */}
               {playbackState.isPlaying ? (
                 <div
                   className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs"
@@ -1485,12 +1791,22 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
                 >
                   <Radio className="w-5 h-5 animate-pulse" />
                 </div>
+              ) : testState.audioCompleted ? (
+                <button
+                  type="button"
+                  onClick={handleEnterCheckingPhaseNow}
+                  className="px-3 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-xs transition active:scale-95 cursor-pointer"
+                  title="Proceed directly to 2-minute Final Answer Checking Period"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Start 2-Min Check Now</span>
+                </button>
               ) : (
                 <button
                   type="button"
                   onClick={handleResumeInterruptedExamAudio}
                   className="px-3 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-xs transition active:scale-95 cursor-pointer"
-                  title="Resume Interrupted Exam Audio"
+                  title="Resume Interrupted Exam Audio from Current Line"
                 >
                   <Play className="w-4 h-4 fill-current" />
                   <span>Resume Audio</span>
@@ -1502,7 +1818,11 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-black text-slate-900 dark:text-white tracking-tight">
                     {playbackState.isPlaying
-                      ? 'Official CD-IELTS Audio Broadcast'
+                      ? playbackState.isInterLinePause
+                        ? `Official CD-IELTS Preparation Pause (${playbackState.pauseRemainingSec ?? 0}s remaining)`
+                        : 'Official CD-IELTS Audio Broadcast'
+                      : testState.audioCompleted
+                      ? 'Audio Broadcast Complete (All 4 Parts Played)'
                       : 'Broadcast Paused — Tap Resume Audio'}
                   </span>
                   <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
@@ -1511,11 +1831,17 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
                     <span>{activeSpeakerDisplay}</span>
                   </span>
                   <span className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                    1.0x Official Speed · Single Play
+                    {testState.pacingMode === 'quick'
+                      ? '1.0x Speed · Quick Practice (Compressed Pauses)'
+                      : '1.0x Official Speed · Authentic Pauses'}
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
-                  {activePartMeta.speakerFormatLabel} · Navigating questions does not interrupt audio
+                  {testState.audioCompleted
+                    ? 'Recording finished. Use remaining Exam Clock to review or click Start 2-Min Check Now.'
+                    : playbackState.isInterLinePause
+                    ? 'Authentic Practice silent preview/check pause in progress — examine the questions carefully. Audio will resume automatically.'
+                    : `${activePartMeta.speakerFormatLabel} · Audio timeline is separate from the 30:00 Exam Clock`}
                 </div>
               </div>
             </div>
@@ -1539,7 +1865,7 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
                     ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold dark:bg-indigo-950/60 dark:border-indigo-800 dark:text-indigo-300'
                     : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
                 }`}
-                title="Toggle Cambridge Exam Hall Acoustic Tone"
+                title="Toggle Practice Exam Hall Acoustic Tone"
               >
                 <Headphones className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Exam Tone</span>
@@ -1574,6 +1900,9 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
 
           {/* Read-only Broadcast Progress Bar (No seeking/scrubbing in strict exam mode) */}
           <div className="flex items-center gap-3 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
+            <span className="font-mono text-[10px] uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400 shrink-0">
+              Audio Track:
+            </span>
             <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-400 w-12 text-left">
               {formatTime(Math.floor(playbackState.currentTime || 0))}
             </span>
@@ -1594,6 +1923,24 @@ export const AuthenticIELTSListeningTest: React.FC<AuthenticIELTSListeningTestPr
               {formatTime(Math.floor(playbackState.duration > 0 ? playbackState.duration : LISTENING_AUDIO_TIME))}
             </span>
           </div>
+
+          {(audioError || playbackState.error) && (
+            <div className="mt-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                <span>
+                  {audioError || playbackState.error}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleResumeInterruptedExamAudio}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer shrink-0"
+              >
+                Retry / Resume Audio
+              </button>
+            </div>
+          )}
         </div>
       )}
 

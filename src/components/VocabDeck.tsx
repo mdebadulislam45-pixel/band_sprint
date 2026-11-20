@@ -22,6 +22,7 @@ import {
   VolumeX,
   Sliders,
   RotateCcw,
+  Award,
   X
 } from 'lucide-react';
 import { VocabCard } from '../types';
@@ -35,6 +36,9 @@ import { VocabVisualBanner } from './vocab/VocabVisualCue';
 import { VocabSprintHeader } from './vocab/VocabSprintHeader';
 import { VocabSprintView } from './vocab/VocabSprintView';
 import { VocabQuizInteractive } from './vocab/VocabQuizInteractive';
+import { C1C2FlashcardQuiz } from './vocab/C1C2FlashcardQuiz';
+import { SavedVocabBanglaQuiz } from './vocab/SavedVocabBanglaQuiz';
+import { VocabLearnerBoard } from './vocab/VocabLearnerBoard';
 import { IdiomsView } from './vocab/IdiomsView';
 import { PhrasesView } from './vocab/PhrasesView';
 import { ReviewSessionView } from './vocab/ReviewSessionView';
@@ -48,6 +52,7 @@ import { MASTER_1000_VOCAB_DATABASE } from '../data/masterVocabDatabase';
 import { VOCABULARY_DATA_AS_CARDS } from '../data/vocabularyData';
 import { BAND_7_9_AS_CARDS } from '../data/band7to9PhrasesAndIdioms';
 import { C1_IDIOMS_AND_PHRASES } from '../data/c1IdiomsAndPhrasesData';
+import { B2_IDIOMS_AND_WORDS } from '../data/b2IdiomsWords';
 
 interface VocabDeckProps {
   onShowToast: (msg: string) => void;
@@ -276,7 +281,7 @@ export const COMPREHENSIVE_VOCAB_ITEMS: VocabCard[] = [
     cefr: 'C1',
     definition: 'Make something that is complicated clear and easy to understand through detailed explanation.',
     beginnerPhrase: 'explain clearly',
-    exampleSentence: 'The visiting Cambridge professor gave an inspiring lecture to elucidate quantum computing principles.',
+    exampleSentence: 'The visiting Practice professor gave an inspiring lecture to elucidate quantum computing principles.',
     mastered: false
   },
   {
@@ -929,10 +934,33 @@ const C1_C2_AS_CARDS: VocabCard[] = C1_IDIOMS_AND_PHRASES.map((entry) => ({
   mastered: false
 }));
 
+// B2 ladder: the same card format, so all 200 new B2 idioms, words and
+// phrases appear in the Vocabulary Deck with the existing B2 filter.
+const B2_AS_CARDS: VocabCard[] = B2_IDIOMS_AND_WORDS.map((entry) => ({
+  id: `b2_${entry.id}`,
+  topic: entry.category || 'B2 Intermediate',
+  category:
+    entry.type === 'Idiom'
+      ? 'idiom'
+      : entry.type === 'B2 Vocabulary' || entry.type === 'Adjective' || entry.type === 'Adverb'
+      ? 'word'
+      : 'phrase',
+  item: entry.phrase.replace(/\s*\(B2 Vocabulary\)\s*/i, ''),
+  partOfSpeech: entry.type,
+  banglaMeaning: entry.banglaMeaning,
+  banglaExplanation: `${entry.banglaMeaning} — Suitability: ${entry.ieltsSuitability}`,
+  definition: `${entry.type} (B2) for IELTS ${entry.ieltsSuitability}`,
+  exampleSentence: entry.exampleSentence,
+  ieltsSkill: entry.ieltsSuitability,
+  cefr: 'B2',
+  mastered: false
+}));
+
 export const ALL_COMBINED_VOCAB: VocabCard[] = (() => {
   const map = new Map<string, VocabCard>();
   [
     ...C1_C2_AS_CARDS,
+    ...B2_AS_CARDS,
     ...BAND_7_9_AS_CARDS,
     ...EXTENDED_VOCAB_DATABASE,
     ...COMPREHENSIVE_VOCAB_ITEMS,
@@ -966,8 +994,34 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
     }
   });
 
-  const [activeTab, setActiveTab] = useState<'sprint' | 'vocab' | 'idioms' | 'phrases' | 'review'>('sprint');
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [activeTab, setActiveTab] = useState<'sprint' | 'vocab' | 'quiz' | 'savedQuiz' | 'idioms' | 'phrases' | 'review'>('sprint');
+  const [savedIds, setSavedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ielts_saved_vocab_ids');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return ['vc_w1', 'vc_w2', 'vc_w3', 'vc_w4', 'vc_w5'];
+  });
+
+  const handleToggleSave = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSavedIds((prev) => {
+      const exists = prev.includes(id);
+      const updated = exists ? prev.filter((item) => item !== id) : [...prev, id];
+      try {
+        localStorage.setItem('ielts_saved_vocab_ids', JSON.stringify(updated));
+      } catch {}
+      if (exists) {
+        soundManager.playBeep(450, 0.05);
+        if (onShowToast) onShowToast('Removed from Saved Vocab List');
+      } else {
+        soundManager.playSuccess();
+        if (onShowToast) onShowToast('Saved to Vocab Quiz List!');
+      }
+      return updated;
+    });
+  };
+  const [viewMode, setViewMode] = useState<'card' | 'list' | 'quiz'>('card');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'word' | 'phrase' | 'idiom'>('all');
   const [selectedTopic, setSelectedTopic] = useState<string>('All');
   const [selectedLevel, setSelectedLevel] = useState<'all' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'>('all');
@@ -1152,6 +1206,7 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
   };
 
   const masteredCount = cards.filter((c) => c.mastered).length;
+  const c1c2MasteredCount = cards.filter((c) => c.mastered && (c.cefr === 'C1' || c.cefr === 'C2')).length;
   const wordCount = cards.filter((c) => c.category === 'word').length;
   const phraseCount = cards.filter((c) => c.category === 'phrase').length;
   const idiomCount = cards.filter((c) => c.category === 'idiom').length;
@@ -1178,6 +1233,16 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
           else if (tab === 'phrases') setSelectedCategory('phrase');
           else if (tab === 'vocab') setSelectedCategory('all');
         }}
+      />
+
+      {/* Local Top 5 Learner Board (Persisted in localStorage) */}
+      <VocabLearnerBoard
+        masteredCount={masteredCount}
+        c1c2MasteredCount={c1c2MasteredCount}
+        totalCards={cards.length}
+        onStartQuiz={() => setActiveTab('quiz')}
+        onStartSprint={() => setActiveTab('sprint')}
+        onShowToast={onShowToast}
       />
 
       {/* 1. TODAY'S SPRINT VIEW */}
@@ -1226,7 +1291,29 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
         />
       )}
 
-      {/* 5. GENERAL VOCABULARY & ALL ITEMS EXPLORER */}
+      {/* 5. SAVED VOCAB BANGLA-TO-ENGLISH QUIZ VIEW */}
+      {activeTab === 'savedQuiz' && (
+        <SavedVocabBanglaQuiz
+          allCards={cards}
+          savedIds={savedIds}
+          onToggleSave={handleToggleSave}
+          onToggleMastery={toggleMastery}
+          onShowToast={onShowToast}
+        />
+      )}
+
+      {/* 6. DEDICATED C1/C2 FLASHCARD QUIZ VIEW */}
+      {activeTab === 'quiz' && (
+        <C1C2FlashcardQuiz
+          cards={cards}
+          onToggleMastery={toggleMastery}
+          onSendToVault={handleSendToVault}
+          onShowToast={onShowToast}
+          onPronounce={handlePronounce}
+        />
+      )}
+
+      {/* 6. GENERAL VOCABULARY & ALL ITEMS EXPLORER */}
       {activeTab === 'vocab' && (
         <div className="space-y-6">
           {/* ================= Native Mobile App Header Card ================= */}
@@ -1252,15 +1339,15 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
           </div>
 
           {/* Right Status Stats & View Switcher */}
-          <div className="flex items-center gap-2 self-start md:self-auto">
-            {/* View Mode Toggle (Flashcard vs List) */}
+          <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+            {/* View Mode Toggle (Flashcard vs List vs C1/C2 Quiz) */}
             <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs font-bold">
               <button
                 onClick={() => {
                   setViewMode('card');
                   soundManager.playBeep(600, 0.04);
                 }}
-                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition ${
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer ${
                   viewMode === 'card'
                     ? 'bg-white text-slate-900 shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
@@ -1276,7 +1363,7 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
                   setViewMode('list');
                   soundManager.playBeep(600, 0.04);
                 }}
-                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition ${
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer ${
                   viewMode === 'list'
                     ? 'bg-white text-slate-900 shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
@@ -1285,6 +1372,34 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
               >
                 <Grid className="w-3.5 h-3.5 text-blue-600" />
                 <span className="hidden sm:inline">তালিকা ভিউ</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('savedQuiz');
+                  soundManager.playBeep(640, 0.04);
+                }}
+                className="px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200"
+                title="Saved Vocabulary Bangla-to-English Practice Quiz"
+              >
+                <Bookmark className="w-3.5 h-3.5 text-amber-600 fill-amber-500" />
+                <span>সেভ করা কুইজ</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setViewMode('quiz');
+                  soundManager.playBeep(620, 0.04);
+                }}
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer ${
+                  viewMode === 'quiz'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Interactive C1/C2 Vocabulary & Bangla Meaning Flashcard Quiz"
+              >
+                <Award className={`w-3.5 h-3.5 ${viewMode === 'quiz' ? 'text-amber-300' : 'text-indigo-600'}`} />
+                <span>C1/C2 কুইজ (Quiz)</span>
               </button>
             </div>
 
@@ -1564,6 +1679,19 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    {/* Bookmark for Quiz */}
+                    <button
+                      onClick={(e) => handleToggleSave(activeCard.id, e)}
+                      className={`p-2 rounded-xl transition border shadow-2xs ${
+                        savedIds.includes(activeCard.id)
+                          ? 'bg-amber-50 text-amber-700 border-amber-300'
+                          : 'text-slate-600 hover:text-amber-600 hover:bg-amber-50 border-slate-200'
+                      }`}
+                      title={savedIds.includes(activeCard.id) ? 'Remove from Saved Vocab List' : 'Bookmark/Save for Bangla Quiz'}
+                    >
+                      <Bookmark className={`w-4 h-4 ${savedIds.includes(activeCard.id) ? 'fill-amber-500 text-amber-500' : ''}`} />
+                    </button>
+
                     {/* Audio pronunciation */}
                     <button
                       onClick={(e) => handlePronounce(activeCard.item, e)}
@@ -1614,10 +1742,10 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
                   <div className="flex items-center justify-center gap-2">
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest font-mono">
                       {activeCard.category === 'idiom'
-                        ? 'Cambridge Band 8.0 Idiom'
+                        ? 'Practice Band 8.0 Idiom'
                         : activeCard.partOfSpeech
                         ? `${activeCard.partOfSpeech} · Band 8.5+`
-                        : 'High-Yield Cambridge Term'}
+                        : 'High-Yield Practice Term'}
                     </span>
                     {activeCard.cefr && (
                       <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-mono font-bold">
@@ -1914,6 +2042,17 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
                     </div>
                   )}
                   <button
+                    onClick={(e) => handleToggleSave(card.id, e)}
+                    className={`p-1.5 rounded-lg transition ${
+                      savedIds.includes(card.id)
+                        ? 'text-amber-600 bg-amber-50'
+                        : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                    }`}
+                    title={savedIds.includes(card.id) ? 'Remove from Saved' : 'Save/Bookmark for Quiz'}
+                  >
+                    <Bookmark className={`w-3.5 h-3.5 ${savedIds.includes(card.id) ? 'fill-amber-500 text-amber-500' : ''}`} />
+                  </button>
+                  <button
                     onClick={() => handlePronounce(card.item)}
                     className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition"
                     title="Pronounce"
@@ -2033,8 +2172,19 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
         </div>
       )}
 
+      {/* ================= VIEW MODE 3: INTERACTIVE C1/C2 FLASHCARD QUIZ ================= */}
+      {viewMode === 'quiz' && (
+        <C1C2FlashcardQuiz
+          cards={filteredCards.length >= 4 ? filteredCards : cards}
+          onToggleMastery={toggleMastery}
+          onSendToVault={handleSendToVault}
+          onShowToast={onShowToast}
+          onPronounce={handlePronounce}
+        />
+      )}
+
       {/* Empty Search State */}
-      {filteredCards.length === 0 && (
+      {filteredCards.length === 0 && viewMode !== 'quiz' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-400 space-y-3">
           <p className="text-sm font-semibold">কোনো শব্দ, বাক্যাংশ বা বাগধারা খুঁজে পাওয়া যায়নি।</p>
           <button
@@ -2191,7 +2341,7 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
               {/* English Definition */}
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 leading-relaxed">
                 <strong className="text-slate-900 font-bold block mb-0.5 font-mono text-[10px] uppercase">
-                  Cambridge Definition & Nuance:
+                  Practice Definition & Nuance:
                 </strong>
                 {selectedDetailCard.definition}
               </div>
@@ -2200,7 +2350,7 @@ export const VocabDeck: React.FC<VocabDeckProps> = ({ onShowToast }) => {
               <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-[10px] font-bold uppercase text-blue-800">
-                    Cambridge Example Sentence
+                    Practice Example Sentence
                   </span>
                   <button
                     type="button"

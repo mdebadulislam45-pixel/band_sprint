@@ -139,7 +139,7 @@ export const MistakeVaultWidget: React.FC<MistakeVaultWidgetProps> = ({
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
             {allMistakes.length > 0
               ? 'Zero cards due right now. Your memory retention is sharp!'
-              : 'Load 5 high-yield Cambridge distractor traps to test SM-2 active recall.'}
+              : 'Load 5 high-yield Practice distractor traps to test SM-2 active recall.'}
           </div>
           {allMistakes.length === 0 && (
             <button
@@ -147,7 +147,7 @@ export const MistakeVaultWidget: React.FC<MistakeVaultWidgetProps> = ({
               className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Load 5 Cambridge Traps (EN/বাংলা)</span>
+              <span>Load 5 Practice Traps (EN/বাংলা)</span>
             </button>
           )}
         </div>

@@ -1,80 +1,126 @@
 /**
- * IELTS Sprint - Production PWA Service Worker (v2)
- * Features:
- * - Shell precaching for offline launch (`/`, `/index.html`, `/manifest.webmanifest`, `/favicon.svg`)
- * - Safe installation error handling (does not break app if offline during initial install)
- * - Dynamic runtime caching (Stale-While-Revalidate) for all visited CSS, JS, and static assets
- * - Strict network-only exclusion for all /api/ endpoints, auth, billing, and cross-origin requests
- * - Safe update strategy (omits aggressive skipWaiting/clients.claim to prevent mid-test session disruption)
+ * BandSprint - Production PWA Service Worker (v3.1.0)
+ *
+ * Offline Study Pack Architecture:
+ * - Immediate activation via self.skipWaiting() & clients.claim()
+ * - Network-First for HTML navigation so fresh deploys load immediately with offline fallback
+ * - Stale-While-Revalidate for versioned app bundles (Spelling Lab 683, Mistake Vault, Vocab Deck, Pronunciation Drills)
+ * - Cache-First for Google Fonts so typography remains crisp offline
+ * - Strict bypass for /api/, Firebase Auth/Firestore, billing, and Vite dev endpoints
  */
 
-const CACHE_NAME = 'ielts-sprint-shell-v2';
-const ASSETS_TO_CACHE = [
+const CACHE_NAME = 'bandsprint-study-pack-v3.1.0';
+const FONT_CACHE_NAME = 'bandsprint-fonts-v1';
+
+const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/icon-192.png',
+  '/icon-512.png',
   '/favicon.svg'
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE).catch((err) => {
-        console.warn('[ServiceWorker] Precache partial failure (non-fatal):', err);
-      });
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(APP_SHELL_ASSETS).catch((err) => {
+        console.warn('[BandSprint SW] Precache partial failure (non-fatal):', err);
+      })
+    )
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      );
-    })
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys.map((key) => {
+            if (key !== CACHE_NAME && key !== FONT_CACHE_NAME) {
+              return caches.delete(key);
+            }
+          })
+        )
+      )
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  const { request } = event;
+  if (request.method !== 'GET') return;
 
-  // Never cache API requests, auth, AI evaluations, billing, or external resources
-  if (url.pathname.startsWith('/api/') || url.origin !== location.origin) {
+  const url = new URL(request.url);
+
+  // 1. Cache-First for Google Fonts stylesheets & font files
+  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
+    event.respondWith(
+      caches.open(FONT_CACHE_NAME).then((cache) =>
+        cache.match(request).then((cached) => {
+          if (cached) return cached;
+          return fetch(request)
+            .then((networkRes) => {
+              if (networkRes && networkRes.status === 200) {
+                cache.put(request, networkRes.clone());
+              }
+              return networkRes;
+            })
+            .catch(() => cached);
+        })
+      )
+    );
     return;
   }
 
-  // Only handle GET requests for caching
-  if (event.request.method !== 'GET') {
+  // 2. Strict bypass for API routes, Firebase/OAuth origins, and Vite dev modules
+  if (
+    url.origin !== location.origin ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.includes('/@vite/') ||
+    url.pathname.includes('/@react-refresh') ||
+    url.pathname.includes('/node_modules/') ||
+    url.pathname.startsWith('/src/') ||
+    url.searchParams.has('v')
+  ) {
     return;
   }
 
+  // 3. Navigation requests: Network-First with cached offline shell fallback
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const fallback = (await caches.match('/index.html')) || (await caches.match('/'));
+          return fallback || new Response('Offline — please reconnect to load BandSprint.', { status: 503 });
+        })
+    );
+    return;
+  }
+
+  // 4. Static JS/CSS/Images/Icons: Stale-While-Revalidate so offline study packs stay instant
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return networkResponse;
-      }).catch(() => {
-        // Network failed, return cached response if available
-        return cachedResponse;
-      });
+    caches.match(request).then((cachedResponse) => {
+      const networkFetch = fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => cachedResponse);
 
-      // Stale-while-revalidate: return cache immediately if available, else wait for network
-      return cachedResponse || fetchPromise;
-    }).catch(() => {
-      // Fallback for SPA navigation
-      if (event.request.mode === 'navigate') {
-        return caches.match('/index.html');
-      }
+      return cachedResponse || networkFetch;
     })
   );
 });

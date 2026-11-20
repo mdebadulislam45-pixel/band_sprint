@@ -4,25 +4,18 @@ import {
   ArrowLeft,
   Search,
   ChevronRight,
+  ChevronDown,
   Flame,
-  BookOpen,
-  Briefcase,
   Sun,
   Moon,
-  GraduationCap,
   Download,
-  MoreVertical,
-  X,
-  BookMarked,
-  Crown,
-  Sparkles,
-  Rocket,
-  ShieldCheck,
-  Mail
+  LogOut,
+  User as UserIcon,
+  Target
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { soundManager } from '../../utils/audioEffects';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { BandSprintMark } from '../common/BandSprintMark';
 import { sanitizeCandidateName } from '../../utils/nameSanitizer';
 import { useTheme } from '../../context/ThemeContext';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
@@ -37,9 +30,11 @@ export interface AppHeaderProps {
   onOpenSearch: () => void;
   onOpenVault: () => void;
   onOpenProfile: () => void;
+  onSignOut?: () => void;
   onOpenMobileMenu?: () => void;
   mistakeCount: number;
   user: UserProfile | null;
+  streakDays?: number;
   examMode?: 'Academic' | 'General Training';
   onExamModeChange?: (mode: 'Academic' | 'General Training') => void;
 }
@@ -51,10 +46,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   canGoBack,
   backLabel,
   onOpenSearch,
-  onOpenVault,
   onOpenProfile,
+  onSignOut,
   onOpenMobileMenu,
-  mistakeCount,
+  streakDays: propStreakDays = 1,
   user,
   examMode: propExamMode,
   onExamModeChange
@@ -62,7 +57,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const { resolvedTheme, toggleTheme } = useTheme();
   const { isInstallable, isInstalled, promptInstall } = usePWAInstall();
   const [showPwaModal, setShowPwaModal] = useState(false);
-  const [showMobileOverflow, setShowMobileOverflow] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const [examMode, setExamMode] = useState<'Academic' | 'General Training'>(() => {
@@ -93,16 +88,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowMobileOverflow(false);
+        setShowAccountMenu(false);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowMobileOverflow(false);
+        setShowAccountMenu(false);
       }
     };
 
-    if (showMobileOverflow) {
+    if (showAccountMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
     }
@@ -110,156 +105,39 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showMobileOverflow]);
+  }, [showAccountMenu]);
 
-  const handleModeSwitch = (mode: 'Academic' | 'General Training') => {
-    if (mode === examMode) return;
-    soundManager.playBeep(mode === 'Academic' ? 580 : 660, 0.04);
-    setExamMode(mode);
-    try {
-      localStorage.setItem('ielts_exam_mode', mode);
-    } catch {}
-    if (onExamModeChange) {
-      onExamModeChange(mode);
-    }
-    window.dispatchEvent(new CustomEvent('ielts_exam_mode_changed', { detail: mode }));
-  };
-
-  const streakDays = user?.progress?.streakDays || 1;
+  const streakDays = user?.progress?.streakDays || propStreakDays || 1;
   const sanitizedName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
   const isDark = resolvedTheme === 'dark';
 
   const getPageTitle = (page: string): string => {
-    switch (page) {
-      case 'home':
-        return 'Command Center';
-      case 'practice':
-        return 'Practice Arena';
-      case 'listening':
-        return 'Authentic Listening Lab';
-      case 'reading':
-        return 'Speed Reading & TFNG';
-      case 'writing':
-        return 'Writing Evaluator';
-      case 'speaking':
-        return 'Speaking Examiner';
-      case 'shadowing':
-        return 'Speaking Shadowing';
-      case 'speedreading':
-        return 'Speed Reader & RSVP';
-      case 'speakingvault':
-        return 'Band 9 Speaking Vault';
-      case 'questionbank':
-        return 'Cambridge Question Bank';
-      case 'mocktest':
-      case 'livemock':
-        return 'Live Mock Exam';
-      case 'cdielts':
-        return 'CD-IELTS Simulator';
-      case 'learn':
-        return 'Learning Studio';
-      case 'aitools':
-        return 'AI Diagnostic Tools';
-      case 'progress':
-      case 'analytics':
-        return 'Band Analytics';
-      case 'history':
-        return 'Exam History';
-      case 'profile':
-        return 'Candidate Profile';
-      case 'vocab':
-        return 'High-Frequency Vocabulary';
-      case 'vocabflashcards':
-        return 'Spaced Repetition Deck';
-      case 'phrases':
-        return 'Discourse Markers & Phrases';
-      case 'idioms':
-        return 'Idiomatic Mastery';
-      case 'c1idioms':
-        return '200 C1 Idioms & Phrases';
-      case 'grammar':
-        return '12 Grammar Rules';
-      case 'modelanswers':
-        return 'Band 9 Model Answers';
-      case 'essayarchitect':
-        return 'Band 9 Essay Architect';
-      case 'spelling':
-        return 'Spelling Trap Lab';
-      case 'collocations':
-        return 'Academic Collocations';
-      case 'studyplan':
-        return 'AI Study Plan & Roadmap';
-      case 'banddescriptors':
-        return 'Band Descriptors Decoder';
-      case 'bangla':
-        return 'Bangla IELTS Master Guide';
-      case 'beginner':
-        return 'Beginner Zero Foundation';
-      case 'slides':
-        return 'Cheat Sheets & Vault';
-      case 'arguments':
-        return 'PESTLE Idea Matrix';
-      case 'transformer':
-      case 'sentencetransformer':
-        return 'Sentence Transformer';
-      case 'maplab':
-      case 'listeningmap':
-        return 'Directional Map Lab';
-      case 'calendar':
-        return '14-Day Sprint Calendar';
-      default:
-        return 'IELTS SPRINT';
-    }
+    const clean = page.replace(/\/+$/, '') || '/';
+    if (clean === '/' || clean === '/home') return 'Command Center';
+    if (clean === '/practice') return 'Practice Hub';
+    if (clean === '/practice/listening') return 'Listening Lab';
+    if (clean === '/practice/reading') return 'Reading Lab';
+    if (clean === '/practice/writing') return 'Writing Lab';
+    if (clean === '/practice/speaking') return 'Speaking Lab';
+    if (clean === '/practice/mock-tests') return 'Mock Tests';
+    if (clean === '/practice/question-bank') return 'Question Bank';
+    if (clean === '/practice/sprint') return 'Practice Library';
+    if (clean === '/practice/ai-tools') return 'AI Studio';
+    if (clean === '/learn') return 'Learning Library';
+    if (clean === '/learn/diagnostic') return 'Diagnostic Test';
+    if (clean === '/learn/study-plan') return '30-Day Study Plan';
+    if (clean === '/learn/spelling') return 'Spelling Lab';
+    if (clean === '/learn/vocabulary') return 'Vocabulary Deck';
+    if (clean === '/progress') return 'Progress Hub';
+    if (clean === '/profile') return 'Candidate Profile';
+    return 'BandSprint';
   };
 
-  const getParentSection = (page: string): { label: string; id: string } | null => {
-    if (
-      [
-        'listening',
-        'reading',
-        'speaking',
-        'shadowing',
-        'writing',
-        'speedreading',
-        'speakingvault',
-        'questionbank',
-        'maplab',
-        'listeningmap'
-      ].includes(page)
-    ) {
-      return { label: 'Practice', id: 'practice' };
-    }
-    if (['livemock', 'cdielts'].includes(page)) {
-      return { label: 'Mock Tests', id: 'mocktest' };
-    }
-    if (
-      [
-        'vocab',
-        'vocabflashcards',
-        'phrases',
-        'idioms',
-        'grammar',
-        'modelanswers',
-        'essayarchitect',
-        'spelling',
-        'collocations',
-        'studyplan',
-        'banddescriptors',
-        'c1idioms',
-        'bangla',
-        'beginner',
-        'slides',
-        'arguments',
-        'transformer',
-        'sentencetransformer',
-        'calendar'
-      ].includes(page)
-    ) {
-      return { label: 'Learning Hub', id: 'learn' };
-    }
-    if (['progress', 'history'].includes(page)) {
-      return { label: 'Analytics', id: 'progress' };
-    }
+  const getParentSection = (page: string): { label: string; path: string } | null => {
+    if (page.startsWith('/practice/')) return { label: 'Practice', path: '/practice' };
+    if (page.startsWith('/learn/')) return { label: 'Learn', path: '/learn' };
+    if (page.startsWith('/progress/')) return { label: 'Progress', path: '/progress' };
+    if (page.startsWith('/profile/')) return { label: 'Profile', path: '/profile' };
     return null;
   };
 
@@ -267,10 +145,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const currentTitle = getPageTitle(currentPage);
 
   return (
-    <header className="sticky top-0 z-40 w-full h-14 sm:h-16 bg-[#FAF8F5]/95 dark:bg-[#0B1120]/95 backdrop-blur-md border-b border-stone-200/80 dark:border-slate-800/80 px-3 sm:px-5 lg:px-7 flex items-center justify-between gap-2 sm:gap-4 transition-colors select-none pt-[env(safe-area-inset-top)]">
+    <header className="sticky top-0 z-40 w-full h-14 sm:h-16 bg-[#EEF3F1]/98 dark:bg-[#11201E]/98 border-b border-[#D3DDDA] dark:border-[#1F8A70]/35 px-2.5 sm:px-5 lg:px-7 flex items-center justify-between gap-2 transition-colors select-none pt-[env(safe-area-inset-top)]">
       {/* ================= LEFT: BRANDING / HAMBURGER / BACK / BREADCRUMB ================= */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
-        {/* Mobile Hamburger Menu Button (☰) */}
+      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 shrink-0">
         <button
           type="button"
           onClick={() => {
@@ -279,11 +156,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               onOpenMobileMenu();
             }
           }}
-          className="w-8 h-8 rounded-xl bg-white hover:bg-stone-100 dark:bg-slate-800/90 dark:hover:bg-slate-700 border border-stone-200/90 dark:border-slate-700 text-slate-700 dark:text-slate-200 md:hidden flex items-center justify-center transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shrink-0"
+          className="min-w-[44px] min-h-[44px] rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] md:hidden flex items-center justify-center transition cursor-pointer shrink-0"
           aria-label="Open mobile navigation drawer"
           title="Open menu"
         >
-          <Menu className="w-4 h-4 text-slate-700 dark:text-slate-200" />
+          <Menu className="w-5 h-5" />
         </button>
 
         {canGoBack && (
@@ -293,43 +170,43 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               soundManager.playBeep(480, 0.04);
               onBack();
             }}
-            className="h-8 sm:h-9 px-2.5 rounded-xl bg-white hover:bg-stone-100 active:bg-stone-200/80 dark:bg-slate-800/90 dark:hover:bg-slate-700 border border-stone-200/90 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer whitespace-nowrap"
+            className="min-h-[44px] px-2.5 sm:px-3 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap"
             title="Go back"
             aria-label="Go back"
           >
-            <ArrowLeft className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+            <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline font-semibold">{backLabel || 'Back'}</span>
           </button>
         )}
 
-        {/* Brand Identity (Single-Line Editorial Wordmark) */}
+        {/* Brand Identity */}
         <button
           type="button"
           onClick={() => {
             soundManager.playBeep(520, 0.04);
-            onNavigate('home');
+            onNavigate('/');
           }}
-          className="flex items-center gap-2 cursor-pointer group py-1 shrink-0 text-left focus-visible:outline-none whitespace-nowrap"
-          title="IELTS Sprint Home"
+          className="flex items-center gap-2 cursor-pointer group py-1 shrink-0 text-left focus-visible:outline-none whitespace-nowrap min-h-[44px]"
+          title="BandSprint Home"
         >
-          <IELTSSprintLogo variant="symbol" size="sm" />
-          <span className="font-display font-bold text-slate-900 dark:text-white tracking-tight text-sm sm:text-base lg:text-lg group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors whitespace-nowrap">
-            IELTS <span className="text-blue-700 dark:text-blue-400">Sprint</span>
+          <BandSprintMark size={32} />
+          <span className="font-display font-bold text-[#0E1F1E] dark:text-[#EEF3F1] tracking-tight text-sm sm:text-base lg:text-lg whitespace-nowrap">
+            BandSprint
           </span>
         </button>
 
         {/* Desktop Breadcrumb */}
         {parentSection && (
-          <div className="hidden xl:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pl-3 border-l border-stone-200 dark:border-slate-800 whitespace-nowrap">
+          <div className="hidden xl:flex items-center gap-1.5 text-xs text-[#566664] dark:text-slate-400 pl-3 border-l border-[#D3DDDA] dark:border-[#1F8A70]/35 whitespace-nowrap">
             <button
               type="button"
-              onClick={() => onNavigate(parentSection.id)}
-              className="hover:text-slate-900 dark:hover:text-white font-medium transition-colors cursor-pointer"
+              onClick={() => onNavigate(parentSection.path)}
+              className="hover:text-[#0E1F1E] dark:hover:text-white font-medium transition-colors cursor-pointer"
             >
               {parentSection.label}
             </button>
             <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-            <span className="text-slate-800 dark:text-slate-200 font-semibold truncate max-w-[160px]">
+            <span className="text-[#0E1F1E] dark:text-[#EEF3F1] font-semibold truncate max-w-[160px]">
               {currentTitle}
             </span>
           </div>
@@ -338,98 +215,48 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
       {/* ================= RIGHT: THEME TOGGLE, SEARCH & CONTROLS ================= */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative" ref={menuRef}>
-
-        {/* Daily Streak Indicator (Tabular Numerals) */}
         <div
-          className="h-8 sm:h-9 px-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-stone-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 hidden sm:flex items-center gap-1.5 text-xs font-semibold shrink-0 whitespace-nowrap"
+          className="h-9 px-2.5 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] hidden sm:flex items-center gap-1.5 text-xs font-semibold shrink-0 whitespace-nowrap"
           title={`Active Daily Practice Streak: ${streakDays} days`}
         >
-          <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+          <Flame className="w-3.5 h-3.5 text-[#F4A62A] fill-[#F4A62A] shrink-0" />
           <span className="font-mono tabular-nums">{streakDays}d</span>
         </div>
 
-        {/* Global Search Button */}
         <button
           type="button"
           onClick={() => {
             soundManager.playBeep(600, 0.04);
             onOpenSearch();
           }}
-          className="h-8 sm:h-9 px-2.5 rounded-xl bg-white hover:bg-stone-100 dark:bg-slate-800/90 dark:hover:bg-slate-700 border border-stone-200/80 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 transition flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer shrink-0 whitespace-nowrap"
-          title="Search test materials and vocabulary (⌘K)"
-          aria-label="Search test materials"
+          className="min-w-[44px] min-h-[44px] px-2.5 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#566664] dark:text-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+          title="Search materials (⌘K)"
+          aria-label="Search materials"
         >
-          <Search className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-          <span className="hidden xl:inline text-[11px] font-mono text-slate-400">⌘K</span>
+          <Search className="w-4 h-4" />
+          <span className="hidden xl:inline text-[11px] font-mono text-[#566664]">⌘K</span>
         </button>
 
-        {/* User-Facing Theme Toggle Button (Visible on ALL devices, persisted in localStorage) */}
         <button
           type="button"
           onClick={() => {
             toggleTheme();
             soundManager.playBeep(isDark ? 740 : 580, 0.035);
           }}
-          className="h-8 sm:h-9 px-2.5 rounded-xl bg-white hover:bg-stone-100 dark:bg-slate-800/90 dark:hover:bg-slate-700 border border-stone-200/90 dark:border-slate-700 text-slate-700 dark:text-slate-200 transition-all flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer shrink-0 whitespace-nowrap"
-          title={isDark ? 'Switch to Light Mode (Saved Automatically)' : 'Switch to Dark Mode (Saved Automatically)'}
+          className="min-w-[44px] min-h-[44px] px-2.5 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+          title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-pressed={isDark}
-          data-testid="header-theme-toggle"
         >
-          <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
-            {isDark ? (
-              <Sun className="w-4 h-4 text-amber-400 fill-amber-400/20 transition-transform duration-200 hover:rotate-45" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-700 fill-slate-700/10 transition-transform duration-200 hover:-rotate-12" />
-            )}
-          </span>
-          <span className="hidden sm:inline text-xs font-semibold tracking-tight text-slate-700 dark:text-slate-200">
+          {isDark ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-[#0E1F1E]" />
+          )}
+          <span className="hidden sm:inline text-xs font-semibold text-[#0E1F1E] dark:text-[#EEF3F1]">
             {isDark ? 'Light' : 'Dark'}
           </span>
         </button>
 
-        {/* 8-Week Sprint Diagnostic Funnel Button (Desktop) */}
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playSuccess();
-            window.dispatchEvent(new CustomEvent('open_onboarding_diagnostic'));
-          }}
-          className="h-8 sm:h-9 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-semibold text-xs hidden lg:flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer shrink-0 whitespace-nowrap transition-colors"
-          title="Personalized 8-Week Band Sprint Diagnostic"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-          <span>Sprint Plan</span>
-        </button>
-
-        {/* Cambridge AI Tutor Button (Desktop) */}
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playBeep(640, 0.04);
-            window.dispatchEvent(new CustomEvent('open_ai_tutor'));
-          }}
-          className="h-8 sm:h-9 px-2.5 rounded-xl bg-white hover:bg-stone-100 dark:bg-slate-800/90 dark:hover:bg-slate-700 border border-stone-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 transition hidden md:flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer shrink-0 whitespace-nowrap"
-          title="Open Cambridge Study Tutor"
-        >
-          <GraduationCap className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
-          <span className="text-xs font-semibold">Tutor</span>
-        </button>
-
-        {/* Why Sprint Commercial Overview (Desktop) */}
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playBeep(640, 0.04);
-            window.dispatchEvent(new CustomEvent('open_commercial_showcase'));
-          }}
-          className="h-8 sm:h-9 px-2.5 rounded-xl bg-white hover:bg-stone-100 dark:bg-slate-800/90 dark:hover:bg-slate-700 border border-stone-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 transition hidden xl:flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer text-xs font-semibold shrink-0 whitespace-nowrap"
-          title="About IELTS Sprint & Cambridge Syllabus"
-        >
-          <span>Why Sprint</span>
-        </button>
-
-        {/* Install PWA Button */}
         {!isInstalled && (
           <button
             type="button"
@@ -437,46 +264,114 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               soundManager.playBeep(680, 0.04);
               setShowPwaModal(true);
             }}
-            className="h-8 sm:h-9 px-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs hidden lg:flex items-center gap-1.5 transition cursor-pointer shrink-0 whitespace-nowrap"
-            title="Install IELTS Sprint for Offline Study"
+            className="h-9 px-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-semibold text-xs hidden lg:flex items-center gap-1.5 transition cursor-pointer shrink-0 whitespace-nowrap"
+            title="Install BandSprint for Offline Study"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Install</span>
           </button>
         )}
 
-        {/* Candidate Profile / Sign In Button (Visible on all screens for clear auth entry) */}
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playBeep(640, 0.04);
-            onOpenProfile();
-          }}
-          className={`relative h-8 sm:h-9 px-2 sm:px-2.5 rounded-xl border flex items-center gap-1.5 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer shrink-0 whitespace-nowrap ${
-            user
-              ? 'bg-white hover:bg-stone-100 dark:bg-slate-800/90 dark:hover:bg-slate-700 border-stone-200/90 dark:border-slate-700'
-              : 'bg-blue-700 hover:bg-blue-800 text-white border-blue-700'
-          }`}
-          title={user ? `Candidate Profile (${sanitizedName})` : 'Sign In or Create Account'}
-          aria-label={user ? 'Candidate profile' : 'Sign in or create account'}
-        >
-          {user ? (
-            <>
-              <div className="w-6 h-6 rounded-lg bg-slate-900 dark:bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center shrink-0">
-                {sanitizedName.slice(0, 1).toUpperCase()}
-              </div>
-              <span className="hidden xl:inline text-xs font-semibold text-slate-800 dark:text-slate-100 max-w-[85px] truncate">
-                {sanitizedName}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              soundManager.playBeep(640, 0.04);
+              if (user) {
+                setShowAccountMenu((v) => !v);
+              } else {
+                onOpenProfile();
+              }
+            }}
+            aria-expanded={showAccountMenu}
+            aria-haspopup="menu"
+            className={`relative min-h-[44px] px-2.5 rounded-xl border flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 whitespace-nowrap ${
+              user
+                ? 'bg-white dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1F8A70]/35 hover:border-[#0F4C45] text-[#0E1F1E] dark:text-[#EEF3F1]'
+                : 'bg-[#0F4C45] text-white border-[#0F4C45]'
+            }`}
+            title={user ? `Account menu (${sanitizedName})` : 'Sign In or Create Account'}
+          >
+            {user ? (
+              <>
+                <div className="w-6 h-6 rounded-lg bg-[#0F4C45] text-white font-bold text-[11px] flex items-center justify-center shrink-0">
+                  {sanitizedName.slice(0, 1).toUpperCase()}
+                </div>
+                <span className="hidden xl:inline text-xs font-semibold max-w-[95px] truncate">
+                  {sanitizedName}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#566664] dark:text-slate-400 hidden sm:inline" />
+              </>
+            ) : (
+              <span className="text-xs font-semibold whitespace-nowrap px-0.5">
+                Sign In
               </span>
-            </>
-          ) : (
-            <span className="text-xs font-semibold whitespace-nowrap px-0.5">
-              Sign In
-            </span>
-          )}
-        </button>
+            )}
+          </button>
 
-        {/* Three-dot right overflow menu removed for a cleaner, uncluttered header */}
+          {showAccountMenu && user && (
+            <div
+              role="menu"
+              className="absolute right-0 mt-2 w-60 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/40 shadow-lg py-2 z-50"
+            >
+              <div className="px-4 py-2.5 border-b border-[#EEF3F1] dark:border-[#1F8A70]/20">
+                <div className="text-xs font-bold text-[#0E1F1E] dark:text-white truncate">
+                  {sanitizedName}
+                </div>
+                <div className="text-[11px] text-[#566664] dark:text-slate-400 truncate">
+                  {user.email}
+                </div>
+                <div className="text-[10px] font-mono font-semibold text-[#0F4C45] dark:text-[#F4A62A] mt-1 tabular-nums">
+                  Target Band {(user.progress?.targetBand || 7.5).toFixed(1)} · {examMode}
+                </div>
+              </div>
+
+              <div className="py-1">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShowAccountMenu(false);
+                    onOpenProfile();
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#0E1F1E] dark:text-[#EEF3F1] hover:bg-[#EEF3F1] dark:hover:bg-[#0B1514] flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <UserIcon className="w-4 h-4 text-[#0F4C45] dark:text-[#F4A62A]" />
+                  <span>Profile &amp; Settings</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShowAccountMenu(false);
+                    onNavigate('/learn/diagnostic');
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-semibold text-[#0E1F1E] dark:text-[#EEF3F1] hover:bg-[#EEF3F1] dark:hover:bg-[#0B1514] flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <Target className="w-4 h-4 text-[#0F4C45] dark:text-[#F4A62A]" />
+                  <span>10-Minute Diagnostic</span>
+                </button>
+              </div>
+
+              {onSignOut && (
+                <div className="pt-1 border-t border-[#EEF3F1] dark:border-[#1F8A70]/20">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setShowAccountMenu(false);
+                      onSignOut();
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2.5 transition cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <PWAInstallModal

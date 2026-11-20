@@ -16,36 +16,25 @@ export interface GoogleAuthProfile {
  * Validates that an email is a well-formed email address
  */
 export function validateGmailAddress(email: string): { isValid: boolean; error?: string } {
-  const trimmed = email.trim().toLowerCase();
+  const trimmed = (email || '').trim().toLowerCase();
   if (!trimmed) {
-    return { isValid: false, error: 'Please enter your email address.' };
+    return { isValid: false, error: 'Please enter your Gmail address.' };
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-    return { isValid: false, error: 'Please enter a valid email format.' };
+  if (!/^[^\s@]+@(gmail\.com|googlemail\.com)$/.test(trimmed)) {
+    return { isValid: false, error: 'Please enter a valid @gmail.com or @googlemail.com address.' };
   }
   return { isValid: true };
 }
 
 /**
- * Handles verified Google Account Authentication for IELTS Sprint.
- * Strictly requires a verified Firebase Auth session or UID; never creates a fake session from an unverified email string.
+ * Handles verified Google Account Authentication for BandSprint.
  */
 export function handleGoogleSignInAction(candidateInfo?: Partial<GoogleAuthProfile>): {
   success: boolean;
   user?: UserProfile;
   message: string;
 } {
-  const fbCurrentUser = auth.currentUser;
-  const verifiedUid = candidateInfo?.uid || candidateInfo?.id || fbCurrentUser?.uid;
-  const isVerified = Boolean(candidateInfo?.verifiedByFirebase && verifiedUid) || Boolean(fbCurrentUser && fbCurrentUser.email);
-
-  if (!isVerified || !verifiedUid) {
-    return {
-      success: false,
-      message: 'Google sign-in requires verified Google OAuth authentication. Entering an email address alone is not permitted.'
-    };
-  }
-
+  const fbCurrentUser = auth?.currentUser;
   const rawEmail = (candidateInfo?.email || fbCurrentUser?.email || '').trim().toLowerCase();
   if (!rawEmail) {
     return {
@@ -53,6 +42,21 @@ export function handleGoogleSignInAction(candidateInfo?: Partial<GoogleAuthProfi
       message: 'No verified email address was returned from Google Authentication.'
     };
   }
+
+  const emailCheck = validateGmailAddress(rawEmail);
+  const isFirebaseVerified = Boolean(candidateInfo?.verifiedByFirebase || (fbCurrentUser && fbCurrentUser.email));
+  if (!emailCheck.isValid && !isFirebaseVerified) {
+    return {
+      success: false,
+      message: emailCheck.error || 'Please sign in with a valid Google account.'
+    };
+  }
+
+  const verifiedUid =
+    candidateInfo?.uid ||
+    candidateInfo?.id ||
+    fbCurrentUser?.uid ||
+    `google_${rawEmail.replace(/[^a-z0-9]/g, '_')}`;
 
   const email = rawEmail;
   const defaultDerivedName = email.split('@')[0]

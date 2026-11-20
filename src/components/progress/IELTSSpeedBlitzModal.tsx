@@ -48,7 +48,7 @@ const BLITZ_QUESTIONS_POOL: BlitzQuestion[] = [
     prompt: 'Which spelling is standard British English required for top accuracy in IELTS Listening?',
     options: ['Accomodation', 'Accommodation', 'Acommodation', 'Acomadation'],
     correctIndex: 1,
-    explanation: 'Double "c" and double "m" (Accommodation) is one of the top 3 most tested spelling traps in Cambridge Section 1!'
+    explanation: 'Double "c" and double "m" (Accommodation) is one of the top 3 most tested spelling traps in Practice Section 1!'
   },
   {
     id: 'bz_3',
@@ -253,7 +253,7 @@ export const IELTSSpeedBlitzModal: React.FC<IELTSSpeedBlitzModalProps> = ({
                     Band 9 Collocation & Trap Blitz!
                   </h3>
                   <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                    5 rapid-fire Cambridge traps, collocations, and idioms. Earn streak multipliers and boost your XP!
+                    5 rapid-fire Practice traps, collocations, and idioms. Earn streak multipliers and boost your XP!
                   </p>
                 </div>
 
@@ -404,7 +404,7 @@ export const IELTSSpeedBlitzModal: React.FC<IELTSSpeedBlitzModalProps> = ({
             <div className="bg-gradient-to-br from-indigo-900 to-blue-900 text-white p-5 rounded-3xl shadow-sm border border-indigo-800/60 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-white/10 px-2.5 py-0.5 rounded-full text-blue-200">
-                  Cambridge Examiner Insight #{secretIndex + 1}
+                  Practice Examiner Insight #{secretIndex + 1}
                 </span>
 
                 <button

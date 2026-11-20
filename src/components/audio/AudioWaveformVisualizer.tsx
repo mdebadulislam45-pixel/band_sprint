@@ -78,7 +78,6 @@ export const AudioWaveformVisualizer: React.FC<AudioWaveformVisualizerProps> = (
     const setupAudio = async () => {
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          console.warn('getUserMedia is not supported on this browser.');
           return;
         }
 
@@ -217,7 +216,6 @@ export const AudioWaveformVisualizer: React.FC<AudioWaveformVisualizerProps> = (
 
         renderFrame();
       } catch (err) {
-        console.warn('Microphone access denied or Web Audio error:', err);
         setMicActive(false);
       }
     };

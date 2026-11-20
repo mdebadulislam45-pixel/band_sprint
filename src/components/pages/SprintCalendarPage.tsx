@@ -41,7 +41,7 @@ const DEFAULT_14_DAY_PLAN: DayPlan[] = [
     title: 'Reading True / False / Not Given Strategy',
     skill: 'reading',
     targetMinutes: 50,
-    tasks: ['Analyze 3 TFNG Cambridge passages', 'Practice scanning without full translation', 'Master contrastive discourse markers'],
+    tasks: ['Analyze 3 TFNG Practice passages', 'Practice scanning without full translation', 'Master contrastive discourse markers'],
     moduleRoute: 'reading'
   },
   {
@@ -131,7 +131,7 @@ const DEFAULT_14_DAY_PLAN: DayPlan[] = [
     title: 'Day 14 Final Spaced Repetition Polish',
     skill: 'vault',
     targetMinutes: 45,
-    tasks: ['Final sweep of Mistake Vault (zero errors goal)', 'Memorize 10 emergency discourse markers', 'Print Official Diagnostic Performance Scorecard'],
+    tasks: ['Final sweep of Mistake Vault (zero errors goal)', 'Memorize 10 emergency discourse markers', 'Print Diagnostic Performance Scorecard'],
     moduleRoute: 'progress',
     isSpacedRepetition: true
   },
@@ -209,7 +209,7 @@ export const SprintCalendarPage: React.FC<SprintCalendarPageProps> = ({
               <span>SPACED REPETITION STUDY ENGINE</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              14-Day Targeted IELTS Sprint Calendar
+              14-Day Targeted BandSprint Calendar
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
               Every day calibrated with deliberate practice drills and scientifically-spaced Mistake Vault re-testing on Days 3, 7, and 13.

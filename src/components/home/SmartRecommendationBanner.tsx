@@ -39,7 +39,7 @@ const STATIC_RECOMMENDATIONS: RecommendationItem[] = [
     module: 'reading',
     category: 'Academic Reading',
     title: 'True / False / Not Given Distractor Trap Filter',
-    reason: 'Eliminate false inference errors in Passage 2. Learn the Cambridge benchmark for statements unmentioned in text.',
+    reason: 'Eliminate false inference errors in Passage 2. Learn the Practice benchmark for statements unmentioned in text.',
     impact: '+2 Raw Marks',
     durationMins: 10,
     difficulty: 'Band 7.0 Focus',

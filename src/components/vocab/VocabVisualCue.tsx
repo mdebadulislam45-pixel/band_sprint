@@ -282,7 +282,7 @@ export function getVisualAssetForVocab(item: string, topic?: string, category?: 
     badgeBg: 'bg-indigo-100 text-indigo-900 border-indigo-200',
     badgeText: 'High-Yield Lexicon',
     icon: Lightbulb,
-    tag: 'Cambridge Standard',
+    tag: 'Practice Standard',
     mnemonicHint: 'Master accurate collocations, natural stress, and clear contextual nuance'
   };
 }

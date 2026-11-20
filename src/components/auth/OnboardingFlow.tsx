@@ -17,7 +17,7 @@ import {
   Zap,
   BookmarkCheck
 } from 'lucide-react';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { BandSprintLogo } from '../common/BandSprintLogo';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -85,7 +85,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, onSk
 
       {/* Top Header: Logo + Skip */}
       <header className="relative z-10 flex items-center justify-between pt-2">
-        <IELTSSprintLogo variant="full" size="sm" className="text-white brightness-125" />
+        <BandSprintLogo variant="full" size="sm" className="text-white brightness-125" />
         <button
           type="button"
           onClick={onSkip}
@@ -177,7 +177,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, onSk
 };
 
 /**
- * Screen 1 Visual: 4 Cambridge IELTS Module Cards + Live progress
+ * Screen 1 Visual: 4 IELTS Module Cards + Live progress
  */
 function ModulesVisual() {
   const modules = [
@@ -191,7 +191,7 @@ function ModulesVisual() {
     <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md">
       <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3 text-[11px] font-semibold text-slate-400">
         <span className="flex items-center gap-1.5 text-blue-400">
-          <Sparkles className="w-3.5 h-3.5" /> Official Cambridge Model
+          <Sparkles className="w-3.5 h-3.5" /> Practice Model
         </span>
         <span className="font-mono text-emerald-400">Active Sprint</span>
       </div>

@@ -28,6 +28,8 @@ import { audioService } from '../../services/audioService';
 import { soundManager } from '../../utils/audioEffects';
 import { addMistake } from '../../utils/vaultStorage';
 import { AudioWaveformVisualizer } from '../audio/AudioWaveformVisualizer';
+import { PronunciationDrillStudio } from './PronunciationDrillStudio';
+import { SpeakingTranscriptHighlighter } from './SpeakingTranscriptHighlighter';
 
 interface ShadowingPracticeProps {
   onShowToast: (msg: string) => void;
@@ -53,6 +55,9 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
   onShowToast,
   onNavigateToVault
 }) => {
+  // Studio View: Native Shadowing vs Dedicated Pronunciation & Minimal-Pair Drills
+  const [studioMode, setStudioMode] = useState<'shadowing' | 'pronunciation'>('shadowing');
+
   // Category & Item selection
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -63,11 +68,12 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
   // Playback & Speech states
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
-  const [selectedVoice, setSelectedVoice] = useState<'speaker_04' | 'speaker_01' | 'speaker_02' | 'speaker_03'>('speaker_04');
+  const [selectedVoice, setSelectedVoice] = useState<'speaker_04' | 'speaker_05' | 'speaker_01' | 'speaker_02' | 'speaker_03'>('speaker_04');
 
   // Recording & Speech Recognition states
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [transcript, setTranscript] = useState<string>('');
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
@@ -85,6 +91,13 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
 
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const isRecordingRef = useRef<boolean>(false);
+  const transcriptRef = useRef<string>('');
+  const recordingStartTimeRef = useRef<number>(0);
+  const handleStopRecordingRef = useRef<() => void>(() => {});
 
   // Filtered items
   const filteredItems = React.useMemo(() => {
@@ -101,6 +114,10 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
     }
     setEvaluation(null);
     setTranscript('');
+    setRecordedAudioUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     setSavedToVault(false);
     setLoopAttempts(0);
     audioService.stop();
@@ -116,6 +133,10 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
           recognitionRef.current.abort();
         } catch {}
       }
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {}
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     };
   }, []);
@@ -134,13 +155,15 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
 
     audioService.speak(currentItem.targetSentence, {
       speakerId: selectedVoice,
+      gender: selectedVoice === 'speaker_05' || selectedVoice === 'speaker_02' ? 'female' : 'male',
+      deliveryProfile: 'pronunciation_model',
       onStart: () => setIsPlayingAudio(true),
       onEnd: () => {
         setIsPlayingAudio(false);
         // If in simultaneous mode and recording, allow candidate a brief buffer to finish
-        if (practiceMode === 'simultaneous' && isRecording) {
+        if (practiceMode === 'simultaneous' && isRecordingRef.current) {
           setTimeout(() => {
-            handleStopRecording();
+            handleStopRecordingRef.current();
           }, 800);
         }
       },
@@ -211,7 +234,7 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
     let feedback = 'Good attempt. Focus on sentence stress and linking consonants.';
     if (accuracyScore >= 95 && fluencyScore >= 90) {
       bandEstimate = '9.0';
-      feedback = 'Outstanding Cambridge fluency! Native-level linking, stress patterns, and flawless pronunciation.';
+      feedback = 'Outstanding Practice fluency! Native-level linking, stress patterns, and flawless pronunciation.';
     } else if (accuracyScore >= 88 && fluencyScore >= 80) {
       bandEstimate = '8.5';
       feedback = 'Exceptional clarity and rhythm. Intonation mirrors authentic British RP delivery.';
@@ -236,12 +259,45 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
   };
 
   // Start Mic Recording & Speech Recognition
-  const handleStartRecording = () => {
+  const handleStartRecording = async () => {
     soundManager.playBeep(520, 0.08);
+    transcriptRef.current = '';
     setTranscript('');
     setEvaluation(null);
+    setRecordedAudioUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    isRecordingRef.current = true;
     setIsRecording(true);
-    setRecordingStartTime(Date.now());
+    const now = Date.now();
+    recordingStartTimeRef.current = now;
+    setRecordingStartTime(now);
+
+    // Capture live candidate voice via MediaRecorder for instant playback comparison
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        audioChunksRef.current = [];
+        const recorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+        recorder.ondataavailable = (ev) => {
+          if (ev.data.size > 0) audioChunksRef.current.push(ev.data);
+        };
+        recorder.onstop = () => {
+          const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+          if (blob.size > 0) {
+            setRecordedAudioUrl(URL.createObjectURL(blob));
+          }
+          stream.getTracks().forEach((t) => t.stop());
+          mediaStreamRef.current = null;
+        };
+        recorder.start();
+      }
+    } catch {
+      // Non-blocking: continue with speech recognition if MediaRecorder unavailable
+    }
 
     // If simultaneous mode, trigger native audio with a micro 250ms lead
     if (practiceMode === 'simultaneous' && !isPlayingAudio) {
@@ -273,6 +329,7 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
             }
           }
           const currentText = (fullSpoken + ' ' + interim).trim();
+          transcriptRef.current = currentText;
           setTranscript(currentText);
 
           // Reset silence countdown timer
@@ -280,14 +337,13 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
           silenceTimerRef.current = setTimeout(() => {
             // Auto finish after 2.5s silence if student has spoken enough words
             if (currentText.split(/\s+/).length >= Math.floor(currentItem.targetSentence.split(/\s+/).length * 0.7)) {
-              handleStopRecording();
+              handleStopRecordingRef.current();
             }
           }, 2500);
         };
 
         recognition.onerror = (e: any) => {
           if (e.error === 'no-speech') return;
-          console.warn('Speech recognition warning:', e);
         };
 
         recognition.onend = () => {
@@ -296,7 +352,6 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
 
         recognition.start();
       } catch (err) {
-        console.warn('Microphone recognition failed:', err);
       }
     }
   };
@@ -304,9 +359,10 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
   // Stop Recording & Process Evaluation
   const handleStopRecording = () => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    if (!isRecording) return;
+    if (!isRecordingRef.current && !isRecording) return;
 
     soundManager.playBeep(650, 0.05);
+    isRecordingRef.current = false;
     setIsRecording(false);
 
     if (recognitionRef.current) {
@@ -315,12 +371,19 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
       } catch {}
     }
 
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+    } catch {}
+
     setIsEvaluating(true);
-    const durationSec = Math.max(1, (Date.now() - recordingStartTime) / 1000);
+    const startTs = recordingStartTimeRef.current || recordingStartTime;
+    const durationSec = Math.max(1, (Date.now() - startTs) / 1000);
 
     setTimeout(() => {
       setIsEvaluating(false);
-      const textToEval = transcript.trim() || 'Good attempt recorded';
+      const textToEval = (transcriptRef.current || transcript).trim() || 'Good attempt recorded';
       const result = evaluatePronunciation(currentItem.targetSentence, textToEval, durationSec);
       setEvaluation(result);
 
@@ -345,6 +408,8 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
       }
     }, 450);
   };
+
+  handleStopRecordingRef.current = handleStopRecording;
 
   // Save problematic phrase to Mistake Vault
   const handleSaveToVault = () => {
@@ -386,52 +451,90 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
 
   return (
     <div className="space-y-6 animate-fade-in pb-16">
-      {/* 1. Header Banner & Methodology Intro */}
-      <div className="bg-gradient-to-r from-rose-900 via-indigo-950 to-slate-950 text-white p-6 sm:p-7 rounded-3xl shadow-md border border-rose-900/40">
+      {/* 1. Header Banner & Studio Mode Toggle */}
+      <div className="bg-[#0F4C45] text-white p-6 sm:p-7 rounded-2xl border border-[#1F8A70]/45 space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 text-[11px] font-mono font-bold border border-rose-400/30">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>CAMBRIDGE PRONUNCIATION & FLUENCY ENGINE</span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#0B3833] text-[#F4A62A] text-[11px] font-mono font-bold border border-white/10">
+              <Sparkles className="w-3.5 h-3.5 text-[#F4A62A]" />
+              <span>BAND 8.5+ PRONUNCIATION &amp; SHADOWING LAB</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
-              <span>IELTS Shadowing Practice</span>
-              <span className="text-xs font-mono font-bold bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-lg">
-                Band 8.0+ Lab
+            <h1 className="font-display text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5 flex-wrap">
+              <span>Shadowing &amp; Pronunciation Studio</span>
+              <span className="text-xs font-mono font-bold bg-[#F4A62A] text-[#0E1F1E] px-2.5 py-0.5 rounded-lg">
+                British RP · EN + বাংলা
               </span>
             </h1>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Shadowing is the gold-standard linguistic technique: listen to native British speech and vocalize concurrently or immediately after, internalizing natural rhythm, intonation peaks, consonant linking, and cadence.
+            <p className="text-xs sm:text-sm text-[#EEF3F1]/85 max-w-2xl leading-relaxed">
+              Train native rhythm, intonation peaks, and consonant linking with live shadowing — or drill tricky IELTS minimal pairs, academic word stress, and voice-playback filler audits.
             </p>
           </div>
 
           {/* Quick Metrics Badge */}
-          <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 shrink-0">
+          <div className="flex items-center gap-3 bg-[#0B3833] px-4 py-3 rounded-xl border border-white/10 shrink-0 tabular-nums">
             <div className="text-center px-2">
-              <div className="text-[10px] text-slate-300 uppercase font-bold font-mono">Practiced</div>
-              <div className="text-lg font-black text-white">{practicedCount}</div>
+              <div className="text-[10px] text-[#EEF3F1]/70 uppercase font-bold font-mono">Practiced</div>
+              <div className="text-lg font-bold text-white font-mono">{practicedCount}</div>
             </div>
-            <div className="w-px h-8 bg-white/20"></div>
+            <div className="w-px h-8 bg-white/15"></div>
             <div className="text-center px-2">
-              <div className="text-[10px] text-slate-300 uppercase font-bold font-mono">Avg Accuracy</div>
-              <div className="text-lg font-black text-amber-300">{avgAccuracy}%</div>
+              <div className="text-[10px] text-[#EEF3F1]/70 uppercase font-bold font-mono">Avg Match</div>
+              <div className="text-lg font-bold text-[#F4A62A] font-mono">{avgAccuracy}%</div>
             </div>
-            <div className="w-px h-8 bg-white/20"></div>
+            <div className="w-px h-8 bg-white/15"></div>
             <div className="text-center px-2">
-              <div className="text-[10px] text-slate-300 uppercase font-bold font-mono">Streak</div>
-              <div className="text-lg font-black text-emerald-400 flex items-center gap-1 justify-center">
-                <Flame className="w-4 h-4 text-orange-400" />
+              <div className="text-[10px] text-[#EEF3F1]/70 uppercase font-bold font-mono">Streak</div>
+              <div className="text-lg font-bold text-emerald-300 font-mono flex items-center gap-1 justify-center">
+                <Flame className="w-4 h-4 text-[#F4A62A]" />
                 <span>{currentStreak}</span>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Prominent 2-Mode Switcher: Shadowing vs Pronunciation & Minimal-Pair Drill */}
+        <div className="inline-flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#0B3833] border border-white/15">
+          <button
+            type="button"
+            onClick={() => {
+              setStudioMode('shadowing');
+              soundManager.playBeep(600, 0.03);
+            }}
+            className={`min-h-[40px] px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              studioMode === 'shadowing'
+                ? 'bg-[#F4A62A] text-[#0E1F1E]'
+                : 'text-[#EEF3F1]/85 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Headphones className="w-4 h-4" />
+            <span>1. Native Shadowing &amp; Cadence</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setStudioMode('pronunciation');
+              soundManager.playBeep(640, 0.03);
+            }}
+            className={`min-h-[40px] px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              studioMode === 'pronunciation'
+                ? 'bg-[#F4A62A] text-[#0E1F1E]'
+                : 'text-[#EEF3F1]/85 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Volume2 className="w-4 h-4" />
+            <span>2. Pronunciation &amp; Minimal-Pair Drill (IPA + বাংলা)</span>
+          </button>
+        </div>
       </div>
 
-      {/* 2. Category Filter & Mode Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
-        {/* Category Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto">
+      {studioMode === 'pronunciation' ? (
+        <PronunciationDrillStudio onShowToast={onShowToast} />
+      ) : (
+        <>
+      {/* 2. Sticky Category Filter & Mode Switcher Header */}
+      <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-2.5 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        {/* Category Pills (Touch Targets >= 44px on mobile) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
           {[
             { id: 'all', label: 'All Modules' },
             { id: 'part1_fluency', label: 'Part 1: Everyday Fluency' },
@@ -447,7 +550,7 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
                 setCurrentIndex(0);
                 soundManager.playBeep(600, 0.03);
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+              className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center shrink-0 ${
                 selectedCategory === cat.id
                   ? 'bg-rose-600 text-white shadow-2xs'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -459,13 +562,13 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
         </div>
 
         {/* Mode Switcher */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 shrink-0">
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 shrink-0 self-start sm:self-auto">
           <button
             onClick={() => {
               setPracticeMode('echo');
               soundManager.playBeep(600, 0.03);
             }}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+            className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center ${
               practiceMode === 'echo'
                 ? 'bg-white text-slate-900 shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -479,7 +582,7 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
               setPracticeMode('simultaneous');
               soundManager.playBeep(600, 0.03);
             }}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+            className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center ${
               practiceMode === 'simultaneous'
                 ? 'bg-white text-slate-900 shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -493,7 +596,7 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
               setPracticeMode('loop');
               soundManager.playBeep(600, 0.03);
             }}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+            className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center ${
               practiceMode === 'loop'
                 ? 'bg-white text-slate-900 shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -505,26 +608,26 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
         </div>
       </div>
 
-      {/* 3. Main Practice Card */}
-      <div className="bg-white rounded-3xl border-2 border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
+      {/* 3. Main Practice Card with Docked Telemetry & Waveform Controls */}
+      <div className="bg-white rounded-3xl border-2 border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col flex-1 gap-4">
         {/* Card Header & Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pb-3 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs font-mono font-black">
+            <span className="px-2.5 py-1 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs font-mono font-black">
               {currentIndex + 1} of {filteredItems.length}
             </span>
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono truncate">
               {currentItem.topic}
             </span>
             <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-mono font-bold">
-              Target: Band {currentItem.bandTarget}
+              Band {currentItem.bandTarget}
             </span>
           </div>
 
           {/* Speed & Voice Controls */}
           <div className="flex items-center gap-2">
             {/* Speed Selector */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-mono font-bold">
+            <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-mono font-bold">
               {[0.75, 0.9, 1.0, 1.1].map((s) => (
                 <button
                   key={s}
@@ -533,7 +636,7 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
                     audioService.setPlaybackRate(s);
                     soundManager.playBeep(600, 0.02);
                   }}
-                  className={`px-2 py-0.5 rounded-lg transition ${
+                  className={`min-h-[32px] px-2 py-0.5 rounded-lg transition cursor-pointer flex items-center ${
                     playbackSpeed === s
                       ? 'bg-rose-600 text-white'
                       : 'text-slate-600 hover:text-slate-900'
@@ -545,26 +648,27 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
               ))}
             </div>
 
-            {/* Voice Model Selector (Strictly British Male) */}
+            {/* Voice Model Selector (Male & Female British RP Voices) */}
             <select
               value={selectedVoice}
               onChange={(e) => {
                 setSelectedVoice(e.target.value as any);
                 soundManager.playBeep(600, 0.03);
               }}
-              className="bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 rounded-xl px-2.5 py-1 outline-none"
-              title="Select authentic British Male Voice"
+              className="min-h-[36px] bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 rounded-xl px-2.5 py-1 outline-none"
+              title="Select authentic British Model Voice"
             >
-              <option value="speaker_04">Arthur · British Examiner (RP)</option>
-              <option value="speaker_01">Oliver · British Conversational</option>
-              <option value="speaker_02">George · British Natural</option>
-              <option value="speaker_03">Alistair · British Academic</option>
+              <option value="speaker_04">Prof. Arthur · Male British RP</option>
+              <option value="speaker_05">Dr. Clara · Female British RP</option>
+              <option value="speaker_01">Thomas · Male Conversational</option>
+              <option value="speaker_02">Libby · Female Natural</option>
+              <option value="speaker_03">Alistair · Academic Lecturer</option>
             </select>
           </div>
         </div>
 
-        {/* 4. Target Sentence Display Box */}
-        <div className="relative p-6 sm:p-7 rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/40 border-2 border-indigo-100/80 space-y-4">
+        {/* 4. Target Sentence Prompt Container: Smooth Scrollable with Max-Height */}
+        <div className="relative p-4 sm:p-6 rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/40 border-2 border-indigo-100/80 space-y-3 max-h-[32vh] sm:max-h-[38vh] overflow-y-auto overscroll-contain scroll-smooth shrink-0">
           <div className="flex items-center justify-between text-xs text-slate-500 font-mono">
             <span className="flex items-center gap-1 font-bold text-indigo-900">
               <Headphones className="w-3.5 h-3.5 text-indigo-600" />
@@ -576,12 +680,12 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
           </div>
 
           {/* Big Sentence Text */}
-          <div className="text-xl sm:text-2xl font-black text-slate-900 leading-snug tracking-tight">
+          <div className="text-lg sm:text-2xl font-black text-slate-900 leading-snug tracking-tight">
             "{currentItem.targetSentence}"
           </div>
 
           {/* Linguistic Coaching & Phonetic Focus */}
-          <div className="p-3 rounded-xl bg-white/90 border border-indigo-200/70 text-xs text-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="p-3 rounded-xl bg-white/90 border border-indigo-200/70 text-xs text-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
               <div>
@@ -603,197 +707,203 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
           </div>
         </div>
 
-        {/* 5. Main Action Center: Listen & Record */}
-        <div className="flex flex-wrap items-center justify-center gap-4 py-2">
-          {/* Native Audio Listen Button */}
-          <button
-            onClick={handlePlayNativeAudio}
-            className={`min-h-[52px] px-6 py-3 rounded-2xl font-black text-sm transition flex items-center gap-2.5 shadow-md active:scale-95 ${
-              isPlayingAudio
-                ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30'
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30'
-            }`}
-            title="Listen to authentic British male pronunciation"
-          >
-            {isPlayingAudio ? (
-              <>
-                <Pause className="w-5 h-5 fill-current" />
-                <span>Pause Native Audio</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="w-5 h-5" />
-                <span>Listen to Native Model ({playbackSpeed}×)</span>
-              </>
-            )}
-          </button>
+        {/* 5. Docked Action Controls, Telemetry & Waveform Directly Below Question Card */}
+        <div className="sticky bottom-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pt-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom)+4.25rem))] sm:pb-3 rounded-b-2xl shadow-lg mt-auto shrink-0 space-y-3">
+          {/* Main Action Buttons: Listen & Record (Touch Targets >= 48px) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Native Audio Listen Button */}
+            <button
+              onClick={handlePlayNativeAudio}
+              className={`min-h-[48px] px-5 py-3 rounded-2xl font-black text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md active:scale-95 cursor-pointer ${
+                isPlayingAudio
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30'
+              }`}
+              title="Listen to authentic British male pronunciation"
+            >
+              {isPlayingAudio ? (
+                <>
+                  <Pause className="w-4 h-4 fill-current" />
+                  <span>Pause Native Audio</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-4 h-4" />
+                  <span>Listen to Native Model ({playbackSpeed}×)</span>
+                </>
+              )}
+            </button>
 
-          {/* Candidate Microphone Record Button */}
-          <button
-            onClick={isRecording ? handleStopRecording : handleStartRecording}
-            className={`min-h-[52px] px-6 py-3 rounded-2xl font-black text-sm transition flex items-center gap-2.5 shadow-md active:scale-95 ${
-              isRecording
-                ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/40 animate-pulse'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30'
-            }`}
-            title={isRecording ? 'Click to finish speaking' : 'Click to shadow and record repetition'}
-          >
-            {isRecording ? (
-              <>
-                <MicOff className="w-5 h-5 animate-spin" />
-                <span>Done Speaking (Recording...)</span>
-              </>
-            ) : (
-              <>
-                <Mic className="w-5 h-5" />
-                <span>{practiceMode === 'simultaneous' ? 'Start Simultaneous Shadow' : 'Shadow Now (Record)'}</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Live Audio Waveform when recording */}
-        {isRecording && (
-          <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-2 animate-fade-in">
-            <div className="flex items-center justify-between text-xs text-rose-900 font-bold">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
-                <span>Recording Candidate Repetition... Speak with clarity and rhythm</span>
-              </span>
-              <span className="font-mono text-[11px]">Web Audio API Active</span>
-            </div>
-            <AudioWaveformVisualizer isRecording={isRecording} height={42} showMetrics={false} />
+            {/* Candidate Microphone Record Button */}
+            <button
+              onClick={isRecording ? handleStopRecording : handleStartRecording}
+              className={`min-h-[48px] px-5 py-3 rounded-2xl font-black text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md active:scale-95 cursor-pointer ${
+                isRecording
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/40 animate-pulse'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30'
+              }`}
+              title={isRecording ? 'Click to finish speaking' : 'Click to shadow and record repetition'}
+            >
+              {isRecording ? (
+                <>
+                  <MicOff className="w-4 h-4 animate-spin" />
+                  <span>Done Speaking (Recording...)</span>
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" />
+                  <span>{practiceMode === 'simultaneous' ? 'Start Simultaneous Shadow' : 'Shadow Now (Record)'}</span>
+                </>
+              )}
+            </button>
           </div>
-        )}
 
-        {/* Evaluating loader */}
-        {isEvaluating && (
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-600 flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 text-indigo-600 animate-spin" />
-            <span>Analyzing phonetics, lexical tokens, and rhythm alignment...</span>
-          </div>
-        )}
-
-        {/* 6. Evaluation & Pronunciation Result */}
-        {evaluation && (
-          <div className="p-5 sm:p-6 rounded-2xl bg-slate-50 border-2 border-slate-200 space-y-5 animate-fade-in">
-            {/* Header Score Row */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black text-white shadow-sm ${
-                    evaluation.accuracyScore >= 85
-                      ? 'bg-emerald-600'
-                      : evaluation.accuracyScore >= 70
-                      ? 'bg-blue-600'
-                      : 'bg-amber-600'
-                  }`}
-                >
-                  <span className="text-lg leading-none">{evaluation.accuracyScore}%</span>
-                  <span className="text-[9px] uppercase font-mono opacity-80">Match</span>
-                </div>
-                <div>
-                  <div className="text-base font-black text-slate-900 flex items-center gap-2">
-                    <span>Estimated Pronunciation: Band {evaluation.bandEstimate}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold font-mono">
-                      {evaluation.wpm} WPM
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500">{evaluation.feedback}</div>
-                </div>
-              </div>
-
-              {/* Action Buttons: Save to Vault & Retry */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSaveToVault}
-                  disabled={savedToVault}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
-                    savedToVault
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 shadow-2xs'
-                  }`}
-                  title="Save sentence to Mistake Vault for targeted spaced repetition"
-                >
-                  <Archive className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>{savedToVault ? 'Saved in Vault' : 'Save to Vault'}</span>
-                </button>
-
-                <button
-                  onClick={handleStartRecording}
-                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Try Again</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Word-by-Word Alignment Grid */}
-            <div className="space-y-2">
-              <div className="text-xs font-bold text-slate-700 font-mono uppercase tracking-wider flex items-center justify-between">
-                <span>Phonetic & Lexical Alignment</span>
-                <span className="text-[10px] text-slate-500 font-normal">
-                  Green = Perfect · Orange = Variation · Underlined = Omitted
+          {/* Live Audio Waveform when recording */}
+          {isRecording && (
+            <div className="p-3 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-1.5 animate-fade-in">
+              <div className="flex items-center justify-between text-xs text-rose-900 font-bold">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
+                  <span>Recording Candidate Repetition... Speak with rhythm</span>
                 </span>
+                <span className="font-mono text-[10px]">Web Audio API Live</span>
+              </div>
+              <AudioWaveformVisualizer isRecording={isRecording} height={38} showMetrics={false} />
+            </div>
+          )}
+
+          {/* Evaluating loader */}
+          {isEvaluating && (
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-600 flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 text-indigo-600 animate-spin" />
+              <span>Analyzing phonetics, lexical tokens, and rhythm alignment...</span>
+            </div>
+          )}
+
+          {/* Evaluation & Pronunciation Result */}
+          {evaluation && (
+            <div className="p-4 rounded-2xl bg-slate-50 border-2 border-slate-200 space-y-3.5 animate-fade-in max-h-[30vh] overflow-y-auto overscroll-contain">
+              {/* Header Score Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-black text-white shadow-sm shrink-0 ${
+                      evaluation.accuracyScore >= 85
+                        ? 'bg-emerald-600'
+                        : evaluation.accuracyScore >= 70
+                        ? 'bg-blue-600'
+                        : 'bg-amber-600'
+                    }`}
+                  >
+                    <span className="text-base leading-none">{evaluation.accuracyScore}%</span>
+                    <span className="text-[8px] uppercase font-mono opacity-80">Match</span>
+                  </div>
+                  <div>
+                    <div className="text-sm font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
+                      <span>Pronunciation: Band {evaluation.bandEstimate}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold font-mono">
+                        {evaluation.wpm} WPM
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500">{evaluation.feedback}</div>
+                  </div>
+                </div>
+
+                {/* Action Buttons: Save to Vault & Retry */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleSaveToVault}
+                    disabled={savedToVault}
+                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                      savedToVault
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 shadow-2xs'
+                    }`}
+                    title="Save sentence to Mistake Vault for targeted spaced repetition"
+                  >
+                    <Archive className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>{savedToVault ? 'Saved' : 'Save'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleStartRecording}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Retry</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-white border border-slate-200 flex flex-wrap gap-2 text-base leading-relaxed">
-                {evaluation.matchedTokens.map((token, i) => (
-                  <span
-                    key={i}
-                    className={`px-2 py-1 rounded-lg font-bold transition ${
-                      token.status === 'correct'
-                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                        : token.status === 'near'
-                        ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                        : 'bg-rose-50 text-rose-800 border border-rose-300 line-through opacity-70'
-                    }`}
-                    title={
-                      token.status === 'correct'
-                        ? 'Pronounced accurately'
-                        : token.status === 'near'
-                        ? `Variation detected: "${token.spoken}"`
-                        : 'Word omitted or mispronounced'
-                    }
-                  >
-                    {token.word}
+              {/* Word-by-Word Alignment Grid */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-bold text-slate-700 font-mono uppercase tracking-wider flex items-center justify-between">
+                  <span>Phonetic Alignment</span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    Green = Accurate · Orange = Variation
                   </span>
-                ))}
+                </div>
+
+                <div className="p-3 rounded-xl bg-white border border-slate-200 flex flex-wrap gap-1.5 text-sm leading-relaxed">
+                  {evaluation.matchedTokens.map((token, i) => (
+                    <span
+                      key={i}
+                      className={`px-2 py-0.5 rounded-lg font-bold transition text-xs ${
+                        token.status === 'correct'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : token.status === 'near'
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : 'bg-rose-50 text-rose-800 border border-rose-300 line-through opacity-70'
+                      }`}
+                      title={
+                        token.status === 'correct'
+                          ? 'Pronounced accurately'
+                          : token.status === 'near'
+                          ? `Variation: "${token.spoken}"`
+                          : 'Omitted or mispronounced'
+                      }
+                    >
+                      {token.word}
+                    </span>
+                  ))}
+                </div>
               </div>
+
+              {/* Candidate Voice Playback & Filler-Word Highlighter */}
+              {(transcript || recordedAudioUrl) && (
+                <SpeakingTranscriptHighlighter
+                  transcript={transcript}
+                  audioUrl={recordedAudioUrl}
+                  contextLabel={`Shadowing: ${currentItem.topic}`}
+                  onShowToast={onShowToast}
+                  compact
+                />
+              )}
+            </div>
+          )}
+
+          {/* Bottom Navigation Bar */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+            <button
+              onClick={handlePrevSentence}
+              className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>Previous</span>
+            </button>
+
+            <div className="text-xs text-slate-400 font-mono">
+              Sentence {currentIndex + 1} of {filteredItems.length}
             </div>
 
-            {/* Candidate Raw Transcript */}
-            {transcript && (
-              <div className="text-xs text-slate-500 bg-white p-3 rounded-xl border border-slate-200">
-                <span className="font-bold text-slate-700 font-mono">Speech Recognition Capture: </span>
-                <span className="italic">"{transcript}"</span>
-              </div>
-            )}
+            <button
+              onClick={handleNextSentence}
+              className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
-        )}
-
-        {/* 7. Bottom Navigation Bar */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-          <button
-            onClick={handlePrevSentence}
-            className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1.5"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            <span>Previous Sentence</span>
-          </button>
-
-          <div className="text-xs text-slate-400 font-mono">
-            Sentence {currentIndex + 1} of {filteredItems.length}
-          </div>
-
-          <button
-            onClick={handleNextSentence}
-            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-2xs"
-          >
-            <span>Next Sentence</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
@@ -821,6 +931,8 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
           </button>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

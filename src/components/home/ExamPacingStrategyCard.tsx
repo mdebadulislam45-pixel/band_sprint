@@ -66,7 +66,7 @@ export const ExamPacingStrategyCard: React.FC<ExamPacingStrategyCardProps> = ({
           if (prev <= 1) {
             setIsTimerRunning(false);
             soundManager.playCelebration();
-            onShowToast('⏰ Practice Time Up! Review your work with Cambridge descriptors.');
+            onShowToast('⏰ Practice Time Up! Review your work with Practice descriptors.');
             return 0;
           }
           return prev - 1;
@@ -115,7 +115,7 @@ export const ExamPacingStrategyCard: React.FC<ExamPacingStrategyCardProps> = ({
               Exam Time & Pacing Strategizer
             </h3>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Official Cambridge time management benchmarks & live sprint timer
+              Practice time management benchmarks & live sprint timer
             </p>
           </div>
         </div>

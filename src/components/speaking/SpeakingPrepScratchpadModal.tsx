@@ -224,7 +224,7 @@ export const SpeakingPrepScratchpadModal: React.FC<SpeakingPrepScratchpadModalPr
     setIsSpeakingRecording(false);
     setStepMode('evaluation');
     soundManager.playSuccess();
-    onShowToast('Evaluation complete! Cambridge rubric analysis generated.');
+    onShowToast('Evaluation complete! Practice rubric analysis generated.');
   };
 
   // Calculate Scores
@@ -279,7 +279,7 @@ export const SpeakingPrepScratchpadModal: React.FC<SpeakingPrepScratchpadModalPr
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {stepMode === 'prep' && 'Step 1: 60-Second Note-Taking & Brainstorming'}
                 {stepMode === 'speaking' && 'Step 2: 2-Minute Continuous Speech Recording'}
-                {stepMode === 'evaluation' && 'Step 3: Cambridge Band 9 Diagnostic Feedback'}
+                {stepMode === 'evaluation' && 'Step 3: Practice Band 9 Diagnostic Feedback'}
               </p>
             </div>
           </div>
@@ -367,7 +367,7 @@ export const SpeakingPrepScratchpadModal: React.FC<SpeakingPrepScratchpadModalPr
               </div>
             </div>
 
-            {/* 4-Quadrant Cambridge Scratchpad */}
+            {/* 4-Quadrant Practice Scratchpad */}
             <div className="space-y-2">
               <div className="flex items-center justify-between px-1">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -524,7 +524,7 @@ export const SpeakingPrepScratchpadModal: React.FC<SpeakingPrepScratchpadModalPr
             <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-950 text-white flex items-center justify-between border border-blue-500/30 shadow-md">
               <div>
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-300">
-                  Official Cambridge Speaking Part 2 Diagnostic
+                  Practice Speaking Part 2 Diagnostic
                 </span>
                 <h3 className="text-base sm:text-lg font-black mt-0.5">
                   Performance Evaluation · {currentTopic.topic}
@@ -542,7 +542,7 @@ export const SpeakingPrepScratchpadModal: React.FC<SpeakingPrepScratchpadModalPr
               </div>
             </div>
 
-            {/* 4 Official Cambridge Criteria Breakdown */}
+            {/* 4 Practice Criteria Breakdown */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-1">
                 <div className="text-[11px] font-bold text-slate-500">Fluency & Coherence</div>

@@ -17,7 +17,7 @@ import {
   Zap,
   BookOpen
 } from 'lucide-react';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { BandSprintLogo } from '../common/BandSprintLogo';
 import { loginCandidateWithServer } from '../../services/authService';
 import { UserProfile } from '../../types';
 import { soundManager } from '../../utils/audioEffects';
@@ -119,7 +119,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <IELTSSprintLogo variant="full" size="sm" className="brightness-125" />
+        <BandSprintLogo variant="full" size="sm" className="brightness-125" />
         <div className="w-9" />
       </header>
 
@@ -135,7 +135,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <div className="text-left space-y-1.5">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border border-blue-500/20 text-blue-300 text-[11px] font-mono font-bold">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Official Cambridge Band 9 Preparation</span>
+              <span>Practice Band 9 Preparation</span>
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
@@ -280,7 +280,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               disabled={isSubmitting}
               className="w-full min-h-[50px] py-3.5 px-6 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold text-sm shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
             >
-              <span>{isSubmitting ? 'Verifying Credentials...' : 'Log In to IELTS Sprint'}</span>
+              <span>{isSubmitting ? 'Verifying Credentials...' : 'Log In to BandSprint'}</span>
               {!isSubmitting && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
@@ -293,7 +293,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
               <div className="text-left">
                 <div className="text-[11px] font-bold text-slate-200">
-                  Cambridge Audio & Real-time AI
+                  Practice Audio & Real-time AI
                 </div>
                 <div className="text-[10px] text-slate-400">
                   1-on-1 Voice Examiner · Multi-Speaker Dialogues · Band 9 Model Answers
@@ -358,7 +358,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <div className="pt-1 flex items-center justify-center gap-4 text-[10px] text-slate-500">
             <span className="flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Cambridge-aligned scoring</span>
+              <span>Practice-aligned scoring</span>
             </span>
             <span>•</span>
             <span className="flex items-center gap-1">

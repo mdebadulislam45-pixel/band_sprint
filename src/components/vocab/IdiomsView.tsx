@@ -230,11 +230,11 @@ export const IdiomsView: React.FC<IdiomsViewProps> = ({
               </div>
             </div>
 
-            {/* Cambridge Example Sentence */}
+            {/* Practice Example Sentence */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-mono font-bold uppercase text-slate-400">
-                  Cambridge Sample Response
+                  Practice Sample Response
                 </span>
                 <button
                   type="button"

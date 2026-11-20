@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { RICH_IDIOMS_DATABASE } from '../../data/richVocabulary';
 import { BAND_7_9_PHRASES_AND_IDIOMS } from '../../data/band7to9PhrasesAndIdioms';
+import { B2_IDIOMS_AND_WORDS } from '../../data/b2IdiomsWords';
+import { C1_IDIOMS_AND_PHRASES } from '../../data/c1IdiomsAndPhrasesData';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
 import { VocabVisualBanner } from '../vocab/VocabVisualCue';
@@ -75,6 +77,39 @@ export const IdiomLabPage: React.FC<IdiomLabPageProps> = ({ onBack, onShowToast 
       }
     }
 
+    // 3. From B2_IDIOMS_AND_WORDS (B2 idioms — the B2 ladder below C1/C2)
+    for (const item of B2_IDIOMS_AND_WORDS) {
+      if (item.type === 'Idiom' && !seen.has(item.phrase.toLowerCase())) {
+        seen.add(item.phrase.toLowerCase());
+        list.push({
+          id: `b2_${item.id}`,
+          idiom: item.phrase,
+          banglaMeaning: item.banglaMeaning,
+          englishMeaning: `B2 idiom for IELTS ${item.ieltsSuitability} — see the example sentence for its meaning in context.`,
+          example: item.exampleSentence,
+          difficulty: 'B2',
+          speaking_suitability: item.ieltsSuitability
+        });
+      }
+    }
+
+    // 4. From C1_IDIOMS_AND_PHRASES (C1/C2 idioms — were never shown here before)
+    for (const item of C1_IDIOMS_AND_PHRASES) {
+      if (item.type === 'Idiom' && !seen.has(item.phrase.toLowerCase())) {
+        seen.add(item.phrase.toLowerCase());
+        const level = item.cefrLevel || (item.category === 'C2 Band-9 Mastery' ? 'C2' : 'C1');
+        list.push({
+          id: `c1c2_${item.id}`,
+          idiom: item.phrase,
+          banglaMeaning: item.banglaMeaning,
+          englishMeaning: `${level} idiom for IELTS ${item.ieltsSuitability} — see the example sentence for its meaning in context.`,
+          example: item.exampleSentence,
+          difficulty: level,
+          speaking_suitability: item.ieltsSuitability
+        });
+      }
+    }
+
     return list;
   }, []);
 
@@ -125,7 +160,9 @@ export const IdiomLabPage: React.FC<IdiomLabPageProps> = ({ onBack, onShowToast 
     }
     setPlayingId(item.id);
     speakBritish(`${item.idiom}. Meaning: ${item.englishMeaning}. Example: ${item.example}`, {
-      onEnd: () => setPlayingId(null)
+      deliveryProfile: 'vocabulary_example',
+      onEnd: () => setPlayingId(null),
+      onError: () => setPlayingId(null)
     });
   };
 
@@ -194,7 +231,7 @@ export const IdiomLabPage: React.FC<IdiomLabPageProps> = ({ onBack, onShowToast 
 
         {/* Difficulty Chips */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {['All', 'B1', 'B2', 'C1'].map((diff) => {
+          {['All', 'B1', 'B2', 'C1', 'C2'].map((diff) => {
             const isActive = selectedDifficulty === diff;
             return (
               <button
@@ -286,7 +323,7 @@ export const IdiomLabPage: React.FC<IdiomLabPageProps> = ({ onBack, onShowToast 
                   <div className="pt-2 border-t border-amber-100 space-y-2.5 text-xs animate-fadeIn">
                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                       <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5 font-mono">
-                        Cambridge Example:
+                        Practice Example:
                       </span>
                       <p className="text-slate-800 italic font-medium">
                         "{item.example}"
@@ -423,7 +460,7 @@ export const IdiomLabPage: React.FC<IdiomLabPageProps> = ({ onBack, onShowToast 
             <div className="space-y-3 text-xs max-h-[45vh] overflow-y-auto pr-1">
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1 font-mono">
-                  Cambridge Example in Context
+                  Practice Example in Context
                 </span>
                 <p className="text-slate-800 italic font-serif leading-relaxed">
                   "{selectedIdiom.example}"

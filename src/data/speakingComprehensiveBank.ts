@@ -1,9 +1,9 @@
 import { SpeakingQuestionItem } from '../types/speakingTypes';
 
 /**
- * Massive, Cambridge-Accurate IELTS Speaking Question Bank
+ * Massive, Practice-Accurate IELTS Speaking Question Bank
  * Contains over 320 Part 1 questions, 150 Part 2 cue cards, and 300+ Part 3 analytical discussion questions
- * structured across all official Cambridge IELTS topic clusters.
+ * structured across all official IELTS topic clusters.
  */
 
 // Helper to assemble high-caliber questions cleanly
@@ -156,7 +156,7 @@ export const PART_1_SPEAKING_BANK: SpeakingQuestionItem[] = [
   makeQ('spk_p1_085', 1, 'Memory', 'What is your very earliest childhood memory that remains crystal clear?', 'part1_interview')
 ];
 
-// Dynamically scale Part 1 to 320+ questions across subtopics using realistic Cambridge variations
+// Dynamically scale Part 1 to 320+ questions across subtopics using realistic Practice variations
 const SUBTOPIC_GENERATORS = [
   { topic: 'Holidays & Celebrations', q: 'What is the most anticipated annual festival in your culture?' },
   { topic: 'Cinema & Films', q: 'Do you prefer watching newly released films in a cinema or streaming at home?' },
@@ -422,7 +422,7 @@ export const PART_3_DISCUSSION_BANK: SpeakingQuestionItem[] = [
   makeQ('spk_p3_030', 3, 'Economics & Consumerism', 'How does aggressive digital advertising target impulsive consumption patterns among impressionable juveniles?', 'part3_discussion')
 ];
 
-// Scale Part 3 to 300+ analytical questions across multifaceted Cambridge IELTS discussion branches
+// Scale Part 3 to 300+ analytical questions across multifaceted IELTS discussion branches
 const PART_3_THEME_CLUSTERS = [
   { topic: 'Ethics of Artificial Intelligence', stem: 'What ethical protocols must be codified before permitting algorithms to take high-stakes clinical or judicial actions?' },
   { topic: 'Intergenerational Workplace Dynamics', stem: 'How do differing expectations regarding job security and purpose create tension between younger and older employees?' },
@@ -445,3 +445,124 @@ PART_3_THEME_CLUSTERS.forEach((cl, idx) => {
     PART_3_DISCUSSION_BANK.push(makeQ(id, 3, cl.topic, text, 'part3_discussion'));
   }
 });
+
+// ==========================================
+// 4. CONTEMPORARY Practice Set 19–21 SPEAKING EXPANSION
+// ==========================================
+const CONTEMPORARY_PART1_ADDITIONS: Array<{ topic: string; questions: string[] }> = [
+  {
+    topic: 'Libraries & Study Environments',
+    questions: [
+      'How frequently do you visit municipal or university libraries to study?',
+      'Do you prefer reading in complete silence or in a lively coffee shop?',
+      'What resources beyond printed books should modern public libraries provide to communities?',
+      'Did you borrow books from your school library when you were a child?'
+    ]
+  },
+  {
+    topic: 'Handwriting & Digital Note-Taking',
+    questions: [
+      'Do you usually write lists and reminders by hand or type them on a smartphone?',
+      'Do you think neat handwriting is still valued in academic and professional life?',
+      'Have you ever received a handwritten letter or postcard that meant a great deal to you?',
+      'Does writing notes by hand help you remember academic concepts more effectively?'
+    ]
+  },
+  {
+    topic: 'Astronomy, Stars & Outer Space',
+    questions: [
+      'Have you ever observed the night sky through an astronomical telescope?',
+      'Is light pollution a barrier to stargazing in your residential area?',
+      'Did you enjoy learning about the solar system and galaxies at school?',
+      'Would you ever consider taking a commercial suborbital spaceflight if it became affordable?'
+    ]
+  },
+  {
+    topic: 'Street Markets & Local Artisans',
+    questions: [
+      'Do you enjoy browsing traditional open-air street markets when visiting a new city?',
+      'What kinds of fresh produce or handmade crafts are sold at markets in your hometown?',
+      'Is bargaining over prices customary in your local markets?',
+      'Why do some shoppers prefer small independent stalls over giant supermarkets?'
+    ]
+  },
+  {
+    topic: 'Silence, Noise & Urban Acoustics',
+    questions: [
+      'Do you feel that modern metropolitan cities have become excessively noisy?',
+      'What natural sounds—such as rainfall or ocean waves—help you feel calm and focused?',
+      'How do you cope when construction or traffic noise interrupts your concentration?',
+      'Where do you go in your city when you seek peaceful solitude?'
+    ]
+  }
+];
+
+CONTEMPORARY_PART1_ADDITIONS.forEach((group, gIdx) => {
+  group.questions.forEach((qText, qIdx) => {
+    PART_1_SPEAKING_BANK.push(
+      makeQ(`spk_p1_c21_${gIdx}_${qIdx}`, 1, group.topic, qText, 'part1_interview')
+    );
+  });
+});
+
+const CONTEMPORARY_PART2_ADDITIONS = [
+  {
+    id: 'spk_p2_c21_01',
+    topic: 'A Scientific Discovery or Invention',
+    prompt: 'Describe a scientific breakthrough or technological invention that has positively shaped modern humanity.',
+    bullets: [
+      'What the scientific discovery or invention is',
+      'When and how you first learned about its history',
+      'How it altered everyday human life or medical survival',
+      'And explain why you believe it ranks among history’s greatest achievements'
+    ],
+    followUp: 'Should scientific patents on life-saving discoveries be placed in the public domain?'
+  },
+  {
+    id: 'spk_p2_c21_02',
+    topic: 'An Independent Local Business',
+    prompt: 'Describe a small independent shop, café, or artisan enterprise in your community that you admire.',
+    bullets: [
+      'What goods or services this enterprise provides',
+      'Where it is situated and what its atmosphere is like',
+      'How the owner or staff cultivate customer loyalty',
+      'And explain why supporting grassroots local businesses is vital for your neighborhood'
+    ],
+    followUp: 'How can small high-street retailers survive the dominance of global e-commerce?'
+  },
+  {
+    id: 'spk_p2_c21_03',
+    topic: 'A Memorable Environmental Documentary',
+    prompt: 'Describe a nature documentary, book, or article that changed your perspective on the natural world.',
+    bullets: [
+      'What the documentary or publication was titled',
+      'Which ecosystems or endangered species it focused upon',
+      'What visual sequences or scientific facts struck you most forcefully',
+      'And explain how it influenced your personal habits or environmental awareness'
+    ],
+    followUp: 'Does emotional storytelling persuade the public more effectively than statistical climate graphs?'
+  },
+  {
+    id: 'spk_p2_c21_04',
+    topic: 'A Difficult Skill Learned Outside School',
+    prompt: 'Describe a practical or creative skill you taught yourself outside of formal academic classrooms.',
+    bullets: [
+      'What the skill was and why you wanted to master it',
+      'What resources, mentors, or online platforms you utilized',
+      'What plateaus or frustrations you encountered during practice',
+      'And explain how mastering this skill enriched your personal confidence'
+    ],
+    followUp: 'Are self-taught polymaths becoming more common in the era of open-access digital tutorials?'
+  }
+];
+
+CONTEMPORARY_PART2_ADDITIONS.forEach((card) => {
+  PART_2_CUE_CARD_BANK.push(
+    makeQ(card.id, 2, card.topic, card.prompt, 'part2_cue_card', {
+      cueBullets: card.bullets,
+      followUp: card.followUp,
+      diff: 'hard'
+    })
+  );
+});
+

@@ -1,4 +1,4 @@
-// Anti-Repetition & Dynamic Question Selection Engine for IELTS Sprint
+// Anti-Repetition & Dynamic Question Selection Engine for BandSprint
 // Tracks question history across sessions to ensure every test attempt features fresh content
 
 const SEEN_QUESTIONS_KEY = 'ielts_seen_question_ids_v1';

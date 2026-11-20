@@ -7,7 +7,7 @@ export function downloadStandaloneHtml(): void {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>IELTS Sprint - Complete Interactive Masterguide, AI Diagnostics & Exam Suite</title>
+  <title>BandSprint - Complete Interactive Masterguide, AI Diagnostics & Exam Suite</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,7 +30,7 @@ export function downloadStandaloneHtml(): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'ielts-sprint-standalone.html';
+  a.download = 'bandsprint-standalone.html';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

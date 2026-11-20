@@ -119,7 +119,7 @@ export const ArgumentMatrix: React.FC<ArgumentMatrixProps> = ({ onTransferToMock
       <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold">
-            <Sparkles className="w-3.5 h-3.5" /> Cambridge Argument Generation Engine
+            <Sparkles className="w-3.5 h-3.5" /> Practice Argument Generation Engine
           </div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1">
             Module 8: Task 2 Essay Argument Generator (PESTLE Engine)
@@ -146,7 +146,7 @@ export const ArgumentMatrix: React.FC<ArgumentMatrixProps> = ({ onTransferToMock
       {/* Prompt Banner */}
       <div className="p-6 rounded-3xl bg-slate-900 text-white shadow-sm space-y-2">
         <div className="flex items-center justify-between text-xs text-purple-300">
-          <span className="font-mono uppercase font-bold tracking-wider">Cambridge Prompt</span>
+          <span className="font-mono uppercase font-bold tracking-wider">Practice Prompt</span>
           <span className="px-2 py-0.5 rounded bg-purple-950 border border-purple-700">{currentEssay.type}</span>
         </div>
         <h3 className="text-lg sm:text-xl font-bold font-serif leading-relaxed">

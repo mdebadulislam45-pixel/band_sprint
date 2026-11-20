@@ -1,6 +1,6 @@
 /**
  * IELTS SPRINT — WRITING EVALUATION SERVICE
- * Certified Cambridge IELTS Psychometric Evaluation Engine for Academic & General Training Writing.
+ * AI-powered IELTS Psychometric Evaluation Engine for Academic & General Training Writing.
  *
  * Enforces the Strict Minimum Word Threshold Guard:
  * - Task 1 Minimum: 30 words
@@ -323,8 +323,8 @@ export function evaluateWritingSubmission(
     ccScore,
     lrScore,
     graScore,
-    feedbackTitle: `Cambridge ${taskType === 'task1' ? 'Task 1' : 'Task 2'} Diagnostic Report`,
-    feedbackEn: `Evaluated ${wordCount} words across 4 official Cambridge criteria.${underTargetNote}`,
+    feedbackTitle: `Sprint ${taskType === 'task1' ? 'Task 1' : 'Task 2'} Diagnostic Report`,
+    feedbackEn: `Evaluated ${wordCount} words across 4 official Sprint criteria.${underTargetNote}`,
     feedbackBn: `আপনার ${wordCount} শব্দের লেখাটি কেমব্রিজের ৪টি মানদণ্ডে (TA/TR, CC, LR, GRA) মূল্যায়ন করা হয়েছে।`,
     annotations,
     lexicalUpgrades: [

@@ -91,34 +91,36 @@ export const ModelAnswersPage: React.FC<ModelAnswersPageProps> = ({ onBack, onSh
       {/* Top Bar with Back Button */}
       <div className="flex items-center justify-between gap-3">
         <button
+          type="button"
           onClick={onBack}
-          className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
+          className="min-h-[42px] px-3.5 py-2 rounded-xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45] text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Learn</span>
         </button>
 
         <div className="text-right">
-          <div className="text-xs font-bold text-slate-900 font-mono">BAND 9 MODEL ANSWERS</div>
-          <div className="text-[10px] text-slate-400">Color-Coded Examiner Analysis</div>
+          <div className="text-xs font-bold text-[#0E1F1E] dark:text-[#EEF3F1] font-mono">BAND 9 MODEL ANSWERS</div>
+          <div className="text-[11px] text-[#566664] dark:text-[#96B0AC]">Color-Coded Examiner Analysis</div>
         </div>
       </div>
 
       {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-indigo-950 text-white p-6 sm:p-7 rounded-3xl shadow-md border border-amber-800/40">
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider border border-amber-400/30">
-            OFFICIAL CAMBRIDGE BENCHMARKS
+      <div className="bg-[#0F4C45] dark:bg-[#0D3833] text-white p-6 sm:p-7 rounded-2xl border border-[#1F8A70]/35 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 mb-2 text-xs font-mono">
+          <span className="text-[#F4A62A] font-bold uppercase tracking-wider">
+            BAND 9 WRITING SAMPLES
           </span>
-          <span className="text-[11px] text-amber-200">
-            Task 1 & Task 2 Annotated Samples
+          <span className="text-white/50">·</span>
+          <span className="text-white/80">
+            Task 1 &amp; Task 2 Annotated Responses
           </span>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-black text-white">
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-white tracking-tight">
           IELTS Band 9.0 Model Answer Bank
         </h1>
-        <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
-          Study real Band 9 responses with color-coded annotations for Lexical Resource, Grammar, Cohesion, and Task Response, paired with authentic British audio read-aloud.
+        <p className="text-xs sm:text-sm text-white/80 mt-1.5 max-w-2xl leading-relaxed">
+          Study high-scoring sample essays with color-coded annotations for Lexical Resource, Grammar, Cohesion, and Task Response, paired with British voice read-aloud.
         </p>
       </div>
 
@@ -131,14 +133,15 @@ export const ModelAnswersPage: React.FC<ModelAnswersPageProps> = ({ onBack, onSh
             return (
               <button
                 key={type}
+                type="button"
                 onClick={() => {
                   setSelectedTaskType(type);
                   soundManager.playBeep(600, 0.04);
                 }}
-                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-bold transition border ${
+                className={`flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-semibold transition border cursor-pointer ${
                   isActive
-                    ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+                    : 'bg-white dark:bg-[#11201E] text-[#566664] dark:text-[#96B0AC] border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45]'
                 }`}
               >
                 {type}

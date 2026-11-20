@@ -71,7 +71,7 @@ export const AdvancedLabsDock: React.FC<AdvancedLabsDockProps> = ({
       id: 'vocabflashcards',
       name: 'Spaced Repetition Flashcards',
       category: 'Lexical Resource',
-      description: '500+ high-frequency Cambridge Academic collocations with audio',
+      description: '500+ high-frequency Practice Academic collocations with audio',
       icon: Layers,
       route: 'vocabflashcards',
       variant: 'amber'
@@ -95,7 +95,7 @@ export const AdvancedLabsDock: React.FC<AdvancedLabsDockProps> = ({
             Specialized Practice Labs
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Interactive cognitive trainers designed specifically for tricky Cambridge question types
+            Interactive cognitive trainers designed specifically for tricky Practice question types
           </p>
         </div>
         <button

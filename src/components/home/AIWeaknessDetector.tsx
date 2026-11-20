@@ -1,32 +1,27 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ShieldAlert,
-  AlertTriangle,
   ArrowRight,
-  Sparkles,
   ChevronDown,
-  ChevronUp,
-  CheckCircle2,
-  Zap,
-  Target
+  ChevronUp
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
+import { DiagnosticSkill } from '../../services/diagnosticResultStore';
 
 interface AIWeaknessDetectorProps {
   onNavigate: (module: string) => void;
   onShowToast?: (msg: string) => void;
-  unmasteredMistakeCount?: number;
+  weakestSkill?: DiagnosticSkill | null;
 }
 
 interface TrapItem {
   id: string;
-  module: string;
+  skill: DiagnosticSkill;
+  route: string;
   moduleName: string;
   trapTitle: string;
   description: string;
-  frequency: string;
   bandImpact: string;
-  severity: 'High' | 'Medium';
   remedy: string;
   drillTitle: string;
 }
@@ -34,182 +29,161 @@ interface TrapItem {
 const IELTS_TRAPS: TrapItem[] = [
   {
     id: 'reading_tfng_trap',
-    module: 'reading',
-    moduleName: 'Academic Reading',
-    trapTitle: 'TFNG vs False Inference Trap',
-    description: 'You tend to mark logical inferences as "False" when the text merely omits confirmation.',
-    frequency: '3 slip-ups recorded',
-    bandImpact: '-0.5 Reading Band',
-    severity: 'High',
-    remedy: 'Cambridge Rule: "False" means the text directly refutes the claim. If the author never took a stand, it is strictly "Not Given".',
-    drillTitle: 'Launch 3-Min TFNG Micro-Drill'
+    skill: 'reading',
+    route: '/practice/reading',
+    moduleName: 'Reading',
+    trapTitle: 'FALSE vs. NOT GIVEN inference trap',
+    description:
+      'Marking a statement as FALSE simply because it sounds unlikely, when the passage never actually contradicts it.',
+    bandImpact: 'Common Band 6.5 → 7.5 blocker',
+    remedy:
+      'FALSE requires a direct contradiction in the passage. If the author never confirms or refutes the claim, choose NOT GIVEN.',
+    drillTitle: 'Practise Reading TFNG'
   },
   {
     id: 'listening_distractor_trap',
-    module: 'listening',
-    moduleName: 'Listening Section 3',
-    trapTitle: 'Speaker Reversal & Consensus Trap',
-    description: 'Prematurely selecting option A before speaker 2 gently corrects or amends the decision.',
-    frequency: '2 slip-ups recorded',
-    bandImpact: '-0.5 Listening Band',
-    severity: 'High',
-    remedy: 'Listen past the initial mention for discourse pivots like "Actually, looking back at the budget..." before noting the answer.',
-    drillTitle: 'Launch Reversal Filter Drill'
+    skill: 'listening',
+    route: '/practice/listening',
+    moduleName: 'Listening',
+    trapTitle: 'Speaker self-correction & reversal trap',
+    description:
+      'Writing down the first date, price, or room number mentioned before the speaker revises it moments later.',
+    bandImpact: 'Frequent Section 1–3 pitfall',
+    remedy:
+      'Stay alert past the initial answer for pivot signals like "actually", "originally we planned", or "hang on, that changed".',
+    drillTitle: 'Practise Listening Lab'
   },
   {
     id: 'writing_linker_trap',
-    module: 'writing',
+    skill: 'writing',
+    route: '/practice/writing',
     moduleName: 'Writing Task 2',
-    trapTitle: 'Over-reliance on Mechanical Linkers',
-    description: 'Beginning consecutive sentences with "Moreover", "Furthermore", and "In addition".',
-    frequency: 'Detected in latest draft',
-    bandImpact: 'Caps CC at Band 6.5',
-    severity: 'Medium',
-    remedy: 'Replace mechanical sentence-head linkers with referential pronouns, thematic fronting, and semicolon coordination.',
-    drillTitle: 'Practice Natural Cohesion'
+    trapTitle: 'Mechanical sentence-start linkers',
+    description:
+      'Stacking "Firstly", "Moreover", and "Furthermore" at the start of every sentence instead of linking ideas organically.',
+    bandImpact: 'Caps Coherence & Cohesion near 6.5',
+    remedy:
+      'Use referencing ("this policy", "such measures") and cause-effect clauses ("thereby reducing...") for Band 7.5+ cohesion.',
+    drillTitle: 'Open Writing Lab'
   },
   {
     id: 'speaking_pacing_trap',
-    module: 'speaking',
+    skill: 'speaking',
+    route: '/practice/speaking',
     moduleName: 'Speaking Part 2',
-    trapTitle: 'Part 2 Pacing Cliff (Early Exhaustion)',
-    description: 'Speaking at high speed and running dry of content around the 1m15s mark.',
-    frequency: 'Pacing alert',
-    bandImpact: '-0.5 Fluency Band',
-    severity: 'Medium',
-    remedy: 'Structure your Cue Card response into 3 chapters: Background past context, present core memory, and future personal reflection.',
-    drillTitle: 'Practice 2-Min Pacing Run'
+    trapTitle: 'Running out of ideas before 2 minutes',
+    description:
+      'Rushing through cue-card bullet points in 60 seconds and repeating the same vocabulary to fill time.',
+    bandImpact: 'Limits Fluency & Lexical Range',
+    remedy:
+      'Divide your talk into 3 beats: past background context, the core event with concrete detail, and what it taught you.',
+    drillTitle: 'Open Speaking Lab'
   }
 ];
 
 export const AIWeaknessDetector: React.FC<AIWeaknessDetectorProps> = ({
   onNavigate,
   onShowToast,
-  unmasteredMistakeCount = 0
+  weakestSkill = null
 }) => {
-  const [expandedTrapId, setExpandedTrapId] = useState<string | null>('reading_tfng_trap');
+  const orderedTraps = useMemo(() => {
+    if (!weakestSkill) return IELTS_TRAPS;
+    return [...IELTS_TRAPS].sort((a, b) => {
+      if (a.skill === weakestSkill && b.skill !== weakestSkill) return -1;
+      if (b.skill === weakestSkill && a.skill !== weakestSkill) return 1;
+      return 0;
+    });
+  }, [weakestSkill]);
+
+  const [expandedTrapId, setExpandedTrapId] = useState<string | null>(
+    orderedTraps[0]?.id ?? null
+  );
 
   const handleLaunchDrill = (trap: TrapItem) => {
     soundManager.playBeep(640, 0.04);
-    if (onShowToast) {
-      onShowToast(`Launching targeted micro-drill: ${trap.trapTitle}...`);
-    }
-    onNavigate(trap.module);
+    onShowToast?.(`Opening ${trap.moduleName}: ${trap.trapTitle}`);
+    onNavigate(trap.route);
   };
 
   return (
-    <div className="rounded-2xl bg-white dark:bg-[#0B1224] border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-2xs space-y-3.5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+    <section className="rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 p-5 sm:p-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#EEF3F1] dark:border-[#1F8A70]/25">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#EEF3F1] dark:bg-[#0B1514] text-[#0F4C45] dark:text-[#1F8A70] flex items-center justify-center shrink-0">
             <ShieldAlert className="w-4 h-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                AI Weakness Radar & Trap Alerts
-              </h2>
-              <span className="text-[10px] font-mono font-bold uppercase text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-500/20 px-1.5 py-0.5 rounded">
-                Trap Detection
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Recurring examination traps identified across your practice mock history
+            <h2 className="font-display text-base sm:text-lg font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
+              High-Frequency IELTS Exam Traps
+            </h2>
+            <p className="text-xs text-[#566664] dark:text-slate-400">
+              {weakestSkill
+                ? `Sorted with your diagnostic priority (${weakestSkill}) first — expand any trap for the exact fix.`
+                : 'Common Band 6.5 → 8.0 score blockers across all four skills, with direct practice drills.'}
             </p>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playBeep(540, 0.03);
-            window.dispatchEvent(new CustomEvent('open_vault_modal'));
-          }}
-          className="text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 self-start sm:self-auto cursor-pointer"
-        >
-          <span>Open Mistake Vault ({unmasteredMistakeCount})</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
       </div>
 
-      {/* Trap List */}
-      <div className="space-y-2">
-        {IELTS_TRAPS.map((trap) => {
+      <div className="divide-y divide-[#EEF3F1] dark:divide-[#1F8A70]/20">
+        {orderedTraps.map((trap) => {
           const isExpanded = expandedTrapId === trap.id;
+          const isPriority = weakestSkill === trap.skill;
+
           return (
-            <div
-              key={trap.id}
-              className={`rounded-xl border transition overflow-hidden ${
-                isExpanded
-                  ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/10'
-                  : 'border-slate-200/80 dark:border-slate-800/80 bg-slate-50/40 dark:bg-slate-900/20 hover:border-slate-300 dark:hover:border-slate-700'
-              }`}
-            >
-              <div
+            <div key={trap.id} className="py-3 first:pt-1 last:pb-1">
+              <button
+                type="button"
+                aria-expanded={isExpanded}
                 onClick={() => {
                   soundManager.playBeep(480, 0.02);
                   setExpandedTrapId(isExpanded ? null : trap.id);
                 }}
-                className="p-3 flex items-center justify-between gap-3 cursor-pointer select-none"
+                className="w-full text-left flex items-center justify-between gap-3 cursor-pointer py-1"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      trap.severity === 'High' ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {trap.trapTitle}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-400 shrink-0">
-                        ({trap.moduleName})
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                      {trap.frequency} · <span className="font-mono text-rose-500 font-semibold">{trap.bandImpact}</span>
-                    </div>
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2 text-xs text-[#566664] dark:text-slate-400 flex-wrap">
+                    <span className="font-semibold text-[#0F4C45] dark:text-[#1F8A70]">
+                      {trap.moduleName}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{trap.bandImpact}</span>
+                    {isPriority && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-semibold text-[#9B6314] dark:text-[#F4A62A]">
+                          Matches your weakest skill
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-sm font-semibold text-[#0E1F1E] dark:text-[#EEF3F1]">
+                    {trap.trapTitle}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded uppercase ${
-                      trap.severity === 'High'
-                        ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
-                        : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                    }`}
-                  >
-                    {trap.severity} Priority
-                  </span>
-                  {isExpanded ? (
-                    <ChevronUp className="w-4 h-4 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                  )}
-                </div>
-              </div>
+                {isExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-[#566664] shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-[#566664] shrink-0" />
+                )}
+              </button>
 
               {isExpanded && (
-                <div className="px-3 pb-3 pt-1 border-t border-rose-200/50 dark:border-rose-900/40 space-y-2 text-xs">
-                  <p className="text-slate-700 dark:text-slate-300">
+                <div className="mt-2.5 pt-2.5 border-t border-[#EEF3F1] dark:border-[#1F8A70]/20 space-y-2.5 text-xs">
+                  <p className="text-[#566664] dark:text-slate-300 leading-relaxed">
                     {trap.description}
                   </p>
-
-                  <div className="p-2.5 rounded-lg bg-white dark:bg-[#0B1224] border border-rose-200/60 dark:border-rose-900/50 text-[11px] text-slate-800 dark:text-slate-200">
-                    <span className="font-bold text-rose-600 dark:text-rose-400">Examiner Advice: </span>
+                  <p className="text-[#0E1F1E] dark:text-[#EEF3F1] leading-relaxed">
+                    <strong className="text-[#0F4C45] dark:text-[#1F8A70]">Examiner fix: </strong>
                     {trap.remedy}
-                  </div>
-
-                  <div className="flex justify-end pt-1">
+                  </p>
+                  <div className="pt-1">
                     <button
                       type="button"
                       onClick={() => handleLaunchDrill(trap)}
-                      className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      className="min-h-[38px] px-3.5 py-2 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs font-semibold transition inline-flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Zap className="w-3.5 h-3.5" />
                       <span>{trap.drillTitle}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
@@ -220,6 +194,6 @@ export const AIWeaknessDetector: React.FC<AIWeaknessDetectorProps> = ({
           );
         })}
       </div>
-    </div>
+    </section>
   );
 };

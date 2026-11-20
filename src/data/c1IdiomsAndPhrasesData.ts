@@ -1,7 +1,7 @@
 export interface C1IdiomPhrase {
   id: number;
   phrase: string;
-  cefrLevel?: 'C1' | 'C2';
+  cefrLevel?: 'B2' | 'C1' | 'C2';
   type:
     | 'Phrase'
     | 'Idiom'
@@ -14,6 +14,7 @@ export interface C1IdiomPhrase {
     | 'Adjective'
     | 'C2 Vocabulary'
     | 'C1 Vocabulary'
+    | 'B2 Vocabulary'
     | 'Collocation';
   banglaMeaning: string;
   exampleSentence: string;
@@ -24,8 +25,8 @@ export interface C1IdiomPhrase {
 export type C1IdiomEntry = C1IdiomPhrase;
 
 export const C1_GUIDE_METADATA = {
-  title: 'C1 & C2 Idioms, Phrases & Academic Vocabulary — Official Candidate Guide',
-  purpose: '240 C1 & C2-level idioms, advanced phrases, and Band 8.5–9.0 academic vocabulary with natural Bangla meanings and Cambridge-calibrated example sentences.',
+  title: 'C1 & C2 Idioms, Phrases & Academic Vocabulary — Candidate Guide',
+  purpose: '240 C1 & C2-level idioms, advanced phrases, and Band 8.5–9.0 academic vocabulary with natural Bangla meanings and Practice-calibrated example sentences.',
   columns: 'No. = serial number; Idiom / Vocabulary = target expression; Level = C1 or C2; বাংলা অর্থ = intended sense; Example Sentence = natural usage.',
   studyTip: 'Learn the meaning and the example together. Use C2 formal vocabulary and discourse phrases in Writing Task 2, and natural idiomatic expressions in Speaking Parts 2 & 3.',
   levelNote: 'Includes both C1 Advanced and C2 Mastery expressions for IELTS Band 7.5 to 9.0.'
@@ -2520,7 +2521,7 @@ export const C1_IDIOMS_AND_PHRASES: C1IdiomPhrase[] = [
     cefrLevel: 'C2',
     type: 'C2 Vocabulary',
     banglaMeaning: 'কোনো কিছুর সবচেয়ে নিখুঁত, আদর্শ বা ধ্রুপদী উদাহরণ',
-    exampleSentence: 'Cambridge remains the quintessential collegiate town, blending medieval architecture with frontier scientific laboratories.',
+    exampleSentence: 'Practice remains the quintessential collegiate town, blending medieval architecture with frontier scientific laboratories.',
     ieltsSuitability: 'Speaking & Writing',
     category: 'C2 Band-9 Mastery'
   },

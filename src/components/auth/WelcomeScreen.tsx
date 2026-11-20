@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles, Award } from 'lucide-react';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { BandSprintLogo } from '../common/BandSprintLogo';
 
 interface WelcomeScreenProps {
   onCreateAccount: () => void;
@@ -27,7 +27,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         transition={{ duration: 0.4 }}
         className="relative z-10 flex items-center justify-center pt-4"
       >
-        <IELTSSprintLogo variant="full" size="md" className="brightness-125" showBadge={true} />
+        <BandSprintLogo variant="full" size="md" className="brightness-125" showBadge={true} />
       </motion.div>
 
       {/* Hero Content */}
@@ -41,7 +41,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-xl space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-400/25 text-blue-300 text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            <span>Cambridge Rubric-Aligned Practice</span>
+            <span>Practice Rubric-Aligned Practice</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-snug">

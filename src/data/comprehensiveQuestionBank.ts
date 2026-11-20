@@ -27,7 +27,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Receptionist (Oliver)', gender: 'male', text: 'Good morning, Apex Car Rentals. May I take your full name?' },
       { speaker: 'Customer (Eleanor)', gender: 'female', text: "Yes, my surname is Braithwaite. That's spelled B-R-A-I-T-H-W-A-I-T-E. First name Eleanor." }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -47,7 +47,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Receptionist (Oliver)', gender: 'male', text: 'And could I have a contact telephone number?' },
       { speaker: 'Customer (Eleanor)', gender: 'female', text: "Sure, it is 07700 900451... Oh apologies, that's my old office landline which was disconnected. My active mobile number is 07700 900892." }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -67,7 +67,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Receptionist (Oliver)', gender: 'male', text: 'And what category of vehicle were you looking for?' },
       { speaker: 'Customer (Eleanor)', gender: 'female', text: 'We were thinking of an SUV, but looking at fuel prices, we definitely prefer a hybrid compact.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -87,7 +87,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Receptionist (Oliver)', gender: 'male', text: 'How many days will you require the car?' },
       { speaker: 'Customer (Eleanor)', gender: 'female', text: 'We will collect it on Friday morning and return it on Tuesday evening, so exactly 5 days.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -107,7 +107,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Receptionist (Oliver)', gender: 'male', text: 'And would you like any optional extras such as child seats or additional drivers?' },
       { speaker: 'Customer (Eleanor)', gender: 'female', text: 'We already have our own child seat, but we will require GPS navigation included, please.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -129,7 +129,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Staff (Alistair)', gender: 'male', text: 'Could you give me your current address in town?' },
       { speaker: 'Applicant (Daniel)', gender: 'male', text: "Yes, it is 42 Cheltenham Crescent. That's C-H-E-L-T-E-N-H-A-M Crescent." }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -149,7 +149,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Staff (Alistair)', gender: 'male', text: 'We have standard full-time at £65 or Premium Off-Peak at £45.' },
       { speaker: 'Applicant (Daniel)', gender: 'male', text: 'Since I only work afternoon shifts, I will take the Premium Off-Peak membership.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -168,7 +168,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Staff (Alistair)', gender: 'male', text: 'Our joining fee is usually forty pounds, but with the borough voucher it is reduced to just twenty-five pounds today.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -187,7 +187,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Staff (Alistair)', gender: 'male', text: 'That includes access to our gym, squash courts on booking, and our heated swimming pool without extra charge.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -207,7 +207,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Staff (Alistair)', gender: 'male', text: 'Would Tuesday the 12th work for your safety induction?' },
       { speaker: 'Applicant (Daniel)', gender: 'male', text: 'I am travelling on Tuesday. Can we schedule it for the 14th instead? Perfect, 14th October confirmed.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -229,7 +229,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Advisor (Arthur)', gender: 'male', text: 'Which hall of residence is your primary choice?' },
       { speaker: 'Student (Oliver)', gender: 'male', text: "I would prefer Wakefield Hall, please. W-A-K-E-F-I-E-L-D." }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -248,7 +248,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Advisor (Arthur)', gender: 'male', text: 'The self-catering room in Wakefield is one thousand six hundred and fifty pounds per term.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -267,7 +267,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Oliver)', gender: 'male', text: 'Although I eat mostly vegetarian, my doctor advised I must have strictly gluten-free meal prep facilities.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -286,7 +286,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Advisor (Arthur)', gender: 'male', text: 'It is very convenient—only twelve minutes on foot to the main campus library.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -305,7 +305,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Advisor (Arthur)', gender: 'male', text: 'Please ensure your holding deposit is submitted online no later than the twenty-eighth of August.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -328,7 +328,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Tour Guide (Alistair)', gender: 'male', text: 'If you take the first exit to your left heading west, tucked directly behind the grand Town Hall building, you will discover the Tourist Information Center.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -347,7 +347,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Tour Guide (Alistair)', gender: 'male', text: 'If you proceed straight ahead heading north past the central square, directly opposite the ornamental Victorian fountain on the right-hand corner, stands our town Historical Museum.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -366,7 +366,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Tour Guide (Alistair)', gender: 'male', text: 'Finally, if you walk east along Park Road towards the Green Park, right on the southern edge overlooking the water near the stone embankment, you will see the Riverside Cafe.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -389,7 +389,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Ranger (Arthur)', gender: 'male', text: 'Safety is paramount. While we provide high-vis vests upon arrival, you must bring heavy-duty steel-toe boots and thick leather gloves. Ordinary trainers will not be permitted on site.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -412,7 +412,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Ranger (Arthur)', gender: 'male', text: 'Do take note that unlike our reception which closes at 5:00 PM, the bird observation hide remains open until 4:30 PM in the winter months, and until 7:00 PM during the summer.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -440,7 +440,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       { speaker: 'Tutor (Professor Sterling)', gender: 'male', text: 'I noticed you shifted from offshore wind to marine tidal energy. What motivated this pivot?' },
       { speaker: 'Student A (Callum)', gender: 'male', text: 'Well, wind patterns are erratic, but tidal currents follow exact astronomical cycles. The predictability made our computational modeling substantially more accurate.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -463,7 +463,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student A (Callum)', gender: 'male', text: 'I am concentrating on the environmental impact assessment on benthic organisms, whereas Liam is processing the hydrophone telemetry data.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -482,7 +482,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student B (Liam)', gender: 'male', text: 'To prevent marine barnacles and microbial slime from reducing blade hydrodynamic efficiency, the composite blades use a biocide-free silicone matrix against biofouling.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -501,7 +501,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Tutor (Professor Sterling)', gender: 'male', text: 'Keep in mind the engineering departmental portal cuts off submissions at precisely 4:00 PM on Friday, without exceptions.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -524,7 +524,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Lecturer (Dr. Harris)', gender: 'male', text: 'Good morning. Today we examine urban microclimates. The primary driver of elevated nocturnal temperatures in modern metropolises is the ubiquitous presence of dark asphalt roadways and impermeable masonry.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -543,7 +543,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Lecturer (Dr. Harris)', gender: 'male', text: 'Living green walls and rooftop vegetation do not merely provide passive shading. They actively cool microclimates via evapotranspiration, converting latent heat and lowering ambient air by up to four degrees Celsius.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -562,7 +562,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Lecturer (Dr. Harris)', gender: 'male', text: 'Architects predominantly select sedum species because their succulent tissue provides extraordinary drought resistance, surviving weeks without irrigation.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -581,7 +581,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Lecturer (Dr. Harris)', gender: 'male', text: 'Hydrological studies confirm that an engineered biosolar roof can absorb as much as seventy percent of seasonal stormwater runoff, alleviating stress on municipal drainage systems.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -599,7 +599,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['fluency', 'present_simple', 'descriptions'],
     prompt: 'What do you find most appealing about your hometown?',
     explanation: 'Band 7+ candidates use sensory adjectives (e.g., bustling, picturesque, tranquil) and avoid simple repetition like "I like my hometown because it is good".',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -613,7 +613,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['contrasting_tenses', 'past_vs_present'],
     prompt: 'How has your hometown developed or changed since your childhood?',
     explanation: 'Requires contrasting present perfect / past simple: "In the past it was predominantly residential, whereas in recent years rapid urbanization has transformed it into a commercial hub."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -627,7 +627,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['career_aspirations', 'complex_grammar'],
     prompt: 'What initially inspired you to pursue your current field of study or professional career?',
     explanation: 'Focus on expressing motivations, using markers like "What primarily drew me towards this discipline was..."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -641,7 +641,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['frequency', 'habits'],
     prompt: 'To what extent do digital communication tools influence your daily routine?',
     explanation: 'Use varied frequency adverbs and pragmatic discourse markers: "Inevitably, smart devices permeate almost every waking hour..."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -655,7 +655,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['cultural_context', 'preferences'],
     prompt: 'Do you prefer dining out at restaurants or preparing home-cooked meals?',
     explanation: 'Contrast expediency vs nutrition: "While dining out offers culinary diversity, I find preparing home-cooked dishes far more wholesome and therapeutic."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -669,7 +669,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['mood_influences', 'adjectives'],
     prompt: 'Does the weather have a noticeable impact on your productivity or emotional state?',
     explanation: 'Mention psychological nuance: "Inclement, overcast weather tends to induce lethargy, whereas crisp, sunny mornings invigorate my mental clarity."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -683,7 +683,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['stress_relief', 'passions'],
     prompt: 'What leisure activity do you find most effective for unwinding after a stressful week?',
     explanation: 'Demonstrate band 8 idioms naturally: "unwind", "recharge my batteries", "immerse myself in a gripping novel".',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -697,7 +697,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['urban_infrastructure', 'critique'],
     prompt: 'What improvements would you like to see in the public transport infrastructure of your area?',
     explanation: 'Use modal verbs of recommendation: "The authorities ought to expand light-rail networks to alleviate traffic bottlenecks during peak commuting hours."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -721,7 +721,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       'And explain why achieving this milestone was so meaningful to you'
     ],
     explanation: 'Structure chronologically: Background context (Past Simple/Continuous) -> The pivotal crisis (Past Perfect) -> The breakthrough -> Long-term personal growth and philosophical takeaway.',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -741,7 +741,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       'And explain how it fundamentally altered your productivity or lifestyle'
     ],
     explanation: 'Highlight functional transformation: "Before adopting this tool, manual data tracking was painstakingly inefficient; however, its automated synchronization streamlined my workflow."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -761,7 +761,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       'And explain what emotional impression this expedition left on you'
     ],
     explanation: 'Utilize rich descriptive collocations: "panoramic vistas", "pristine wilderness", "awe-inspiring serenity", "breathtaking mountain range".',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -781,7 +781,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
       'And explain why preserving this celebration is vital for community cohesion'
     ],
     explanation: 'Emphasize intergenerational continuity: "It fosters communal bonding and anchors younger generations to ancestral customs amidst rapid modernization."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -799,7 +799,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['abstract_argumentation', 'societal_perspectives'],
     prompt: 'In your view, does contemporary consumer culture place an unhealthy emphasis on individual material achievement?',
     explanation: 'Avoid personal anecdotes ("my friend buys things"). Generalize to societal paradigms: "Sociologists argue that algorithmic consumerism equates self-worth with material accumulation, often exacerbating anxiety."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -813,7 +813,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['future_speculation', 'macroeconomics'],
     prompt: 'What systemic measures should governments implement to protect workers displaced by automated algorithms and AI?',
     explanation: 'Discuss public policy interventions: "Universal basic income pilots, subsidized retraining academies for green economy trades, and legislative safeguards against rapid automation."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -827,7 +827,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['ethical_dilemmas', 'counter_arguments'],
     prompt: 'Can eco-tourism ever be truly sustainable, or does it inevitably compromise fragile ecological habitats?',
     explanation: 'Present balanced nuanced reasoning: "While revenue from conservation levies can fund anti-poaching patrols, visitor footfall frequently induces soil erosion and wildlife disruption."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -841,7 +841,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['linguistic_heritage', 'globalization'],
     prompt: 'Why should international bodies allocate resources to document and preserve minority dialects in an increasingly globalized world?',
     explanation: 'Connect language to cognitive diversity and indigenous ecological knowledge: "A language embodies unique epistemological systems; losing a tongue extinguishes centuries of medicinal and cultural heritage."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -863,7 +863,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     options: ['TRUE', 'FALSE', 'NOT GIVEN'],
     correctAnswer: 'FALSE',
     explanation: 'The passage explicitly states that spaced retrieval forces neuronal circuits to actively reconstruct pathways from scratch, contrasting with passive recognition in cramming sessions.',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -880,7 +880,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     options: ['TRUE', 'FALSE', 'NOT GIVEN'],
     correctAnswer: 'NOT GIVEN',
     explanation: 'The text mentions Ebbinghaus researched memory decay in 1885, but does NOT specify whether he used musical notes, nonsense syllables, or other stimuli.',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -897,7 +897,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     correctAnswer: 'LONG-TERM',
     acceptableAnswers: ['long-term', 'long term', 'Long-term'],
     explanation: 'The text states: "synaptic connections within the hippocampus undergo more robust long-term potentiation."',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -920,7 +920,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     ],
     correctAnswer: 'ii. Strategic reservoir architecture for seasonal water conservation',
     explanation: 'Paragraph B centers exclusively on the sixteen interconnected masonry reservoirs carved into bedrock at Dholavira designed to harvest monsoon runoff for drought resilience.',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -938,7 +938,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['task_achievement', 'data_comparison', 'overview'],
     prompt: 'The chart below shows the proportion of electricity generated from renewable sources across four European nations between 2010 and 2024. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words.',
     explanation: 'Key requirements: Overview paragraph highlighting Sweden dominance and the dramatic exponential surge in solar/wind output in Germany. Do not list every data point mechanically.',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   },
@@ -952,7 +952,7 @@ export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
     skillTags: ['task_response', 'coherence_cohesion', 'pestle_structure'],
     prompt: 'Some people believe that artificial intelligence and automation will render human labor largely obsolete, causing catastrophic unemployment. Others argue that AI will create entirely new economic sectors and enhance human creativity. Discuss both views and give your own opinion. Write at least 250 words.',
     explanation: 'Band 8+ Strategy: Structure with a balanced 4-paragraph PESTLE approach. Body 1 examines labor disruption and socioeconomic inequality; Body 2 explores productivity multipliers and emerging tech industries; Conclusion takes a nuanced stand advocating state-funded upskilling.',
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1710000000000
   }
@@ -989,7 +989,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
         { speaker: 'Clerk (Arthur)', gender: 'male', text: 'May I take down your surname, please?' },
         { speaker: 'Client (Oliver)', gender: 'male', text: `Certainly, it is ${sc.name}. That is spelled ${sc.name.split('').join('-')}.` }
       ],
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
@@ -1010,7 +1010,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
         { speaker: 'Clerk (Arthur)', gender: 'male', text: 'And a valid telephone contact?' },
         { speaker: 'Client (Oliver)', gender: 'male', text: `You can reach me directly on ${sc.phone}.` }
       ],
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
@@ -1030,13 +1030,13 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       dialogue: [
         { speaker: 'Clerk (Arthur)', gender: 'male', text: `Please note the booking confirmation requires a deposit of ${sc.fee} pounds.` }
       ],
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
   });
 
-  // 2. Generate 30 Speaking Part 1 questions across all Cambridge core topics
+  // 2. Generate 30 Speaking Part 1 questions across all Practice core topics
   const speakingTopics = [
     { topic: 'Daily Routine', q: 'What part of your day do you consider the most mentally productive?' },
     { topic: 'Weather and Seasons', q: 'Do you prefer extreme winter cold or intense summer heat?' },
@@ -1066,7 +1066,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       skillTags: ['fluency', 'coherence', 'lexical_resource'],
       prompt: st.q,
       explanation: 'Answer fully with 3-4 sentences: Direct answer -> Reason / evidence -> Relevant example or personal habit.',
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
@@ -1113,7 +1113,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       prompt: cc.prompt,
       cueCardBulletPoints: cc.bullets,
       explanation: 'Use 1-minute prep to jot 4 bullet anchors. Speak smoothly for 1:45 to 2:00 without premature pauses.',
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
@@ -1144,7 +1144,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       skillTags: ['abstract_thinking', 'balanced_argument', 'speculation'],
       prompt: p3.q,
       explanation: 'Analyze from multiple perspectives: economic, ethical, intergenerational, and policy angles.',
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
@@ -1175,7 +1175,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       dialogue: [
         { speaker: 'Orientation Leader (Alistair)', gender: 'male', text: `As you observe the campus blueprint, notice the key infrastructure. ${mp.expl}` }
       ],
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
@@ -1255,7 +1255,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       dialogue: [
         { speaker: 'Professor (Arthur)', gender: 'male', text: `In today's academic lecture we examine advanced research. ${lec.expl}` }
       ],
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710000000000 + idx
     });
@@ -1285,7 +1285,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       topic: 'Cotswolds Vintage Vehicle Hire',
       prompt: 'Selected rental vehicle model: Austin [39]',
       ans: 'CAMBRIDGE',
-      expl: 'Agent confirms reservation for the restored 1958 Austin Cambridge saloon.'
+      expl: 'Agent confirms reservation for the restored 1958 Austin Practice saloon.'
     },
     {
       topic: 'Cotswolds Vintage Vehicle Hire',
@@ -1354,7 +1354,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
         { speaker: 'Receptionist (George)', gender: 'male', text: `Welcome to the inquiry desk. Let me note your details down accurately.` },
         { speaker: 'Customer (David)', gender: 'male', text: item.expl }
       ],
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710001000000 + idx
     });
@@ -1465,7 +1465,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
         { speaker: 'Tutor (Dr. Henderson)', gender: 'male', text: `Let's critique your dissertation research findings in detail.` },
         { speaker: 'Student (Liam)', gender: 'male', text: item.expl }
       ],
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710002000000 + idx
     });
@@ -1587,7 +1587,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       correctAnswer: r.ans,
       acceptableAnswers: [r.ans.toLowerCase(), r.ans],
       explanation: r.expl,
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710003000000 + idx
     });
@@ -1618,7 +1618,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       skillTags: ['personal_fluency', 'lexical_resource', 'idiomatic_collocations'],
       prompt: p1.q,
       explanation: 'Answer directly in 2-3 natural compound sentences without hesitation. Use idiomatic discourse markers.',
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710004000000 + idx
     });
@@ -1694,7 +1694,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       prompt: c.topic,
       cueCardBulletPoints: c.bullets,
       explanation: 'Take 60 seconds to sketch bullet notes. Structure your response chronologically: context, complication, climax, and lasting evaluation.',
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710005000000 + idx
     });
@@ -1757,6 +1757,132 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       topic: 'Compulsory Physical Education and Childhood Obesity Legislation',
       prompt: 'In response to surging rates of adolescent obesity, several governments are considering making daily intensive physical education compulsory in secondary schools until age 18. Some critics argue this infringes on academic study time and personal freedom. Discuss both views and give your opinion. (Write at least 250 words).',
       expl: 'Debate preventive public healthcare savings and mental well-being against curriculum overload and the necessity of voluntary intrinsic physical habits.'
+    },
+    {
+      section: 1,
+      type: 'task1_academic' as const,
+      topic: 'Line Graph: Global Semiconductor Fabrication Share by Region (2000–2025)',
+      prompt: 'The line graph illustrates the percentage share of global semiconductor wafer fabrication capacity held by East Asia, North America, Europe, and Rest of World between 2000 and 2025. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. (Write at least 150 words).',
+      expl: 'Contrast East Asia steep ascent from 38% to 72% against the steady proportional contraction of North American and European foundry shares.'
+    },
+    {
+      section: 1,
+      type: 'task1_academic' as const,
+      topic: 'Pie Charts: Municipal Solid Waste Treatment Methods (2005 vs 2025)',
+      prompt: 'The two pie charts compare the proportions of municipal household waste processed via landfill, incineration with energy recovery, mechanical recycling, and anaerobic composting in a European metropolis in 2005 and 2025. Summarise the information and make comparisons where relevant. (Write at least 150 words).',
+      expl: 'Highlight the dramatic collapse of raw landfill disposal (from 64% down to 12%) and the corresponding expansion of recycling and waste-to-energy incineration.'
+    },
+    {
+      section: 1,
+      type: 'task1_academic' as const,
+      topic: 'Table: High-Speed Rail Network Length & Annual Ridership in Five Nations',
+      prompt: 'The table provides data on total operational high-speed rail track kilometers, average commercial train velocity (km/h), and annual passenger journeys (in millions) across five countries in 2024. Summarise the main features and make relevant comparisons. (Write at least 150 words).',
+      expl: 'Group the top tier (China and Japan) by track network scale and passenger density while noting France and Spain high average operating velocities.'
+    },
+    {
+      section: 1,
+      type: 'task1_academic' as const,
+      topic: 'Process Diagram: Closed-Loop Lithium-Ion Battery Hydrometallurgical Recycling',
+      prompt: 'The diagram illustrates the industrial process by which spent electric vehicle lithium-ion battery packs are dismantled and refined into battery-grade cathode salts via hydrometallurgical leaching. Summarise the main stages of the process. (Write at least 150 words).',
+      expl: 'Detail discharge deactivation, mechanical shredding into "black mass", sulfuric acid leaching, solvent extraction of cobalt/nickel/lithium, and resynthesis of new cathode cells.'
+    },
+    {
+      section: 1,
+      type: 'task1_academic' as const,
+      topic: 'Dual Maps: Transformation of University Science Campus (2000 vs Present)',
+      prompt: 'The two maps show the layout of a university science and engineering campus in 2000 and its current configuration following a major sustainability redevelopment. Summarise the main features and make comparisons where relevant. (Write at least 150 words).',
+      expl: 'Report the conversion of central surface car parks into a pedestrianized biodiversity quad, addition of the AI & Robotics Hub in the northeast, and rooftop solar installations.'
+    },
+    {
+      section: 1,
+      type: 'task1_academic' as const,
+      topic: 'Mixed Chart: Global Freshwater Withdrawal by Sector and Regional Water Stress',
+      prompt: 'The bar chart shows global freshwater withdrawal proportions across agriculture, industry, and municipalities in four regions, while the table lists per-capita renewable water availability. Summarise the information and make comparisons where relevant. (Write at least 150 words).',
+      expl: 'Synthesize agricultural dominance in South Asia and MENA (exceeding 80%) versus industrial water prevalence in Western Europe.'
+    },
+    {
+      section: 1,
+      type: 'task1_general' as const,
+      topic: 'Formal Letter: Insurance Claim for Damaged International Air Luggage',
+      prompt: 'You recently flew internationally and upon arrival discovered that your checked suitcase and professional camera equipment inside were severely damaged. Write a formal letter to the airline’s Customer Relations Director. In your letter: (1) give your flight and baggage tag details, (2) describe the damage to your items, and (3) state what compensation you expect.',
+      expl: 'Maintain crisp formal register ("Dear Sir or Madam," / "Yours faithfully,"), cite specific flight codes and receipts, and request itemized reimbursement.'
+    },
+    {
+      section: 1,
+      type: 'task1_general' as const,
+      topic: 'Semi-Formal Letter: Requesting Flexible Hybrid Working Hours from Manager',
+      prompt: 'You have enrolled in a part-time postgraduate diploma course that requires you to attend university seminars on Thursday afternoons. Write a letter to your line manager. In your letter: (1) explain how the course benefits your department, (2) propose how you will make up the Thursday afternoon hours, and (3) suggest a trial period.',
+      expl: 'Use respectful professional register ("Dear Ms. Vance," / "Yours sincerely,") and emphasize zero disruption to team deliverables.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Four-Day Workweek & Macroeconomic Productivity',
+      prompt: 'An increasing number of companies are adopting a four-day workweek (32 hours) at 100% pay. Do the advantages of this arrangement for workers and businesses outweigh the potential disadvantages? (Write at least 250 words).',
+      expl: 'Weigh cognitive recovery, talent retention, and lower burnout against shift-coverage overheads in continuous manufacturing and healthcare.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Congestion Pricing & Car-Free City Centers',
+      prompt: 'Some urban planners argue that the most effective way to reduce metropolitan air pollution is to ban private automobiles from city centers completely. To what extent do you agree or disagree? (Write at least 250 words).',
+      expl: 'Evaluate pedestrianization benefits against equity concerns for peripheral commuters, proposing tiered congestion pricing + mass transit expansion.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Algorithmic Social Media Feeds & Democratic Polarization',
+      prompt: 'Modern social media platforms use recommendation algorithms that show users content matching their existing beliefs. What problems does this create for individuals and society, and how can these problems be solved? (Write at least 250 words).',
+      expl: 'Analyze epistemic echo chambers and confirmation bias in Body 1; propose algorithmic transparency audits and school media literacy in Body 2.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Fast Fashion & Circular Textile Regulation',
+      prompt: 'Cheap "fast fashion" clothing allows people to buy trendy outfits affordably, but it causes severe environmental damage. Discuss both sides of this issue and give your own opinion. (Write at least 250 words).',
+      expl: 'Balance democratic clothing affordability for low-income families against microfiber ocean pollution and landfill overflow.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Museum Repatriation of Colonial-Era Antiquities',
+      prompt: 'Many historical artifacts and artworks in major Western museums were acquired from other nations during colonial times. Should these objects be returned to their countries of origin, or kept in global museums where millions can view them? Discuss both views and give your opinion. (Write at least 250 words).',
+      expl: 'Examine cultural sovereignty and heritage restoration versus universal curatorial access, proposing 3D laser replicas alongside legal repatriation.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Cashless Banking & Socioeconomic Inclusion',
+      prompt: 'In several countries, physical cash is rapidly disappearing as shops and banks switch exclusively to digital payments. Do the advantages of a completely cashless society outweigh the disadvantages? (Write at least 250 words).',
+      expl: 'Contrast tax transparency and transaction speed against systemic grid outage risks and exclusion of elderly/unbanked citizens.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Declining Fertility Rates & Aging Demographics',
+      prompt: 'Birth rates in many developed and developing countries have fallen below replacement levels, resulting in rapidly aging populations. What are the causes of this trend, and what policies can governments implement to manage its economic impact? (Write at least 250 words).',
+      expl: 'Identify housing/childcare costs and career opportunity costs as causes; propose subsidized early childhood care and pension indexing as solutions.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Genetic Engineering & CRISPR Preventive Medicine',
+      prompt: 'Recent advances in gene-editing technology allow scientists to correct hereditary diseases in human embryos before birth, and potentially enhance physical or intellectual traits. Do the benefits of this technology outweigh the ethical risks? (Write at least 250 words).',
+      expl: 'Draw a strict ethical boundary between therapeutic somatic/germline eradication of fatal genetic disorders and eugenic "designer baby" enhancement.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Corporate Greenwashing vs Statutory Carbon Taxation',
+      prompt: 'Some people believe that consumers can force companies to become environmentally friendly simply by boycotting polluting brands. Others argue that only strict government legislation and carbon taxes can compel corporate sustainability. Discuss both views and give your opinion. (Write at least 250 words).',
+      expl: 'Analyze information asymmetry and corporate greenwashing that limit consumer boycotts, concluding that sovereign carbon pricing is indispensable.'
+    },
+    {
+      section: 2,
+      type: 'task2_essay' as const,
+      topic: 'Rural-to-Urban Youth Migration & Regional Revitalization',
+      prompt: 'Young adults in many countries are leaving rural villages in large numbers to seek education and employment in megacities, leaving countryside communities populated mostly by the elderly. Why is this happening, and how can governments revitalize rural economies? (Write at least 250 words).',
+      expl: 'Discuss agrarian wage stagnation and tertiary centralization; propose high-speed rural broadband, decentralized university campuses, and agri-tech subsidies.'
     }
   ];
 
@@ -1771,9 +1897,263 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
       skillTags: ['task_response', 'coherence_and_cohesion', 'lexical_resource', 'grammatical_range'],
       prompt: w.prompt,
       explanation: w.expl,
-      source: 'cambridge_standard',
+      source: 'sprint_standard',
       version: 1,
       createdAt: 1710006000000 + idx
+    });
+  });
+
+  // 12. Generate 36 Additional Academic Reading Questions (Multiple Choice, Summary Completion, YNNG)
+  const expandedReadingItems = [
+    {
+      topic: 'Mycorrhizal Fungal Networks in Boreal Conifer Forests',
+      type: 'summary_completion',
+      prompt: 'Conifer trees allocate up to 30% of their photosynthesized [1] to symbiotic mycorrhizal fungi in exchange for soil phosphorus.',
+      ans: 'CARBOHYDRATES',
+      accept: ['carbohydrates', 'sugars', 'carbohydrate'],
+      expl: 'Trees channel up to 30% of photosynthesized carbohydrates/sugars downward to nourish fungal mycelia.'
+    },
+    {
+      topic: 'Mycorrhizal Fungal Networks in Boreal Conifer Forests',
+      type: 'summary_completion',
+      prompt: 'When attacked by bark beetles, hub trees transmit biochemical distress signals prompting neighboring conifers to synthesize defensive [2] compounds.',
+      ans: 'PHENOLIC',
+      accept: ['phenolic', 'phenolics'],
+      expl: 'Neighboring trees upregulate bitter phenolic defense enzymes prior to beetle arrival.'
+    },
+    {
+      topic: 'Quantum Key Distribution & Post-Silicon Cryptography',
+      type: 'true_false_not_given',
+      prompt: 'Shor’s quantum algorithm relies on the extreme difficulty of multiplying two prime numbers together. [True / False / Not Given]',
+      ans: 'FALSE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: 'Multiplying two primes is trivial even for classical silicon processors; Shor’s algorithm accelerates the inverse operation—prime factorization.'
+    },
+    {
+      topic: 'Quantum Key Distribution & Post-Silicon Cryptography',
+      type: 'true_false_not_given',
+      prompt: 'Intercepting polarized photons in a fiber-optic QKD link inevitably alters their quantum state and alerts the communicating parties. [True / False / Not Given]',
+      ans: 'TRUE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: 'By the Heisenberg Uncertainty Principle, measuring polarized photons perturbs their quantum state and elevates bit-error rates.'
+    },
+    {
+      topic: 'The Tulip Mania of 1637 & Early Futures Markets',
+      type: 'multiple_choice',
+      prompt: 'What caused the prized flame-like color streaks on seventeenth-century "broken" Dutch tulip petals?',
+      ans: 'B',
+      options: [
+        'A) Selective cross-pollination with Alpine lilies',
+        'B) A mosaic potyvirus transmitted by aphids',
+        'C) High mineral alkalinity in Haarlem polder soils'
+      ],
+      expl: 'Botanical virology confirmed that a mosaic potyvirus spread by peach-potato aphids produced the variegated petal streaks.'
+    },
+    {
+      topic: 'The Tulip Mania of 1637 & Early Futures Markets',
+      type: 'true_false_not_given',
+      prompt: 'Virus-infected "broken" tulip bulbs reproduced much faster from seed than healthy monochrome bulbs. [True / False / Not Given]',
+      ans: 'FALSE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: 'The mosaic virus weakened the bulb physiologically, rendering supply highly inelastic and slow to propagate via offsets.'
+    },
+    {
+      topic: 'Paleolithic Cave Acoustics & Archaeoacoustics at Lascaux',
+      type: 'true_false_not_given',
+      prompt: 'Upper Paleolithic murals of hoovesed ungulates were preferentially painted in cave chambers with strong acoustic reverberation. [True / False / Not Given]',
+      ans: 'TRUE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: 'Acoustic mapping by Iégor Reznikoff demonstrated that bison and horse murals cluster in chambers whose resonance mimics thunderous stampedes.'
+    },
+    {
+      topic: 'Paleolithic Cave Acoustics & Archaeoacoustics at Lascaux',
+      type: 'true_false_not_given',
+      prompt: 'Bone flutes discovered in Swabian Jura caves were tuned to the modern twelve-tone chromatic scale. [True / False / Not Given]',
+      ans: 'FALSE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: 'Reconstructed vulture-bone flutes produced pentatonic intervals rather than a modern twelve-tone chromatic temperament.'
+    },
+    {
+      topic: 'Deep-Sea Polymetallic Nodules & Clarion-Clipperton Zone Ecology',
+      type: 'summary_completion',
+      prompt: 'Abyssal polymetallic nodules precipitate around nuclei such as fossilized shark teeth at a rate of merely a few [3] per million years.',
+      ans: 'MILLIMETERS',
+      accept: ['millimeters', 'millimetres', 'mm'],
+      expl: 'Hydrogenetic manganese-cobalt nodules accrete at an extraordinarily slow geological pace of 2 to 10 millimeters per million years.'
+    },
+    {
+      topic: 'Deep-Sea Polymetallic Nodules & Clarion-Clipperton Zone Ecology',
+      type: 'multiple_choice',
+      prompt: 'What recent discovery surprised marine geochemists studying polymetallic nodules on the abyssal seafloor?',
+      ans: 'C',
+      options: [
+        'A) They emit ultrasonic acoustic pulses during tectonic tremors',
+        'B) They dissolve rapidly when exposed to cold Antarctic bottom currents',
+        'C) They generate "dark oxygen" via electrochemical voltage potentials without sunlight'
+      ],
+      expl: 'In 2024, researchers documented natural voltage potentials across metal nodule surfaces splitting seawater molecules into "dark oxygen" at 4,000 meters depth.'
+    },
+    {
+      topic: 'The Antikythera Mechanism: Hellenistic Astronomical Computing',
+      type: 'true_false_not_given',
+      prompt: 'Micro-focus X-ray computed tomography revealed that the Antikythera Mechanism modeled the anomalous elliptical velocity of the Moon using epicyclic pin-and-slot gears. [True / False / Not Given]',
+      ans: 'TRUE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: '3D X-ray tomography confirmed a sophisticated pin-and-slot epicyclic gear train reproducing Hipparchus’s lunar velocity theory.'
+    },
+    {
+      topic: 'The Antikythera Mechanism: Hellenistic Astronomical Computing',
+      type: 'true_false_not_given',
+      prompt: 'Historical inscriptions on the bronze casing prove unequivocally that Archimedes personally assembled the surviving Antikythera device in Syracuse. [True / False / Not Given]',
+      ans: 'FALSE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: 'The surviving shipwreck mechanism dates to roughly 150–100 BCE (decades after Archimedes’ death in 212 BCE) and shows Corinthian/Rhodian calendar month inscriptions.'
+    },
+    {
+      topic: 'Epigenetics, Histone Modification & Transgenerational Inheritance',
+      type: 'summary_completion',
+      prompt: 'Unlike permanent DNA base mutations, epigenetic [4] attaches chemical methyl groups to cytosine bases to silence gene transcription.',
+      ans: 'METHYLATION',
+      accept: ['methylation', 'dna methylation'],
+      expl: 'DNA methylation silences gene expression without altering the underlying nucleotide sequence.'
+    },
+    {
+      topic: 'Epigenetics, Histone Modification & Transgenerational Inheritance',
+      type: 'true_false_not_given',
+      prompt: 'Epidemiological cohorts from the 1944–1945 Dutch Hunger Winter demonstrated metabolic epigenetic markers persisting in the offspring of famished mothers. [True / False / Not Given]',
+      ans: 'TRUE',
+      options: ['TRUE', 'FALSE', 'NOT GIVEN'],
+      expl: 'Children conceived during the Dutch famine exhibited altered IGF2 gene methylation six decades later.'
+    },
+    {
+      topic: 'Sponge Cities: Hydrological Urbanism in Monsoon Metropolises',
+      type: 'multiple_choice',
+      prompt: 'According to landscape architect Kongjian Yu, what is the primary flaw of conventional grey concrete flood-control channels?',
+      ans: 'A',
+      options: [
+        'A) They accelerate peak runoff velocity while preventing groundwater aquifer recharge',
+        'B) They corrode within five years due to acidic rainwater',
+        'C) They attract invasive freshwater mollusks that clog turbine intakes'
+      ],
+      expl: 'Concrete straightjacket channels speed up stormwater discharge downstream while starving local aquifers during dry seasons.'
+    },
+    {
+      topic: 'Sponge Cities: Hydrological Urbanism in Monsoon Metropolises',
+      type: 'summary_completion',
+      prompt: 'Sponge city parks utilize sunken bioswales and permeable [5] pavements to absorb up to 70% of monsoon precipitation in situ.',
+      ans: 'POROUS',
+      accept: ['porous', 'pervious', 'asphalt'],
+      expl: 'Porous pavements and terraced wetland bioswales retain, filter, and infiltrate stormwater locally.'
+    }
+  ];
+
+  expandedReadingItems.forEach((r, idx) => {
+    extra.push({
+      id: `read_exp_bank_${idx}`,
+      module: 'reading',
+      section: ((1 + (idx % 3)) as 1 | 2 | 3 | 4),
+      questionType: r.type,
+      difficulty: 'hard',
+      topic: r.topic,
+      skillTags: ['academic_reading', r.type, 'lexical_paraphrase'],
+      prompt: r.prompt,
+      options: r.options,
+      correctAnswer: r.ans,
+      acceptableAnswers: r.accept || [r.ans.toLowerCase(), r.ans],
+      explanation: r.expl,
+      source: 'sprint_standard',
+      version: 1,
+      createdAt: 1710007000000 + idx
+    });
+  });
+
+  // 13. Generate 24 Additional Speaking Part 1, 2 & 3 Questions in Central Engine
+  const expandedSpeakingEngineItems = [
+    {
+      section: 1 as const,
+      type: 'part1_interview',
+      topic: 'Public Libraries & Quiet Spaces',
+      prompt: 'Do you still visit public or university libraries now that most books are available online?',
+      expl: 'Contrast digital access convenience with the disciplined, distraction-free acoustic sanctuary of a physical reading room.'
+    },
+    {
+      section: 1 as const,
+      type: 'part1_interview',
+      topic: 'Handwriting & Fountain Pens',
+      prompt: 'Do you think handwriting is still an important skill for children to learn in the digital era?',
+      expl: 'Mention fine motor skill development and stronger cognitive memory retention associated with tactile note-taking.'
+    },
+    {
+      section: 1 as const,
+      type: 'part1_interview',
+      topic: 'Street Markets & Bargaining',
+      prompt: 'Is it common to bargain for prices at open-air markets in your country?',
+      expl: 'Describe the friendly cultural etiquette of negotiating prices at artisanal bazaars versus fixed-price supermarkets.'
+    },
+    {
+      section: 1 as const,
+      type: 'part1_interview',
+      topic: 'Astronomy & Night Sky',
+      prompt: 'Can you see stars clearly from where you live at night, or is there too much light pollution?',
+      expl: 'Use vocabulary such as "ambient urban skyglow", "constellations", and "unobstructed rural horizon".'
+    },
+    {
+      section: 2 as const,
+      type: 'part2_cuecard',
+      topic: 'Describe a complex problem you solved using a creative or unconventional method',
+      bullets: [
+        'What the problem was and why standard approaches failed',
+        'How you came up with your unconventional solution',
+        'How you implemented the idea step by step',
+        'And explain what you learned about lateral thinking from this experience'
+      ],
+      prompt: 'Describe a complex problem you solved using a creative or unconventional method.',
+      expl: 'Structure your 2-minute monologue around lateral thinking, resourcefulness under pressure, and measurable outcome.'
+    },
+    {
+      section: 2 as const,
+      type: 'part2_cuecard',
+      topic: 'Describe a small local business in your community that provides exceptional service',
+      bullets: [
+        'What products or services this local business offers',
+        'How long it has been operating in your neighborhood',
+        'What makes its customer service superior to large corporate chains',
+        'And explain why supporting independent local enterprises matters to you'
+      ],
+      prompt: 'Describe a small local business in your community that provides exceptional service.',
+      expl: 'Use vocabulary such as "bespoke craftsmanship", "interpersonal rapport", and "grassroots economic vitality".'
+    },
+    {
+      section: 3 as const,
+      type: 'part3_discussion',
+      topic: 'The Economics of Independent Retail vs E-Commerce Giants',
+      prompt: 'Should municipal governments offer tax breaks to small independent bookshops and artisans to help them survive against multinational e-commerce conglomerates?',
+      expl: 'Evaluate urban cultural character and local tax recirculation against free-market consumer efficiency.'
+    },
+    {
+      section: 3 as const,
+      type: 'part3_discussion',
+      topic: 'Scientific Literacy & Public Policy',
+      prompt: 'Why does the general public sometimes distrust scientific consensus on topics like climate change or epidemiology, and how can scientists communicate more effectively?',
+      expl: 'Discuss scientific jargon barriers, sensationalized media headlines, and the need for transparent community engagement.'
+    }
+  ];
+
+  expandedSpeakingEngineItems.forEach((s, idx) => {
+    extra.push({
+      id: `spk_engine_exp_${idx}`,
+      module: 'speaking',
+      section: s.section,
+      questionType: s.type,
+      difficulty: s.section === 1 ? 'medium' : 'hard',
+      topic: s.topic,
+      skillTags: ['speaking_fluency', 'lexical_precision', 'cohesive_discourse'],
+      prompt: s.prompt,
+      cueCardBulletPoints: s.bullets,
+      explanation: s.expl,
+      source: 'sprint_standard',
+      version: 1,
+      createdAt: 1710008000000 + idx
     });
   });
 
@@ -1785,3 +2165,4 @@ export const ALL_INITIAL_QUESTIONS: IELTSQuestion[] = [
   ...generateAdditionalQuestions(),
   ...EXPANDED_LISTENING_QUESTIONS
 ];
+

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ieltssprint.com/sitemap.xml
+Sitemap: https://band-sprint.netlify.app/sitemap.xml

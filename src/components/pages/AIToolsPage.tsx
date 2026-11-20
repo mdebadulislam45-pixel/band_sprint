@@ -39,18 +39,28 @@ import {
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
+import { getPreferredVoiceGender } from '../../config/voiceConfig';
 import { SpeechRecognitionService } from '../../services/SpeechRecognitionService';
 import { getMistakes, addMistake, saveMistakes } from '../../utils/vaultStorage';
 import { getCurrentUser } from '../../utils/userStorage';
 import { questionEngine } from '../../services/QuestionEngine';
 import { SHADOWING_ITEMS } from '../../data/shadowingSentences';
+import {
+  PART_1_SPEAKING_BANK,
+  PART_2_CUE_CARD_BANK,
+  PART_3_DISCUSSION_BANK
+} from '../../data/speakingComprehensiveBank';
 import { MASTER_1000_VOCAB_DATABASE } from '../../data/masterVocabDatabase';
 import { SpeakingVoiceOrb } from '../audio/SpeakingVoiceOrb';
-import { ChubbyMascotAvatar, MascotMood } from '../common/ChubbyMascotAvatar';
+import { MascotMood } from '../common/ChubbyMascotAvatar';
 import { Icon3D, Icon3DVariant } from '../common/Icon3D';
-import { Cambridge3DStudio } from '../three/Cambridge3DStudio';
 import { GeminiLiveAndTranscribeHub } from '../ai/GeminiLiveAndTranscribeHub';
+import { AIRewriter } from '../ai/AIRewriter';
 import { LiveAvatarSpeakingPartner } from '../speaking/LiveAvatarSpeakingPartner';
+
+const Sprint3DStudio = React.lazy(() =>
+  import('../three/Sprint3DStudio').then((m) => ({ default: m.Sprint3DStudio }))
+);
 
 
 interface AIToolsPageProps {
@@ -72,6 +82,7 @@ type StudioView =
   // English Improvement
   | 'vocab-builder'
   | 'grammar-improvement'
+  | 'rewriter'
   | 'speaking-fluency'
   | 'listening-shadowing'
   // Personalized Coaching
@@ -104,7 +115,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
     {
       badge: '🔥 MOTIVATION BOOST',
       title: 'Unstoppable Band 8+ Momentum!',
-      text: 'Every 15 minutes of focused Cambridge practice sharpens your ear for distractor traps and builds effortless lexical fluency. Keep going — your Target Band is within reach!'
+      text: 'Every 15 minutes of focused Practice practice sharpens your ear for distractor traps and builds effortless lexical fluency. Keep going — your Target Band is within reach!'
     },
     {
       badge: '🎁 C2 IDIOM SURPRISE',
@@ -128,6 +139,9 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
 
     setBarnabySpeaking(true);
     speakBritish(`${item.title}. ${item.text}`, {
+      speakerId: 'speaker_barnaby',
+      gender: 'male',
+      deliveryProfile: 'barnaby_companion',
       onStart: () => setBarnabyMood('speaking'),
       onEnd: () => {
         setBarnabySpeaking(false);
@@ -144,6 +158,11 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
 
   // ================= 1. AI SPEAKING EXAMINER STATE =================
   const [speakingPart, setSpeakingPart] = useState<1 | 2 | 3>(1);
+  const [speakingPromptIndex, setSpeakingPromptIndex] = useState<Record<1 | 2 | 3, number>>({
+    1: 0,
+    2: 0,
+    3: 0
+  });
   const [speakingStep, setSpeakingStep] = useState<'intro' | 'prompt' | 'recording' | 'evaluating' | 'result'>('intro');
   const [speakingTranscript, setSpeakingTranscript] = useState('');
   const [speakingTimer, setSpeakingTimer] = useState(60);
@@ -152,29 +171,58 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
   const [examinerSpeaking, setExaminerSpeaking] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionService | null>(null);
 
-  const speakingPrompts = {
-    1: {
-      question: "Do you prefer studying or working in the morning or in the evening? Why?",
-      followUp: "How has your daily routine changed in recent years?",
-      banglaTip: "সকালের কাজের সুবিধা ও সন্ধ্যার ক্লান্তি বা মনোযোগের পার্থক্য নিয়ে কথা বলুন।"
-    },
-    2: {
-      question: "Describe an ambition or personal goal that you have had for a long time. You should say: what it is, why you chose it, how you plan to achieve it, and how you will feel when you succeed.",
-      followUp: "Do you think having ambitious goals is essential for personal fulfillment?",
-      banglaTip: "একটি সুনির্দিষ্ট লক্ষ্য (যেমন উচ্চশিক্ষা, ক্যারিয়ার বা নতুন ভাষা শেখা) নিয়ে ২ মিনিট কথা বলুন।"
-    },
-    3: {
-      question: "In what ways do modern technology and automated devices impact human work-life balance?",
-      followUp: "Some argue that technology creates more work rather than saving time. To what extent do you agree?",
-      banglaTip: "প্রযুক্তির ইতিবাচক ও নেতিবাচক প্রভাব উভয় দিক বিশ্লেষণ করুন।"
+  const activeSpeakingBank = useMemo(() => {
+    if (speakingPart === 1) return PART_1_SPEAKING_BANK;
+    if (speakingPart === 2) return PART_2_CUE_CARD_BANK;
+    return PART_3_DISCUSSION_BANK;
+  }, [speakingPart]);
+
+  const activeSpeakingPromptObj = useMemo(() => {
+    const idx = speakingPromptIndex[speakingPart] % Math.max(1, activeSpeakingBank.length);
+    const item = activeSpeakingBank[idx];
+    const cueBullets =
+      speakingPart === 2 && item?.cueCardBulletPoints?.length
+        ? ` You should say: ${item.cueCardBulletPoints.join('; ')}.`
+        : '';
+    return {
+      question: `${item?.questionText || 'Do you prefer studying or working in the morning or in the evening? Why?'}${cueBullets}`,
+      topic: item?.topic || `Part ${speakingPart}`,
+      index: idx,
+      total: activeSpeakingBank.length,
+      banglaTip:
+        speakingPart === 1
+          ? `বিষয়: ${item?.topic || 'Part 1'} — স্বাভাবিক ও আত্মবিশ্বাসের সাথে ২-৪ বাক্যে উত্তর দিন এবং একটি উদাহরণ যুক্ত করুন।`
+          : speakingPart === 2
+          ? `কিউ কার্ড (${item?.topic || 'Part 2'}) — প্রতিটি বুলেট পয়েন্ট কভার করে টানা ১.৫ থেকে ২ মিনিট কথা বলুন।`
+          : `গভীর আলোচনা (${item?.topic || 'Part 3'}) — দুই দিকের যুক্তি, উদাহরণ এবং ভবিষ্যৎ প্রভাব বিশ্লেষণ করুন।`
+    };
+  }, [speakingPart, speakingPromptIndex, activeSpeakingBank]);
+
+  const handleNextSpeakingPrompt = () => {
+    stopSpeech();
+    if (recognitionRef.current) {
+      recognitionRef.current.stopListening(true);
     }
+    setExaminerSpeaking(false);
+    setSpeakingTimerActive(false);
+    setSpeakingTranscript('');
+    setSpeakingResult(null);
+    setSpeakingStep('intro');
+    setSpeakingPromptIndex((prev) => ({
+      ...prev,
+      [speakingPart]: (prev[speakingPart] + 1) % Math.max(1, activeSpeakingBank.length)
+    }));
+    soundManager.playBeep(620, 0.04);
   };
 
   const handleStartSpeakingPrompt = () => {
-    const q = speakingPrompts[speakingPart].question;
+    const q = activeSpeakingPromptObj.question;
     setSpeakingStep('prompt');
     setExaminerSpeaking(true);
+    const prefGender = getPreferredVoiceGender();
     speakBritish(`Let's proceed with Part ${speakingPart}. ${q}`, {
+      gender: prefGender,
+      speakerId: prefGender === 'female' ? 'speaker_05' : 'speaker_04',
       onEnd: () => setExaminerSpeaking(false),
       onError: () => setExaminerSpeaking(false)
     });
@@ -221,7 +269,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       headers: spkHeaders,
       body: JSON.stringify({
         transcript: speakingTranscript || "I generally prefer working early in the morning because my cognitive focus is much sharper and distractions are minimal.",
-        question: speakingPrompts[speakingPart].question,
+        question: activeSpeakingPromptObj.question,
         part: speakingPart,
         durationSec: Math.max(duration, 15)
       })
@@ -374,7 +422,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
         isUserCorrect: questionUserChoice === 'NOT GIVEN',
         trapExplanation: "The text states that traditional paradigms disproportionately prioritized surface phenotyping, but NEVER mentions the financial cost ('too expensive') as the reason.",
         banglaExplanation: "প্যাসেজে বলা হয়েছে মাটির উপরের অংশের দিকে বেশি নজর দেওয়া হয়েছিল, কিন্তু খরচের কারণে এটি করা হয়েছিল কি না তা কোথাও উল্লেখ করা হয়নি। তাই উত্তর NOT GIVEN।",
-        cambridgeRule: "Do not extrapolate beyond the literal passage text. If a reason is plausible in real life but unstated in the text, the answer is NOT GIVEN."
+        practiceRule: "Do not extrapolate beyond the literal passage text. If a reason is plausible in real life but unstated in the text, the answer is NOT GIVEN."
       });
       soundManager.playSuccess();
     }, 500);
@@ -628,9 +676,10 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       { id: 'vocab-builder', title: 'Vocabulary Builder', cat: 'english', desc: 'Extracts C1 words & collocations from essays or reading with 1-click deck save.', icon: BookMarked, variant: 'indigo' },
       { id: 'listening-shadowing', title: 'Listening Lab', cat: 'english', desc: 'Sentence-by-sentence British audio playback with syllable stress pacing.', icon: Headphones, variant: 'emerald' },
       { id: 'reading-explainer', title: 'Reading Passage Explainer', cat: 'exam', desc: 'Analyzes dense paragraph arguments, referencing words, and author stance.', icon: BookOpen, variant: 'emerald' },
-      { id: 'question-explainer', title: 'Question Explainer', cat: 'exam', desc: 'Deconstructs True/False/Not Given & multiple choice traps with Cambridge heuristics.', icon: HelpCircle, variant: 'blue' },
+      { id: 'question-explainer', title: 'Question Explainer', cat: 'exam', desc: 'Deconstructs True/False/Not Given & multiple choice traps with Practice heuristics.', icon: HelpCircle, variant: 'blue' },
       // English Improvement
       { id: 'grammar-improvement', title: 'Grammar & Sentence Improvement', cat: 'english', desc: 'Elevates colloquial syntax into formal Band 8.5 academic structures.', icon: FileText, variant: 'cyan' },
+      { id: 'rewriter', title: 'AI Rewriter', cat: 'english', desc: 'Rewrites Task 2 sentences with Band 7+ vocabulary, fixes common grammar slips and explains the 3 biggest changes — works fully offline.', icon: RefreshCw, variant: 'purple' },
       { id: 'speaking-fluency', title: 'Speaking Fluency Coach', cat: 'english', desc: 'Spontaneous 30-sec response analyzer: speech rate, fillers, and thought units.', icon: Zap, variant: 'amber' },
       // Personalized Coaching
       { id: 'weakness-detector', title: 'AI Weakness Detector', cat: 'coaching', desc: 'Correlates genuine mistakes from test history to identify score bottlenecks.', icon: Target, variant: 'amber' },
@@ -666,7 +715,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Official Cambridge Band Descriptors calibration with male British voice examiners and targeted diagnostic tools.
+            Practice Band Descriptors calibration with male British voice examiners and targeted diagnostic tools.
           </p>
         </div>
 
@@ -744,17 +793,17 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                 soundManager.playBeep(600, 0.03);
                 setActiveView(item.id);
               }}
-              className={`p-3.5 rounded-2xl border text-left transition flex items-center gap-3 cursor-pointer ${
+              className={`p-3.5 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
                 isActive
-                  ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                  : 'bg-white dark:bg-[#101B32] text-slate-900 dark:text-white border-slate-200/90 dark:border-slate-800 hover:border-blue-500'
+                  ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+                  : 'bg-white dark:bg-[#11201E] text-[#0E1F1E] dark:text-[#EEF3F1] border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45]'
               }`}
             >
               <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                   isActive
-                    ? 'bg-white/20 text-white'
-                    : 'bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400'
+                    ? 'bg-white/20 text-[#F4A62A]'
+                    : 'bg-[#EEF3F1] dark:bg-[#0B1514] text-[#0F4C45] dark:text-[#4DB6A4]'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -763,7 +812,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                 <div className="text-xs sm:text-sm font-bold truncate">{item.label}</div>
                 <div
                   className={`text-[11px] truncate ${
-                    isActive ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'
+                    isActive ? 'text-white/80' : 'text-[#566664] dark:text-[#96B0AC]'
                   }`}
                 >
                   {item.sub}
@@ -776,23 +825,34 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
 
       {/* ================= BARNABY COMPANION BANNER (HIDDEN INSIDE SPEAKING STUDIO) ================= */}
       {activeView !== 'speaking-examiner' && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#0B1224] via-[#111C38] to-[#1E293B] text-white border border-slate-800 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#0F4C45] dark:bg-[#0D3833] text-white border border-[#1F8A70]/35 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 min-w-0">
-            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-amber-100 via-amber-50 to-blue-100 flex items-center justify-center shrink-0 border-2 border-amber-300/80 shadow-inner">
-              <ChubbyMascotAvatar mood={barnabyMood} size="lg" />
-              <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0B1224]" />
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-[#FDF6E7] flex items-center justify-center shrink-0 border-2 border-[#F4A62A]/70">
+              <img
+                src="/barnaby-dragon-avatar.webp"
+                alt="Barnaby study companion"
+                draggable={false}
+                className={`w-full h-full rounded-xl object-cover transition-transform duration-300 ${
+                  barnabyMood === 'speaking'
+                    ? 'scale-105 ring-2 ring-[#F4A62A]'
+                    : barnabyMood === 'surprise'
+                    ? 'scale-110'
+                    : ''
+                }`}
+              />
+              <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#4DB6A4] border-2 border-[#0F4C45]" />
             </div>
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm sm:text-base font-black text-white">
-                  Barnaby · Your Cambridge AI Companion
+                <span className="text-sm sm:text-base font-bold text-white">
+                  Barnaby · Study Companion
                 </span>
-                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-400/40 font-mono text-[10px] font-bold">
+                <span className="px-2 py-0.5 rounded bg-white/10 text-[#F4A62A] border border-[#F4A62A]/35 font-mono text-[10px] font-bold">
                   {barnabySurprises[barnabyTipIndex].badge}
                 </span>
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                <strong className="text-amber-300 mr-1.5">{barnabySurprises[barnabyTipIndex].title}:</strong>
+              <p className="text-xs text-white/85 leading-relaxed">
+                <strong className="text-[#F4A62A] mr-1.5">{barnabySurprises[barnabyTipIndex].title}:</strong>
                 {barnabySurprises[barnabyTipIndex].text}
               </p>
             </div>
@@ -802,26 +862,34 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
             <button
               type="button"
               onClick={handleBarnabySurprise}
-              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95 whitespace-nowrap"
+              className="px-3.5 py-2.5 rounded-xl bg-[#F4A62A] hover:bg-[#E0951B] text-[#0E1F1E] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
             >
               <Gift className="w-4 h-4" />
-              <span>{barnabySpeaking ? 'Speaking Surprise...' : 'Surprise Me! (C2 Idiom / Boost)'}</span>
+              <span>{barnabySpeaking ? 'Speaking...' : 'Surprise Idiom'}</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* ================= INTERACTIVE 3D CAMBRIDGE SPEAKING & ACOUSTIC STUDIO ================= */}
+      {/* ================= INTERACTIVE 3D SPEAKING & ACOUSTIC STUDIO (LAZY-LOADED) ================= */}
       {activeView === 'overview' && (
-        <Cambridge3DStudio
-          activeSpeakingPart={speakingPart}
-          isVoiceActive={studioVoiceActive || barnabySpeaking || examinerSpeaking}
-          onSelectSpeakingPart={(part) => setSpeakingPart(part)}
-          onLaunchSpeakingStudio={() => setActiveView('speaking-examiner')}
-          onLaunchWritingEvaluator={() => setActiveView('writing-coach')}
-          onLaunchVocabBuilder={() => setActiveView('vocab-builder')}
-          onLaunchListeningLab={() => setActiveView('listening-shadowing')}
-        />
+        <React.Suspense
+          fallback={
+            <div className="p-6 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 text-center text-sm text-[#566664] dark:text-slate-300">
+              Loading 3D Speaking &amp; Acoustic Studio...
+            </div>
+          }
+        >
+          <Sprint3DStudio
+            activeSpeakingPart={speakingPart}
+            isVoiceActive={studioVoiceActive || barnabySpeaking || examinerSpeaking}
+            onSelectSpeakingPart={(part) => setSpeakingPart(part)}
+            onLaunchSpeakingStudio={() => setActiveView('speaking-examiner')}
+            onLaunchWritingEvaluator={() => setActiveView('writing-coach')}
+            onLaunchVocabBuilder={() => setActiveView('vocab-builder')}
+            onLaunchListeningLab={() => setActiveView('listening-shadowing')}
+          />
+        </React.Suspense>
       )}
 
       {/* ================= NEXT-GEN GEMINI LIVE VOICE / TRANSCRIBER / MULTI-MODEL CHAT VIEWS ================= */}
@@ -854,25 +922,25 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
         <div className="space-y-6">
           {/* Category Tabs & Search Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto scrollbar-none">
+            <div className="flex items-center gap-1 p-1 bg-[#EEF3F1] dark:bg-[#11201E] rounded-xl border border-[#D3DDDA] dark:border-[#1E3330] overflow-x-auto scrollbar-none">
               <button
                 type="button"
                 onClick={() => setCategoryFilter('all')}
-                className={`min-h-[40px] px-3 py-1.5 text-xs font-bold rounded-lg transition whitespace-nowrap shrink-0 ${
+                className={`min-h-[38px] px-3 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                   categoryFilter === 'all'
-                    ? 'bg-white dark:bg-[#101B32] text-blue-600 dark:text-blue-400 shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-[#0F4C45] text-white'
+                    : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E]'
                 }`}
               >
-                All Tools (12)
+                All Tools (13)
               </button>
               <button
                 type="button"
                 onClick={() => setCategoryFilter('exam')}
-                className={`min-h-[40px] px-3 py-1.5 text-xs font-bold rounded-lg transition whitespace-nowrap shrink-0 ${
+                className={`min-h-[38px] px-3 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                   categoryFilter === 'exam'
-                    ? 'bg-white dark:bg-[#101B32] text-blue-600 dark:text-blue-400 shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-[#0F4C45] text-white'
+                    : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E]'
                 }`}
               >
                 Exam Practice (4)
@@ -880,21 +948,21 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
               <button
                 type="button"
                 onClick={() => setCategoryFilter('english')}
-                className={`min-h-[40px] px-3 py-1.5 text-xs font-bold rounded-lg transition whitespace-nowrap shrink-0 ${
+                className={`min-h-[38px] px-3 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                   categoryFilter === 'english'
-                    ? 'bg-white dark:bg-[#101B32] text-blue-600 dark:text-blue-400 shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-[#0F4C45] text-white'
+                    : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E]'
                 }`}
               >
-                English Improvement (4)
+                English Improvement (5)
               </button>
               <button
                 type="button"
                 onClick={() => setCategoryFilter('coaching')}
-                className={`min-h-[40px] px-3 py-1.5 text-xs font-bold rounded-lg transition whitespace-nowrap shrink-0 ${
+                className={`min-h-[38px] px-3 py-1.5 text-xs font-semibold rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                   categoryFilter === 'coaching'
-                    ? 'bg-white dark:bg-[#101B32] text-blue-600 dark:text-blue-400 shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    ? 'bg-[#0F4C45] text-white'
+                    : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E]'
                 }`}
               >
                 Personalized Coaching (4)
@@ -902,13 +970,13 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
             </div>
 
             <div className="relative min-w-[200px] sm:max-w-xs">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-[#566664] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search AI Studio tools..."
-                className="w-full min-h-[40px] pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#101B32] text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full min-h-[40px] pl-9 pr-3 py-1.5 rounded-xl border border-[#D3DDDA] dark:border-[#1E3330] bg-white dark:bg-[#11201E] text-xs text-[#0E1F1E] dark:text-[#EEF3F1] placeholder:text-[#566664] focus:outline-none focus:border-[#0F4C45]"
               />
             </div>
           </div>
@@ -920,12 +988,12 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                 key={tool.id}
                 type="button"
                 onClick={() => setActiveView(tool.id as StudioView)}
-                className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#101B32] border border-slate-200/90 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 shadow-2xs hover:shadow-xs active:scale-[0.99] transition text-left flex flex-col justify-between group min-h-[145px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="p-4 sm:p-5 rounded-xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45] dark:hover:border-[#4DB6A4] transition text-left flex flex-col justify-between group min-h-[145px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F4C45]"
               >
                 <div>
                   <div className="flex items-center justify-between">
                     <Icon3D icon={tool.icon} variant={tool.variant} size="md" animateHover={true} />
-                    <span className="text-[10px] font-mono font-bold uppercase text-slate-400 px-2 py-0.5 rounded bg-slate-50 dark:bg-slate-800">
+                    <span className="text-[10px] font-mono font-bold uppercase text-[#566664] dark:text-[#96B0AC] px-2 py-0.5 rounded bg-[#EEF3F1] dark:bg-[#0B1514]">
                       {tool.cat}
                     </span>
                   </div>
@@ -1009,23 +1077,35 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
             </div>
 
             <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-amber-300 uppercase">Examiner Prompt:</span>
-                <button
-                  type="button"
-                  onClick={() => speakBritish(speakingPrompts[speakingPart].question)}
-                  className="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1"
-                >
-                  <Volume2 className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Hear Examiner</span>
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-mono font-bold text-amber-300 uppercase">
+                  Examiner Prompt · {activeSpeakingPromptObj.topic} ({activeSpeakingPromptObj.index + 1}/{activeSpeakingPromptObj.total})
+                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => speakBritish(activeSpeakingPromptObj.question)}
+                    className="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1 cursor-pointer"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Hear Examiner</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextSpeakingPrompt}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-xs font-bold text-amber-300 flex items-center gap-1 cursor-pointer transition"
+                  >
+                    <span>Next Question</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
               <p className="text-sm font-serif leading-relaxed text-slate-100">
-                "{speakingPrompts[speakingPart].question}"
+                "{activeSpeakingPromptObj.question}"
               </p>
               {showBanglaHelp && (
                 <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
-                  💡 বাংলা নির্দেশিকা: {speakingPrompts[speakingPart].banglaTip}
+                  💡 বাংলা নির্দেশিকা: {activeSpeakingPromptObj.banglaTip}
                 </div>
               )}
             </div>
@@ -1110,7 +1190,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
               <div className="p-6 text-center space-y-2">
                 <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
                 <div className="text-xs font-bold text-slate-300">
-                  Analyzing fluency, vocabulary, grammar & pronunciation against Cambridge descriptors...
+                  Analyzing fluency, vocabulary, grammar & pronunciation against Practice descriptors...
                 </div>
               </div>
             )}
@@ -1124,16 +1204,13 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                     Diagnostic Score Breakdown (Unofficial)
                   </span>
                   <h3 className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
-                    Estimated Overall Band {speakingResult.estimatedBands?.overall || 7.0}
+                    Estimated Overall Band {(speakingResult.overallBand ?? speakingResult.estimatedBands?.overall ?? 0).toFixed(1)}
                   </h3>
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSpeakingStep('intro');
-                    setSpeakingTranscript('');
-                  }}
-                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 flex items-center gap-1"
+                  onClick={handleNextSpeakingPrompt}
+                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 flex items-center gap-1 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Try Another Prompt</span>
@@ -1144,25 +1221,25 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
                   <div className="text-[10px] text-slate-500 font-mono">Fluency & Coherence</div>
                   <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {speakingResult.estimatedBands?.fluency || 7.0}
+                    {(speakingResult.criteria?.fc ?? speakingResult.estimatedBands?.fluency ?? 0).toFixed(1)}
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
                   <div className="text-[10px] text-slate-500 font-mono">Lexical Resource</div>
                   <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {speakingResult.estimatedBands?.lexical || 7.0}
+                    {(speakingResult.criteria?.lr ?? speakingResult.estimatedBands?.lexical ?? 0).toFixed(1)}
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
                   <div className="text-[10px] text-slate-500 font-mono">Grammar & Accuracy</div>
                   <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {speakingResult.estimatedBands?.grammar || 6.5}
+                    {(speakingResult.criteria?.gra ?? speakingResult.estimatedBands?.grammar ?? 0).toFixed(1)}
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
                   <div className="text-[10px] text-slate-500 font-mono">Pronunciation Clarity</div>
                   <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {speakingResult.estimatedBands?.pronunciation || 7.0}
+                    {(speakingResult.criteria?.pr ?? speakingResult.estimatedBands?.pronunciation ?? 0).toFixed(1)}
                   </div>
                 </div>
               </div>
@@ -1363,7 +1440,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                   Reading Passage Explainer & Deep Logic Analyzer
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Deconstruct complex academic paragraphs, implicit premises, and Cambridge distractor traps.
+                  Deconstruct complex academic paragraphs, implicit premises, and Practice distractor traps.
                 </p>
               </div>
             </div>
@@ -1378,7 +1455,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
 
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-slate-400 font-mono">
-                Identifies: Core thesis, referencing words & Cambridge test traps
+                Identifies: Core thesis, referencing words & Practice test traps
               </span>
               <button
                 type="button"
@@ -1523,8 +1600,8 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                 )}
 
                 <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 text-blue-900 dark:text-blue-200">
-                  <span className="font-bold font-mono uppercase text-[10px] block">Cambridge Heuristic Rule:</span>
-                  <p className="mt-0.5">{questionExplanation.cambridgeRule}</p>
+                  <span className="font-bold font-mono uppercase text-[10px] block">Practice Heuristic Rule:</span>
+                  <p className="mt-0.5">{questionExplanation.practiceRule}</p>
                 </div>
               </div>
             )}
@@ -1709,6 +1786,11 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
         </div>
       )}
 
+      {/* ================= 6b. AI REWRITER VIEW (fully offline) ================= */}
+      {activeView === 'rewriter' && (
+        <AIRewriter onShowToast={onShowToast} />
+      )}
+
       {/* ================= 7. SPEAKING FLUENCY COACH VIEW ================= */}
       {activeView === 'speaking-fluency' && (
         <div className="space-y-4 animate-fade-in">
@@ -1800,7 +1882,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                     AI Listening & Shadowing Coach
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Authentic British male voice cadence with sentence-level shadowing.
+                    Realistic British male voice cadence with sentence-level shadowing.
                   </p>
                 </div>
               </div>

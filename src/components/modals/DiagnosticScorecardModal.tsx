@@ -42,26 +42,52 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
   const targetBand = user?.progress?.targetBand || 7.5;
   const examHistory = user?.progress?.examHistory || [];
 
-  // Compute realistic scores from user's history or calibrated target baseline
-  const scores = React.useMemo(() => {
-    if (examHistory.length > 0) {
-      const latest = examHistory[examHistory.length - 1];
+  const { scores, hasAttempts } = React.useMemo(() => {
+    const scoredExams = examHistory.filter(
+      (e) => (e.overallBand && e.overallBand > 0) || (e.listeningBand && e.listeningBand > 0) || (e.readingBand && e.readingBand > 0) || (e.writingBand && e.writingBand > 0)
+    );
+
+    if (scoredExams.length > 0) {
+      const latest = scoredExams[scoredExams.length - 1];
+      const l = typeof latest.listeningBand === 'number' && latest.listeningBand > 0 ? latest.listeningBand : null;
+      const r = typeof latest.readingBand === 'number' && latest.readingBand > 0 ? latest.readingBand : null;
+      const w = typeof latest.writingBand === 'number' && latest.writingBand > 0 ? latest.writingBand : null;
+      const s = typeof (latest as any).speakingBand === 'number' && (latest as any).speakingBand > 0 ? (latest as any).speakingBand : null;
+
+      const subBands = [l, r, w, s].filter((b): b is number => b !== null);
+      let ov = latest.overallBand && latest.overallBand > 0 ? latest.overallBand : null;
+      if (ov === null && subBands.length > 0) {
+        const rawAvg = subBands.reduce((a, b) => a + b, 0) / subBands.length;
+        const decimal = rawAvg - Math.floor(rawAvg);
+        let band = Math.floor(rawAvg);
+        if (decimal >= 0.75) band += 1.0;
+        else if (decimal >= 0.25) band += 0.5;
+        ov = band;
+      }
+
       return {
-        overall: latest.overallBand || 7.5,
-        listening: latest.listeningBand || 8.0,
-        reading: latest.readingBand || 7.5,
-        writing: latest.writingBand || 7.0,
-        speaking: latest.overallBand || 7.5
+        hasAttempts: true,
+        scores: {
+          overall: ov,
+          listening: l,
+          reading: r,
+          writing: w,
+          speaking: s
+        }
       };
     }
+
     return {
-      overall: targetBand,
-      listening: Math.min(9.0, +(targetBand + 0.5).toFixed(1)),
-      reading: targetBand,
-      writing: Math.max(6.0, +(targetBand - 0.5).toFixed(1)),
-      speaking: targetBand
+      hasAttempts: false,
+      scores: {
+        overall: null,
+        listening: null,
+        reading: null,
+        writing: null,
+        speaking: null
+      }
     };
-  }, [examHistory, targetBand]);
+  }, [examHistory]);
 
   const candidateId = `IS-${Math.abs(
     (user?.id || 'candidate').split('').reduce((acc, c) => acc + c.charCodeAt(0), 1000) * 73
@@ -73,7 +99,8 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
     year: 'numeric'
   });
 
-  const getCefrLevel = (band: number): string => {
+  const getCefrLevel = (band: number | null): string => {
+    if (band === null || band <= 0) return 'Unassessed';
     if (band >= 8.5) return 'C2 Mastery';
     if (band >= 7.0) return 'C1 Operational';
     if (band >= 5.5) return 'B2 Vantage';
@@ -86,13 +113,17 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
   };
 
   const handleShare = async () => {
-    const text = `🎯 I just completed my official IELTS Diagnostic Assessment on IELTS Sprint and scored a predicted Band ${scores.overall} (${getCefrLevel(scores.overall)})! Test your IELTS skills for free at https://ieltssprint.com`;
+    if (!hasAttempts || scores.overall === null) {
+      onShowToast?.('Complete at least one evaluated test to share your verified scorecard!');
+      return;
+    }
+    const text = `🎯 I just completed my IELTS Diagnostic Assessment on BandSprint and scored a predicted Band ${scores.overall.toFixed(1)} (${getCefrLevel(scores.overall)})! Test your IELTS skills for free at https://band-sprint.netlify.app`;
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'My IELTS Sprint Diagnostic Scorecard',
+          title: 'My BandSprint Diagnostic Scorecard',
           text,
-          url: 'https://ieltssprint.com'
+          url: 'https://band-sprint.netlify.app'
         });
         onShowToast?.('Scorecard shared successfully!');
       } catch {}
@@ -179,7 +210,7 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 font-serif tracking-wider uppercase">
-                Cambridge Assessment Calibrated · Public Band Standards
+                IELTS Calibrated · Public Band Standards
               </div>
             </div>
 
@@ -213,19 +244,23 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
           <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-md">
             <div className="space-y-1 text-center sm:text-left">
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-300">
-                Predicted Cambridge Band Score
+                {scores.overall !== null ? 'Verified Practice Band Score' : 'Diagnostic Status'}
               </span>
               <h2 className="text-lg sm:text-xl font-black text-white">
-                Band {scores.overall.toFixed(1)} Overall Trajectory
+                {scores.overall !== null ? `Band ${scores.overall.toFixed(1)} Overall Trajectory` : 'No Evaluated Exam History'}
               </h2>
               <p className="text-xs text-blue-200/80 max-w-sm">
-                Demonstrates {getCefrLevel(scores.overall)} proficiency with strong capacity for academic discourse and professional international study.
+                {scores.overall !== null
+                  ? `Demonstrates ${getCefrLevel(scores.overall)} proficiency with strong capacity for academic discourse and professional international study.`
+                  : 'Take an assessment in Listening, Reading, Writing, or Speaking to generate your authentic verified scorecard.'}
               </p>
             </div>
 
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-500 text-slate-950 flex flex-col items-center justify-center shrink-0 shadow-lg border-2 border-white/20">
               <span className="text-[10px] font-mono font-black uppercase tracking-wider">BAND</span>
-              <span className="text-2xl font-black leading-none font-mono">{scores.overall.toFixed(1)}</span>
+              <span className="text-2xl font-black leading-none font-mono">
+                {scores.overall !== null ? scores.overall.toFixed(1) : '—'}
+              </span>
             </div>
           </div>
 
@@ -244,16 +279,18 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-800 text-xs">{skill.name}</span>
                   <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-mono font-black text-xs">
-                    {skill.score.toFixed(1)}
+                    {skill.score !== null ? skill.score.toFixed(1) : '—'}
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                   <div
                     className="bg-blue-600 h-1.5 rounded-full"
-                    style={{ width: `${(skill.score / 9.0) * 100}%` }}
+                    style={{ width: `${skill.score !== null ? (skill.score / 9.0) * 100 : 0}%` }}
                   />
                 </div>
-                <div className="text-[9px] text-slate-400 leading-tight pt-0.5">{skill.desc}</div>
+                <div className="text-[9px] text-slate-400 leading-tight pt-0.5">
+                  {skill.score !== null ? skill.desc : 'Not Attempted'}
+                </div>
               </div>
             ))}
           </div>
@@ -263,13 +300,13 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>
-                Verified by <strong>IELTS Sprint AI Diagnostic Engine</strong> · 100% Zero-Repetition Calibrated
+                Verified by <strong>BandSprint AI Diagnostic Engine</strong> · 100% Zero-Repetition Calibrated
               </span>
             </div>
 
             <div className="flex items-center gap-1 font-mono text-[9px] text-slate-400">
               <QrCode className="w-3.5 h-3.5 text-slate-500" />
-              <span>https://ieltssprint.com/verify/{candidateId}</span>
+              <span>https://band-sprint.netlify.app/verify/{candidateId}</span>
             </div>
           </div>
         </div>

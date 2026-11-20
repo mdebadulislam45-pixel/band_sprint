@@ -201,7 +201,7 @@ export const AcademicCollocationFinder: React.FC<AcademicCollocationFinderProps>
               Band 8.5+ Topic Collocation Explorer
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Cambridge lexical items categorized by official IELTS Task 2 essay domains
+              Practice lexical items categorized by IELTS Task 2 essay domains
             </p>
           </div>
         </div>

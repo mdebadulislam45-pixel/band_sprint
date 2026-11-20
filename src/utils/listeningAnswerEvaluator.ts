@@ -103,30 +103,243 @@ export function countAnswerWords(answer: string): number {
   return trimmed.split(/\s+/).filter(Boolean).length;
 }
 
+export function extractCurrencyTokens(text: string): string[] {
+  if (!text) return [];
+  const found = new Set<string>();
+  if (/£|\bpounds?\b|\bgbp\b/i.test(text)) found.add('£');
+  if (/\$|\bdollars?\b|\busd\b/i.test(text)) found.add('$');
+  if (/€|\beuros?\b|\beur\b/i.test(text)) found.add('€');
+  if (/¥|\byen\b/i.test(text)) found.add('¥');
+  return Array.from(found);
+}
+
+/**
+ * Extracts currency tokens strictly associated with the answer blank in a question prompt
+ * when the canonical answer itself is a bare number (e.g. "Registration fee: £_____" -> ['£']).
+ * Avoids unioning distractor currencies mentioned elsewhere in the prompt (e.g. "Initially quoted at $400, final fee: £_____").
+ */
+function extractPromptBlankCurrency(promptText: string): string[] {
+  if (!promptText) return [];
+
+  const blankAdjacentMatches = new Set<string>();
+
+  // 1. Currency symbol or code immediately preceding a blank marker (e.g. "£_____", "£ [1]", "GBP _____")
+  const prefixBlankRegex =
+    /([£$€¥]|\b(?:pounds?|gbp|dollars?|usd|euros?|eur|yen)\b)\s*(?:_{2,}|\[\s*(?:\d+|_+)\s*\]|\.{3,}|…)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = prefixBlankRegex.exec(promptText)) !== null) {
+    extractCurrencyTokens(match[1]).forEach((c) => blankAdjacentMatches.add(c));
+  }
+
+  // 2. Currency symbol or word immediately following a blank marker (e.g. "_____ pounds", "_____ £")
+  const suffixBlankRegex =
+    /(?:_{2,}|\[\s*(?:\d+|_+)\s*\]|\.{3,}|…)\s*([£$€¥]|\b(?:pounds?|gbp|dollars?|usd|euros?|eur|yen)\b)/gi;
+  while ((match = suffixBlankRegex.exec(promptText)) !== null) {
+    extractCurrencyTokens(match[1]).forEach((c) => blankAdjacentMatches.add(c));
+  }
+
+  // 3. Parenthetical currency indicator before colon/blank (e.g. "Total fee (£): _____")
+  const parenBlankRegex =
+    /\(\s*([£$€¥]|\b(?:pounds?|gbp|dollars?|usd|euros?|eur|yen)\b)\s*\)\s*:?\s*(?:_{2,}|\[\s*(?:\d+|_+)\s*\]|$)/gi;
+  while ((match = parenBlankRegex.exec(promptText)) !== null) {
+    extractCurrencyTokens(match[1]).forEach((c) => blankAdjacentMatches.add(c));
+  }
+
+  // 4. Prompt ending directly with a currency symbol (e.g. "Total deposit: £")
+  const trailingSymbolMatch = promptText.trim().match(/([£$€¥])$/);
+  if (trailingSymbolMatch) {
+    extractCurrencyTokens(trailingSymbolMatch[1]).forEach((c) => blankAdjacentMatches.add(c));
+  }
+
+  if (blankAdjacentMatches.size === 1) {
+    return Array.from(blankAdjacentMatches);
+  }
+  if (blankAdjacentMatches.size > 1) {
+    return [];
+  }
+
+  // Fallback only if the entire prompt contains a single unambiguous currency
+  const allPromptCurrencies = extractCurrencyTokens(promptText);
+  return allPromptCurrencies.length === 1 ? allPromptCurrencies : [];
+}
+
+function stripLeadingOrWordCurrency(text: string): string {
+  return (text || '')
+    .replace(/^(?:[£$€¥]|\b(?:pounds?|gbp|dollars?|usd|euros?|eur|yen)\b)\s*/gi, '')
+    .replace(/\s*(?:[£$€¥]|\b(?:pounds?|gbp|dollars?|usd|euros?|eur|yen)\b)$/gi, '')
+    .trim();
+}
+
+const CARDINAL_ONES_AND_TEENS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19
+};
+
+const CARDINAL_TENS: Record<string, number> = {
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90
+};
+
+/**
+ * Converts standalone English cardinal number word sequences into digits
+ * (e.g. "forty percent" -> "40 percent", "twenty five" -> "25", "two hundred" -> "200", "eighty five" -> "85").
+ * Preserves all non-numeric words and units untouched.
+ */
+export function convertEnglishNumberWordsToDigits(input: string): string {
+  if (!input) return '';
+  // Separate trailing % attached directly to a word (e.g. "forty%" -> "forty %")
+  const prepped = input.replace(/([a-z])%/gi, '$1 %');
+  const tokens = prepped.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return '';
+
+  const isNumberToken = (tok: string): boolean => {
+    const clean = tok.toLowerCase();
+    return (
+      clean in CARDINAL_ONES_AND_TEENS ||
+      clean in CARDINAL_TENS ||
+      clean === 'hundred' ||
+      clean === 'thousand'
+    );
+  };
+
+  const out: string[] = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    if (!isNumberToken(tokens[i])) {
+      out.push(tokens[i]);
+      i++;
+      continue;
+    }
+
+    let total = 0;
+    let current = 0;
+    let consumed = 0;
+
+    while (i < tokens.length) {
+      const w = tokens[i].toLowerCase();
+      if (w in CARDINAL_ONES_AND_TEENS) {
+        current += CARDINAL_ONES_AND_TEENS[w];
+        i++;
+        consumed++;
+      } else if (w in CARDINAL_TENS) {
+        current += CARDINAL_TENS[w];
+        i++;
+        consumed++;
+      } else if (w === 'hundred') {
+        current = (current === 0 ? 1 : current) * 100;
+        i++;
+        consumed++;
+      } else if (w === 'thousand') {
+        total += (current === 0 ? 1 : current) * 1000;
+        current = 0;
+        i++;
+        consumed++;
+      } else if (
+        w === 'and' &&
+        consumed > 0 &&
+        i + 1 < tokens.length &&
+        isNumberToken(tokens[i + 1])
+      ) {
+        i++;
+      } else {
+        break;
+      }
+    }
+
+    const numericValue = total + current;
+
+    // Optional decimal: "point <single-digit-word(s)>" (e.g., "one point five" -> "1.5")
+    if (
+      i + 1 < tokens.length &&
+      tokens[i].toLowerCase() === 'point' &&
+      tokens[i + 1].toLowerCase() in CARDINAL_ONES_AND_TEENS &&
+      CARDINAL_ONES_AND_TEENS[tokens[i + 1].toLowerCase()] < 10
+    ) {
+      i++; // consume 'point'
+      let fracDigits = '';
+      while (
+        i < tokens.length &&
+        tokens[i].toLowerCase() in CARDINAL_ONES_AND_TEENS &&
+        CARDINAL_ONES_AND_TEENS[tokens[i].toLowerCase()] < 10
+      ) {
+        fracDigits += String(CARDINAL_ONES_AND_TEENS[tokens[i].toLowerCase()]);
+        i++;
+      }
+      out.push(`${numericValue}.${fracDigits}`);
+    } else {
+      out.push(String(numericValue));
+    }
+  }
+
+  return out.join(' ');
+}
+
 /**
  * Normalizes a text answer for comparison while preserving meaningful punctuation
- * (such as colons in times like "4:30"), numbers, dates, and exact word spelling.
+ * (such as colons in times like "4:30"), currency identity (£, $, €, ¥), percentages (%),
+ * numbers, dates, and exact word spelling. Avoids malformed multi-decimal transformations.
  */
 export function normalizeCompletionAnswer(input: string): string {
-  return (input || '')
+  const baseNormalized = (input || '')
     .toLowerCase()
     .trim()
-    // Remove thousand-separator commas inside numbers (e.g. "1,650" -> "1650")
-    .replace(/(\d),(\d{3})\b/g, '$1$2')
-    // Normalize hyphens and dashes to a single space so "gluten-free" and "gluten free" match
+    // Remove thousand-separator commas inside valid numbers (e.g. "1,650" -> "1650")
+    .replace(/(?<![0-9.])(\d{1,3}),(\d{3})(?![0-9])/g, '$1$2')
+    // Collapse whitespace immediately between a currency symbol and a digit (e.g. "$ 85.00" -> "$85.00", "350 £" -> "350£")
+    .replace(/([£$€¥])\s+(\d)/g, '$1$2')
+    .replace(/(\d)\s+([£$€¥])/g, '$1$2')
+    // Normalize trailing .00 on standalone whole numbers only (never on multi-decimal strings like "12.350.00" or "350.00.1")
+    .replace(/(?<![0-9.])(\d+)\.00\b(?![.\d])/g, '$1')
+    // Normalize hyphens and dashes to a single space so "gluten-free" and "gluten free" or "twenty-five" and "twenty five" match
     .replace(/[-–—]+/g, ' ')
-    // Strip harmless leading/trailing punctuation such as periods, quotes, or brackets
-    .replace(/^[.,/#!$%^&*;:{}=_`~()"'\[\]]+|[.,/#!$%^&*;:{}=_`~()"'\[\]]+$/g, '')
+    // Strip harmless leading/trailing punctuation (preserving currency symbols £, $, €, ¥ and percentage symbol %)
+    .replace(/^[.,/#!^&*;:{}=_`~()"'\[\]]+|[.,/#!^&*;:{}=_`~()"'\[\]]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!baseNormalized) return '';
+
+  // Convert standalone English number words to digits (e.g. "forty percent" -> "40 percent")
+  const withDigits = convertEnglishNumberWordsToDigits(baseNormalized);
+
+  return withDigits
+    // Canonicalize percentage forms: "40 percent", "40 per cent", "40 %" -> "40%"
+    .replace(/(?<![0-9.])(\d+(?:\.\d+)?)\s*(?:%|percent|per\s+cent)(?=\b|$)/gi, '$1%')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 /**
- * Evaluates whether a candidate's Listening answer is correct.
- * Shared across AuthenticIELTSListeningTest (submission + review table) and ListeningLab.
+ * Evaluates whether a candidate's Listening/Reading answer is correct.
+ * Shared across RealisticIELTSListeningTest, LiveMockTest, and ListeningLab.
  */
 export function isListeningAnswerCorrect(
-  q: IELTSQuestion & { wordLimit?: number; maxWords?: number },
+  q: IELTSQuestion & { wordLimit?: number; maxWords?: number; prompt?: string },
   userAns: string
 ): boolean {
   const rawTrimmed = (userAns || '').trim();
@@ -137,8 +350,18 @@ export function isListeningAnswerCorrect(
   if (!cleanNorm) return false;
 
   const hasOptions = Array.isArray(q.options) && q.options.length > 0;
+  const tfngYnngTokens = new Set(['true', 'false', 'yes', 'no', 'not given']);
+  const hasUnprefixedTfngYnngOptions =
+    hasOptions &&
+    q.options!.every((opt) => tfngYnngTokens.has((opt || '').trim().toLowerCase()));
+  const isTfngOrYnng =
+    q.questionType === 'true_false_not_given' ||
+    q.questionType === 'yes_no_not_given' ||
+    (q as any).type === 'true_false_not_given' ||
+    (q as any).type === 'yes_no_not_given' ||
+    hasUnprefixedTfngYnngOptions;
   const isOptionBasedType =
-    hasOptions ||
+    (!isTfngOrYnng && hasOptions) ||
     q.questionType === 'multiple_choice' ||
     q.questionType === 'matching' ||
     q.questionType === 'map_labelling';
@@ -154,7 +377,7 @@ export function isListeningAnswerCorrect(
     }
   }
 
-  // 1. Option-based evaluation (Multiple Choice, Map Labelling, Matching with options)
+  // 1. Option-based evaluation (Multiple Choice, Map Labelling, Matching with options, TFNG/YNNG with options)
   if (hasOptions && q.options) {
     const correctList = Array.isArray(q.correctAnswer)
       ? q.correctAnswer
@@ -175,6 +398,9 @@ export function isListeningAnswerCorrect(
         const corrTrim = (corr || '').trim();
         const corrLower = corrTrim.toLowerCase();
         const corrNorm = normalizeCompletionAnswer(corrTrim);
+        if (isTfngOrYnng) {
+          return corrNorm === optRawNorm || corrNorm === optLabelNorm;
+        }
         if (corrLower === optLetter || corrNorm === optRawNorm || corrNorm === optLabelNorm) {
           return true;
         }
@@ -188,6 +414,12 @@ export function isListeningAnswerCorrect(
       });
 
       if (isTargetOption) {
+        if (isTfngOrYnng) {
+          if (cleanNorm === optLabelNorm || cleanNorm === optRawNorm) {
+            return true;
+          }
+          continue;
+        }
         if (
           cleanLower === optLetter ||
           cleanNorm === optLabelNorm ||
@@ -221,6 +453,30 @@ export function isListeningAnswerCorrect(
     candidates.push(...q.acceptableAnswers);
   }
 
+  const promptText = q.prompt || (q as any).questionText || '';
+  const promptIndicatesPercentage = /\b(?:percentage|percent|per\s+cent)\b|%/i.test(promptText);
+
+  // Determine currency identity from canonical/acceptable answers first.
+  // Only fall back to prompt blank context when the configured answers contain no currency token.
+  const expectedCurrencies = new Set<string>();
+  for (const cand of candidates) {
+    extractCurrencyTokens(cand).forEach((c) => expectedCurrencies.add(c));
+  }
+  if (expectedCurrencies.size === 0) {
+    extractPromptBlankCurrency(promptText).forEach((c) => expectedCurrencies.add(c));
+  }
+
+  const userCurrencies = extractCurrencyTokens(rawTrimmed);
+  // Reject mismatched, multiple conflicting, or unexpected currency symbols in user response
+  if (userCurrencies.length > 0) {
+    if (
+      expectedCurrencies.size === 0 ||
+      userCurrencies.some((uc) => !expectedCurrencies.has(uc))
+    ) {
+      return false;
+    }
+  }
+
   for (const ans of candidates) {
     const ansTrim = (ans || '').trim();
     if (!ansTrim) continue;
@@ -230,6 +486,30 @@ export function isListeningAnswerCorrect(
 
     if (cleanLower === ansLower || cleanNorm === ansNorm) {
       return true;
+    }
+
+    // Percentage equivalence: when the canonical/acceptable answer is a percentage (e.g. "40%"),
+    // accept the exact numeric value ("40" or "forty") as well as "40%", "40 percent", "forty percent".
+    // Conversely, if the canonical answer is a bare number ("40") AND the prompt explicitly asks for a percentage,
+    // accept "40%" / "40 percent" / "forty percent". Never accept "85%" when the question asks for a non-percentage count ("85").
+    const ansPercentMatch = ansNorm.match(/^(\d+(?:\.\d+)?)%$/);
+    if (ansPercentMatch && cleanNorm === ansPercentMatch[1]) {
+      return true;
+    }
+    const userPercentMatch = cleanNorm.match(/^(\d+(?:\.\d+)?)%$/);
+    if (userPercentMatch && ansNorm === userPercentMatch[1] && promptIndicatesPercentage) {
+      return true;
+    }
+
+    // If question specifies an unambiguous currency (e.g. prompt blank has "£_____" or correctAnswer is "£350" / "350")
+    // and user either omitted the currency symbol ("350") or included the matching currency symbol/code ("£350", "GBP 350", "350£", "350 pounds"),
+    // compare the normalized numeric core after verifying currency compatibility above.
+    if (expectedCurrencies.size > 0) {
+      const userCore = stripLeadingOrWordCurrency(cleanNorm);
+      const ansCore = stripLeadingOrWordCurrency(ansNorm);
+      if (userCore && ansCore && userCore === ansCore && /^\d+(?:\.\d+)?$/.test(userCore)) {
+        return true;
+      }
     }
 
     // If a multiple-choice/matching question has no options array populated but stores
@@ -248,6 +528,11 @@ export function isListeningAnswerCorrect(
 
   return false;
 }
+
+/**
+ * Convenient alias for isListeningAnswerCorrect
+ */
+export const isAnswerCorrect = isListeningAnswerCorrect;
 
 /**
  * Determines whether a specific option in a multiple-choice, matching, or map-labelling
@@ -415,23 +700,37 @@ export interface ListeningQuestionProgressInfo {
 
 export function getListeningQuestionProgress(
   questionIndex: number,
-  totalQuestions: number = 40
+  totalQuestions: number = 40,
+  activeSection?: 1 | 2 | 3 | 4
 ): ListeningQuestionProgressInfo {
   const safeTotal = Math.max(1, totalQuestions);
   const safeIndex = Math.max(0, Math.min(safeTotal - 1, Math.floor(questionIndex)));
-  const overallQuestionNumber = safeIndex + 1;
-  const partNumber = (Math.min(4, Math.floor(safeIndex / 10) + 1) as 1 | 2 | 3 | 4) || 1;
-  const partQuestionNumber = (safeIndex % 10) + 1;
-  const partTotal = Math.min(10, Math.max(1, safeTotal - (partNumber - 1) * 10));
+
+  // If practicing a single 10-question section, align with activeSection
+  let partNumber: 1 | 2 | 3 | 4 = activeSection || 1;
+  let overallQuestionNumber = safeIndex + 1;
+  let partQuestionNumber = safeIndex + 1;
+
+  if (safeTotal > 10) {
+    // 40-question full exam
+    partNumber = (Math.min(4, Math.floor(safeIndex / 10) + 1) as 1 | 2 | 3 | 4) || 1;
+    partQuestionNumber = (safeIndex % 10) + 1;
+  } else if (activeSection) {
+    // 10-question single section practice
+    overallQuestionNumber = (activeSection - 1) * 10 + safeIndex + 1;
+    partQuestionNumber = safeIndex + 1;
+  }
+
+  const partTotal = safeTotal > 10 ? 10 : safeTotal;
   const partMeta = IELTS_LISTENING_PARTS[partNumber - 1];
-  const overallLabel = `Question ${overallQuestionNumber} of ${safeTotal}`;
+  const overallLabel = `Question ${overallQuestionNumber} of ${safeTotal > 10 ? safeTotal : 40}`;
   const partLabel = `Question ${partQuestionNumber} of ${partTotal}`;
 
   return {
     part: partNumber,
     partNumber,
     overallQuestionNumber,
-    overallTotal: safeTotal,
+    overallTotal: safeTotal > 10 ? safeTotal : 40,
     overallLabel,
     overallProgressLabel: overallLabel,
     partQuestionNumber,
@@ -440,6 +739,133 @@ export function getListeningQuestionProgress(
     partProgressLabel: partLabel,
     partMeta
   };
+}
+
+export interface QuestionAudioSyncCue {
+  questionIndex: number;
+  questionNumber: number;
+  questionId: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  timestampLabel: string;
+  timeRangeLabel: string;
+  topic?: string;
+  promptPreview?: string;
+}
+
+/**
+ * Formats seconds into human-readable M:SS audio timestamps
+ */
+export function formatAudioTimestamp(seconds: number): string {
+  if (isNaN(seconds) || seconds < 0) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Robustly maps every question (e.g. all 10 questions) to precise audio timestamp intervals
+ * across the specified audio duration (calibrated to the 47s recording duration or dynamic duration).
+ * Guarantees 100% of questions are accounted for with non-overlapping, contiguous cues.
+ */
+export function computeListeningAudioSyncMap(
+  questions: IELTSQuestion[],
+  totalAudioDuration: number = 47,
+  dialogueLines?: Array<{ text: string; pauseAfterMs?: number; speaker?: string }>,
+  sectionNumber: 1 | 2 | 3 | 4 = 1
+): QuestionAudioSyncCue[] {
+  if (!questions || questions.length === 0) return [];
+
+  const count = questions.length;
+  const duration = Math.max(10, totalAudioDuration || 47);
+
+  // Sprint audio padding:
+  // - Lead-in examiner introduction: ~3.5s for 47s, or ~7.5% of duration
+  // - Mid-section split pause (between Q5 and Q6): ~2s, or ~4.5% of duration
+  // - Outro/conclusion: ~1.5s, or ~4% of duration
+  const hasMidSplit = count > 5;
+  const introDur = Math.max(2.5, Math.min(6.0, duration * 0.075));
+  const outroDur = Math.max(1.5, Math.min(4.0, duration * 0.04));
+  const midSplitDur = hasMidSplit ? Math.max(1.5, Math.min(3.5, duration * 0.045)) : 0;
+
+  const availableForQuestions = Math.max(count * 2.0, duration - introDur - outroDur - midSplitDur);
+  const slotDuration = availableForQuestions / count;
+
+  const cues: QuestionAudioSyncCue[] = [];
+  let currentTime = introDur;
+
+  const splitPoint = hasMidSplit ? Math.min(5, Math.ceil(count / 2)) : count;
+
+  for (let i = 0; i < count; i++) {
+    const q = questions[i];
+    const qNum = (sectionNumber - 1) * 10 + i + 1;
+
+    // If transitioning into the second half, account for the Sprint mid-section pause
+    if (hasMidSplit && i === splitPoint) {
+      currentTime += midSplitDur;
+    }
+
+    const start = Number(currentTime.toFixed(2));
+    const end = Number((currentTime + slotDuration).toFixed(2));
+    const promptPreview = q.prompt ? q.prompt.replace(/\[\d+\]/g, '').trim().slice(0, 32) : `Question ${qNum}`;
+
+    cues.push({
+      questionIndex: i,
+      questionNumber: qNum,
+      questionId: q.id,
+      startTime: start,
+      endTime: end,
+      duration: Number(slotDuration.toFixed(2)),
+      timestampLabel: formatAudioTimestamp(start),
+      timeRangeLabel: `${formatAudioTimestamp(start)} - ${formatAudioTimestamp(end)}`,
+      topic: q.topic,
+      promptPreview
+    });
+
+    currentTime += slotDuration;
+  }
+
+  return cues;
+}
+
+/**
+ * Robust time-tracking function that identifies which question index is currently active
+ * based on the playback timestamp.
+ */
+export function findActiveQuestionIndexForTimestamp(
+  currentTime: number,
+  cues: QuestionAudioSyncCue[]
+): number {
+  if (!cues || cues.length === 0) return 0;
+  const time = Math.max(0, currentTime);
+
+  // If before first question cue (intro), default to first question
+  if (time < cues[0].startTime) {
+    return 0;
+  }
+
+  // If after last question cue, default to last question
+  if (time >= cues[cues.length - 1].endTime) {
+    return cues.length - 1;
+  }
+
+  // Match active range [startTime, endTime)
+  for (let i = 0; i < cues.length; i++) {
+    const cue = cues[i];
+    if (time >= cue.startTime && time < cue.endTime) {
+      return i;
+    }
+  }
+
+  // If within mid-split gap, return the upcoming question
+  for (let i = 0; i < cues.length - 1; i++) {
+    if (time >= cues[i].endTime && time < cues[i + 1].startTime) {
+      return i + 1;
+    }
+  }
+
+  return Math.min(cues.length - 1, Math.max(0, Math.floor((time / cues[cues.length - 1].endTime) * cues.length)));
 }
 
 /**
@@ -572,7 +998,7 @@ export function resolveDialogueLineSpeakerId(
   if (activeSection === 3) {
     return 'speaker_03';
   }
-  return 'speaker_04'; // Arthur (British Male RP Examiner / Presenter)
+  return 'speaker_01'; // Default British Male Conversational (preserves Examiner Arthur speaker_04)
 }
 
 /**
@@ -582,7 +1008,7 @@ export function resolveDialogueLineSpeakerId(
 export const SPEAKER_EDGE_VOICE_MAP: Record<string, string> = {
   speaker_01: 'en-GB-ThomasNeural',
   speaker_02: 'en-GB-LibbyNeural',
-  speaker_03: 'en-US-AndrewNeural',
+  speaker_03: 'en-GB-ThomasNeural',
   speaker_04: 'en-GB-RyanNeural',
   speaker_05: 'en-GB-SoniaNeural',
   speaker_06: 'en-AU-WilliamMultilingualNeural',
@@ -625,36 +1051,38 @@ export function assignSectionDialogueSpeakers(
   pauseAfterMs: number;
   deliveryProfile: SpeechDeliveryProfileId;
 }> {
-  // British-first & Commonwealth voice pools (all verified supported in MsEdgeTTS, all unique models)
+  // British-first & Commonwealth voice pools for dialogue characters (verified supported in MsEdgeTTS)
+  // Note: speaker_04 (Examiner Arthur, en-GB-RyanNeural) is strictly excluded from the dialogue pool
+  // so the Sprint examiner's voice is NEVER accidentally reused for dialogue participants.
   const malePool = [
-    'speaker_01',
-    'speaker_04',
-    'speaker_03',
-    'speaker_15',
-    'speaker_06',
-    'speaker_11',
-    'speaker_08',
-    'speaker_13',
-    'speaker_09'
+    'speaker_01', // Thomas (en-GB-ThomasNeural, Male RP)
+    'speaker_15', // Connor (en-IE-ConnorNeural, Irish Male)
+    'speaker_06', // William (en-AU-WilliamMultilingualNeural, Australian Male)
+    'speaker_03', // Alistair (en-GB-ThomasNeural, Senior Professor)
+    'speaker_11', // Liam (en-CA-LiamNeural, Canadian Male)
+    'speaker_08', // Luke (en-ZA-LukeNeural, South African Male)
+    'speaker_13', // Mitchell (en-NZ-MitchellNeural, New Zealand Male)
+    'speaker_09'  // Christopher (en-US-ChristopherNeural, American Male)
   ];
   const femalePool = [
-    'speaker_05',
-    'speaker_02',
-    'speaker_16',
-    'speaker_07',
-    'speaker_12',
-    'speaker_14',
-    'speaker_10'
+    'speaker_05', // Charlotte/Clara (en-GB-SoniaNeural, Female RP)
+    'speaker_02', // Libby (en-GB-LibbyNeural, Female RP)
+    'speaker_16', // Emily (en-IE-EmilyNeural, Irish Female)
+    'speaker_07', // Natasha (en-AU-NatashaNeural, Australian Female)
+    'speaker_12', // Clara (en-CA-ClaraNeural, Canadian Female)
+    'speaker_14', // Molly (en-NZ-MollyNeural, New Zealand Female)
+    'speaker_10'  // Jenny (en-US-JennyNeural, American Female)
   ];
 
   const isMonologuePart = section === 2 || section === 4;
 
-  const speakerIdMap = new Map<
+  let speakerIdMap = new Map<
     string,
     { speakerId: string; gender: 'male' | 'female'; role: string }
   >();
-  const usedSpeakerIds = new Set<string>();
-  const usedVoiceIds = new Set<string>();
+  // Pre-seed Examiner Arthur so dialogue roles never collide with examiner rubric delivery
+  let usedSpeakerIds = new Set<string>(['speaker_04']);
+  let usedVoiceIds = new Set<string>([SPEAKER_EDGE_VOICE_MAP['speaker_04']]);
   let lockedMonologueVoice: { speakerId: string; gender: 'male' | 'female' } | null = null;
   let speakerCounter = 0;
   let maleIdx = 0;
@@ -662,8 +1090,57 @@ export function assignSectionDialogueSpeakers(
 
   return rawLines.map((line) => {
     const rawSpk = (line.speaker || defaultLabel).trim();
+    const lowerText = (line.text || '').toLowerCase();
+    const lowerSpk = rawSpk.toLowerCase();
 
-    if (!speakerIdMap.has(rawSpk)) {
+    const isExaminerLine =
+      lowerSpk.includes('examiner') ||
+      lowerSpk.includes('sprint examiner') ||
+      lowerText.startsWith('before you hear') ||
+      lowerText.startsWith('that is the end') ||
+      lowerText.startsWith('part ') ||
+      lowerText.startsWith('section ') ||
+      lowerText.startsWith('international english language');
+
+    if (isExaminerLine) {
+      // Examiner rubric/transition lines: ALWAYS preserve Examiner Arthur (speaker_04, male)
+      const deliveryProfile = inferSpeechDeliveryProfile(
+        { text: line.text, speaker: 'Sprint Examiner (Arthur)', speakerId: 'speaker_04', role: 'Examiner' },
+        section
+      );
+      return {
+        speaker: 'Sprint Examiner (Arthur)',
+        speakerName: 'Sprint Examiner (Arthur)',
+        speakerId: 'speaker_04',
+        gender: 'male' as const,
+        text: (line.text || '').trim(),
+        pauseAfterMs: line.pauseAfterMs || 1000,
+        deliveryProfile
+      };
+    }
+
+    // Normalize rawSpk key cleanly
+    const normalizedSpkKey = lowerSpk;
+
+    // Reset speaker map per sub-scenario in Part 1/2/3 if a new scenario pair starts
+    if (
+      !speakerIdMap.has(normalizedSpkKey) &&
+      !isMonologuePart &&
+      speakerCounter >= 2 &&
+      (normalizedSpkKey.includes('coordinator') ||
+        normalizedSpkKey.includes('agent') ||
+        normalizedSpkKey.includes('receptionist') ||
+        normalizedSpkKey.includes('staff') ||
+        normalizedSpkKey.includes('clerk') ||
+        normalizedSpkKey.includes('officer'))
+    ) {
+      speakerIdMap = new Map();
+      usedSpeakerIds = new Set();
+      usedVoiceIds = new Set();
+      speakerCounter = 0;
+    }
+
+    if (!speakerIdMap.has(normalizedSpkKey)) {
       let gender = inferDialogueSpeakerGender(line);
       let role: string;
       if (section === 2) {
@@ -687,7 +1164,11 @@ export function assignSectionDialogueSpeakers(
           : resolveDialogueLineSpeakerId({ ...line, gender }, section);
 
       if (isMonologuePart) {
-        // Parts 2 and 4 are single-speaker monologues: lock the speaker voice across the part
+        // Parts 2 and 4 are single-speaker monologues: lock the speaker voice across the entire part monologue
+        if (candidateId === 'speaker_04') {
+          candidateId = section === 4 ? 'speaker_06' : 'speaker_05';
+          gender = IELTS_SPEAKERS[candidateId]?.gender || gender;
+        }
         if (lockedMonologueVoice) {
           candidateId = lockedMonologueVoice.speakerId;
           gender = lockedMonologueVoice.gender;
@@ -702,7 +1183,6 @@ export function assignSectionDialogueSpeakers(
           IELTS_SPEAKERS[candidateId]?.gender !== gender;
 
         if (isCollision) {
-          // In dialogue parts (Parts 1 and 3), ensure every distinct speaker gets a unique speakerId AND unique neural voice
           const pool = gender === 'female' ? femalePool : malePool;
           let chosen = pool[0];
           for (let i = 0; i < pool.length; i++) {
@@ -723,13 +1203,13 @@ export function assignSectionDialogueSpeakers(
       if (assignedVoice) {
         usedVoiceIds.add(assignedVoice);
       }
-      speakerIdMap.set(rawSpk, { speakerId: candidateId, gender, role });
+      speakerIdMap.set(normalizedSpkKey, { speakerId: candidateId, gender, role });
       speakerCounter++;
     }
 
-    const assigned = speakerIdMap.get(rawSpk)!;
+    const assigned = speakerIdMap.get(normalizedSpkKey)!;
     const formattedSpeaker = line.speaker
-      ? isMonologuePart || (line.speaker.includes('(') && line.speaker.includes(assigned.role))
+      ? isMonologuePart || line.speaker.includes('(')
         ? line.speaker
         : `${line.speaker} (${assigned.role})`
       : `${defaultLabel} (${assigned.role})`;
@@ -757,8 +1237,84 @@ export function assignSectionDialogueSpeakers(
 }
 
 /**
- * Official Cambridge IELTS Listening Raw Score (out of 40) to Band Score Conversion Table.
- * If totalQuestions != 40, scales the raw score proportionally to the 40-question Cambridge scale.
+ * Deterministically validates and coalesces dialogue turns for natural IELTS turn-taking:
+ * - Guarantees non-empty text and valid speaker identities.
+ * - Protects Examiner rubric lines from dialogue role corruption.
+ * - In Parts 1 & 3, coalesces adjacent turns from the same non-examiner speaker if text was split across questions.
+ * - Preserves exact question-answer content, prompts, and options.
+ */
+export function validateAndCoalesceDialogueSequence(
+  lines: BuiltExamDialogueLine[],
+  sectionNum: number = 1
+): BuiltExamDialogueLine[] {
+  if (!lines || lines.length === 0) return [];
+
+  const validated: BuiltExamDialogueLine[] = [];
+
+  for (const line of lines) {
+    const cleanText = (line.text || '').trim();
+    if (!cleanText) continue;
+
+    const lowerText = cleanText.toLowerCase();
+    const isExaminer =
+      Boolean(line.speakerName && line.speakerName.toLowerCase().includes('examiner')) ||
+      lowerText.startsWith('part ') ||
+      lowerText.startsWith('section ') ||
+      lowerText.startsWith('before you hear') ||
+      lowerText.startsWith('that is the end') ||
+      lowerText.startsWith('international english language');
+
+    const resolvedSpeakerId = line.speakerId && SPEAKER_EDGE_VOICE_MAP[line.speakerId]
+      ? line.speakerId
+      : isExaminer
+      ? 'speaker_04'
+      : 'speaker_01';
+
+    const resolvedSpeakerName = isExaminer
+      ? 'Sprint Examiner (Arthur)'
+      : line.speakerName || 'Sprint Speaker';
+
+    const currentLine: BuiltExamDialogueLine = {
+      speakerId: resolvedSpeakerId,
+      speakerName: resolvedSpeakerName,
+      gender: line.gender || (resolvedSpeakerId === 'speaker_05' || resolvedSpeakerId === 'speaker_02' ? 'female' : 'male'),
+      text: cleanText,
+      pauseAfterMs: line.pauseAfterMs ?? (isExaminer ? 1000 : 420)
+    };
+
+    // Coalesce consecutive turns from the same non-examiner speaker in Part 1 and Part 3
+    if (
+      validated.length > 0 &&
+      (sectionNum === 1 || sectionNum === 3) &&
+      !isExaminer
+    ) {
+      const prev = validated[validated.length - 1];
+      const prevIsExaminer =
+        prev.speakerId === 'speaker_04' &&
+        Boolean(prev.speakerName && prev.speakerName.toLowerCase().includes('examiner'));
+
+      if (!prevIsExaminer && prev.speakerId === currentLine.speakerId) {
+        prev.text = `${prev.text} ${currentLine.text}`;
+        prev.pauseAfterMs = Math.max(prev.pauseAfterMs || 0, currentLine.pauseAfterMs || 0);
+        continue;
+      }
+    }
+
+    validated.push(currentLine);
+  }
+
+  return validated;
+}
+
+/**
+ * IELTS Indicative Listening Raw Score (out of 40) to Band Score Conversion Table.
+ * Calibrated against published IELTS/IDP/the IELTS partners indicative benchmarks.
+ * Note on Equating & Practice Estimations:
+ * Raw score-to-band conversions published by test partners represent typical difficulty benchmarks.
+ * In live IELTS administrations, operational boundaries may fluctuate slightly (typically ±1 raw mark)
+ * due to psychometric scaling and form equating across different test versions.
+ * Therefore, results are indicative practice estimates rather than guaranteed official test-day scores.
+ * If totalQuestions != 40, scales the raw score proportionally to the 40-question Sprint scale.
  * Strictly returns 0.0 when correctCount <= 0 or totalQuestions <= 0.
  */
 export function calculateOfficialListeningBand(correctCount: number, totalQuestions: number = 40): number {
@@ -784,9 +1340,13 @@ export function calculateOfficialListeningBand(correctCount: number, totalQuesti
 }
 
 /**
- * Official Cambridge IELTS Academic Reading Raw Score (out of 40) to Band Score Conversion Table.
+ * IELTS Indicative Academic Reading Raw Score (out of 40) to Band Score Conversion Table.
+ * Calibrated against published IELTS/IDP/the IELTS partners indicative benchmarks:
  * Example benchmarks: 39-40 = 9.0, 37-38 = 8.5, 35-36 = 8.0, 33-34 = 7.5, 30-32 = 7.0,
  * 27-29 = 6.5, 23-26 = 6.0, 16-22 = 5.5, 13-15 = 5.0, 10-12 = 4.5, 8-9 = 4.0, 6-7 = 3.5, 4-5 = 3.0, 0 = 0.0.
+ * Note on Equating & Practice Estimations:
+ * Raw score boundaries vary slightly across specific test versions in live administrations.
+ * Results generated are indicative practice estimates.
  */
 export function calculateOfficialAcademicReadingBand(correctCount: number, totalQuestions: number = 40): number {
   if (correctCount <= 0 || totalQuestions <= 0) return 0.0;
@@ -809,3 +1369,252 @@ export function calculateOfficialAcademicReadingBand(correctCount: number, total
   if (scaledRaw >= 1) return 2.0;
   return 0.0;
 }
+
+/**
+ * IELTS Indicative General Training Reading Raw Score (out of 40) to Band Score Conversion Table.
+ * Calibrated against published IELTS/IDP/the IELTS partners indicative benchmarks:
+ * Benchmarks: 40 = 9.0, 39 = 8.5, 37-38 = 8.0, 36 = 7.5, 34-35 = 7.0, 32-33 = 6.5, 30-31 = 6.0,
+ * 27-29 = 5.5, 23-26 = 5.0, 19-22 = 4.5, 15-18 = 4.0, 12-14 = 3.5, 9-11 = 3.0, 6-8 = 2.5, 4-5 = 2.0, 0 = 0.0.
+ * Note on Equating & Practice Estimations:
+ * Raw score boundaries vary slightly across specific test versions in live administrations.
+ * Results generated are indicative practice estimates.
+ */
+export function calculateOfficialGeneralTrainingReadingBand(correctCount: number, totalQuestions: number = 40): number {
+  if (correctCount <= 0 || totalQuestions <= 0) return 0.0;
+  const scaledRaw = totalQuestions === 40 ? correctCount : Math.round((correctCount / totalQuestions) * 40);
+
+  if (scaledRaw >= 40) return 9.0;
+  if (scaledRaw >= 39) return 8.5;
+  if (scaledRaw >= 37) return 8.0;
+  if (scaledRaw >= 36) return 7.5;
+  if (scaledRaw >= 34) return 7.0;
+  if (scaledRaw >= 32) return 6.5;
+  if (scaledRaw >= 30) return 6.0;
+  if (scaledRaw >= 27) return 5.5;
+  if (scaledRaw >= 23) return 5.0;
+  if (scaledRaw >= 19) return 4.5;
+  if (scaledRaw >= 15) return 4.0;
+  if (scaledRaw >= 12) return 3.5;
+  if (scaledRaw >= 9) return 3.0;
+  if (scaledRaw >= 6) return 2.5;
+  if (scaledRaw >= 4) return 2.0;
+  return 1.0;
+}
+
+export type ListeningExamPacingMode = 'authentic' | 'quick';
+
+export interface BuiltExamDialogueLine {
+  speakerId?: string;
+  speakerName?: string;
+  gender?: 'male' | 'female';
+  text: string;
+  pauseAfterMs?: number;
+}
+
+/**
+ * Builds the 4-part IELTS Listening examination dialogue script from 40 questions.
+ * - 'authentic' mode: Uses realistic preview pauses (20s before each part, 15s mid-part)
+ *   and full 30-second ("half a minute") answer-checking pauses at the end of Parts 1, 2, and 3.
+ * - 'quick' mode: Uses compressed pauses (~1.1s between instructions and sections) for
+ *   faster practice while preserving 100% of spoken questions and dialogue turns at 1.0x speed.
+ */
+export function buildListeningExamDialogue(
+  questions: IELTSQuestion[],
+  pacingMode: ListeningExamPacingMode = 'authentic'
+): BuiltExamDialogueLine[] {
+  if (!questions || questions.length === 0) return [];
+
+  const isAuthentic = pacingMode === 'authentic';
+  const welcomePauseMs = isAuthentic ? 2500 : 1100;
+  const partPreviewPauseMs = isAuthentic ? 20000 : 1100;
+  const midPartTransitionPauseMs = isAuthentic ? 15000 : 950;
+  const endOfPartCheckPauseMs = isAuthentic ? 30000 : 1100;
+
+  const lines: BuiltExamDialogueLine[] = [];
+
+  const appendPartQuestions = (
+    partSlice: IELTSQuestion[],
+    defaultLabel: string,
+    sectionNum: 1 | 2 | 3 | 4 = 1
+  ) => {
+    const seenTexts = new Set<string>();
+    const collectedDialogue: Array<{
+      speaker?: string;
+      speakerId?: string;
+      gender?: 'male' | 'female';
+      text: string;
+      pauseAfterMs?: number;
+    }> = [];
+
+    let previousTopic: string | null = null;
+    const partStartQuestionNumber = (sectionNum - 1) * 10 + 1;
+    const partEndQuestionNumber = sectionNum * 10;
+
+    partSlice.forEach((q, sliceIdx) => {
+      const currentTopic = (q.topic || '').trim();
+      const absoluteQuestionNumber = partStartQuestionNumber + sliceIdx;
+
+      if (
+        previousTopic &&
+        currentTopic &&
+        currentTopic !== previousTopic &&
+        sliceIdx >= 3 &&
+        sliceIdx <= 7
+      ) {
+        const transitionPrompt = `Before you hear the rest of Part ${sectionNum}, you have a moment to look at questions ${absoluteQuestionNumber} to ${partEndQuestionNumber}.`;
+        if (!seenTexts.has(transitionPrompt)) {
+          seenTexts.add(transitionPrompt);
+          collectedDialogue.push({
+            speaker: 'Sprint Examiner (Arthur)',
+            speakerId: 'speaker_04',
+            gender: 'male',
+            text: transitionPrompt,
+            pauseAfterMs: midPartTransitionPauseMs
+          });
+        }
+      }
+      if (currentTopic) {
+        previousTopic = currentTopic;
+      }
+
+      if (q.dialogue && q.dialogue.length > 0) {
+        q.dialogue.forEach((d) => {
+          const clean = formatIELTSSpeechText((d.text || '').trim());
+          if (clean && !seenTexts.has(clean)) {
+            seenTexts.add(clean);
+            collectedDialogue.push({
+              speaker: d.speaker,
+              speakerId: d.speakerId,
+              gender: d.gender,
+              text: clean,
+              pauseAfterMs:
+                d.pauseAfterMs ||
+                (isAuthentic ? (sectionNum === 4 ? 950 : 800) : sectionNum === 4 ? 720 : 620)
+            });
+          }
+        });
+      } else if (q.audioScript) {
+        const clean = formatIELTSSpeechText(q.audioScript.trim());
+        if (clean && !seenTexts.has(clean)) {
+          seenTexts.add(clean);
+          collectedDialogue.push({
+            speaker: defaultLabel,
+            speakerId: sectionNum === 2 ? 'speaker_05' : sectionNum === 4 ? 'speaker_06' : 'speaker_01',
+            gender: sectionNum === 2 ? 'female' : 'male',
+            text: clean,
+            pauseAfterMs: isAuthentic ? 900 : 750
+          });
+        }
+      } else if (q.prompt) {
+        const clean = formatIELTSSpeechText(q.prompt.trim());
+        if (clean && !seenTexts.has(clean)) {
+          seenTexts.add(clean);
+          collectedDialogue.push({
+            speaker: defaultLabel,
+            speakerId: sectionNum === 2 ? 'speaker_05' : sectionNum === 4 ? 'speaker_06' : 'speaker_01',
+            gender: sectionNum === 2 ? 'female' : 'male',
+            text: clean,
+            pauseAfterMs: isAuthentic ? 900 : 750
+          });
+        }
+      }
+    });
+
+    const resolvedPartLines = assignSectionDialogueSpeakers(
+      collectedDialogue,
+      sectionNum,
+      defaultLabel
+    );
+    const validatedPartLines = validateAndCoalesceDialogueSequence(resolvedPartLines, sectionNum);
+
+    validatedPartLines.forEach((rl) => {
+      lines.push({
+        speakerId: rl.speakerId,
+        speakerName: rl.speakerName,
+        gender: rl.gender,
+        text: rl.text,
+        pauseAfterMs: rl.pauseAfterMs
+      });
+    });
+  };
+
+  // BandSprint Welcome & Test Opening
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'International English Language Testing System. Authentic Computer-Delivered Listening Examination. The test consists of four parts, with forty questions in total. You will hear each recording once only. Answer all questions as you listen. At the end of the test, you will have two minutes to check your answers.',
+    pauseAfterMs: welcomePauseMs
+  });
+
+  // Part 1: Everyday Social Conversation (Two Speakers)
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'Part 1. You will hear a conversation between two speakers in an everyday social context. First, you have some time to look at questions 1 to 10.',
+    pauseAfterMs: partPreviewPauseMs
+  });
+
+  appendPartQuestions(questions.slice(0, 10), 'Everyday Speaker (Thomas)', 1);
+
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'That is the end of Part 1. You now have half a minute to check your answers to questions 1 to 10. Now turn to Part 2.',
+    pauseAfterMs: endOfPartCheckPauseMs
+  });
+
+  // Part 2: Everyday Social Monologue (Single Speaker)
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'Part 2. You will hear a talk by a single speaker about local community facilities and public arrangements. First, you have some time to look at questions 11 to 20.',
+    pauseAfterMs: partPreviewPauseMs
+  });
+
+  appendPartQuestions(questions.slice(10, 20), 'Community Guide (Charlotte)', 2);
+
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'That is the end of Part 2. You now have half a minute to check your answers to questions 11 to 20. Now turn to Part 3.',
+    pauseAfterMs: endOfPartCheckPauseMs
+  });
+
+  // Part 3: Academic Discussion (Two to Four Speakers)
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'Part 3. You will hear an academic discussion between university students and their tutor. First, you have some time to look at questions 21 to 30.',
+    pauseAfterMs: partPreviewPauseMs
+  });
+
+  appendPartQuestions(questions.slice(20, 30), 'Academic Tutor (Dr. Alistair)', 3);
+
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'That is the end of Part 3. You now have half a minute to check your answers to questions 21 to 30. Now turn to Part 4.',
+    pauseAfterMs: endOfPartCheckPauseMs
+  });
+
+  // Part 4: Academic Lecture Monologue (Single Speaker)
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'Part 4. You will hear an academic lecture by a single speaker on a university subject. First, you have some time to look at questions 31 to 40.',
+    pauseAfterMs: partPreviewPauseMs
+  });
+
+  appendPartQuestions(questions.slice(30, 40), 'University Lecturer (Professor Edward)', 4);
+
+  // Final Conclusion
+  lines.push({
+    speakerId: 'speaker_04',
+    speakerName: 'Sprint Examiner (Arthur)',
+    text: 'That is the end of Part 4 and the end of the listening audio recording. You now have two minutes to check and finalize your answers across all four parts.',
+    pauseAfterMs: 1000
+  });
+
+  return lines;
+}
+

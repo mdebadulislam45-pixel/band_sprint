@@ -1,6 +1,6 @@
 /**
  * IELTS Speaking Band 9 Vault
- * Real Cambridge test topics across Part 1 (Short Q&A), Part 2 (Cue Card Monologues),
+ * Real Practice test topics across Part 1 (Short Q&A), Part 2 (Cue Card Monologues),
  * and Part 3 (Abstract In-depth Discussion) with British voice-ready transcripts.
  */
 

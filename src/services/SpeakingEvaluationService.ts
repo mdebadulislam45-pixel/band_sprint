@@ -1,6 +1,6 @@
 /**
  * IELTS SPRINT — SPEAKING EVALUATION SERVICE
- * Evaluates candidate responses across the 4 official IELTS Speaking criteria:
+ * Evaluates candidate responses across the 4 IELTS Speaking criteria:
  * 1. Fluency and Coherence (25%)
  * 2. Lexical Resource (25%)
  * 3. Grammatical Range and Accuracy (25%)
@@ -87,9 +87,52 @@ const COMPLEX_GRAMMAR_PATTERNS = [
   /\b(although|even though|despite the fact that|whereas|while|provided that|unless)\b/gi,
   /\b(which|who|whom|whose|whereby|in which)\b/gi,
   /\b(had been|have been|has been|would have|could have|should have|might have)\b/gi,
+  /\b(have|has|had)\s+[a-z]+ed\b/gi,
+  /\b(having\s+[a-z]+ed|having\s+said)\b/gi,
   /\b(not only .* but also|neither .* nor|either .* or)\b/gi,
   /\b(if .* were|were .* to)\b/gi
 ];
+
+export function calculateIELTSOverallBand(fc: number, gra: number, lr: number, pr: number): {
+  rawAverage: number;
+  overallBand: number;
+  formulaString: string;
+} {
+  const rawAverage = (fc + gra + lr + pr) / 4;
+  const decimal = rawAverage - Math.floor(rawAverage);
+  let overallBand = Math.floor(rawAverage);
+
+  if (decimal < 0.25) {
+    overallBand += 0.0;
+  } else if (decimal < 0.75) {
+    overallBand += 0.5;
+  } else {
+    overallBand += 1.0;
+  }
+
+  return {
+    rawAverage: Number(rawAverage.toFixed(3)),
+    overallBand,
+    formulaString: `(${fc.toFixed(1)} + ${gra.toFixed(1)} + ${lr.toFixed(1)} + ${pr.toFixed(1)}) ÷ 4 = ${rawAverage.toFixed(3)} → ${overallBand.toFixed(1)}`
+  };
+}
+
+export function getIELTSBandDescriptor(band: number): string {
+  if (band >= 9.0) return 'Expert user';
+  if (band >= 8.5) return 'Very good user (Upper)';
+  if (band >= 8.0) return 'Very good user';
+  if (band >= 7.5) return 'Good user (Upper)';
+  if (band >= 7.0) return 'Good user';
+  if (band >= 6.5) return 'Competent user (Upper)';
+  if (band >= 6.0) return 'Competent user';
+  if (band >= 5.5) return 'Modest user (Upper)';
+  if (band >= 5.0) return 'Modest user';
+  if (band >= 4.0) return 'Limited user';
+  if (band >= 3.0) return 'Extremely limited user';
+  if (band >= 2.0) return 'Intermittent user';
+  if (band >= 1.0) return 'Non-user';
+  return 'Did not attempt / Inaudible';
+}
 
 function roundToHalfBand(score: number): number {
   const clamped = Math.max(0.0, Math.min(9.0, score));
@@ -109,7 +152,7 @@ export function computeSpeakingAnalytics(answers: SpeakingAnswerRecord[]): Speak
   for (const ans of answers) {
     const cleanWords = (ans.transcript || '').trim().split(/\s+/).filter(Boolean);
     totalSpeakingTimeSec += ans.durationSec || 0;
-    totalWordsSpoken += cleanWords.length;
+    totalWordsSpoken += typeof ans.wordCount === 'number' && ans.wordCount > 0 ? ans.wordCount : cleanWords.length;
     totalPauses += ans.pauseCount || 0;
     totalLongPauses += ans.longPauseCount || 0;
     totalFillers += ans.fillerCount || 0;
@@ -257,12 +300,14 @@ export function evaluateSpeakingSession(
 
   let advancedVocabHits = 0;
   for (const pattern of ADVANCED_VOCAB_PATTERNS) {
+    pattern.lastIndex = 0;
     const matches = combinedTranscript.match(pattern);
     if (matches) advancedVocabHits += matches.length;
   }
 
   let complexGrammarHits = 0;
   for (const pattern of COMPLEX_GRAMMAR_PATTERNS) {
+    pattern.lastIndex = 0;
     const matches = combinedTranscript.match(pattern);
     if (matches) complexGrammarHits += matches.length;
   }
@@ -361,9 +406,13 @@ export function evaluateSpeakingSession(
 
   const pronunciationBand = roundToHalfBand(rawPronunciation);
 
-  const overallBand = roundToHalfBand(
-    (fluencyBand + lexicalBand + grammarBand + pronunciationBand) / 4
+  const bandCalculation = calculateIELTSOverallBand(
+    fluencyBand,
+    grammarBand,
+    lexicalBand,
+    pronunciationBand
   );
+  const overallBand = bandCalculation.overallBand;
 
   const sampleQuotes = answers
     .map((a) => (a.transcript || '').trim())
@@ -443,10 +492,6 @@ export function evaluateSpeakingSession(
     grammarBand,
     pronunciationBand,
     criteria: {
-      fc: fluencyBand,
-      lr: lexicalBand,
-      gra: grammarBand,
-      pr: pronunciationBand,
       fluency: fluencyFeedback,
       lexical: lexicalFeedback,
       grammar: grammarFeedback,
@@ -482,17 +527,15 @@ export function evaluateSpeakingSession(
     ],
     grammarObservations: realGrammarObservations,
     vocabUpgrades: [
-      {
-        original: 'very important',
-        upgraded: 'of paramount importance / indispensable',
-        reason: 'Demonstrates C1 lexical resource in Part 3 discussions.'
-      },
-      {
-        original: 'many people think',
-        upgraded: 'a widespread consensus suggests',
-        reason: 'Elevates informal generalizations into formal academic discourse.'
-      }
-    ],
+      { regex: /\bvery important\b/i, original: 'very important', upgraded: 'of paramount importance / indispensable', reason: 'Demonstrates C1 lexical resource in Part 3 discussions.' },
+      { regex: /\bmany people think\b/i, original: 'many people think', upgraded: 'a widespread consensus suggests', reason: 'Elevates informal generalizations into formal academic discourse.' },
+      { regex: /\ba lot of\b/i, original: 'a lot of', upgraded: 'a substantial proportion of / a plethora of', reason: 'Replaces informal conversational quantifier with C1 academic register.' },
+      { regex: /\bbig problem\b/i, original: 'big problem', upgraded: 'pressing conundrum / formidable challenge', reason: 'Replaces generic noun phrase with precise lexical expression.' },
+      { regex: /\bgood idea\b/i, original: 'good idea', upgraded: 'viable proposition / judicious approach', reason: 'Elevates everyday conversational phrasing to Band 8+ standard.' },
+      { regex: /\bvery (big|good|bad)\b/i, original: 'very big / good / bad', upgraded: 'substantial / commendable / detrimental', reason: 'Replaces basic modifier + adjective with a single C1 lexical item.' }
+    ]
+      .filter((u) => u.regex.test(combinedTranscript))
+      .map((u) => ({ original: u.original, upgraded: u.upgraded, reason: u.reason })),
     overallSummary: `Assessed across ${analytics.totalWordsSpoken} spoken words (${analytics.averageWpm} WPM): Overall Band ${overallBand.toFixed(1)} (FC ${fluencyBand.toFixed(1)} · LR ${lexicalBand.toFixed(1)} · GRA ${grammarBand.toFixed(1)} · PR ${pronunciationBand.toFixed(1)}).`
   };
 }
@@ -645,7 +688,7 @@ export async function evaluateSingleSpeakingTurn(
 }
 
 /**
- * Deterministic Cambridge linguistic evaluator for candidate transcripts (>= 5 words).
+ * Deterministic Sprint linguistic evaluator for candidate transcripts (>= 5 words).
  * Strictly enforces the 5-word input gate and never injects fake grammar errors.
  */
 export function generateDiagnosticTurnFeedback(
@@ -749,14 +792,16 @@ export function generateDiagnosticTurnFeedback(
   // 1. Detect REAL grammatical errors present in the candidate's transcript
   const grammaticalErrors: DetailedGrammarError[] = [];
 
-  if (/\b(it|he|she)\s+(make|feel|sound|seem|give|take|help|cost)\b/i.test(lower)) {
-    const match = cleanText.match(/\b(it|he|she)\s+(make|feel|sound|seem|give|take|help|cost)\b/i);
-    const obs = match ? match[0] : 'it make';
+  if (/\b(it|he|she|my brother|my sister|my friend)\s+(make|feel|sound|seem|give|take|help|cost|live|work|have)\b/i.test(lower)) {
+    const match = cleanText.match(/\b(it|he|she|my brother|my sister|my friend)\s+(make|feel|sound|seem|give|take|help|cost|live|work|have)\b/i);
+    const obs = match ? match[0] : 'he have';
     const parts = obs.split(/\s+/);
+    const verb = parts[parts.length - 1].toLowerCase();
+    const correctedVerb = verb === 'have' ? 'has' : `${verb}s`;
     grammaticalErrors.push({
       observed: obs,
-      corrected: `${parts[0]} ${parts[1]}s`,
-      explanation: 'Third-person singular subjects (he/she/it) require a singular verb ending in "-s" in the present simple tense.',
+      corrected: `${parts.slice(0, parts.length - 1).join(' ')} ${correctedVerb}`,
+      explanation: `Third-person singular subjects require a singular verb ("${correctedVerb}") in the present simple tense.`,
       ruleCategory: 'Subject-Verb Agreement',
       severity: 'moderate'
     });
@@ -841,6 +886,24 @@ export function generateDiagnosticTurnFeedback(
       ipa: '/ˌɒpəˈtjuːnəti/',
       syllableStress: 'op-uh-TYOO-nuh-tee',
       tip: 'In British RP, pronounce "-tu-" with a clear /tjuː/ glide.'
+    },
+    difference: {
+      word: 'difference',
+      ipa: '/ˈdɪfrəns/',
+      syllableStress: 'DIF-uhns (2 syllables)',
+      tip: 'Elide the unstressed middle "-er-" vowel in natural British RP (/ˈdɪfrəns/).'
+    },
+    devices: {
+      word: 'devices',
+      ipa: '/dɪˈvaɪsɪz/',
+      syllableStress: 'di-VAI-siz',
+      tip: 'Place primary stress on the second syllable diphthong /aɪ/.'
+    },
+    upgraded: {
+      word: 'upgraded',
+      ipa: '/ʌpˈɡreɪdɪd/',
+      syllableStress: 'up-GRAY-did',
+      tip: 'Stress the root verb syllable "GRAY" and articulate the /-ɪd/ past suffix.'
     }
   };
 
@@ -883,13 +946,33 @@ export function generateDiagnosticTurnFeedback(
     );
   }
 
+  // Check C1/C2 advanced vocabulary and complex grammar hits in actual transcript
+  let advVocabHits = 0;
+  for (const pattern of ADVANCED_VOCAB_PATTERNS) {
+    pattern.lastIndex = 0;
+    const matches = cleanText.match(pattern);
+    if (matches) advVocabHits += matches.length;
+  }
+  let cpxGrammarHits = 0;
+  for (const pattern of COMPLEX_GRAMMAR_PATTERNS) {
+    pattern.lastIndex = 0;
+    const matches = cleanText.match(pattern);
+    if (matches) cpxGrammarHits += matches.length;
+  }
+
   // 4. Calculate Band Scores proportional to actual word count, lexical richness, and grammar
   let fluency = wordCount >= 35 ? 7.5 : wordCount >= 20 ? 6.5 : wordCount >= 10 ? 5.5 : 5.0;
   let lexical = wordCount >= 30 ? 7.0 : wordCount >= 15 ? 6.0 : 5.0;
+  if (advVocabHits >= 2) lexical += 1.0;
+  else if (advVocabHits >= 1) lexical += 0.5;
+
   let grammar = grammaticalErrors.length === 0 ? (wordCount >= 20 ? 7.0 : 6.0) : 5.5;
+  if (cpxGrammarHits >= 2) grammar += 1.0;
+  else if (cpxGrammarHits >= 1) grammar += 0.5;
+
   let pronunciation = wordCount >= 15 ? 6.5 : 5.5;
 
-  const overall = roundToHalfBand((fluency + lexical + grammar + pronunciation) / 4);
+  const overall = calculateIELTSOverallBand(fluency, grammar, lexical, pronunciation).overallBand;
 
   return {
     questionId,
@@ -928,6 +1011,24 @@ export function generateDiagnosticTurnFeedback(
       intonationPattern: 'Use rising-falling intonation across subordinate clauses to signal continuation before your final point.',
       rhythmVerdict: 'Audible cadence; emphasize content words while reducing function words.'
     },
+    pronunciationAnalysis: {
+      clarityBand: pronunciation,
+      cadenceWpm: wordsPerMinute || 110,
+      trickyWords,
+      problemWords: trickyWords.map((w) => ({
+        word: w.word,
+        phoneticIpa: w.ipa,
+        stressedSyllable: w.syllableStress,
+        advice: w.tip
+      })),
+      connectedSpeechTips: [
+        'Link final consonant sounds smoothly into following vowel words (catenation).',
+        'Use weak schwa (/ə/) forms on unstressed prepositions ("to", "of", "for") to maintain British stress-timed rhythm.'
+      ],
+      intonationPattern: 'Use rising-falling intonation across subordinate clauses to signal continuation before your final point.',
+      intonationGuidance: 'Use rising-falling intonation across subordinate clauses to signal continuation before your final point.',
+      rhythmVerdict: 'Audible cadence; emphasize content words while reducing function words.'
+    },
     band8Answer: {
       bandScore: 8.5,
       modelAnswer,
@@ -935,6 +1036,15 @@ export function generateDiagnosticTurnFeedback(
       keyDiscourseMarkers: ['To be perfectly frank', 'Having said that', 'On the one hand', 'Consequently'],
       examinerRationale,
       audioPromptText: modelAnswer
+    },
+    betterAnswer: {
+      bandScore: 8.5,
+      modelAnswer,
+      modelResponse: modelAnswer,
+      highlightedPhrases: highlightedCollocations.map((c) => c.phrase),
+      highlightedCollocations,
+      keyDiscourseMarkers: ['To be perfectly frank', 'Having said that', 'On the one hand', 'Consequently'],
+      examinerRationale
     },
     actionableTips: [
       wordCount < 15

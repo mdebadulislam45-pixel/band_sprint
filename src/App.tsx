@@ -1,91 +1,108 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Download, Volume2, Play, Pause, RotateCcw, Sparkles, Mic, FileText, 
-  BookOpen, CheckCircle, Award, Compass, MessageSquare, Globe, ArrowRight,
-  ShieldCheck, AlertCircle, RefreshCw, X, ChevronRight
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import { MotionConfig, motion, AnimatePresence } from 'framer-motion';
 import { UserProfile } from './types';
-import { getCurrentUser, createDefaultProgress, switchActiveUser, saveUser } from './utils/userStorage';
+import { getCurrentUser, saveUser } from './utils/userStorage';
 import { getMistakes } from './utils/vaultStorage';
-import { PreLoginLanding } from './components/landing/PreLoginLanding';
-import { ProductionAuthModal } from './components/auth/ProductionAuthModal';
+import {
+  validateCurrentServerSession,
+  storeSessionToken,
+  logoutCandidate
+} from './services/authService';
+import { firebaseSyncService } from './services/firebaseSyncService';
+
+// Router & Common UI
+import { useAppRouter } from './router/useAppRouter';
+import { Breadcrumbs } from './components/common/Breadcrumbs';
+import { NotFoundPage } from './components/common/NotFoundPage';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { PageLoader } from './components/common/LoadingStates';
+import { OfflineStatusIndicator } from './components/common/OfflineStatusIndicator';
 
 // Top-Level Navigation & Layout
 import { AppHeader } from './components/navigation/AppHeader';
-import { BottomNav, BottomNavTab } from './components/navigation/BottomNav';
+import { BottomNav } from './components/navigation/BottomNav';
 import { DesktopSidebar } from './components/navigation/DesktopSidebar';
 import { MobileSidebarDrawer } from './components/navigation/MobileSidebarDrawer';
 
-// Main Dashboard & Labs
-import { HomeDashboard } from './components/HomeDashboard';
-import { ListeningLab } from './components/ListeningLab';
-import { ReadingLab } from './components/ReadingLab';
-import { LiveMockTest } from './components/LiveMockTest';
-import { VocabDeck } from './components/VocabDeck';
-import { BanglaIELTSGuide } from './components/BanglaIELTSGuide';
-import { Beginner101 } from './components/Beginner101';
-import { SlideGuide } from './components/SlideGuide';
-import { Task1Visualizer } from './components/Task1Visualizer';
-import { ArgumentMatrix } from './components/ArgumentMatrix';
-
-// Pages
-import { PracticePage } from './components/pages/PracticePage';
-import { SpeakingLabPage } from './components/pages/SpeakingLabPage';
-import { WritingLabPage } from './components/pages/WritingLabPage';
-import { AIToolsPage } from './components/pages/AIToolsPage';
-import { LearnPage } from './components/pages/LearnPage';
-import { ProgressPage } from './components/pages/ProgressPage';
-import { ProfilePage } from './components/pages/ProfilePage';
-import { MockTestPage } from './components/pages/MockTestPage';
-import { CDIELTSExamMode } from './components/cdielts/CDIELTSExamMode';
-import { CDIELTSSpeakingSuite } from './components/cdielts/CDIELTSSpeakingSuite';
-import { PreExamHardwareCheck } from './components/cdielts/PreExamHardwareCheck';
-import { OnboardingDiagnosticFunnel } from './components/onboarding/OnboardingDiagnosticFunnel';
-import { UsefulPhrasesPage } from './components/pages/UsefulPhrasesPage';
-import { IdiomLabPage } from './components/pages/IdiomLabPage';
-import { C1IdiomsPage } from './components/pages/C1IdiomsPage';
-import { GrammarLabPage } from './components/pages/GrammarLabPage';
-import { ModelAnswersPage } from './components/pages/ModelAnswersPage';
-import { SpellingLabPage } from './components/pages/SpellingLabPage';
-import { CollocationLabPage } from './components/pages/CollocationLabPage';
-import { StudyPlanPage } from './components/pages/StudyPlanPage';
-import { BandDescriptorsPage } from './components/pages/BandDescriptorsPage';
-import { QuestionBankPage } from './components/pages/QuestionBankPage';
-import { QuestionHistoryPage } from './components/pages/QuestionHistoryPage';
-import { SpeakingVaultPage } from './components/pages/SpeakingVaultPage';
-import { SpeedReadingPage } from './components/pages/SpeedReadingPage';
-import { SprintCalendarPage } from './components/pages/SprintCalendarPage';
-import { CambridgeLibraryPage } from './components/cambridge/CambridgeLibraryPage';
-import { ContextualAITutor } from './components/common/ContextualAITutor';
-import { OfflineStatusIndicator } from './components/common/OfflineStatusIndicator';
-import { audioManager } from './services/AudioManager';
-
-// Modals
-import { GlobalSearchModal } from './components/modals/GlobalSearchModal';
-import { MistakeVault } from './components/MistakeVault';
-import { BandCalculatorModal } from './components/BandCalculatorModal';
-import { AuthModal } from './components/AuthModal';
-import { CommercialShowcaseModal } from './components/commercial/CommercialShowcaseModal';
-import { TermsAndPrivacyModal } from './components/commercial/TermsAndPrivacyModal';
-import { ContactSupportModal } from './components/commercial/ContactSupportModal';
-import { LaunchSeoGuideModal } from './components/commercial/LaunchSeoGuideModal';
-
 // Theme Provider
 import { ThemeProvider } from './context/ThemeContext';
+import { audioManager } from './services/AudioManager';
+
+// Lazy-Loaded Pre-Login Landing & Modals (Excluded from Main Initial Chunk)
+const PreLoginLanding = lazy(() => import('./components/landing/PreLoginLanding').then(m => ({ default: m.PreLoginLanding })));
+const ProductionAuthModal = lazy(() => import('./components/auth/ProductionAuthModal').then(m => ({ default: m.ProductionAuthModal })));
+const GlobalSearchModal = lazy(() => import('./components/modals/GlobalSearchModal').then(m => ({ default: m.GlobalSearchModal })));
+const MistakeVault = lazy(() => import('./components/MistakeVault').then(m => ({ default: m.MistakeVault })));
+const BandCalculatorModal = lazy(() => import('./components/BandCalculatorModal').then(m => ({ default: m.BandCalculatorModal })));
+const AuthModal = lazy(() => import('./components/AuthModal').then(m => ({ default: m.AuthModal })));
+const CommercialShowcaseModal = lazy(() => import('./components/commercial/CommercialShowcaseModal').then(m => ({ default: m.CommercialShowcaseModal })));
+const TermsAndPrivacyModal = lazy(() => import('./components/commercial/TermsAndPrivacyModal').then(m => ({ default: m.TermsAndPrivacyModal })));
+const ContactSupportModal = lazy(() => import('./components/commercial/ContactSupportModal').then(m => ({ default: m.ContactSupportModal })));
+const LaunchSeoGuideModal = lazy(() => import('./components/commercial/LaunchSeoGuideModal').then(m => ({ default: m.LaunchSeoGuideModal })));
+const PreExamHardwareCheck = lazy(() => import('./components/cdielts/PreExamHardwareCheck').then(m => ({ default: m.PreExamHardwareCheck })));
+const FloatingBarnaby = lazy(() => import('./components/common/FloatingBarnaby').then(m => ({ default: m.FloatingBarnaby })));
+const OnboardingDiagnosticFunnel = lazy(() => import('./components/onboarding/OnboardingDiagnosticFunnel').then(m => ({ default: m.OnboardingDiagnosticFunnel })));
+const PreAuthOnboardingFunnel = lazy(() => import('./components/onboarding/PreAuthOnboardingFunnel').then(m => ({ default: m.PreAuthOnboardingFunnel })));
+
+// Lazy-Loaded Main Hubs & Pages for Maximum Mobile Performance
+const HomeDashboard = lazy(() => import('./components/HomeDashboard').then(m => ({ default: m.HomeDashboard })));
+const PracticePage = lazy(() => import('./components/pages/PracticePage').then(m => ({ default: m.PracticePage })));
+const LearnPage = lazy(() => import('./components/pages/LearnPage').then(m => ({ default: m.LearnPage })));
+const ProgressPage = lazy(() => import('./components/pages/ProgressPage').then(m => ({ default: m.ProgressPage })));
+const ProfilePage = lazy(() => import('./components/pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
+
+// Lazy-Loaded Practice Labs & Tools
+const ListeningLab = lazy(() => import('./components/ListeningLab').then(m => ({ default: m.ListeningLab })));
+const ReadingLab = lazy(() => import('./components/ReadingLab').then(m => ({ default: m.ReadingLab })));
+const SpeakingLabPage = lazy(() => import('./components/pages/SpeakingLabPage').then(m => ({ default: m.SpeakingLabPage })));
+const WritingLabPage = lazy(() => import('./components/pages/WritingLabPage').then(m => ({ default: m.WritingLabPage })));
+const MockTestPage = lazy(() => import('./components/pages/MockTestPage').then(m => ({ default: m.MockTestPage })));
+const QuestionBankPage = lazy(() => import('./components/pages/QuestionBankPage').then(m => ({ default: m.QuestionBankPage })));
+const AIToolsPage = lazy(() => import('./components/pages/AIToolsPage').then(m => ({ default: m.AIToolsPage })));
+
+// Lazy-Loaded Learning Labs & Decks
+const VocabDeck = lazy(() => import('./components/VocabDeck').then(m => ({ default: m.VocabDeck })));
+const UsefulPhrasesPage = lazy(() => import('./components/pages/UsefulPhrasesPage').then(m => ({ default: m.UsefulPhrasesPage })));
+const IdiomLabPage = lazy(() => import('./components/pages/IdiomLabPage').then(m => ({ default: m.IdiomLabPage })));
+const CollocationLabPage = lazy(() => import('./components/pages/CollocationLabPage').then(m => ({ default: m.CollocationLabPage })));
+const GrammarLabPage = lazy(() => import('./components/pages/GrammarLabPage').then(m => ({ default: m.GrammarLabPage })));
+const SpellingLabPage = lazy(() => import('./components/pages/SpellingLabPage').then(m => ({ default: m.SpellingLabPage })));
+const SpeakingVaultPage = lazy(() => import('./components/pages/SpeakingVaultPage').then(m => ({ default: m.SpeakingVaultPage })));
+const ModelAnswersPage = lazy(() => import('./components/pages/ModelAnswersPage').then(m => ({ default: m.ModelAnswersPage })));
+const BandDescriptorsPage = lazy(() => import('./components/pages/BandDescriptorsPage').then(m => ({ default: m.BandDescriptorsPage })));
+const StudyPlanPage = lazy(() => import('./components/pages/StudyPlanPage').then(m => ({ default: m.StudyPlanPage })));
+const DiagnosticTestPage = lazy(() => import('./components/pages/DiagnosticTestPage').then(m => ({ default: m.DiagnosticTestPage })));
+const BanglaIELTSGuide = lazy(() => import('./components/BanglaIELTSGuide').then(m => ({ default: m.BanglaIELTSGuide })));
+const Beginner101 = lazy(() => import('./components/Beginner101').then(m => ({ default: m.Beginner101 })));
+const SlideGuide = lazy(() => import('./components/SlideGuide').then(m => ({ default: m.SlideGuide })));
+const Task1Visualizer = lazy(() => import('./components/Task1Visualizer').then(m => ({ default: m.Task1Visualizer })));
+const ArgumentMatrix = lazy(() => import('./components/ArgumentMatrix').then(m => ({ default: m.ArgumentMatrix })));
+
+// Lazy-Loaded Progress Subpages
+const CandidateAnalyticsPage = lazy(() => import('./components/pages/CandidateAnalyticsPage').then(m => ({ default: m.CandidateAnalyticsPage })));
+const QuestionHistoryPage = lazy(() => import('./components/pages/QuestionHistoryPage').then(m => ({ default: m.QuestionHistoryPage })));
+const SprintCalendarPage = lazy(() => import('./components/pages/SprintCalendarPage').then(m => ({ default: m.SprintCalendarPage })));
+const AdminAnalyticsPage = lazy(() => import('./components/pages/AdminAnalyticsPage').then(m => ({ default: m.AdminAnalyticsPage })));
 
 function AppContent() {
-  const [currentPage, setCurrentPage] = useState<string>('home');
-  const [navHistory, setNavHistory] = useState<string[]>(['home']);
+  const { currentPath, routeInfo, hub, isNotFound, navigate, goBack } = useAppRouter();
   const [user, setUser] = useState<UserProfile | null>(() => getCurrentUser());
-  const [mistakeCount, setMistakeCount] = useState<number>(0);
+  const [mistakeCount, setMistakeCount] = useState<number>(() => {
+    try {
+      return getMistakes().filter((m) => !m.mastered).length;
+    } catch {
+      return 0;
+    }
+  });
   const [examMode, setExamMode] = useState<'Academic' | 'General Training'>('Academic');
 
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Toast Notification Handler
   const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(msg);
+    }, 0);
   }, []);
 
   useEffect(() => {
@@ -96,51 +113,9 @@ function AppContent() {
   }, [toastMessage]);
 
   const [isGoogleAuthOpen, setIsGoogleAuthOpen] = useState(false);
-  const isLoggedIn = !!user || !!localStorage.getItem('ielts_auth_session');
-
-  const handleSignOut = useCallback(() => {
-    try {
-      localStorage.removeItem('ielts_auth_session');
-      localStorage.removeItem('ielts_active_user_id_v1');
-    } catch {}
-    setUser(null);
-    showToast('Signed out successfully. Returning to pre-login welcome.');
-  }, [showToast]);
-
-  useEffect(() => {
-    const handleSignOutEvent = () => handleSignOut();
-    window.addEventListener('sign_out_candidate', handleSignOutEvent);
-    return () => window.removeEventListener('sign_out_candidate', handleSignOutEvent);
-  }, [handleSignOut]);
-
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-blue-500 selection:text-white">
-        <PreLoginLanding
-          onOpenGoogleAuth={() => setIsGoogleAuthOpen(true)}
-          onPreviewExamRoom={() => {
-            setIsGoogleAuthOpen(true);
-            showToast('Please authenticate with Google and link your mobile number to access the exam room preview.');
-          }}
-          onShowToast={showToast}
-        />
-        <ProductionAuthModal
-          isOpen={isGoogleAuthOpen}
-          onClose={() => setIsGoogleAuthOpen(false)}
-          onShowToast={showToast}
-          onSuccess={() => {
-            const active = getCurrentUser();
-            setUser(active);
-          }}
-        />
-        {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-semibold">
-            <span>{toastMessage}</span>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const [isPreAuthSurveyOpen, setIsPreAuthSurveyOpen] = useState(false);
+  const [authModalInitialMode, setAuthModalInitialMode] = useState<'signin' | 'register'>('signin');
+  const [pendingPostAuthRoute, setPendingPostAuthRoute] = useState<string | null>(null);
 
   // Modal States
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -152,71 +127,148 @@ function AppContent() {
   const [isHardwareCheckOpen, setIsHardwareCheckOpen] = useState(false);
   const [preflightModule, setPreflightModule] = useState<'reading' | 'listening' | 'speaking' | 'full_mock'>('listening');
 
-  // Commercial & Legal Modal States (Subscription option paused for 1 month)
+  // Commercial & Legal Modal States
   const [isShowcaseOpen, setIsShowcaseOpen] = useState(false);
   const [isLegalOpen, setIsLegalOpen] = useState(false);
   const [legalTab, setLegalTab] = useState<'terms' | 'privacy'>('terms');
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isSeoGuideOpen, setIsSeoGuideOpen] = useState(false);
 
+  const isLoggedIn = Boolean(user && user.id && user.id !== 'default_candidate');
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await firebaseSyncService.signOut();
+    } catch {}
+    try {
+      await logoutCandidate();
+    } catch {}
+    try {
+      localStorage.removeItem('ielts_auth_session');
+      localStorage.removeItem('ielts_active_user_id_v1');
+      localStorage.removeItem('ielts_session_token_v2');
+      localStorage.removeItem('ielts_user_subscription_v2');
+      localStorage.removeItem('bandsprint_onboarding_survey_v1');
+      localStorage.removeItem('bandsprint_exam_setup_v1');
+      localStorage.removeItem('bandsprint_diagnostic_result_v1');
+      localStorage.removeItem('ielts_voice_examiner_session_v1');
+    } catch {}
+    setPendingPostAuthRoute(null);
+    setIsGoogleAuthOpen(false);
+    setIsPreAuthSurveyOpen(false);
+    setUser(null);
+    navigate('/');
+    showToast('Signed out successfully.');
+  }, [navigate, showToast]);
 
-  // Route Change Global Audio Killswitch: stops any ongoing audio/speech whenever currentPage changes
+  useEffect(() => {
+    const handleSignOutEvent = () => {
+      handleSignOut();
+    };
+    window.addEventListener('sign_out_candidate', handleSignOutEvent);
+    return () => window.removeEventListener('sign_out_candidate', handleSignOutEvent);
+  }, [handleSignOut]);
+
+  // Sync session on startup
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlSessionToken = params.get('sessionToken');
+    const urlAuthError = params.get('authError');
+
+    if (urlAuthError) {
+      showToast(urlAuthError);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (urlSessionToken) {
+      storeSessionToken(urlSessionToken);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    validateCurrentServerSession().then((res) => {
+      const cachedUser = getCurrentUser();
+      if (res.success && res.user) {
+        // Merge with local cached user progress to ensure no exam records or streaks are lost
+        const mergedUser = cachedUser && cachedUser.progress && cachedUser.progress.examHistory && cachedUser.progress.examHistory.length > (res.user.progress?.examHistory?.length || 0)
+          ? {
+              ...res.user,
+              progress: {
+                ...res.user.progress,
+                examHistory: cachedUser.progress.examHistory,
+                streakDays: Math.max(res.user.progress?.streakDays || 1, cachedUser.progress.streakDays || 1)
+              }
+            }
+          : res.user;
+        setUser((prev) => {
+          if (
+            prev &&
+            prev.id === mergedUser.id &&
+            prev.email === mergedUser.email &&
+            prev.name === mergedUser.name &&
+            prev.progress?.streakDays === mergedUser.progress?.streakDays &&
+            (prev.progress?.examHistory?.length || 0) === (mergedUser.progress?.examHistory?.length || 0)
+          ) {
+            return prev;
+          }
+          return mergedUser;
+        });
+        saveUser(mergedUser);
+      } else {
+        // If server validation fails (e.g., server restart), preserve local cached user instead of logging out or wiping progress!
+        if (cachedUser && cachedUser.id && cachedUser.id !== 'default_candidate') {
+          setUser((prev) => (prev && prev.id === cachedUser.id ? prev : cachedUser));
+        } else {
+          setUser((prev) => (prev === null ? prev : null));
+        }
+      }
+    });
+  }, [showToast]);
+
+  // Stop audio on path change
   useEffect(() => {
     audioManager.killAllAudio();
-  }, [currentPage]);
+  }, [currentPath]);
 
-  // Sync user and mistakes
+  // Sync user and mistakes (single consolidated listener for auth/progress/vault events)
   const syncUserData = useCallback(() => {
-    const currentUser = getCurrentUser();
-    setUser(currentUser);
-    const mistakes = getMistakes();
-    setMistakeCount(mistakes.filter((m) => !m.mastered).length);
-  }, []);
-
-  // Explicitly observe user authentication state changes and trigger UI re-render when getCurrentUser() returns populated data
-  useEffect(() => {
-    const observeAuthChanges = () => {
-      const activeUser = getCurrentUser();
-      if (activeUser && activeUser.id && activeUser.email) {
-        setUser((prev) => {
-          if (!prev || prev.id !== activeUser.id || prev.email !== activeUser.email || prev.progress?.streakDays !== activeUser.progress?.streakDays) {
-            return { ...activeUser };
-          }
-          return prev;
-        });
-      }
-    };
-
-    observeAuthChanges();
-    window.addEventListener('user_auth_updated', observeAuthChanges);
-    window.addEventListener('user_progress_updated', observeAuthChanges);
-
-    return () => {
-      window.removeEventListener('user_auth_updated', observeAuthChanges);
-      window.removeEventListener('user_progress_updated', observeAuthChanges);
-    };
+    const activeUser = getCurrentUser();
+    if (activeUser && activeUser.id && activeUser.id !== 'default_candidate') {
+      setUser((prev) => {
+        if (
+          !prev ||
+          prev.id !== activeUser.id ||
+          prev.email !== activeUser.email ||
+          prev.name !== activeUser.name ||
+          prev.progress?.streakDays !== activeUser.progress?.streakDays ||
+          (prev.progress?.examHistory?.length || 0) !== (activeUser.progress?.examHistory?.length || 0)
+        ) {
+          return { ...activeUser };
+        }
+        return prev;
+      });
+    } else {
+      setUser((prev) => (prev === null ? prev : null));
+    }
+    const nextCount = getMistakes().filter((m) => !m.mastered).length;
+    setMistakeCount((prev) => (prev === nextCount ? prev : nextCount));
   }, []);
 
   useEffect(() => {
-    syncUserData();
-    const handleAuth = () => syncUserData();
     const handleVault = () => {
-      const mistakes = getMistakes();
-      setMistakeCount(mistakes.filter((m) => !m.mastered).length);
+      const nextCount = getMistakes().filter((m) => !m.mastered).length;
+      setMistakeCount((prev) => (prev === nextCount ? prev : nextCount));
     };
 
-    window.addEventListener('user_auth_updated', handleAuth);
-    window.addEventListener('user_progress_updated', handleAuth);
+    window.addEventListener('user_auth_updated', syncUserData);
+    window.addEventListener('user_progress_updated', syncUserData);
     window.addEventListener('vault_updated', handleVault);
     window.addEventListener('ielts_mistakes_updated', handleVault);
 
     const handleOpenVaultModal = () => setIsVaultOpen(true);
     const handleOpenBandModal = () => setIsBandModalOpen(true);
-    const handleOpenAiTutor = () => handleNavigate('aitools');
-    // Subscription paused: announce 100% free access
+    const handleOpenAiTutor = () => navigate('/practice/ai-tools');
     const handleOpenPremiumModal = () => {
-      showToast('🎉 All IELTS Sprint features are 100% Free! AI British examiners, mock tests & model answers are fully unlocked.');
+      showToast('Free tier: 5 full mocks, 2 AI Speaking + 1 AI Writing every day — no card needed.');
     };
 
     const handleOpenShowcase = () => setIsShowcaseOpen(true);
@@ -245,8 +297,8 @@ function AppContent() {
     window.addEventListener('open_cdielts_preflight', handleOpenCdIeltsPreflight);
 
     return () => {
-      window.removeEventListener('user_auth_updated', handleAuth);
-      window.removeEventListener('user_progress_updated', handleAuth);
+      window.removeEventListener('user_auth_updated', syncUserData);
+      window.removeEventListener('user_progress_updated', syncUserData);
       window.removeEventListener('vault_updated', handleVault);
       window.removeEventListener('ielts_mistakes_updated', handleVault);
       window.removeEventListener('open_vault_modal', handleOpenVaultModal);
@@ -261,30 +313,7 @@ function AppContent() {
       window.removeEventListener('open_onboarding_diagnostic', handleOpenOnboarding);
       window.removeEventListener('open_cdielts_preflight', handleOpenCdIeltsPreflight);
     };
-  }, [syncUserData]);
-
-  // Handle navigation
-  const handleNavigate = useCallback((page: string) => {
-    if (page === currentPage) return;
-    setNavHistory((prev) => [...prev, page]);
-    setCurrentPage(page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [currentPage]);
-
-  const handleBack = useCallback(() => {
-    if (navHistory.length > 1) {
-      const newHistory = [...navHistory];
-      newHistory.pop();
-      const prevPage = newHistory[newHistory.length - 1];
-      setNavHistory(newHistory);
-      setCurrentPage(prevPage);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      handleNavigate('home');
-    }
-  }, [navHistory, handleNavigate]);
-
-
+  }, [syncUserData, navigate, showToast]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -298,88 +327,267 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Compute bottom nav tab mapping
-  const getBottomNavTab = (page: string): BottomNavTab => {
-    if (page === 'home') return 'home';
-    if (['practice', 'listening', 'reading', 'speaking', 'writing', 'shadowing', 'cdielts', 'livemock', 'mocktest', 'cambridge', 'maplab', 'listeningmap', 'questionbank', 'speakingvault', 'speedreading'].includes(page)) {
-      return 'practice';
+  const isDirectLoginRoute = currentPath === '/login' || currentPath === '/signin';
+  const isDirectSignupRoute = currentPath === '/signup' || currentPath === '/register';
+
+  // Redirect already-authenticated users away from auth URLs instead of showing 404
+  useEffect(() => {
+    if (isLoggedIn && (isDirectLoginRoute || isDirectSignupRoute)) {
+      navigate('/', true);
     }
-    if (['aitools', 'tutor'].includes(page)) return 'aitools';
-    if (['progress', 'analytics', 'history'].includes(page)) return 'analytics';
-    if (['profile'].includes(page)) return 'profile';
-    return 'home';
-  };
+  }, [isLoggedIn, isDirectLoginRoute, isDirectSignupRoute, navigate]);
 
-  const handleBottomTabSelect = (tab: BottomNavTab) => {
-    if (tab === 'home') handleNavigate('home');
-    else if (tab === 'practice') handleNavigate('practice');
-    else if (tab === 'aitools') handleNavigate('aitools');
-    else if (tab === 'analytics') handleNavigate('progress');
-    else if (tab === 'profile') handleNavigate('profile');
-  };
+  if (!isLoggedIn) {
+    const showAuthPage = isGoogleAuthOpen || isDirectLoginRoute || isDirectSignupRoute;
+    const effectiveAuthMode: 'signin' | 'register' = isGoogleAuthOpen
+      ? authModalInitialMode
+      : isDirectSignupRoute
+      ? 'register'
+      : 'signin';
 
-  const activeUser = user || {
-    id: 'default_candidate',
-    name: 'Candidate',
-    email: 'candidate@ieltssprint.com',
-    createdAt: Date.now(),
-    progress: createDefaultProgress(7.5, 'Candidate')
-  };
+    return (
+      <div className="min-h-screen bg-[#F7F9F8] text-[#0E1F1E] font-sans selection:bg-[#0F4C45] selection:text-white">
+        <ErrorBoundary label="landing page">
+          <Suspense fallback={<PageLoader label="Loading BandSprint…" />}>
+            <PreLoginLanding
+              onOpenGoogleAuth={(mode = 'signin', targetRoute?: string) => {
+                setAuthModalInitialMode(mode);
+                setPendingPostAuthRoute(targetRoute || '/');
+                setIsPreAuthSurveyOpen(false);
+                setIsGoogleAuthOpen(true);
+              }}
+              onStartOnboardingSurvey={(targetRoute?: string) => {
+                setPendingPostAuthRoute(targetRoute || '/');
+                setIsGoogleAuthOpen(false);
+                setIsPreAuthSurveyOpen(true);
+              }}
+              onPreviewExamRoom={() => {
+                setAuthModalInitialMode('register');
+                setPendingPostAuthRoute('/practice/mock-tests');
+                setIsPreAuthSurveyOpen(false);
+                setIsGoogleAuthOpen(true);
+                showToast('Sign in or create your free account to open the timed exam simulator.');
+              }}
+              onShowToast={showToast}
+              onOpenLegal={(tab) => {
+                setLegalTab(tab);
+                setIsLegalOpen(true);
+              }}
+              onOpenContact={() => setIsContactOpen(true)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+        {isPreAuthSurveyOpen && (
+          <Suspense fallback={null}>
+            <PreAuthOnboardingFunnel
+              isOpen={isPreAuthSurveyOpen}
+              onClose={() => setIsPreAuthSurveyOpen(false)}
+              onSkipToLogin={() => {
+                setIsPreAuthSurveyOpen(false);
+                setAuthModalInitialMode('signin');
+                setIsGoogleAuthOpen(true);
+              }}
+              onCompleteToAuth={(mode) => {
+                setIsPreAuthSurveyOpen(false);
+                setAuthModalInitialMode(mode);
+                setIsGoogleAuthOpen(true);
+              }}
+            />
+          </Suspense>
+        )}
+        {showAuthPage && !isPreAuthSurveyOpen && (
+          <Suspense fallback={null}>
+            <ProductionAuthModal
+              isOpen={showAuthPage}
+              initialMode={effectiveAuthMode}
+              onOpenOnboardingSurvey={() => {
+                setIsGoogleAuthOpen(false);
+                setIsPreAuthSurveyOpen(true);
+              }}
+              onClose={() => {
+                setIsGoogleAuthOpen(false);
+                if (isDirectLoginRoute || isDirectSignupRoute) {
+                  navigate('/');
+                }
+              }}
+              onShowToast={showToast}
+              onSuccess={() => {
+                const active = getCurrentUser();
+                setUser(active);
+                const destination =
+                  pendingPostAuthRoute &&
+                  pendingPostAuthRoute !== '/login' &&
+                  pendingPostAuthRoute !== '/signup'
+                    ? pendingPostAuthRoute
+                    : '/';
+                setPendingPostAuthRoute(null);
+                navigate(destination);
+              }}
+            />
+          </Suspense>
+        )}
+        {isLegalOpen && (
+          <Suspense fallback={null}>
+            <TermsAndPrivacyModal
+              isOpen={isLegalOpen}
+              onClose={() => setIsLegalOpen(false)}
+              initialTab={legalTab}
+            />
+          </Suspense>
+        )}
+        {isContactOpen && (
+          <Suspense fallback={null}>
+            <ContactSupportModal
+              isOpen={isContactOpen}
+              onClose={() => setIsContactOpen(false)}
+              onShowToast={showToast}
+            />
+          </Suspense>
+        )}
+        {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-50 bg-[#0E1F1E] text-white border border-[#1F8A70]/40 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 text-xs font-semibold">
+            <span>{toastMessage}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
-  // Page View Switcher
-  const renderCurrentPage = () => {
-    switch (currentPage) {
-      case 'home':
+  // Render Breadcrumb Items for inner pages
+  const breadcrumbItems = routeInfo && !routeInfo.isHub ? [
+    { label: routeInfo.hub.charAt(0).toUpperCase() + routeInfo.hub.slice(1), path: `/${routeInfo.hub}` },
+    { label: routeInfo.title }
+  ] : [];
+
+  const renderActiveRoute = () => {
+    if (isNotFound) {
+      return (
+        <NotFoundPage
+          onNavigateHome={() => navigate('/')}
+          onGoBack={goBack}
+          currentPath={currentPath}
+        />
+      );
+    }
+
+    switch (currentPath) {
+      // Home
+      case '/':
+      case '/home':
         return (
           <HomeDashboard
             user={user}
-            onNavigate={handleNavigate}
+            onNavigate={navigate}
             onShowToast={showToast}
             onOpenBandModal={() => setIsBandModalOpen(true)}
             examMode={examMode}
           />
         );
-      case 'practice':
-        return <PracticePage onNavigate={handleNavigate} onShowToast={showToast} user={user} />;
-      case 'listening':
+
+      // Practice Hub & Subpages
+      case '/practice':
+        return <PracticePage onNavigate={navigate} onShowToast={showToast} />;
+      case '/practice/listening':
         return <ListeningLab onShowToast={showToast} />;
-      case 'reading':
+      case '/practice/reading':
         return <ReadingLab onShowToast={showToast} />;
-      case 'speaking':
-      case 'shadowing':
+      case '/practice/writing':
+        return (
+          <WritingLabPage
+            onBack={goBack}
+            onShowToast={showToast}
+            onTransferToMock={() => navigate('/practice/writing')}
+          />
+        );
+      case '/practice/speaking':
         return (
           <SpeakingLabPage
-            onBack={handleBack}
-            onGradeInMock={() => handleNavigate('writing')}
+            onBack={goBack}
+            onGradeInMock={() => navigate('/practice/writing')}
             onShowToast={showToast}
             onNavigateToVault={() => setIsVaultOpen(true)}
           />
         );
-      case 'writing':
-        return (
-          <WritingLabPage
-            onBack={handleBack}
-            onShowToast={showToast}
-            onTransferToMock={() => handleNavigate('writing')}
-          />
-        );
-      case 'aitools':
-      case 'tutor':
-        return <AIToolsPage onNavigate={handleNavigate} onShowToast={showToast} />;
-      case 'learn':
-        return <LearnPage onNavigate={handleNavigate} onShowToast={showToast} />;
-      case 'progress':
-      case 'analytics':
+      case '/practice/mock-tests':
+        return <MockTestPage user={user || getCurrentUser()} onNavigate={navigate} onShowToast={showToast} onOpenBandModal={() => setIsBandModalOpen(true)} />;
+      case '/practice/question-bank':
+        return <QuestionBankPage onBack={goBack} onShowToast={showToast} />;
+      case '/practice/sprint':
+        return <PracticePage onNavigate={navigate} onShowToast={showToast} />;
+      case '/practice/ai-tools':
+        return <AIToolsPage onNavigate={navigate} onShowToast={showToast} />;
+
+      // Learn Hub & Subpages
+      case '/learn':
+        return <LearnPage onNavigate={navigate} onShowToast={showToast} />;
+      case '/learn/vocabulary':
+        return <VocabDeck onShowToast={showToast} />;
+      case '/learn/phrases':
+        return <UsefulPhrasesPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/idioms':
+        return <IdiomLabPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/collocations':
+        return <CollocationLabPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/grammar':
+        return <GrammarLabPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/spelling':
+        return <SpellingLabPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/shadowing':
+        return <SpeakingVaultPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/model-answers':
+        return <ModelAnswersPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/band-descriptors':
+        return <BandDescriptorsPage onBack={goBack} onShowToast={showToast} />;
+      case '/learn/diagnostic':
+        return <DiagnosticTestPage onBack={goBack} onNavigate={navigate} onShowToast={showToast} />;
+      case '/learn/study-plan':
+        return <StudyPlanPage onBack={goBack} onNavigateToModule={(m) => navigate(`/practice/${m}`)} onShowToast={showToast} onOpenDiagnostic={() => navigate('/learn/diagnostic')} />;
+      case '/learn/bangla-guide':
+        return <BanglaIELTSGuide onNavigateToModule={(m) => navigate(`/practice/${m}`)} onShowToast={showToast} />;
+      case '/learn/beginner-101':
+        return <Beginner101 onNavigate={(m) => navigate(`/practice/${m}`)} />;
+      case '/learn/slide-guide':
+        return <SlideGuide onNavigate={(m) => navigate(`/practice/${m}`)} />;
+      case '/learn/task1-visualizer':
+        return <Task1Visualizer onShowToast={showToast} />;
+      case '/learn/argument-matrix':
+        return <ArgumentMatrix onTransferToMock={() => navigate('/practice/writing')} onShowToast={showToast} />;
+
+      // Progress Hub & Subpages
+      case '/progress':
         return (
           <ProgressPage
+            onNavigate={navigate}
+            onShowToast={showToast}
+            onOpenBandModal={() => setIsBandModalOpen(true)}
+            onOpenVault={() => setIsVaultOpen(true)}
             user={user}
             mistakeCount={mistakeCount}
-            onNavigate={handleNavigate}
-            onOpenVault={() => setIsVaultOpen(true)}
-            onOpenBandModal={() => setIsBandModalOpen(true)}
           />
         );
-      case 'profile':
+      case '/progress/analytics':
+        return <CandidateAnalyticsPage user={user} onNavigate={navigate} onShowToast={showToast} />;
+      case '/progress/history':
+        return <QuestionHistoryPage onBack={goBack} onNavigate={navigate} onShowToast={showToast} />;
+      case '/progress/saved':
+      case '/progress/mistakes':
+        return (
+          <ProgressPage
+            onNavigate={navigate}
+            onShowToast={showToast}
+            onOpenBandModal={() => setIsBandModalOpen(true)}
+            onOpenVault={() => setIsVaultOpen(true)}
+            user={user}
+            mistakeCount={mistakeCount}
+          />
+        );
+      case '/progress/calendar':
+        return <SprintCalendarPage onNavigate={navigate} onShowToast={showToast} />;
+      case '/progress/admin-analytics':
+        return <AdminAnalyticsPage user={user} onNavigate={navigate} onShowToast={showToast} initialSection="telemetry" />;
+
+      // Profile Hub & Subpages
+      case '/profile':
         return (
           <ProfilePage
             user={user}
@@ -387,315 +595,308 @@ function AppContent() {
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
             onOpenBandModal={() => setIsBandModalOpen(true)}
             onOpenVault={() => setIsVaultOpen(true)}
-            onNavigate={handleNavigate}
+            onNavigate={navigate}
             onShowToast={showToast}
+            onLogout={handleSignOut}
           />
         );
-      case 'mocktest':
+      case '/profile/details':
         return (
-          <MockTestPage
-            user={activeUser}
-            onNavigate={handleNavigate}
-            onShowToast={showToast}
-            onOpenBandModal={() => setIsBandModalOpen(true)}
-          />
-        );
-      case 'cdielts':
-        return <CDIELTSExamMode onExit={handleBack} onShowToast={showToast} />;
-      case 'cdieltsspeaking':
-        return <CDIELTSSpeakingSuite onExit={handleBack} onShowToast={showToast} candidateName={user?.name || 'Candidate'} />;
-      case 'livemock':
-        return <LiveMockTest onShowToast={showToast} onNavigateToVault={() => setIsVaultOpen(true)} />;
-      case 'vocab':
-        return <VocabDeck onShowToast={showToast} />;
-      case 'vocabflashcards':
-        return <VocabDeck onShowToast={showToast} />;
-      case 'phrases':
-        return <UsefulPhrasesPage onBack={handleBack} onShowToast={showToast} />;
-      case 'idioms':
-        return <IdiomLabPage onBack={handleBack} onShowToast={showToast} />;
-      case 'c1idioms':
-        return <C1IdiomsPage onBack={handleBack} onShowToast={showToast} />;
-      case 'grammar':
-        return <GrammarLabPage onBack={handleBack} onShowToast={showToast} />;
-      case 'modelanswers':
-        return <ModelAnswersPage onBack={handleBack} onShowToast={showToast} />;
-      case 'spelling':
-        return <SpellingLabPage onBack={handleBack} onShowToast={showToast} />;
-      case 'collocations':
-        return <CollocationLabPage onBack={handleBack} onShowToast={showToast} />;
-      case 'studyplan':
-        return <StudyPlanPage onBack={handleBack} onNavigateToModule={handleNavigate} onShowToast={showToast} />;
-      case 'banddescriptors':
-        return <BandDescriptorsPage onBack={handleBack} onShowToast={showToast} />;
-      case 'bangla':
-        return <BanglaIELTSGuide onNavigateToModule={handleNavigate} onShowToast={showToast} />;
-      case 'beginner':
-        return <Beginner101 onNavigate={handleNavigate} />;
-      case 'slides':
-        return <SlideGuide onNavigate={handleNavigate} />;
-      case 'arguments':
-        return <ArgumentMatrix onTransferToMock={() => handleNavigate('writing')} onShowToast={showToast} />;
-      case 'task1':
-        return <Task1Visualizer onShowToast={showToast} />;
-      case 'questionbank':
-        return <QuestionBankPage onBack={handleBack} onShowToast={showToast} />;
-      case 'history':
-        return <QuestionHistoryPage onBack={handleBack} onNavigate={handleNavigate} onShowToast={showToast} />;
-      case 'speakingvault':
-        return <SpeakingVaultPage onBack={handleBack} onShowToast={showToast} />;
-      case 'speedreading':
-        return <SpeedReadingPage onBack={handleBack} onShowToast={showToast} />;
-      case 'cambridge':
-        return (
-          <CambridgeLibraryPage
-            onBack={handleBack}
-            onShowToast={showToast}
+          <ProfilePage
+            subpage="details"
             user={user}
-            onNavigate={handleNavigate}
+            mistakeCount={mistakeCount}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenBandModal={() => setIsBandModalOpen(true)}
+            onOpenVault={() => setIsVaultOpen(true)}
+            onNavigate={navigate}
+            onShowToast={showToast}
+            onLogout={handleSignOut}
           />
         );
-      case 'calendar':
-        return <SprintCalendarPage onNavigate={handleNavigate} onShowToast={showToast} />;
+      case '/profile/settings':
+        return (
+          <ProfilePage
+            subpage="settings"
+            user={user}
+            mistakeCount={mistakeCount}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenBandModal={() => setIsBandModalOpen(true)}
+            onOpenVault={() => setIsVaultOpen(true)}
+            onNavigate={navigate}
+            onShowToast={showToast}
+            onLogout={handleSignOut}
+          />
+        );
+      case '/profile/subscription':
+        return (
+          <ProfilePage
+            subpage="subscription"
+            user={user}
+            mistakeCount={mistakeCount}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenBandModal={() => setIsBandModalOpen(true)}
+            onOpenVault={() => setIsVaultOpen(true)}
+            onNavigate={navigate}
+            onShowToast={showToast}
+            onLogout={handleSignOut}
+          />
+        );
+      case '/profile/help':
+        return (
+          <ProfilePage
+            subpage="help"
+            user={user}
+            mistakeCount={mistakeCount}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenBandModal={() => setIsBandModalOpen(true)}
+            onOpenVault={() => setIsVaultOpen(true)}
+            onNavigate={navigate}
+            onShowToast={showToast}
+            onLogout={handleSignOut}
+          />
+        );
+
       default:
         return (
-          <HomeDashboard
-            user={user}
-            onNavigate={handleNavigate}
-            onShowToast={showToast}
-            onOpenBandModal={() => setIsBandModalOpen(true)}
-            examMode={examMode}
+          <NotFoundPage
+            onNavigateHome={() => navigate('/')}
+            onGoBack={goBack}
+            currentPath={currentPath}
           />
         );
     }
   };
 
-  const isExamRoomMode = currentPage === 'cdielts' || currentPage === 'cdieltsspeaking';
-
-  if (isExamRoomMode) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-[#070D1B] text-slate-900 dark:text-slate-100 flex flex-col font-sans">
-        <main className="w-full flex-1 min-h-screen p-0 m-0 overflow-x-hidden">
-          {renderCurrentPage()}
-        </main>
-
-        {/* Global Modals accessible even in exam mode if needed */}
-        <BandCalculatorModal
-          isOpen={isBandModalOpen}
-          onClose={() => setIsBandModalOpen(false)}
-        />
-        <AuthModal
-          isOpen={isAuthModalOpen}
-          onClose={() => setIsAuthModalOpen(false)}
-          onShowToast={showToast}
-          onNavigateToModule={handleNavigate}
-        />
-        <OfflineStatusIndicator />
-        {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-semibold">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-            <span className="flex-1">{toastMessage}</span>
-            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white p-0.5">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const isCDIELTSMode = currentPage === 'cdielts' || currentPage === 'cdieltsspeaking';
-
-  if (isCDIELTSMode) {
-    return (
-      <div className="h-screen w-screen overflow-hidden bg-slate-900 text-white flex flex-col font-sans">
-        <main className="flex-1 w-full h-full overflow-hidden">
-          {renderCurrentPage()}
-        </main>
-        {/* Offline / Online Status Indicator Banner */}
-        <OfflineStatusIndicator />
-        {/* Toast Notification Bar */}
-        {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-semibold max-w-sm">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-            <span className="flex-1">{toastMessage}</span>
-            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white p-0.5">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const canGoBack = currentPath !== '/' && currentPath !== '/home';
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] dark:bg-[#080D1A] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      {/* Top App Header Navigation Bar */}
-      <AppHeader
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        onBack={handleBack}
-        canGoBack={navHistory.length > 1 && currentPage !== 'home'}
-        onOpenSearch={() => setIsSearchOpen(true)}
-        onOpenVault={() => setIsVaultOpen(true)}
-        onOpenProfile={() => setIsAuthModalOpen(true)}
-        onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+    <div className="min-h-screen bg-[#F7F9F8] dark:bg-[#0B1514] text-[#0E1F1E] dark:text-[#EEF3F1] flex flex-col md:flex-row font-sans selection:bg-[#0F4C45] selection:text-white transition-colors">
+      {/* 1. Desktop Sidebar (5 Main Destinations Only) */}
+      <DesktopSidebar
+        activeHub={hub}
+        onNavigate={navigate}
         mistakeCount={mistakeCount}
-        user={user}
-        examMode={examMode}
-        onExamModeChange={(mode) => setExamMode(mode)}
+        onOpenVault={() => setIsVaultOpen(true)}
+        onOpenBandModal={() => setIsBandModalOpen(true)}
+        onSignOut={handleSignOut}
       />
 
-      {/* Mobile Navigation Sliding Drawer (<md) */}
+      {/* Mobile Drawer */}
       <MobileSidebarDrawer
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
+        currentPage={currentPath}
+        onNavigate={navigate}
         mistakeCount={mistakeCount}
         onOpenVault={() => setIsVaultOpen(true)}
         onOpenBandModal={() => setIsBandModalOpen(true)}
         user={user}
         examMode={examMode}
-        onExamModeChange={(mode) => setExamMode(mode)}
+        onExamModeChange={setExamMode}
+        onSignOut={handleSignOut}
       />
 
-      {/* Main Content Layout with Desktop Sidebar & Main Content Canvas */}
-      <div className="flex-1 flex w-full max-w-[1600px] mx-auto">
-        {/* Desktop Sidebar (visible on md: and larger) */}
-        <DesktopSidebar
-          currentPage={currentPage}
-          onNavigate={handleNavigate}
-          mistakeCount={mistakeCount}
+      {/* Main Viewport Workspace */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen pb-20 md:pb-8">
+        {/* App Header */}
+        <AppHeader
+          currentPage={currentPath}
+          onNavigate={navigate}
+          onBack={goBack}
+          canGoBack={canGoBack}
+          onOpenSearch={() => setIsSearchOpen(true)}
           onOpenVault={() => setIsVaultOpen(true)}
-          onOpenBandModal={() => setIsBandModalOpen(true)}
+          onOpenProfile={() => navigate('/profile')}
+          onSignOut={handleSignOut}
+          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+          mistakeCount={mistakeCount}
+          user={user}
+          examMode={examMode}
+          onExamModeChange={setExamMode}
         />
 
-        {/* Main Content Viewport */}
-        <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-5 sm:py-7 overflow-x-hidden min-w-0 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8">
-          {renderCurrentPage()}
+        {/* Content Container */}
+        <main className="flex-1 px-3 sm:px-6 pt-4 sm:pt-6">
+          {/* Breadcrumb Navigation on Inner Pages */}
+          {breadcrumbItems.length > 0 && (
+            <div className="max-w-5xl mx-auto">
+              <Breadcrumbs
+                items={breadcrumbItems}
+                onNavigate={navigate}
+                onBack={goBack}
+              />
+            </div>
+          )}
+
+          {/* Lazy-Loaded Route Content with crisp editorial transition */}
+          <ErrorBoundary key={currentPath} label="this page">
+            <Suspense fallback={<PageLoader />}>
+              <motion.div
+                key={currentPath}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {renderActiveRoute()}
+              </motion.div>
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 
-      {/* Barnaby Chubby Cambridge Live AI Companion Floating Button & Drawer */}
-      <ContextualAITutor
-        currentPage={currentPage}
-        examMode={examMode}
-        onNavigate={handleNavigate}
-        onShowToast={showToast}
-      />
-
-      {/* Mobile Bottom Bar Navigation (<md) */}
+      {/* 2. Mobile Bottom Navigation (5 Main Destinations Only) */}
       <BottomNav
-        currentTab={getBottomNavTab(currentPage)}
-        onSelectTab={handleBottomTabSelect}
+        activeHub={hub}
+        onNavigate={navigate}
         mistakeCount={mistakeCount}
       />
 
-      {/* Global Modals */}
-      <GlobalSearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onNavigate={handleNavigate}
-      />
+      {/* Conditionally Mounted & Lazy-Loaded Modals */}
+      {isSearchOpen && (
+        <Suspense fallback={null}>
+          <GlobalSearchModal
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+            onNavigate={navigate}
+          />
+        </Suspense>
+      )}
 
-      <MistakeVault
-        isModal={true}
-        isOpen={isVaultOpen}
-        onClose={() => setIsVaultOpen(false)}
-        onShowToast={showToast}
-      />
+      {isVaultOpen && (
+        <Suspense fallback={null}>
+          <MistakeVault
+            isOpen={isVaultOpen}
+            onClose={() => setIsVaultOpen(false)}
+            onShowToast={showToast}
+          />
+        </Suspense>
+      )}
 
-      <BandCalculatorModal
-        isOpen={isBandModalOpen}
-        onClose={() => setIsBandModalOpen(false)}
-      />
+      {isBandModalOpen && (
+        <Suspense fallback={null}>
+          <BandCalculatorModal
+            isOpen={isBandModalOpen}
+            onClose={() => setIsBandModalOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onShowToast={showToast}
-        onNavigateToModule={handleNavigate}
-      />
+      {isAuthModalOpen && (
+        <Suspense fallback={null}>
+          <AuthModal
+            isOpen={isAuthModalOpen}
+            onClose={() => setIsAuthModalOpen(false)}
+            onShowToast={showToast}
+          />
+        </Suspense>
+      )}
 
-      {/* High-Converting Pre-Login Diagnostic Funnel (Inspired by ieltsly.ai) */}
-      <OnboardingDiagnosticFunnel
-        isOpen={isOnboardingOpen}
-        onClose={() => setIsOnboardingOpen(false)}
-        onCompleted={(newProfile) => {
-          setUser(newProfile);
-          showToast(`Welcome ${newProfile.name}! Your 8-week Band ${newProfile.progress.targetBand} sprint is activated.`);
-        }}
-        onOpenAuthModal={() => {
-          setIsOnboardingOpen(false);
-          setIsAuthModalOpen(true);
-        }}
-      />
+      {isShowcaseOpen && (
+        <Suspense fallback={null}>
+          <CommercialShowcaseModal
+            isOpen={isShowcaseOpen}
+            onClose={() => setIsShowcaseOpen(false)}
+            onNavigateToPractice={() => navigate('/practice')}
+          />
+        </Suspense>
+      )}
 
-      {/* Official CD-IELTS Pre-Exam Device Check (Headphones, Mic & Lockdown) */}
-      <PreExamHardwareCheck
-        isOpen={isHardwareCheckOpen}
-        onClose={() => setIsHardwareCheckOpen(false)}
-        onProceedToExam={() => {
-          setIsHardwareCheckOpen(false);
-          if (preflightModule === 'speaking') {
-            handleNavigate('cdieltsspeaking');
-          } else {
-            handleNavigate('cdielts');
-          }
-        }}
-        moduleType={preflightModule}
-      />
+      {isLegalOpen && (
+        <Suspense fallback={null}>
+          <TermsAndPrivacyModal
+            isOpen={isLegalOpen}
+            onClose={() => setIsLegalOpen(false)}
+            initialTab={legalTab}
+          />
+        </Suspense>
+      )}
 
-      {/* Commercial Showcase & Trust Modals (Subscription paused for 1 month) */}
-      <CommercialShowcaseModal
-        isOpen={isShowcaseOpen}
-        onClose={() => setIsShowcaseOpen(false)}
-        onNavigateToPractice={() => handleNavigate('practice')}
-      />
+      {isContactOpen && (
+        <Suspense fallback={null}>
+          <ContactSupportModal
+            isOpen={isContactOpen}
+            onClose={() => setIsContactOpen(false)}
+            onShowToast={showToast}
+          />
+        </Suspense>
+      )}
 
-      <TermsAndPrivacyModal
-        isOpen={isLegalOpen}
-        onClose={() => setIsLegalOpen(false)}
-        initialTab={legalTab}
-      />
+      {isSeoGuideOpen && (
+        <Suspense fallback={null}>
+          <LaunchSeoGuideModal
+            isOpen={isSeoGuideOpen}
+            onClose={() => setIsSeoGuideOpen(false)}
+            onShowToast={showToast}
+          />
+        </Suspense>
+      )}
 
-      <ContactSupportModal
-        isOpen={isContactOpen}
-        onClose={() => setIsContactOpen(false)}
-        onShowToast={showToast}
-      />
+      {isOnboardingOpen && (
+        <Suspense fallback={null}>
+          <OnboardingDiagnosticFunnel
+            isOpen={isOnboardingOpen}
+            onClose={() => setIsOnboardingOpen(false)}
+            onCompleted={(profile) => {
+              setUser(profile);
+              setIsOnboardingOpen(false);
+              showToast('Onboarding complete! Target calibration updated.');
+            }}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          />
+        </Suspense>
+      )}
 
-      <LaunchSeoGuideModal
-        isOpen={isSeoGuideOpen}
-        onClose={() => setIsSeoGuideOpen(false)}
-        onShowToast={showToast}
-      />
+      {isHardwareCheckOpen && (
+        <Suspense fallback={null}>
+          <PreExamHardwareCheck
+            isOpen={isHardwareCheckOpen}
+            onClose={() => setIsHardwareCheckOpen(false)}
+            onProceedToExam={() => {
+              setIsHardwareCheckOpen(false);
+              navigate('/practice/mock-tests');
+            }}
+            moduleType={preflightModule as any}
+          />
+        </Suspense>
+      )}
 
-      {/* Offline / Online Status Indicator Banner */}
+      {/* Toast Notification Container */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            key={toastMessage}
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.96 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
+            className="fixed bottom-20 md:bottom-6 right-6 z-50 bg-[#0F4C45] dark:bg-[#EEF3F1] text-white dark:text-[#0E1F1E] border border-[#1F8A70]/60 dark:border-[#D3DDDA] px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold select-none max-w-sm"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#F4A62A] shrink-0" />
+            <span>{toastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Offline / Reconnected Study Pack Indicator */}
       <OfflineStatusIndicator />
 
-      {/* Toast Notification Bar */}
-      {toastMessage && (
-        <div className="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 bg-slate-900/95 dark:bg-slate-800/95 text-white border border-slate-700/80 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in text-xs font-semibold max-w-sm">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-          <span className="flex-1">{toastMessage}</span>
-          <button
-            onClick={() => setToastMessage(null)}
-            className="text-slate-400 hover:text-white p-0.5"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+      {/* Floating Barnaby — automatically hidden on active exams, speaking drills, and /progress */}
+      <Suspense fallback={null}>
+        <FloatingBarnaby onNavigate={navigate} currentPath={currentPath} />
+      </Suspense>
     </div>
   );
 }
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <MotionConfig reducedMotion="user">
+      <ThemeProvider>
+        <ErrorBoundary label="BandSprint">
+          <AppContent />
+        </ErrorBoundary>
+      </ThemeProvider>
+    </MotionConfig>
   );
 }

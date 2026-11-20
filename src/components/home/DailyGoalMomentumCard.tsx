@@ -46,7 +46,7 @@ export const DailyGoalMomentumCard: React.FC<DailyGoalMomentumCardProps> = ({
   const progressPercent = Math.min(100, Math.round((studiedMins / dailyGoalMins) * 100));
 
   const [checklist, setChecklist] = useState<ChecklistItem[]>([
-    { id: '1', title: '1 Cambridge Listening Section', mins: 12, module: 'listening', completed: true },
+    { id: '1', title: '1 Practice Listening Section', mins: 12, module: 'listening', completed: true },
     { id: '2', title: '5 C1 Academic Collocations', mins: 8, module: 'practice', completed: true },
     { id: '3', title: '1 AI Speaking Part 2 Run', mins: 10, module: 'speaking', completed: studiedMins >= 30 },
     { id: '4', title: 'Task 2 Body Paragraph Review', mins: 15, module: 'writing', completed: studiedMins >= 45 }

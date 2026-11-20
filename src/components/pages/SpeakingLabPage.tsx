@@ -16,7 +16,8 @@ import {
   CheckCircle2,
   Sliders,
   Brain,
-  ArrowUpRight
+  ArrowUpRight,
+  Globe
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -31,12 +32,24 @@ import {
 import { VoiceExaminer } from '../VoiceExaminer';
 import { CueScratchpad } from '../CueScratchpad';
 import { ShadowingPractice } from '../speaking/ShadowingPractice';
+import { SpeakingTranscriptHighlighter } from '../speaking/SpeakingTranscriptHighlighter';
 import { LiveAvatarSpeakingPartner } from '../speaking/LiveAvatarSpeakingPartner';
 import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
+import {
+  BritishRegionalAccent,
+  BRITISH_REGIONAL_ACCENT_LIST,
+  BRITISH_REGIONAL_ACCENT_METADATA,
+  getPreferredBritishRegionalAccent,
+  setPreferredBritishRegionalAccent,
+  getPreferredVoiceGender,
+  setPreferredVoiceGender
+} from '../../config/voiceConfig';
 import { addMistake } from '../../utils/vaultStorage';
+import { getActiveUser } from '../../utils/userStorage';
 import { evaluateSingleSpeakingTurn } from '../../services/SpeakingEvaluationService';
 import { InstantSpeakingFeedback, SpeakingAnswerRecord } from '../../types/speakingTypes';
+import { CandidateAiPilotPanel } from '../common/CandidateAiPilotPanel';
 
 interface SpeakingLabPageProps {
   onBack: () => void;
@@ -153,7 +166,7 @@ const DIAGNOSTIC_PRESETS: DiagnosticPreset[] = [
     grammarPronScore: 8.5,
     overallBand: 8.5,
     verdictEn:
-      'Optimal Fluency-Coherence Equilibrium (Band 8.5): Speech rate sits squarely in the Cambridge native cadence zone (134 WPM) while concessive subordination ("While it is undeniable that...") frames a nuanced argument.',
+      'Optimal Fluency-Coherence Equilibrium (Band 8.5): Speech rate sits squarely in the Practice native cadence zone (134 WPM) while concessive subordination ("While it is undeniable that...") frames a nuanced argument.',
     verdictBn:
       'ফ্লুয়েন্সি এবং কোহেরেন্সের আদর্শ ভারসাম্য (Band 8.5): আপনার কথা বলার গতি (134 WPM) এবং জটিল বাক্যের গঠন ("While it is undeniable that...") সম্পূর্ণভাবে ক্যামব্রিজ Band 8.5 মানদণ্ড পূরণ করেছে।',
     discourseUpgrade: {
@@ -172,7 +185,14 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
   onShowToast,
   onNavigateToVault
 }) => {
-  const [activeTab, setActiveTab] = useState<'interview' | 'avatar_partner' | 'cuecard' | 'shadowing' | 'feedback'>('interview');
+  const [activeTab, setActiveTab] = useState<'interview' | 'avatar_partner' | 'cuecard' | 'shadowing' | 'feedback' | 'ai_pilots'>('interview');
+  const [examinerGender, setExaminerGender] = useState<'male' | 'female'>(() =>
+    getPreferredVoiceGender()
+  );
+  const [regionalAccent, setRegionalAccent] = useState<BritishRegionalAccent>(() =>
+    getPreferredBritishRegionalAccent()
+  );
+  const [isPreviewingRegionalAccent, setIsPreviewingRegionalAccent] = useState<boolean>(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>(DIAGNOSTIC_PRESETS[0].id);
   const [customTranscript, setCustomTranscript] = useState<string>('');
   const [customQuestion, setCustomQuestion] = useState<string>(
@@ -182,6 +202,82 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
   const [isEvaluatingCustom, setIsEvaluatingCustom] = useState<boolean>(false);
   const [isPlayingUpgradeAudio, setIsPlayingUpgradeAudio] = useState<boolean>(false);
   const [savedUpgradeIds, setSavedUpgradeIds] = useState<Record<string, boolean>>({});
+
+  // AI Speaking Pilot State (launched only from APPROVED drafts)
+  const [activePilotSet, setActivePilotSet] = useState<any | null>(null);
+
+  useEffect(() => {
+    const handleRegionalSync = (e: Event) => {
+      const custom = e as CustomEvent<{ accent: BritishRegionalAccent }>;
+      if (custom.detail?.accent) {
+        setRegionalAccent(custom.detail.accent);
+      }
+    };
+    const handleGenderSync = (e: Event) => {
+      const custom = e as CustomEvent<{ gender: 'male' | 'female' }>;
+      if (custom.detail?.gender === 'male' || custom.detail?.gender === 'female') {
+        setExaminerGender(custom.detail.gender);
+      }
+    };
+    window.addEventListener('ielts_british_regional_accent_changed', handleRegionalSync);
+    window.addEventListener('ielts_voice_gender_changed', handleGenderSync);
+    return () => {
+      window.removeEventListener('ielts_british_regional_accent_changed', handleRegionalSync);
+      window.removeEventListener('ielts_voice_gender_changed', handleGenderSync);
+    };
+  }, []);
+
+  const handleSelectExaminerGender = (nextGender: 'male' | 'female') => {
+    soundManager.playBeep(600, 0.04);
+    stopSpeech();
+    setExaminerGender(nextGender);
+    setPreferredVoiceGender(nextGender);
+    const cfg = BRITISH_REGIONAL_ACCENT_METADATA[regionalAccent];
+    const personaName = nextGender === 'female' ? 'Examiner Clara, AI (Female)' : 'Examiner Arthur, AI (Practice Male)';
+    onShowToast(`Examiner Voice set to ${personaName} · ${cfg.label}`);
+    setIsPreviewingRegionalAccent(true);
+    speakBritish(
+      `Good day. I am ${nextGender === 'female' ? 'Doctor Clara Sterling' : 'Professor Arthur Pendelton'}, your Practice IELTS Speaking examiner.`,
+      {
+        speakerId: nextGender === 'female' ? 'speaker_05' : 'speaker_04',
+        gender: nextGender,
+        regionalAccent,
+        rate: cfg.defaultRate,
+        deliveryProfile: 'examiner_instruction',
+        onEnd: () => setIsPreviewingRegionalAccent(false),
+        onError: () => setIsPreviewingRegionalAccent(false)
+      }
+    );
+  };
+
+  const handleSelectRegionalAccent = (nextAccent: BritishRegionalAccent) => {
+    soundManager.playBeep(620, 0.04);
+    stopSpeech();
+    setIsPreviewingRegionalAccent(false);
+    setRegionalAccent(nextAccent);
+    setPreferredBritishRegionalAccent(nextAccent);
+    const cfg = BRITISH_REGIONAL_ACCENT_METADATA[nextAccent];
+    onShowToast(`Examiner Regional Accent set to ${cfg.label} (${cfg.regionName})`);
+  };
+
+  const handlePreviewRegionalAccent = () => {
+    if (isPreviewingRegionalAccent) {
+      stopSpeech();
+      setIsPreviewingRegionalAccent(false);
+      return;
+    }
+    const cfg = BRITISH_REGIONAL_ACCENT_METADATA[regionalAccent];
+    soundManager.playBeep(660, 0.04);
+    setIsPreviewingRegionalAccent(true);
+    speakBritish(cfg.sampleGreeting, {
+      gender: examinerGender,
+      regionalAccent,
+      rate: cfg.defaultRate,
+      deliveryProfile: 'examiner_instruction',
+      onEnd: () => setIsPreviewingRegionalAccent(false),
+      onError: () => setIsPreviewingRegionalAccent(false)
+    });
+  };
 
   // Check if user has a recent speaking session in localStorage to hydrate live feedback
   useEffect(() => {
@@ -343,7 +439,7 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
       soundManager.playSuccess();
       onShowToast('Updated Fluency vs. Coherence Spider Chart with your speech analysis!');
     } catch {
-      onShowToast('Evaluated speech performance with Cambridge local rubric.');
+      onShowToast('Evaluated speech performance with Practice local rubric.');
     } finally {
       setIsEvaluatingCustom(false);
     }
@@ -358,8 +454,8 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
     soundManager.playBeep(660, 0.04);
     setIsPlayingUpgradeAudio(true);
     speakBritish(text, {
-      speakerId: 'speaker_04',
-      rate: 0.95,
+      regionalAccent,
+      rate: BRITISH_REGIONAL_ACCENT_METADATA[regionalAccent].defaultRate,
       onEnd: () => setIsPlayingUpgradeAudio(false),
       onError: () => setIsPlayingUpgradeAudio(false)
     });
@@ -404,92 +500,220 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
     onShowToast('Saved Fluency & Coherence upgrade to SuperMemo SM-2 Mistake Vault!');
   };
 
+  const activeRegionConfig = BRITISH_REGIONAL_ACCENT_METADATA[regionalAccent];
+
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-5 animate-fade-in pb-24">
-      {/* Top Bar with Back Button & Module Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="w-full max-w-5xl mx-auto space-y-4 animate-fade-in pb-24 md:pb-12">
+      {/* Top Bar with Back Button & Sticky Module Switcher */}
+      <div className="sticky top-0 z-30 bg-[#F7F9F8]/95 dark:bg-[#0B1514]/95 backdrop-blur-md p-2 rounded-xl border border-[#D3DDDA] dark:border-[#1E3330] flex items-center justify-between gap-2.5">
         <button
+          type="button"
           onClick={onBack}
-          className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          className="min-h-[42px] min-w-[42px] px-3.5 py-2 rounded-lg bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45] text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Practice</span>
+          <span className="hidden sm:inline">Practice</span>
         </button>
 
-        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+        <div className="flex items-center gap-1 p-1 bg-[#EEF3F1] dark:bg-[#11201E] rounded-lg border border-[#D3DDDA] dark:border-[#1E3330] overflow-x-auto scrollbar-none">
           <button
+            type="button"
             onClick={() => {
               setActiveTab('interview');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+            className={`min-h-[36px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
               activeTab === 'interview'
-                ? 'bg-white text-slate-900 shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E] dark:hover:text-[#EEF3F1]'
             }`}
           >
-            <Mic className="w-3.5 h-3.5 text-rose-600" />
+            <Mic className="w-3.5 h-3.5" />
             <span>Examiner Interview</span>
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setActiveTab('avatar_partner');
               soundManager.playBeep(620, 0.04);
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+            className={`min-h-[36px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
               activeTab === 'avatar_partner'
-                ? 'bg-blue-600 text-white shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E] dark:hover:text-[#EEF3F1]'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>3D Avatar Partner & Grammar Finder</span>
+            <Sparkles className="w-3.5 h-3.5 text-[#F4A62A]" />
+            <span>Live Video Examiner</span>
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setActiveTab('feedback');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+            className={`min-h-[36px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
               activeTab === 'feedback'
-                ? 'bg-slate-900 text-white shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E] dark:hover:text-[#EEF3F1]'
             }`}
           >
-            <Activity className="w-3.5 h-3.5 text-emerald-500" />
-            <span>AI Fluency vs. Coherence Radar</span>
+            <Activity className="w-3.5 h-3.5" />
+            <span>AI Radar</span>
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setActiveTab('shadowing');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+            className={`min-h-[36px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
               activeTab === 'shadowing'
-                ? 'bg-white text-rose-800 shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E] dark:hover:text-[#EEF3F1]'
             }`}
           >
-            <Headphones className="w-3.5 h-3.5 text-rose-600" />
-            <span>Shadowing Practice</span>
+            <Headphones className="w-3.5 h-3.5" />
+            <span>Shadowing &amp; Pronunciation</span>
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setActiveTab('cuecard');
               soundManager.playBeep(600, 0.04);
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+            className={`min-h-[36px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
               activeTab === 'cuecard'
-                ? 'bg-white text-slate-900 shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E] dark:hover:text-[#EEF3F1]'
             }`}
           >
-            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            <FileText className="w-3.5 h-3.5" />
             <span>Cue Card Scratchpad</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('ai_pilots');
+              soundManager.playBeep(640, 0.04);
+            }}
+            className={`min-h-[36px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
+              activeTab === 'ai_pilots'
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#0F4C45] dark:text-[#4DB6A4] hover:text-[#0B3833]'
+            }`}
+          >
+            <Brain className="w-3.5 h-3.5" />
+            <span>AI Pilots</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Practice Examiner Voice Persona & British Regional Accent Toggle Bar */}
+      <div className="bg-white dark:bg-[#11201E] rounded-xl border border-[#D3DDDA] dark:border-[#1E3330] p-3.5 sm:px-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-[#0F4C45] dark:text-[#4DB6A4]">
+              <Globe className="w-3.5 h-3.5" />
+              <span>Practice Examiner Voice &amp; Regional Accent</span>
+            </span>
+            <span className="text-[11px] font-semibold text-[#0E1F1E] dark:text-[#EEF3F1] bg-[#EEF3F1] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3330] px-2 py-0.5 rounded-md">
+              {examinerGender === 'male' ? 'Prof. Arthur (Male)' : 'Dr. Clara (Female)'} · {activeRegionConfig.regionName}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            {activeRegionConfig.phoneticNote}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Practice Male / Female Examiner Toggle */}
+          <div
+            role="radiogroup"
+            aria-label="Select Practice Male or Female Examiner Voice"
+            className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={examinerGender === 'male'}
+              onClick={() => handleSelectExaminerGender('male')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                examinerGender === 'male'
+                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Prof. Arthur (Male)
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={examinerGender === 'female'}
+              onClick={() => handleSelectExaminerGender('female')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                examinerGender === 'female'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Dr. Clara (Female)
+            </button>
+          </div>
+
+          {/* Regional Accent Toggle */}
+          <div
+            role="radiogroup"
+            aria-label="Select British Regional Accent for AI Examiner"
+            className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex-wrap"
+          >
+            {BRITISH_REGIONAL_ACCENT_LIST.map((item) => {
+              const isSelected = regionalAccent === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => handleSelectRegionalAccent(item.id)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                    isSelected
+                      ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {item.shortLabel}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={handlePreviewRegionalAccent}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap border ${
+              isPreviewingRegionalAccent
+                ? 'bg-rose-600 text-white border-rose-500'
+                : 'bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/80'
+            }`}
+            title={`Hear a sample greeting in ${activeRegionConfig.label}`}
+          >
+            {isPreviewingRegionalAccent ? (
+              <>
+                <VolumeX className="w-3.5 h-3.5 animate-pulse" />
+                <span>Stop</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>Test {activeRegionConfig.shortLabel}</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -499,12 +723,31 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
         <VoiceExaminer
           onGradeInMock={onGradeInMock}
           onShowToast={onShowToast}
+          customMockSet={activePilotSet}
+          onClearCustomMockSet={() => setActivePilotSet(null)}
         />
+      ) : activeTab === 'ai_pilots' ? (
+        <div className="space-y-6 animate-fade-in">
+          <CandidateAiPilotPanel
+            module="speaking"
+            moduleTitle="Speaking"
+            onLaunchApprovedPilot={(examSet) => {
+              setActivePilotSet(examSet);
+              soundManager.playSuccess();
+              onShowToast(
+                `Launched Approved AI Speaking Pilot: "${examSet.title || 'Speaking Pilot'}"`
+              );
+              setActiveTab('interview');
+            }}
+          />
+        </div>
       ) : activeTab === 'avatar_partner' ? (
         <LiveAvatarSpeakingPartner
           isModal={false}
           isOpen={true}
           autoStart5MinDrill={true}
+          initialGender={examinerGender}
+          initialCharacter={examinerGender === 'male' ? 'arthur' : 'clara'}
           onShowToast={onShowToast}
         />
       ) : activeTab === 'feedback' ? (
@@ -515,7 +758,7 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
               <div className="space-y-1">
                 <div className="text-[11px] font-mono uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5" />
-                  <span>CAMBRIDGE ACOUSTIC & DISCOURSE TELEMETRY</span>
+                  <span>Practice ACOUSTIC & DISCOURSE TELEMETRY</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
                   Fluency vs. Coherence AI Performance Spider Chart
@@ -869,9 +1112,9 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
                 <button
                   onClick={handleAnalyzeCustomSpeech}
                   disabled={isEvaluatingCustom}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] disabled:bg-slate-400 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer"
                 >
-                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <Sparkles className="w-4 h-4 text-[#F4A62A]" />
                   <span>
                     {isEvaluatingCustom
                       ? 'Computing 6-Axis Radar...'
@@ -879,6 +1122,19 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
                   </span>
                 </button>
               </div>
+
+              {(customTranscript.trim() || (selectedPresetId === 'live_session' && liveEvaluation?.candidateTranscript)) && (
+                <SpeakingTranscriptHighlighter
+                  transcript={
+                    customTranscript.trim() ||
+                    (selectedPresetId === 'live_session' && liveEvaluation?.candidateTranscript
+                      ? liveEvaluation.candidateTranscript
+                      : '')
+                  }
+                  contextLabel={customQuestion || 'Speaking Lab AI Radar Audit'}
+                  onShowToast={onShowToast}
+                />
+              )}
             </div>
           </div>
         </div>

@@ -70,7 +70,7 @@ const LIVE_PAGE_GUIDANCE: Record<string, string> = {
   writing: 'Writing Tip: Never include raw numbers in your Task 1 Overview paragraph — save exact figures for Body Paragraphs!',
   speaking: 'Speaking Tip: Expand every Part 1 answer with a reason + brief personal example (2–3 natural sentences).',
   cdielts: 'CD-IELTS Simulator: Use the built-in Notepad and Highlight tools just like on the official computer test!',
-  essayarchitect: 'Essay Architect: Tap "Listen" on any Cambridge model paragraph to absorb natural C2 rhythm and cohesion!',
+  essayarchitect: 'Essay Architect: Tap "Listen" on any Practice model paragraph to absorb natural C2 rhythm and cohesion!',
   vocab: 'Lexical Tip: Learn words in 2–3 word collocation chunks rather than isolated single words.'
 };
 
@@ -149,12 +149,12 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
     {
       id: 'welcome_1',
       sender: 'tutor',
-      text: `Cheerio! I'm Barnaby, your Cambridge AI Companion. I'm guiding you live through ${currentPage.toUpperCase()} (${examMode}). Ask me any exam question or switch to the C1 & C2 Idiom + Vocabulary tab to master Band 8.5–9.0 expressions!`,
+      text: `Cheerio! I'm Barnaby, your Practice AI Companion. I'm guiding you live through ${currentPage.toUpperCase()} (${examMode}). Ask me any exam question or switch to the C1 & C2 Idiom + Vocabulary tab to master Band 8.5–9.0 expressions!`,
       timestamp: Date.now(),
       data: {
-        reply: `Cheerio! I'm Barnaby, your Cambridge AI Companion. I'm guiding you live through ${currentPage.toUpperCase()} (${examMode}). Ask me any exam question or explore our new C1 & C2 Idioms and Vocabulary deck!`,
+        reply: `Cheerio! I'm Barnaby, your Practice AI Companion. I'm guiding you live through ${currentPage.toUpperCase()} (${examMode}). Ask me any exam question or explore our new C1 & C2 Idioms and Vocabulary deck!`,
         strategyTip:
-          'Always focus on the four Cambridge criteria: Task Achievement/Response, Coherence & Cohesion, Lexical Resource, and Grammatical Range & Accuracy.',
+          'Always focus on the four Practice criteria: Task Achievement/Response, Coherence & Cohesion, Lexical Resource, and Grammatical Range & Accuracy.',
         academicCollocations: ['watershed moment', 'walk a tightrope', 'insurmountable barrier', 'bridging the chasm'],
         suggestedNextAction: { label: 'Open C1 & C2 Idiom Lab', route: 'c1idioms' }
       }
@@ -414,10 +414,13 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
     soundManager.playBeep(600, 0.04);
     setIsPlayingAudio(true);
     setMascotMood('speaking');
+    const isArthur = selectedPersona === 'examiner_arthur';
+    const isCharlotte = selectedPersona === 'writing_charlotte';
     speakBritish(text, {
-      speakerId: 'speaker_barnaby',
-      gender: 'female',
-      rate: 1.02,
+      speakerId: isArthur ? 'speaker_04' : isCharlotte ? 'speaker_05' : 'speaker_barnaby',
+      gender: isCharlotte ? 'female' : 'male',
+      rate: 1.0,
+      deliveryProfile: isArthur || isCharlotte ? 'examiner_instruction' : 'barnaby_companion',
       onEnd: () => {
         setIsPlayingAudio(false);
         setMascotMood('idle');
@@ -520,7 +523,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
 
     return (
       <aside
-        aria-label="Barnaby Live Cambridge AI Companion"
+        aria-label="Barnaby Live Practice AI Companion"
         style={{
           bottom: isMobileViewport
             ? 'calc(5rem + env(safe-area-inset-bottom, 0px))'
@@ -565,7 +568,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
               soundManager.playBeep(600, 0.04);
             }}
             className="flex items-center gap-2 cursor-pointer group focus:outline-none"
-            title="Open Barnaby — Your Live Cambridge AI Tutor"
+            title="Open Barnaby — Your Live IELTS AI Tutor"
           >
             <div className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr from-amber-100 via-amber-50 to-blue-100 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center border border-amber-300/60 shadow-inner">
               <ChubbyMascotAvatar mood={mascotMood} size="sm" />
@@ -581,7 +584,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
                   LIVE
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400">Cambridge Guide · C1/C2 Lexicon</span>
+              <span className="text-[10px] text-slate-400">IELTS Guide · C1/C2 Lexicon</span>
             </div>
           </button>
 
@@ -623,7 +626,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
   // ================= EXPANDED LIVE AI TUTOR DRAWER =================
   return (
     <aside
-      aria-label="Barnaby Cambridge AI Tutor Chat"
+      aria-label="Barnaby IELTS AI Tutor Chat"
       style={{
         bottom: isMobileViewport
           ? 'calc(4.75rem + env(safe-area-inset-bottom, 0px))'
@@ -657,7 +660,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-slate-400 truncate">
-              Cambridge Guide · C1 & C2 Idioms & Vocabulary
+              Practice Guide · C1 & C2 Idioms & Vocabulary
             </p>
           </div>
         </div>
@@ -838,7 +841,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
                     {currentLexiconItem.banglaMeaning}
                   </div>
 
-                  {/* Cambridge Band 9 Example */}
+                  {/* Practice Band 9 Example */}
                   <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
                     <span className="text-[10px] font-mono uppercase font-bold text-slate-400 block mb-0.5">
                       Band 9 IELTS Context:
@@ -1062,7 +1065,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
                     </div>
 
                     <span className="text-[9px] text-slate-400 px-1 font-mono">
-                      {m.sender === 'tutor' ? 'Barnaby (Cambridge Guide)' : 'Candidate'}
+                      {m.sender === 'tutor' ? 'Barnaby (Practice Guide)' : 'Candidate'}
                     </span>
                   </div>
                 ))}
@@ -1070,7 +1073,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
                 {isLoading && (
                   <div className="flex items-center gap-2 p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 w-fit">
                     <RefreshCw className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 animate-spin" />
-                    <span>Barnaby is checking the Cambridge rubric...</span>
+                    <span>Barnaby is checking the Practice rubric...</span>
                   </div>
                 )}
 

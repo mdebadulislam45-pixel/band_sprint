@@ -16,19 +16,19 @@ import {
 import { soundManager } from '../../utils/audioEffects';
 
 interface AIBandScorecardProps {
-  estimatedBand: number;
-  targetBand: number;
-  overallPercentage: number;
+  estimatedBand?: number;
+  targetBand?: number;
+  overallPercentage?: number;
   onNavigate: (module: string) => void;
-  onOpenBandModal: () => void;
+  onOpenBandModal?: () => void;
 }
 
 type CriteriaTab = 'writing' | 'speaking';
 
 export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
-  estimatedBand,
-  targetBand,
-  overallPercentage,
+  estimatedBand = 0,
+  targetBand = 7.5,
+  overallPercentage = 0,
   onNavigate,
   onOpenBandModal
 }) => {
@@ -167,7 +167,7 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <span className="font-semibold text-blue-700 dark:text-blue-400">Cambridge Band Descriptors</span>
+              <span className="font-semibold text-blue-700 dark:text-blue-400">Practice Band Descriptors</span>
               <span aria-hidden="true">·</span>
               <span>Diagnostic Estimate</span>
             </div>
@@ -311,12 +311,12 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
         })}
       </div>
 
-      {/* Official Cambridge Criteria Rubric Triage */}
+      {/* Practice Criteria Rubric Triage */}
       <div className="border-t border-slate-200/80 dark:border-slate-800/80 pt-3 space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
             <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-            <span>Cambridge 4-Criteria Diagnostic Breakdown</span>
+            <span>Practice Set 4-Criteria Diagnostic Breakdown</span>
           </div>
 
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/70 p-0.5 rounded-lg">
@@ -387,7 +387,7 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
 
                 {isExpanded && (
                   <div className="mt-2 pt-2 border-t border-blue-200/50 dark:border-blue-800/50 text-[10.5px] text-blue-700 dark:text-blue-300 bg-blue-50/60 dark:bg-blue-950/40 p-2 rounded-lg">
-                    <span className="font-bold">Cambridge Band 8.0 Target: </span>
+                    <span className="font-bold">Practice Band 8.0 Target: </span>
                     {crit.band8Tip}
                   </div>
                 )}

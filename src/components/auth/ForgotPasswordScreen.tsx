@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Mail, ArrowLeft, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { BandSprintLogo } from '../common/BandSprintLogo';
+import { firebaseSyncService } from '../../services/firebaseSyncService';
 
 interface ForgotPasswordScreenProps {
   onBackToLogin: () => void;
@@ -13,20 +14,25 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBa
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!email.trim() || !email.includes('@')) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
       setErrorMsg('Please enter a valid candidate email address.');
       return;
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      await firebaseSyncService.sendResetPasswordEmail(cleanEmail);
       setIsSubmitted(true);
-    }, 400);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Unable to send password reset email. Please check the email address and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -44,7 +50,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBa
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <IELTSSprintLogo variant="full" size="sm" className="brightness-125" />
+        <BandSprintLogo variant="full" size="sm" className="brightness-125" />
         <div className="w-8" />
       </header>
 
@@ -62,7 +68,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBa
                 Reset your password
               </h1>
               <p className="text-xs sm:text-sm text-slate-400">
-                Enter your email and we'll send you a secure password-reset link.
+                Enter your email and we'll send you a secure password-reset link via Firebase Authentication.
               </p>
             </div>
 
@@ -85,7 +91,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBa
                     type="email"
                     required
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
+                    onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"
                     className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                   />
@@ -116,29 +122,29 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBa
             <div className="space-y-1">
               <h2 className="text-xl sm:text-2xl font-black text-white">Check your email</h2>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                If an account exists for <span className="font-mono text-blue-400">{email}</span>, you'll receive instructions shortly.
+                A password reset email has been dispatched to <span className="font-mono text-blue-400">{email}</span>.
               </p>
             </div>
 
             <button
               type="button"
               onClick={onBackToLogin}
-              className="w-full py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-750 text-white font-bold text-xs transition"
+              className="w-full min-h-[46px] py-3 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 transition"
             >
-              Back to Log In
+              Return to Sign In
             </button>
           </motion.div>
         )}
       </main>
 
-      <footer className="relative z-10 pt-4 pb-2 text-center text-xs text-slate-400">
-        Remember your password?{' '}
+      <footer className="relative z-10 pt-4 pb-2 text-center text-[11px] text-slate-500">
+        Remembered your password?{' '}
         <button
           type="button"
           onClick={onBackToLogin}
           className="font-bold text-blue-400 hover:text-blue-300 underline"
         >
-          Back to Log In
+          Sign In
         </button>
       </footer>
     </div>

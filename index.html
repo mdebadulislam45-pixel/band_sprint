@@ -2,94 +2,106 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Fast Refresh preamble guard: ensures window.$RefreshReg$ is available across iframe preview environments
+      if (typeof window !== 'undefined') {
+        window.$RefreshReg$ = window.$RefreshReg$ || function () {};
+        window.$RefreshSig$ = window.$RefreshSig$ || function () { return function (type) { return type; }; };
+        window.__vite_plugin_react_preamble_installed__ = true;
+      }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-    <title>IELTS Sprint — AI Speaking Examiner, Listening Lab & Cambridge Prep</title>
+    <title>BandSprint — Reach your band.</title>
     <meta
       name="description"
-      content="IELTS Sprint is the premier Cambridge IELTS preparation platform. Practice authentic Listening tests, oral interviews with AI British examiners, Band 9 Writing evaluations, and C1/C2 vocabulary with Bangla meanings."
+      content="BandSprint is the premier IELTS-style practice platform. Practice realistic Listening tests, oral interviews with AI voice examiners, Writing evaluations, and vocabulary with Bangla meanings."
     />
     <meta
       name="keywords"
-      content="IELTS Sprint, ielts sprint app, ielts speaking mock test, cambridge ielts listening, ielts writing evaluator, ielts preparation bangladesh, band 9 model essays, c1 idioms bangla"
+      content="BandSprint, ielts practice bangladesh, ielts speaking mock test, listening practice, writing evaluator, band 8 ielts prep"
     />
-    <meta name="author" content="IELTS Sprint" />
+    <meta name="author" content="BandSprint Education" />
     <meta name="robots" content="index, follow" />
-    <meta name="theme-color" content="#0F172A" />
+    <meta name="theme-color" content="#0F4C45" />
 
     <!-- OpenGraph Social Sharing Metadata -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="IELTS Sprint" />
-    <meta property="og:title" content="IELTS Sprint — AI Speaking Examiner, Listening Lab & Cambridge Prep" />
+    <meta property="og:site_name" content="BandSprint" />
+    <meta property="og:title" content="BandSprint — Reach your band." />
     <meta
       property="og:description"
-      content="All-in-one Cambridge IELTS preparation: AI British Voice Examiner, authentic Listening lab, Band 9 Writing evaluator, and 1,000+ vocabulary with Bangla meanings."
+      content="All-in-one IELTS-style preparation: AI British Voice Examiner, Listening lab, Writing evaluator, and 1,000+ vocabulary with Bangla meanings."
     />
-    <meta property="og:url" content="https://ieltssprint.com/" />
-    <meta property="og:image" content="/favicon.svg" />
+    <meta property="og:url" content="https://band-sprint.netlify.app/" />
+    <meta property="og:image" content="https://band-sprint.netlify.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:alt" content="BandSprint — Reach your band." />
+    <meta property="og:locale" content="en_US" />
 
     <!-- Twitter / X Card Metadata -->
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="IELTS Sprint — AI Speaking Examiner & Cambridge Prep" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="BandSprint — Reach your band." />
     <meta
       name="twitter:description"
-      content="Practice authentic Listening tests, oral interviews with AI British examiners, and instant Band 9 Writing scorecards with IELTS Sprint."
+      content="IELTS-style tests, oral interviews with AI examiners, and instant Writing scorecards with BandSprint."
     />
-    <meta name="twitter:image" content="/favicon.svg" />
+    <meta name="twitter:image" content="https://band-sprint.netlify.app/og-image.png" />
 
-    <!-- Search Engine Verification Meta Tags (Google Search Console & Bing) -->
+    <!-- Search Engine Verification Meta Tags (Google Search Console) -->
     <meta name="google-site-verification" content="xloq0LHLJM5v52xUCqVTjcyGHRxtmytyXsh4FIIW4GU" />
-    <meta name="msvalidate.01" content="bing-webmaster-verification-ielts-sprint" />
 
     <!-- Web App Manifest & Mobile PWA -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="canonical" href="https://ieltssprint.com/" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="BandSprint" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="canonical" href="https://band-sprint.netlify.app/" />
 
-    <!-- Google Fonts: Oxford Editorial Serif (Fraunces), UI Sans (Plus Jakarta Sans), Tabular Mono (JetBrains Mono) & Bengali Typography -->
+    <!-- Google Fonts: Bricolage Grotesque & Hind Siliguri -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Hind+Siliguri:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Hind+Siliguri:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
 
-    <!-- Schema.org Structured Data (JSON-LD) for Google Search Dominance -->
+    <!-- Schema.org Structured Data (JSON-LD) for Search Engines -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@graph": [
         {
           "@type": "WebSite",
-          "@id": "https://ieltssprint.com/#website",
-          "url": "https://ieltssprint.com/",
-          "name": "IELTS Sprint",
-          "description": "The Premier AI-Powered Cambridge IELTS Preparation Platform for Band 7.5 to 9.0 Candidates.",
+          "@id": "https://band-sprint.netlify.app/#website",
+          "url": "https://band-sprint.netlify.app/",
+          "name": "BandSprint",
+          "description": "The Premier AI-Powered IELTS Preparation Platform for Band 7.5 to 9.0 Candidates.",
           "publisher": {
-            "@id": "https://ieltssprint.com/#organization"
+            "@id": "https://band-sprint.netlify.app/#organization"
           },
           "potentialAction": {
             "@type": "SearchAction",
             "target": {
               "@type": "EntryPoint",
-              "urlTemplate": "https://ieltssprint.com/?search={search_term_string}"
+              "urlTemplate": "https://band-sprint.netlify.app/?search={search_term_string}"
             },
             "query-input": "required name=search_term_string"
           }
         },
         {
           "@type": "WebApplication",
-          "@id": "https://ieltssprint.com/#app",
-          "name": "IELTS Sprint",
-          "alternateName": "IELTS Sprint Masterguide",
-          "url": "https://ieltssprint.com/",
+          "@id": "https://band-sprint.netlify.app/#app",
+          "name": "BandSprint",
+          "alternateName": "BandSprint Masterguide",
+          "url": "https://band-sprint.netlify.app/",
           "applicationCategory": "EducationalApplication",
           "operatingSystem": "All",
-          "aggregateRating": {
-            "@type": "AggregateRating",
-            "ratingValue": "4.9",
-            "reviewCount": "1240"
-          },
-          "description": "Comprehensive Cambridge IELTS preparation platform featuring AI British voice examiners, authentic listening tests, band score estimators, and vocabulary with Bengali translations.",
+          "description": "Comprehensive IELTS preparation platform featuring AI British voice examiners, realistic listening tests, band score estimators, and vocabulary with Bengali translations.",
           "offers": {
             "@type": "Offer",
             "price": "0",
@@ -98,57 +110,57 @@
         },
         {
           "@type": "EducationalOrganization",
-          "@id": "https://ieltssprint.com/#organization",
-          "name": "IELTS Sprint",
-          "url": "https://ieltssprint.com/",
-          "logo": "https://ieltssprint.com/favicon.svg",
-          "email": "support@ieltssprint.com",
-          "description": "Smart AI-powered Cambridge IELTS exam prep tailored for high-achieving candidates targeting Band 7.5 to 9.0."
+          "@id": "https://band-sprint.netlify.app/#organization",
+          "name": "BandSprint",
+          "url": "https://band-sprint.netlify.app/",
+          "logo": "https://band-sprint.netlify.app/favicon.svg",
+          "email": "support@bandsprint.app",
+          "description": "Smart AI-powered IELTS exam prep tailored for high-achieving candidates targeting Band 7.5 to 9.0."
         },
         {
           "@type": "Course",
-          "@id": "https://ieltssprint.com/#course",
-          "name": "Cambridge IELTS Band 8.0+ Master Sprint",
+          "@id": "https://band-sprint.netlify.app/#course",
+          "name": "IELTS Band 8.0+ Master Sprint",
           "description": "Comprehensive diagnostic preparation course for IELTS Academic and General Training covering Listening, Speaking, Reading, and Writing.",
           "provider": {
-            "@id": "https://ieltssprint.com/#organization"
+            "@id": "https://band-sprint.netlify.app/#organization"
           },
           "isAccessibleForFree": true
         },
         {
           "@type": "FAQPage",
-          "@id": "https://ieltssprint.com/#faq",
+          "@id": "https://band-sprint.netlify.app/#faq",
           "mainEntity": [
             {
               "@type": "Question",
-              "name": "What is IELTS Sprint?",
+              "name": "What is BandSprint?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "IELTS Sprint is a premier Cambridge IELTS preparation web platform offering authentic 4-section Listening labs, AI British voice examiners for oral interviews, instant Band 9 Writing diagnostic scoring, and 1,000+ C1/C2 vocabulary with Bengali translations."
+                "text": "BandSprint is a premier IELTS preparation web platform offering realistic 4-section Listening labs, AI British voice examiners for oral interviews, instant Band 9 Writing diagnostic scoring, and 1,000+ C1/C2 vocabulary with Bengali translations."
               }
             },
             {
               "@type": "Question",
-              "name": "How does the IELTS Sprint AI British Examiner work?",
+              "name": "How does the BandSprint AI British Examiner work?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "The AI examiner simulates a realistic Cambridge Speaking test across Parts 1, 2, and 3 using Received Pronunciation (British RP). It records candidate speech, evaluates fluency, lexical range, and grammatical accuracy, and provides actionable band feedback."
+                "text": "The AI examiner simulates a realistic Practice Speaking test across Parts 1, 2, and 3 using Received Pronunciation (British RP). It records candidate speech, evaluates fluency, lexical range, and grammatical accuracy, and provides actionable band feedback."
               }
             },
             {
               "@type": "Question",
-              "name": "Is IELTS Sprint free to use?",
+              "name": "Is BandSprint free to use?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Yes, IELTS Sprint is currently 100% free for all students. All diagnostic labs, mock exams, AI voice evaluations, and Band 9 model answers are fully unlocked without subscription fees."
+                "text": "BandSprint offers free practice labs. Some full mock exams and AI evaluations are part of optional premium plans — see the pricing page inside the app for current plans."
               }
             },
             {
               "@type": "Question",
-              "name": "Does IELTS Sprint cover Cambridge IELTS 1 through 19?",
+              "name": "Are BandSprint tests real Cambridge IELTS tests?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Yes, all question styles, listening multi-accent audio files, reading passages, and writing tasks strictly follow authentic Cambridge IELTS test specifications for both Academic and General Training."
+                "text": "No. BandSprint tests are original IELTS-style practice tests. All question styles, listening audio, reading passages, and writing tasks follow the IELTS test format for both Academic and General Training, but they are not real Cambridge test papers."
               }
             }
           ]

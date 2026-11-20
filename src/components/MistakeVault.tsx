@@ -99,7 +99,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
       seedHighYieldSampleMistakes();
       soundManager.playSuccess();
       loadData();
-      onShowToast('Tutorial / Walkthrough Mode: Loaded 4 sample Cambridge traps.');
+      onShowToast('Tutorial / Walkthrough Mode: Loaded 4 sample Practice traps.');
     } catch (err) {
       console.error('[MistakeVault] Seed samples failed:', err);
     }
@@ -266,10 +266,10 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
           <button
             onClick={handleSeedSamples}
             className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-            title="Load 4 High-Yield Cambridge Traps across all 4 skills"
+            title="Load 4 High-Yield Practice Traps across all 4 skills"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>Load Cambridge Traps</span>
+            <span>Load Practice Traps</span>
           </button>
 
           <button
@@ -418,7 +418,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
               <div className="p-4 rounded-2xl bg-emerald-950/50 border border-emerald-700/60 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold">
-                    Official Correct Target / Band 8.5 Upgrade:
+                    Correct Target / Band 8.5 Upgrade:
                   </span>
                   <button
                     onClick={() => speakBritish(currentWorkoutCard.correctAnswer)}
@@ -436,7 +436,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
                   <span className="text-[10px] font-mono uppercase text-blue-400 font-bold block">
-                    🇬🇧 Cambridge Examiner Logic
+                    🇬🇧 Practice Examiner Logic
                   </span>
                   <p className="text-slate-300 leading-relaxed">
                     {currentWorkoutCard.trapExplanationEn || currentWorkoutCard.explanation}
@@ -626,7 +626,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
                     <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] text-slate-500 dark:text-slate-400 uppercase block font-sans">
-                          Official Correct Target:
+                          Correct Target:
                         </span>
                         <button
                           onClick={() => speakBritish(item.correctAnswer)}

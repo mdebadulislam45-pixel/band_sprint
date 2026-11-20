@@ -13,11 +13,22 @@ import {
   ChevronRight,
   X,
   ArrowRight,
-  Loader2
+  Loader2,
+  UserCheck,
+  ShieldCheck
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
+import { getPreferredVoiceGender, setPreferredVoiceGender } from '../../config/voiceConfig';
 import { firebaseSyncService } from '../../services/firebaseSyncService';
+import {
+  CDIELTSColorScheme,
+  CDIELTSZoomLevel,
+  getCDIELTSThemeClasses,
+  getCDIELTSFontSizeClass
+} from './CDIELTSThemeContainer';
+import { SprintTRFModal } from './SprintTRFModal';
+import { ExaminerHumanoidCanvas } from '../speaking/ExaminerHumanoidCanvas';
 
 interface CDIELTSSpeakingSuiteProps {
   onExit: () => void;
@@ -42,6 +53,15 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   onShowToast,
   candidateName = 'Candidate'
 }) => {
+  // Theme & Contrast state
+  const [colorScheme, setColorScheme] = useState<CDIELTSColorScheme>('standard');
+  const [zoomLevel, setZoomLevel] = useState<CDIELTSZoomLevel>('100%');
+
+  // Examiner persona state
+  const [examinerGender, setExaminerGender] = useState<'female' | 'male'>(() => getPreferredVoiceGender());
+  const [isExaminerSpeaking, setIsExaminerSpeaking] = useState<boolean>(false);
+  const [activeSpokenPrompt, setActiveSpokenPrompt] = useState<string>('');
+
   const [stage, setStage] = useState<SpeakingStage>('intro');
   const [prepSecondsLeft, setPrepSecondsLeft] = useState<number>(60);
   const [speakSecondsLeft, setSpeakSecondsLeft] = useState<number>(120);
@@ -51,6 +71,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   const [spokenTranscript, setSpokenTranscript] = useState<string>('');
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evaluation, setEvaluation] = useState<SpeakingEvaluation | null>(null);
+  const [showTRFModal, setShowTRFModal] = useState<boolean>(false);
 
   // Part 1 index
   const [part1QuestionIdx, setPart1QuestionIdx] = useState<number>(0);
@@ -113,8 +134,10 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
             clearInterval(interval);
             setIsPrepTimerRunning(false);
             soundManager.playBeep(600, 0.3);
-            onShowToast('Preparation time has ended. Please begin speaking.');
-            setStage('part2_speak');
+            setTimeout(() => {
+              onShowToast('Preparation time has ended. Please begin speaking.');
+              setStage('part2_speak');
+            }, 0);
             return 0;
           }
           return prev - 1;
@@ -132,9 +155,11 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
         setSpeakSecondsLeft((prev) => {
           if (prev <= 1) {
             clearInterval(interval);
-            handleStopRecording();
-            onShowToast('2-minute long turn completed. Moving to Part 3 discussion.');
-            setStage('part3');
+            setTimeout(() => {
+              handleStopRecording();
+              onShowToast('2-minute long turn completed. Moving to Part 3 discussion.');
+              setStage('part3');
+            }, 0);
             return 0;
           }
           return prev - 1;
@@ -146,7 +171,16 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
   const speakPrompt = (text: string) => {
     stopSpeech();
-    speakBritish(text, { rate: 0.96 });
+    setActiveSpokenPrompt(text);
+    setIsExaminerSpeaking(true);
+    speakBritish(text, {
+      rate: 0.96,
+      speakerId: examinerGender === 'female' ? 'speaker_05' : 'speaker_04',
+      gender: examinerGender,
+      onStart: () => setIsExaminerSpeaking(true),
+      onEnd: () => setIsExaminerSpeaking(false),
+      onError: () => setIsExaminerSpeaking(false)
+    });
   };
 
   const handleStartPrep = () => {
@@ -158,6 +192,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
   const handleStartRecording = async () => {
     stopSpeech();
+    setIsExaminerSpeaking(false);
     soundManager.playSuccess();
     recordedChunksRef.current = [];
 
@@ -230,6 +265,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   const handleCompleteInterview = async () => {
     handleStopRecording();
     stopSpeech();
+    setIsExaminerSpeaking(false);
     setStage('result');
 
     const combinedText = (spokenTranscript || candidateNotes || '').trim();
@@ -243,7 +279,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
         grammarBand: 0,
         pronunciationBand: 0,
         examinerFeedback:
-          'No spoken response or transcript was recorded during this session. Please use the microphone or enter your spoken response in the transcript box to receive a verified Cambridge Rubric-aligned band score.',
+          'No spoken response or transcript was recorded during this session. Please use the microphone or enter your spoken response in the transcript box to receive a verified Practice Rubric-aligned band score.',
         wordCount: words
       });
       return;
@@ -318,27 +354,73 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
     }
   };
 
+  // Real-Time Live Speech Analytics
+  const wordsArray = (spokenTranscript || '').trim().split(/\s+/).filter(Boolean);
+  const wordCount = wordsArray.length;
+  const elapsedMinutes = Math.max(0.08, (120 - speakSecondsLeft) / 60);
+  const currentWpm = isRecording ? Math.round(wordCount / elapsedMinutes) : 0;
+  
+  // Filler words detector
+  const fillerRegex = /\b(um|uh|like|you know|actually|basically|sort of|kind of)\b/gi;
+  const detectedFillers = (spokenTranscript.match(fillerRegex) || []).length;
+
+  // High-level academic lexis detector
+  const academicLexisRegex = /\b(paramount|crucial|profound|consequently|sustainable|infrastructure|substantial|mitigate|pivotal|perspective|inevitable|significantly|predominantly|comprehensive)\b/gi;
+  const detectedAcademicWords = Array.from(new Set((spokenTranscript.match(academicLexisRegex) || []).map(w => w.toLowerCase())));
+
+  const theme = getCDIELTSThemeClasses(colorScheme);
+  const fontSizeClass = getCDIELTSFontSizeClass(zoomLevel);
+
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans select-none">
+    <div className={`min-h-screen ${theme.bg} ${fontSizeClass} flex flex-col font-sans select-none`}>
       {/* CD-IELTS Top Exam Bar */}
-      <header className="px-4 sm:px-6 py-3 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
+      <header className={`px-4 sm:px-6 py-3 border-b ${theme.border} ${theme.headerBg} flex items-center justify-between font-mono`}>
         <div className="flex items-center gap-3">
-          <span className="px-2.5 py-1 rounded bg-blue-600 text-white font-mono font-bold text-xs uppercase tracking-wider">
-            CD-IELTS
+          <span className="px-2.5 py-1 bg-sky-600 text-white font-bold text-xs uppercase tracking-wider">
+            CD-IELTS SPEAKING
           </span>
-          <span className="text-xs sm:text-sm font-bold text-slate-200">
-            Speaking Interview Room · Candidate: {candidateName}
+          <span className="hidden sm:inline text-xs text-slate-300">
+            Candidate: <strong>{candidateName}</strong> · Standard Practice Interview
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Accessibility & Options */}
+        <div className="flex items-center gap-3">
+          {/* Zoom Selector */}
+          <div className="flex items-center gap-1 border border-gray-600 px-2 py-1 text-xs text-gray-200">
+            <span>Zoom:</span>
+            {(['100%', '125%', '150%'] as CDIELTSZoomLevel[]).map((lvl) => (
+              <button
+                key={lvl}
+                onClick={() => setZoomLevel(lvl)}
+                className={`px-1.5 py-0.5 font-bold cursor-pointer transition ${
+                  zoomLevel === lvl ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'
+                }`}
+              >
+                {lvl}
+              </button>
+            ))}
+          </div>
+
+          {/* Color Scheme Selector */}
+          <select
+            value={colorScheme}
+            onChange={(e) => setColorScheme(e.target.value as CDIELTSColorScheme)}
+            className="border border-gray-600 bg-gray-900 text-gray-200 text-xs px-2 py-1 outline-none cursor-pointer"
+          >
+            <option value="standard">Standard Contrast</option>
+            <option value="black-on-yellow">Black on Yellow</option>
+            <option value="yellow-on-black">Yellow on Black</option>
+            <option value="white-on-black">White on Black</option>
+          </select>
+
           <button
             onClick={() => {
               stopSpeech();
               handleStopRecording();
               onExit();
             }}
-            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-xs font-semibold text-slate-300 flex items-center gap-1"
+            className="px-3 py-1.5 border border-gray-600 hover:bg-gray-800 text-xs font-semibold text-gray-200 flex items-center gap-1 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
             <span>Exit Room</span>
@@ -347,19 +429,99 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
       </header>
 
       {/* Main Suite Container */}
-      <div className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-8 flex flex-col justify-center">
+      <div className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center">
         {/* ================= INTRO STAGE ================= */}
         {stage === 'intro' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 text-center animate-fade-in">
+          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 text-center animate-fade-in max-w-4xl mx-auto w-full">
             <div className="w-16 h-16 rounded-2xl bg-blue-600/20 text-blue-400 mx-auto flex items-center justify-center">
               <Mic className="w-8 h-8" />
             </div>
 
             <div className="space-y-2">
-              <h1 className="text-2xl font-bold tracking-tight">1:1 IELTS Speaking Interview Simulator</h1>
-              <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
-                Consists of Part 1 (Introduction), Part 2 (Long Turn with 1-min prep timer), and Part 3 (Thematic Discussion) with neural British voice prompts.
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-300 text-xs font-mono">
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                <span>IELTS Oral Simulation</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                1:1 IELTS Speaking Interview
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-400 max-w-lg mx-auto">
+                Featuring interactive AI Speaking Examiners with authentic British RP pronunciation, lip-synced articulation, and real-time Practice Band 9 assessment.
               </p>
+            </div>
+
+            {/* Examiner Persona Selector */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 text-left space-y-3 max-w-xl mx-auto">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-blue-400" />
+                <span>Select Your IELTS Speaking Examiner:</span>
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExaminerGender('female');
+                    setPreferredVoiceGender('female');
+                    soundManager.playBeep(520, 0.04);
+                    stopSpeech();
+                    speakBritish('Good day. I am Doctor Clara Sterling, your IELTS Speaking examiner.', {
+                      speakerId: 'speaker_05',
+                      gender: 'female',
+                      rate: 0.96,
+                      onStart: () => setIsExaminerSpeaking(true),
+                      onEnd: () => setIsExaminerSpeaking(false),
+                      onError: () => setIsExaminerSpeaking(false)
+                    });
+                  }}
+                  className={`p-3.5 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                    examinerGender === 'female'
+                      ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-rose-500 via-pink-400 to-indigo-500 flex items-center justify-center text-xl shadow-inner border border-white/20 shrink-0">
+                    👩‍🏫
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs text-white">Dr. Clara Sterling</div>
+                    <div className="text-[10px] text-blue-300 font-mono">Senior Female Assessor Persona</div>
+                    <div className="text-[10px] text-slate-400">Standard Southern British (RP)</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExaminerGender('male');
+                    setPreferredVoiceGender('male');
+                    soundManager.playBeep(520, 0.04);
+                    stopSpeech();
+                    speakBritish('Good day. I am Professor Arthur Pendelton, your IELTS Speaking examiner.', {
+                      speakerId: 'speaker_04',
+                      gender: 'male',
+                      rate: 0.96,
+                      onStart: () => setIsExaminerSpeaking(true),
+                      onEnd: () => setIsExaminerSpeaking(false),
+                      onError: () => setIsExaminerSpeaking(false)
+                    });
+                  }}
+                  className={`p-3.5 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                    examinerGender === 'male'
+                      ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-sky-600 via-indigo-500 to-amber-500 flex items-center justify-center text-xl shadow-inner border border-white/20 shrink-0">
+                    👨‍🏫
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs text-white">Prof. Arthur Pendelton</div>
+                    <div className="text-[10px] text-blue-300 font-mono">Senior Male Assessor Persona</div>
+                    <div className="text-[10px] text-slate-400">Standard Southern British (RP)</div>
+                  </div>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left max-w-lg mx-auto text-xs">
@@ -383,7 +545,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                 soundManager.playSuccess();
                 speakPrompt(part1Questions[0]);
               }}
-              className="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition inline-flex items-center gap-2"
+              className="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition inline-flex items-center gap-2 cursor-pointer"
             >
               <span>Begin Speaking Interview</span>
               <ArrowRight className="w-4 h-4" />
@@ -393,64 +555,120 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
         {/* ================= PART 1: INTRODUCTORY QUESTIONS ================= */}
         {stage === 'part1' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 animate-fade-in">
+          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <span className="text-xs font-mono font-bold text-blue-400 uppercase">
                 PART 1 · QUESTION {part1QuestionIdx + 1} OF {part1Questions.length}
               </span>
               <button
                 onClick={() => speakPrompt(part1Questions[part1QuestionIdx])}
-                className="text-xs text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                className="text-xs text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
               >
                 <Volume2 className="w-3.5 h-3.5" /> Repeat Question
               </button>
             </div>
 
-            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
-              <div className="text-xs font-mono text-slate-400 uppercase">AI IELTS Examiner (British Voice):</div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                "{part1Questions[part1QuestionIdx]}"
-              </h2>
-            </div>
+            {/* Split Screen: Live Animated Practice Examiner + Interactive Question Console */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+              <div className="lg:col-span-5">
+                <ExaminerHumanoidCanvas
+                  gender={examinerGender}
+                  isSpeaking={isExaminerSpeaking}
+                  isListening={isRecording}
+                  spokenText={activeSpokenPrompt || part1Questions[part1QuestionIdx]}
+                  candidateVolumeRms={isRecording ? 50 : 0}
+                  activePartLabel="Part 1: Introduction"
+                  compact={true}
+                />
+              </div>
 
-            <div className="flex items-center justify-between pt-4 flex-wrap gap-3">
-              <span className="text-xs text-slate-400 italic">
-                Speak naturally for 20–30 seconds per prompt.
-              </span>
+              <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                  <div className="text-[11px] font-mono text-slate-400 uppercase">
+                    Examiner Spoken Question:
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-bold text-white leading-relaxed">
+                    "{part1Questions[part1QuestionIdx]}"
+                  </h2>
+                  <p className="text-xs text-slate-400 pt-1">
+                    Speak naturally into your microphone for 20–30 seconds.
+                  </p>
+                </div>
 
-              {part1QuestionIdx < part1Questions.length - 1 ? (
-                <button
-                  onClick={() => {
-                    const next = part1QuestionIdx + 1;
-                    setPart1QuestionIdx(next);
-                    soundManager.playBeep(520, 0.03);
-                    speakPrompt(part1Questions[next]);
-                  }}
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
-                >
-                  <span>Next Question</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    stopSpeech();
-                    setStage('part2_prep');
-                    soundManager.playSuccess();
-                  }}
-                  className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
-                >
-                  <span>Proceed to Part 2 (Cue Card)</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
+                {/* Candidate Recording Button & Live Speech Feedback */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono text-slate-300">
+                      {isRecording ? 'Candidate Microphone Active · Speaking...' : 'Ready to Answer'}
+                    </span>
+                    {!isRecording ? (
+                      <button
+                        onClick={handleStartRecording}
+                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                      >
+                        <Mic className="w-3.5 h-3.5" />
+                        <span>Start Speaking</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleStopRecording}
+                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
+                      >
+                        <span>Done Speaking</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {spokenTranscript && (
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 italic">
+                      "{spokenTranscript}"
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-slate-500 font-mono">
+                    Target: Fluency without long hesitations
+                  </span>
+
+                  {part1QuestionIdx < part1Questions.length - 1 ? (
+                    <button
+                      onClick={() => {
+                        handleStopRecording();
+                        const next = part1QuestionIdx + 1;
+                        setPart1QuestionIdx(next);
+                        soundManager.playBeep(520, 0.03);
+                        speakPrompt(part1Questions[next]);
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Next Question</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        handleStopRecording();
+                        stopSpeech();
+                        setIsExaminerSpeaking(false);
+                        setStage('part2_prep');
+                        soundManager.playSuccess();
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Proceed to Part 2 (Cue Card)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* ================= PART 2: CUE CARD PREP (1-MINUTE TIMER) ================= */}
         {stage === 'part2_prep' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 animate-fade-in">
+          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <span className="text-xs font-mono font-bold text-amber-400 uppercase">
                 PART 2 · CANDIDATE CUE CARD & 1-MINUTE PREP
@@ -461,66 +679,82 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               </div>
             </div>
 
-            {/* Cue Card Display */}
-            <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-3">
-              <div className="text-xs font-mono font-bold text-amber-500 uppercase">Topic Prompt:</div>
-              <h2 className="text-lg sm:text-xl font-bold text-white">{part2CueCard.title}</h2>
-              <p className="text-xs text-slate-300">You should say:</p>
-              <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-5">
-                {part2CueCard.cues.map((c, i) => (
-                  <li key={i}>{c}</li>
-                ))}
-              </ul>
-            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+              <div className="lg:col-span-5">
+                <ExaminerHumanoidCanvas
+                  gender={examinerGender}
+                  isSpeaking={isExaminerSpeaking}
+                  isListening={false}
+                  spokenText={activeSpokenPrompt || 'Please take one minute to prepare your notes on the cue card.'}
+                  activePartLabel="Part 2: 1-Min Preparation"
+                  compact={true}
+                />
+              </div>
 
-            {/* Digital Scratchpad Note Taker */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-blue-400" />
-                <span>Candidate Margin Scratchpad (Type Keywords & Bullet Notes)</span>
-              </label>
-              <textarea
-                value={candidateNotes}
-                onChange={(e) => setCandidateNotes(e.target.value)}
-                placeholder="e.g. 1. Solar desalination project, 2. Arabian Gulf, 3. Reduces brine pollution, 4. Scalable & green..."
-                rows={4}
-                className="w-full p-3.5 rounded-xl border border-slate-700 bg-slate-900 text-xs sm:text-sm text-slate-200 outline-none focus:border-blue-500"
-              />
-            </div>
+              <div className="lg:col-span-7 space-y-4">
+                {/* Cue Card Display */}
+                <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-2.5">
+                  <div className="text-xs font-mono font-bold text-amber-500 uppercase">Topic Prompt:</div>
+                  <h2 className="text-base sm:text-lg font-bold text-white">{part2CueCard.title}</h2>
+                  <p className="text-xs text-slate-300">You should say:</p>
+                  <ul className="text-xs text-slate-300 space-y-1 list-disc pl-5">
+                    {part2CueCard.cues.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
 
-            <div className="flex items-center justify-between pt-2 flex-wrap gap-3">
-              {!isPrepTimerRunning ? (
-                <button
-                  onClick={handleStartPrep}
-                  className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Start 1-Minute Prep Timer</span>
-                </button>
-              ) : (
-                <span className="text-xs text-slate-400 italic">
-                  Prep timer running... jot down key vocabulary.
-                </span>
-              )}
+                {/* Digital Scratchpad Note Taker */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-blue-400" />
+                    <span>Candidate Margin Scratchpad (Jot Keywords & Structure)</span>
+                  </label>
+                  <textarea
+                    value={candidateNotes}
+                    onChange={(e) => setCandidateNotes(e.target.value)}
+                    placeholder="e.g. 1. Solar desalination project, 2. Arabian Gulf, 3. Reduces brine pollution, 4. Scalable & green..."
+                    rows={3}
+                    className="w-full p-3 rounded-xl border border-slate-700 bg-slate-900 text-xs sm:text-sm text-slate-200 outline-none focus:border-blue-500"
+                  />
+                </div>
 
-              <button
-                onClick={() => {
-                  stopSpeech();
-                  setStage('part2_speak');
-                  soundManager.playBeep(520, 0.05);
-                }}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
-              >
-                <span>Ready to Speak (Start 2-Min Turn)</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                <div className="flex items-center justify-between pt-1 flex-wrap gap-3">
+                  {!isPrepTimerRunning ? (
+                    <button
+                      onClick={handleStartPrep}
+                      className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Start 1-Minute Prep Timer</span>
+                    </button>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">
+                      Prep timer running... jot down key vocabulary.
+                    </span>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      stopSpeech();
+                      setIsExaminerSpeaking(false);
+                      setStage('part2_speak');
+                      soundManager.playBeep(520, 0.05);
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Ready to Speak (Start 2-Min Turn)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* ================= PART 2: 2-MINUTE SPEAKING TURN ================= */}
         {stage === 'part2_speak' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 animate-fade-in">
+          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <span className="text-xs font-mono font-bold text-emerald-400 uppercase">
                 PART 2 · CANDIDATE LONG TURN (2 MINUTES)
@@ -540,146 +774,243 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               </div>
             </div>
 
-            {/* Note reference drawer */}
-            {candidateNotes && (
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-                <span className="font-bold text-slate-400 uppercase font-mono text-[10px]">Your Prep Notes:</span>
-                <p className="text-slate-300 mt-1">{candidateNotes}</p>
-              </div>
-            )}
-
-            {/* Audio Voice Recording Controls */}
-            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-blue-600/20 text-blue-400">
-                <Mic className={`w-8 h-8 ${isRecording ? 'text-rose-500 animate-pulse' : ''}`} />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+              <div className="lg:col-span-5">
+                <ExaminerHumanoidCanvas
+                  gender={examinerGender}
+                  isSpeaking={false}
+                  isListening={isRecording}
+                  candidateVolumeRms={isRecording ? 60 : 0}
+                  activePartLabel="Part 2: 2-Min Monologue"
+                  compact={true}
+                />
               </div>
 
-              <div>
-                <h3 className="text-base font-bold">
-                  {isRecording ? 'Examiner Listening · Voice Recording Active' : 'Press Start to Begin 2-Minute Monologue'}
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  Aim to speak continuously for at least 1 minute 30 seconds. Your speech is transcribed for rubric grading.
-                </p>
-              </div>
+              <div className="lg:col-span-7 space-y-4">
+                {/* Note reference drawer */}
+                {candidateNotes && (
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                    <span className="font-bold text-slate-400 uppercase font-mono text-[10px]">
+                      Your Prep Notes:
+                    </span>
+                    <p className="text-slate-300 mt-1">{candidateNotes}</p>
+                  </div>
+                )}
 
-              {!isRecording ? (
-                <button
-                  onClick={handleStartRecording}
-                  className="px-8 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition inline-flex items-center gap-2"
-                >
-                  <Mic className="w-4 h-4" />
-                  <span>Start Speaking</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handleStopRecording}
-                  className="px-6 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition inline-flex items-center gap-2"
-                >
-                  <span>Stop Recording</span>
-                </button>
-              )}
+                {/* Audio Voice Recording Controls */}
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-600/20 text-blue-400">
+                      <Mic className={`w-6 h-6 ${isRecording ? 'text-rose-500 animate-pulse' : ''}`} />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="text-sm font-bold text-white">
+                        {isRecording ? 'Examiner Listening · Candidate Recording Active' : 'Press Start to Begin 2-Minute Monologue'}
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Aim to speak continuously for at least 1 minute 30 seconds.
+                      </p>
+                    </div>
+                  </div>
 
-              {audioUrl && (
-                <div className="pt-2">
-                  <audio src={audioUrl} controls className="mx-auto h-9" />
+                  <div className="flex items-center justify-center gap-3">
+                    {!isRecording ? (
+                      <button
+                        onClick={handleStartRecording}
+                        className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+                      >
+                        <Mic className="w-4 h-4" />
+                        <span>Start Speaking</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleStopRecording}
+                        className="px-6 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition inline-flex items-center gap-2 cursor-pointer"
+                      >
+                        <span>Stop Recording</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {audioUrl && (
+                    <div className="pt-1">
+                      <audio src={audioUrl} controls className="mx-auto h-8" />
+                    </div>
+                  )}
+
+                  {/* Real-Time Live Speech Analytics */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-left font-mono">
+                    <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-400 uppercase">Speech Rate</div>
+                      <div className={`text-xs font-bold mt-0.5 ${currentWpm >= 115 && currentWpm <= 160 ? 'text-emerald-400' : currentWpm > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                        {currentWpm > 0 ? `${currentWpm} WPM` : 'Measuring...'}
+                      </div>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-400 uppercase">Fillers</div>
+                      <div className={`text-xs font-bold mt-0.5 ${detectedFillers > 3 ? 'text-rose-400' : 'text-slate-200'}`}>
+                        {detectedFillers} words
+                      </div>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-400 uppercase">C1 Lexis</div>
+                      <div className="text-xs font-bold text-sky-400 mt-0.5">
+                        {detectedAcademicWords.length} collocations
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Live / Editable Transcript Box so grading works across all devices */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono font-bold uppercase text-slate-400">
-                Captured Speech Transcript (or type/paste your spoken response for AI grading):
-              </label>
-              <textarea
-                value={spokenTranscript}
-                onChange={(e) => setSpokenTranscript(e.target.value)}
-                placeholder="Your spoken words will appear here automatically while recording, or you can type/refine your response here..."
-                rows={3}
-                className="w-full p-3 rounded-xl border border-slate-700 bg-slate-900 text-xs sm:text-sm text-slate-200 outline-none focus:border-blue-500"
-              />
-            </div>
+                {/* Captured Transcript Box */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono font-bold uppercase text-slate-400">
+                    Live Captured Speech Transcript:
+                  </label>
+                  <textarea
+                    value={spokenTranscript}
+                    onChange={(e) => setSpokenTranscript(e.target.value)}
+                    placeholder="Your spoken words will appear here automatically while recording..."
+                    rows={2}
+                    className="w-full p-2.5 rounded-xl border border-slate-700 bg-slate-900 text-xs text-slate-200 outline-none focus:border-blue-500"
+                  />
+                </div>
 
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => {
-                  handleStopRecording();
-                  setStage('part3');
-                  soundManager.playSuccess();
-                  speakPrompt(part3Questions[0]);
-                }}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
-              >
-                <span>Proceed to Part 3 (Discussion)</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                <div className="flex justify-end pt-1">
+                  <button
+                    onClick={() => {
+                      handleStopRecording();
+                      setStage('part3');
+                      soundManager.playSuccess();
+                      speakPrompt(part3Questions[0]);
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Proceed to Part 3 (Discussion)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* ================= PART 3: THEMATIC DISCUSSION ================= */}
         {stage === 'part3' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 animate-fade-in">
+          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <span className="text-xs font-mono font-bold text-blue-400 uppercase">
                 PART 3 · THEMATIC DISCUSSION ({part3QuestionIdx + 1} OF {part3Questions.length})
               </span>
               <button
                 onClick={() => speakPrompt(part3Questions[part3QuestionIdx])}
-                className="text-xs text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                className="text-xs text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
               >
                 <Volume2 className="w-3.5 h-3.5" /> Repeat Prompt
               </button>
             </div>
 
-            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
-              <div className="text-xs font-mono text-slate-400 uppercase">Discussion Question:</div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                "{part3Questions[part3QuestionIdx]}"
-              </h2>
-            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+              <div className="lg:col-span-5">
+                <ExaminerHumanoidCanvas
+                  gender={examinerGender}
+                  isSpeaking={isExaminerSpeaking}
+                  isListening={isRecording}
+                  spokenText={activeSpokenPrompt || part3Questions[part3QuestionIdx]}
+                  candidateVolumeRms={isRecording ? 50 : 0}
+                  activePartLabel="Part 3: Discussion"
+                  compact={true}
+                />
+              </div>
 
-            <div className="flex items-center justify-between pt-4 flex-wrap gap-3">
-              <span className="text-xs text-slate-400 italic">
-                Develop arguments with concrete real-world examples.
-              </span>
+              <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                  <div className="text-[11px] font-mono text-slate-400 uppercase">
+                    Discussion Question:
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-bold text-white leading-relaxed">
+                    "{part3Questions[part3QuestionIdx]}"
+                  </h2>
+                  <p className="text-xs text-slate-400 pt-1">
+                    Develop arguments with concrete real-world examples and nuanced perspectives.
+                  </p>
+                </div>
 
-              {part3QuestionIdx < part3Questions.length - 1 ? (
-                <button
-                  onClick={() => {
-                    const next = part3QuestionIdx + 1;
-                    setPart3QuestionIdx(next);
-                    soundManager.playBeep(520, 0.03);
-                    speakPrompt(part3Questions[next]);
-                  }}
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
-                >
-                  <span>Next Question</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={handleCompleteInterview}
-                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
-                >
-                  <span>Complete Interview & Evaluate</span>
-                  <CheckCircle2 className="w-4 h-4" />
-                </button>
-              )}
+                {/* Candidate Recording Button */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono text-slate-300">
+                      {isRecording ? 'Candidate Microphone Active · Speaking...' : 'Ready to Answer'}
+                    </span>
+                    {!isRecording ? (
+                      <button
+                        onClick={handleStartRecording}
+                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                      >
+                        <Mic className="w-3.5 h-3.5" />
+                        <span>Start Speaking</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleStopRecording}
+                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
+                      >
+                        <span>Done Speaking</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {spokenTranscript && (
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 italic">
+                      "{spokenTranscript}"
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 flex-wrap gap-3">
+                  <span className="text-xs text-slate-400 italic">
+                    Abstract analysis & C1 discourse markers.
+                  </span>
+
+                  {part3QuestionIdx < part3Questions.length - 1 ? (
+                    <button
+                      onClick={() => {
+                        handleStopRecording();
+                        const next = part3QuestionIdx + 1;
+                        setPart3QuestionIdx(next);
+                        soundManager.playBeep(520, 0.03);
+                        speakPrompt(part3Questions[next]);
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Next Question</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleCompleteInterview}
+                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Complete Interview & Evaluate</span>
+                      <CheckCircle2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* ================= RESULT STAGE: AI BAND SCORECARD ================= */}
         {stage === 'result' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 animate-fade-in">
+          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 animate-fade-in max-w-4xl mx-auto w-full">
             {isEvaluating ? (
               <div className="py-12 text-center space-y-3">
                 <Loader2 className="w-10 h-10 text-blue-400 animate-spin mx-auto" />
-                <h3 className="text-lg font-bold">Evaluating Speaking Performance...</h3>
+                <h3 className="text-lg font-bold text-white">Evaluating Speaking Performance...</h3>
                 <p className="text-xs text-slate-400">
-                  Analyzing fluency, lexical resource, grammatical range, and pronunciation against Cambridge descriptors.
+                  Analyzing fluency, lexical resource, grammatical range, and pronunciation against Practice descriptors.
                 </p>
               </div>
             ) : evaluation && evaluation.overallBand > 0 ? (
@@ -688,9 +1019,9 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
                     <Award className="w-8 h-8" />
                   </div>
-                  <h2 className="text-2xl font-bold tracking-tight">Speaking Assessment Complete</h2>
+                  <h2 className="text-2xl font-bold tracking-tight text-white">Speaking Assessment Complete</h2>
                   <p className="text-xs text-slate-400">
-                    AI IELTS Examiner (Cambridge Rubric-Aligned) · {evaluation.wordCount} Words Analyzed
+                    AI IELTS Examiner (Practice Rubric-Aligned) · {evaluation.wordCount} Words Analyzed
                   </p>
                 </div>
 
@@ -723,14 +1054,14 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                 <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center">
                   <AlertCircle className="w-7 h-7" />
                 </div>
-                <h2 className="text-xl font-bold">No Spoken Response Recorded</h2>
+                <h2 className="text-xl font-bold text-white">No Spoken Response Recorded</h2>
                 <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
                   {evaluation?.examinerFeedback ||
                     'We do not assign a synthetic band score when no speech or transcript was recorded. Return to Part 2 to record your voice or enter your spoken transcript.'}
                 </p>
                 <button
                   onClick={() => setStage('part2_speak')}
-                  className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5"
+                  className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>Retry Part 2 Recording</span>
@@ -738,10 +1069,19 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               </div>
             )}
 
-            <div className="flex justify-center pt-2">
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
+              {evaluation && evaluation.overallBand > 0 && (
+                <button
+                  onClick={() => setShowTRFModal(true)}
+                  className="px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Award className="w-4 h-4 text-slate-950" />
+                  <span>Official Speaking TRF Certificate</span>
+                </button>
+              )}
               <button
                 onClick={onExit}
-                className="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition"
+                className="px-8 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition cursor-pointer"
               >
                 Return to Dashboard
               </button>
@@ -749,7 +1089,24 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
           </div>
         )}
       </div>
+
+      {/* Practice Speaking TRF Modal */}
+      {evaluation && (
+        <SprintTRFModal
+          isOpen={showTRFModal}
+          onClose={() => setShowTRFModal(false)}
+          data={{
+            candidateName,
+            testTitle: 'IELTS Academic Speaking Interview Simulation',
+            listeningBand: 7.0,
+            readingBand: 7.0,
+            writingBand: 7.0,
+            speakingBand: evaluation.overallBand,
+            overallBand: evaluation.overallBand,
+            testType: 'Academic'
+          }}
+        />
+      )}
     </div>
   );
 };
-

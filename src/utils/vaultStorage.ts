@@ -36,7 +36,7 @@ function sanitizeMistakeItem(raw: any, index: number): MistakeItem | null {
     userAnswer: rawUserAnswer,
     userWrongAnswer: typeof raw.userWrongAnswer === 'string' ? raw.userWrongAnswer : rawUserAnswer,
     correctAnswer: typeof raw.correctAnswer === 'string' && raw.correctAnswer.trim() ? raw.correctAnswer.trim() : (raw.correctAnswer != null ? String(raw.correctAnswer) : 'Correct Form Required'),
-    explanation: typeof raw.explanation === 'string' && raw.explanation.trim() ? raw.explanation.trim() : 'Review Cambridge grammar / vocabulary guidelines for this question.',
+    explanation: typeof raw.explanation === 'string' && raw.explanation.trim() ? raw.explanation.trim() : 'Review Sprint grammar / vocabulary guidelines for this question.',
     trapExplanationEn: typeof raw.trapExplanationEn === 'string' ? raw.trapExplanationEn.trim() : undefined,
     trapExplanationBn: typeof raw.trapExplanationBn === 'string' ? raw.trapExplanationBn.trim() : undefined,
     sourceContext: typeof raw.sourceContext === 'string' ? raw.sourceContext.trim() : undefined,
@@ -66,7 +66,6 @@ export function getMistakes(): MistakeItem[] {
 
     return sanitized;
   } catch (err) {
-    console.warn('[MistakeVault] Error reading local mistakes:', err);
     return [];
   }
 }
@@ -109,6 +108,9 @@ export function addMistake(item: Omit<MistakeItem, 'id' | 'timestamp' | 'mastere
     existing.intervalDays = 0;
     existing.nextReviewAt = Date.now();
     saveMistakes(current);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: existing }));
+    }
     return existing;
   }
 
@@ -123,7 +125,7 @@ export function addMistake(item: Omit<MistakeItem, 'id' | 'timestamp' | 'mastere
     userAnswer: safeUserAnswer,
     userWrongAnswer: item.userWrongAnswer || safeUserAnswer,
     correctAnswer: typeof item.correctAnswer === 'string' ? item.correctAnswer : String(item.correctAnswer || ''),
-    explanation: typeof item.explanation === 'string' ? item.explanation : 'Cambridge exam review guidance.',
+    explanation: typeof item.explanation === 'string' ? item.explanation : 'Sprint exam review guidance.',
     trapExplanationEn: item.trapExplanationEn,
     trapExplanationBn: item.trapExplanationBn,
     sourceContext: item.sourceContext,
@@ -136,6 +138,9 @@ export function addMistake(item: Omit<MistakeItem, 'id' | 'timestamp' | 'mastere
   };
 
   saveMistakes([newMistake, ...current]);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: newMistake }));
+  }
   return newMistake;
 }
 
@@ -189,6 +194,9 @@ export function recordSM2Review(id: string, quality: 1 | 3 | 4 | 5): MistakeItem
   });
 
   saveMistakes(updated);
+  if (updatedItem && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: updatedItem }));
+  }
   return updatedItem;
 }
 
@@ -208,7 +216,7 @@ export function seedHighYieldSampleMistakes(): MistakeItem[] {
       userWrongAnswer: 'MK4 9TJ',
       correctAnswer: 'MK4 8TR',
       explanation: 'In IELTS Listening Part 1, speakers frequently state an initial number or postcode and immediately self-correct using signal words like "apologies" or "actually". Always wait for confirmation.',
-      trapExplanationEn: 'Cambridge Section 1 examiners test whether you prematurely write the first code you hear ("MK4 9TJ"). Listen for contrast markers ("oh wait, apologies") that invalidate the distractor.',
+      trapExplanationEn: 'Sprint Section 1 examiners test whether you prematurely write the first code you hear ("MK4 9TJ"). Listen for contrast markers ("oh wait, apologies") that invalidate the distractor.',
       trapExplanationBn: 'IELTS Listening Section 1-এ বক্তা প্রায়ই প্রথমে একটি ভুল নম্বর বা পোস্টকোড বলে পরক্ষণেই "oh wait, apologies" বা "actually" বলে সঠিক উত্তরটি দেন। তাই প্রথম তথ্যটি শুনেই তাড়াহুড়ো করবেন না!'
     },
     {
@@ -287,26 +295,34 @@ export function getVaultRetentionStats(): {
 export function toggleMastery(id: string): void {
   if (!id) return;
   const current = getMistakes();
+  let toggledItem: MistakeItem | null = null;
   const updated = current.map(m => {
     if (m.id === id) {
       const nextMastered = !m.mastered;
-      return {
+      toggledItem = {
         ...m,
         mastered: nextMastered,
         status: nextMastered ? ('mastered' as const) : ('unresolved' as const),
         repetition: nextMastered ? Math.max(3, m.repetition ?? 3) : 0,
         intervalDays: nextMastered ? Math.max(7, m.intervalDays ?? 7) : 0
       };
+      return toggledItem;
     }
     return m;
   });
   saveMistakes(updated);
+  if (toggledItem && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: toggledItem }));
+  }
 }
 
 export function deleteMistake(id: string): void {
   if (!id) return;
   const current = getMistakes();
   saveMistakes(current.filter(m => m.id !== id));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('bandsprint_mistake_deleted', { detail: { id } }));
+  }
 }
 
 export function clearMistakes(): void {

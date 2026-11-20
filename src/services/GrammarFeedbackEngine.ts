@@ -4,7 +4,7 @@
  * Specifically identifies:
  * 1. Pronunciation faults (IPA phonetics, syllable stress, cadence, connected speech)
  * 2. Grammatical errors (observed mistake, rule category, severity, correction)
- * 3. Band score justifications across official Cambridge criteria
+ * 3. Band score justifications across official Sprint criteria
  * 4. Actionable improvements & Band 9 model answers
  */
 
@@ -204,7 +204,6 @@ class GrammarFeedbackEngineService {
       const data = await response.json();
       return this.formatSpeakingResult(data, question, part, topic, transcript, durationSec, wordsPerMinute);
     } catch (error: any) {
-      console.warn('[GrammarFeedbackEngine] Speaking analysis fallback activated:', error?.message || error);
       return this.generateOfflineSpeakingFallback(transcript, question, part, topic, durationSec, wordsPerMinute);
     }
   }
@@ -261,7 +260,6 @@ class GrammarFeedbackEngineService {
       const data = await response.json();
       return this.formatWritingResult(data, prompt, testType, essayText);
     } catch (error: any) {
-      console.warn('[GrammarFeedbackEngine] Writing analysis fallback activated:', error?.message || error);
       return this.generateOfflineWritingFallback(essayText, prompt, testType);
     }
   }

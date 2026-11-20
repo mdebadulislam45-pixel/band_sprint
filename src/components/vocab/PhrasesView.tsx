@@ -381,7 +381,7 @@ export const PhrasesView: React.FC<PhrasesViewProps> = ({
                   )}
                 </div>
 
-                {/* Cambridge Example Sentence */}
+                {/* Practice Example Sentence */}
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-serif italic text-slate-800 leading-relaxed">
                   "{phrase.exampleSentence}"
                 </div>
@@ -541,11 +541,11 @@ export const PhrasesView: React.FC<PhrasesViewProps> = ({
               </div>
             </div>
 
-            {/* Cambridge Context & Details */}
+            {/* Practice Context & Details */}
             <div className="space-y-2.5 text-xs">
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1 font-mono">
-                  Cambridge Example in Context
+                  Practice Example in Context
                 </span>
                 <p className="text-slate-800 italic font-serif leading-relaxed text-xs sm:text-sm">
                   "{modalPhrase.exampleSentence}"

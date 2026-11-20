@@ -34,7 +34,6 @@ export class SpeakingStorageService {
       // Trigger global event so UI updates immediately
       window.dispatchEvent(new CustomEvent('speaking_history_updated', { detail: session }));
     } catch (e) {
-      console.warn('Could not save speaking session:', e);
     }
   }
 

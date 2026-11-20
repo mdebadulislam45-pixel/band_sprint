@@ -192,7 +192,7 @@ export const SlideGuide: React.FC<SlideGuideProps> = ({ onNavigate }) => {
                 The Self-Correction Distractor Blueprint
               </h3>
               <p className="text-sm text-slate-600 mt-1">
-                Cambridge examiners use intentional conversational misdirection to catch inattentive candidates.
+                Practice examiners use intentional conversational misdirection to catch inattentive candidates.
               </p>
             </div>
 

@@ -308,7 +308,7 @@ export const Beginner101: React.FC<Beginner101Props> = ({ onNavigate }) => {
       {activeTab === 'scale' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Official Cambridge Band 1.0 – 9.0 Descriptor Grid</h2>
+            <h2 className="text-xl font-bold text-slate-900">Practice Band 1.0 – 9.0 Descriptor Grid</h2>
             <p className="text-sm text-slate-500 mt-1">There is no "Pass" or "Fail" in IELTS. Each institution establishes their bespoke threshold.</p>
           </div>
 
@@ -345,7 +345,7 @@ export const Beginner101: React.FC<Beginner101Props> = ({ onNavigate }) => {
           </div>
 
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center justify-between">
-            <span><strong>Cambridge Rounding Rule:</strong> Overall band is the arithmetic average of the 4 sub-scores. Fractions ending in .25 round UP to .5 (e.g. 6.25 ➔ 6.5). Fractions ending in .75 round UP to next whole band (e.g. 6.75 ➔ 7.0).</span>
+            <span><strong>Practice Rounding Rule:</strong> Overall band is the arithmetic average of the 4 sub-scores. Fractions ending in .25 round UP to .5 (e.g. 6.25 ➔ 6.5). Fractions ending in .75 round UP to next whole band (e.g. 6.75 ➔ 7.0).</span>
           </div>
         </div>
       )}

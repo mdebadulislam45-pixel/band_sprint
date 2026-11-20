@@ -60,7 +60,7 @@ export const AIWritingQuickEvaluator: React.FC<AIWritingQuickEvaluatorProps> = (
     soundManager.playBeep(520, 0.03);
     setEssayText(SAMPLE_ESSAY);
     setEvaluation(null);
-    if (onShowToast) onShowToast('Loaded Cambridge 19 Task 2 Band 8.0 Sample Essay');
+    if (onShowToast) onShowToast('Loaded Practice Set 19 Task 2 Band 8.0 Sample Essay');
   };
 
   const handleEvaluate = () => {
@@ -145,7 +145,7 @@ export const AIWritingQuickEvaluator: React.FC<AIWritingQuickEvaluatorProps> = (
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Paste your essay or paragraph for immediate Cambridge TR / CC / LR / GRA score prediction
+              Paste your essay or paragraph for immediate Practice TR / CC / LR / GRA score prediction
             </p>
           </div>
         </div>
@@ -199,7 +199,7 @@ export const AIWritingQuickEvaluator: React.FC<AIWritingQuickEvaluatorProps> = (
           <textarea
             value={essayText}
             onChange={(e) => setEssayText(e.target.value)}
-            placeholder={`Paste or type your IELTS ${taskType === 'task2' ? 'Task 2 essay' : 'Task 1 response'} here to test against the official Cambridge examiner rubric...`}
+            placeholder={`Paste or type your IELTS ${taskType === 'task2' ? 'Task 2 essay' : 'Task 1 response'} here to test against the official Practice examiner rubric...`}
             rows={4}
             className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-3 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-purple-500 focus:outline-none transition resize-y font-sans leading-relaxed"
           />
@@ -248,7 +248,7 @@ export const AIWritingQuickEvaluator: React.FC<AIWritingQuickEvaluatorProps> = (
               {isEvaluating ? (
                 <>
                   <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                  <span>Evaluating Cambridge Rubric...</span>
+                  <span>Evaluating Practice Rubric...</span>
                 </>
               ) : (
                 <>
@@ -286,7 +286,7 @@ export const AIWritingQuickEvaluator: React.FC<AIWritingQuickEvaluatorProps> = (
                 </div>
                 <div>
                   <div className="text-xs font-bold text-slate-900 dark:text-white">
-                    Predicted Cambridge Rubric Score: Band {evaluation.overallBand.toFixed(1)}
+                    Predicted Practice Rubric Score: Band {evaluation.overallBand.toFixed(1)}
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400">
                     {evaluation.keyStrengths}

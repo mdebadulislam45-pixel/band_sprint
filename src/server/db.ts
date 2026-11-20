@@ -10,11 +10,29 @@ export interface ServerUser {
   passwordSalt?: string;
   avatarUrl?: string;
   googleId?: string;
+  firebaseUid?: string;
+  emailVerified?: boolean;
+  phone?: string;
+  isPhoneVerified?: boolean;
+  phoneVerifiedAt?: number;
   targetBand?: number;
   intendedFormat?: 'Academic' | 'General Training';
   targetCountry?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface PhoneOtpChallenge {
+  userId: string;
+  phone: string;
+  otpHash: string;
+  otpSalt: string;
+  createdAt: number;
+  expiresAt: number;
+  resendAvailableAt: number;
+  attempts: number;
+  maxAttempts: number;
+  consumedAt?: number;
 }
 
 export interface ServerSession {
@@ -46,6 +64,7 @@ export interface ServerSubscription {
 export interface DailyUsageRecord {
   speakingEvaluations: number;
   writingEvaluations: number;
+  mockExamsGenerated?: number;
 }
 
 export interface PromoCode {
@@ -90,13 +109,98 @@ export interface PaymentOrder {
   metadata?: Record<string, any>;
 }
 
+export interface QuestionProblemReport {
+  id: string;
+  questionId: string | number;
+  moduleId: 'reading' | 'listening' | 'writing' | 'speaking';
+  examId?: string;
+  examTitle?: string;
+  issueType: 'wrong_key' | 'ambiguous_wording' | 'audio_mismatch' | 'typo' | 'other';
+  comment?: string;
+  studentUserId?: string;
+  studentEmail?: string;
+  reportedAt: number;
+  status: 'open' | 'investigating' | 'resolved' | 'dismissed';
+}
+
+export interface AIDraftExam {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  userId: string;
+  model: string;
+  examType: 'academic_reading' | 'general_reading' | 'listening' | 'writing' | 'speaking';
+  status: 'REQUESTED' | 'GENERATING' | 'VALIDATING' | 'REPAIRING' | 'PENDING_REVIEW' | 'APPROVED' | 'VALIDATION_FAILED' | 'FAILED' | 'REJECTED';
+  pipelineStatus?: 'draft' | 'checked' | 'reviewed' | 'published';
+  isLive?: boolean;
+  origin?: {
+    model: string;
+    solverModel?: string;
+    date: string;
+    promptVersion: string;
+    topicId?: string;
+    topicTitle?: string;
+    tokenUsage?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+    };
+    passageCallCount?: number;
+  };
+  validationStatus: 'PASSED' | 'FAILED' | 'REPAIRED';
+  repairAttempts: number;
+  validationFindings: {
+    passed: boolean;
+    structuralOk: boolean;
+    answersOk: boolean;
+    evidenceOk: boolean;
+    qualityOk: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+  solverResult?: {
+    solverModel: string;
+    testedAt: number;
+    passed: boolean;
+    matchCount: number;
+    mismatchCount: number;
+    needsReview: boolean;
+    summary: string;
+    details: any[];
+  };
+  duplicateCheck?: {
+    isDuplicate: boolean;
+    maxSimilarity: number;
+    matchedId?: string;
+    matchedTitle?: string;
+    reason?: string;
+  };
+  isBeta?: boolean;
+  codeChecksResult?: any;
+  tokenUsage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    thoughtsTokens?: number;
+  };
+  reviewedBy?: string;
+  reviewedAt?: number;
+  rejectionReason?: string;
+  content?: any;
+}
+
 export const SERVER_PLAN_PRICES: Record<'pro' | 'master', { monthly: number; yearly: number }> = {
   pro: { monthly: 150, yearly: 1500 },
   master: { monthly: 300, yearly: 3000 }
 };
 
+export const MAX_RETAINED_FAILED_DRAFTS_PER_USER = 20;
+
 const DATA_DIR = path.join(process.cwd(), '.data');
-const DB_FILE = path.join(DATA_DIR, 'sprint_store.json');
+const DB_FILE_NAME = process.env.STORE_PATH
+  ? path.basename(process.env.STORE_PATH)
+  : 'sprint_store.json';
+const DB_FILE = path.join(DATA_DIR, DB_FILE_NAME);
 
 const DEFAULT_PROMO_CODES: Record<string, PromoCode> = {
   SPRINT7: {
@@ -121,7 +225,7 @@ const DEFAULT_PROMO_CODES: Record<string, PromoCode> = {
   },
   IELTS2026: {
     code: 'IELTS2026',
-    description: '30-Day IELTS Sprint 2026 Launch Special Voucher',
+    description: '30-Day BandSprint 2026 Launch Special Voucher',
     planId: 'pro',
     durationDays: 30,
     maxRedemptions: 100,
@@ -131,7 +235,7 @@ const DEFAULT_PROMO_CODES: Record<string, PromoCode> = {
   },
   CAMBRIDGE: {
     code: 'CAMBRIDGE',
-    description: '7-Day Cambridge Master Exam Simulation & VIP Diagnostic Pass',
+    description: '7-Day Sprint Master Exam Simulation & VIP Diagnostic Pass',
     planId: 'master',
     durationDays: 7,
     maxRedemptions: 100,
@@ -153,6 +257,7 @@ const DEFAULT_PROMO_CODES: Record<string, PromoCode> = {
 
 class DatabaseStore {
   private saveTimeout: NodeJS.Timeout | null = null;
+  public maxRetainedFailedDraftsPerUser: number = MAX_RETAINED_FAILED_DRAFTS_PER_USER;
   public data: {
     users: Record<string, ServerUser>;
     sessions: Record<string, ServerSession>;
@@ -162,6 +267,12 @@ class DatabaseStore {
     promoCodes?: Record<string, PromoCode>;
     promoRedemptions?: Record<string, PromoRedemptionRecord[]>;
     paymentOrders?: Record<string, PaymentOrder>;
+    otpChallenges?: Record<string, PhoneOtpChallenge>;
+    aiDraftExams?: Record<string, AIDraftExam>;
+    analyticsEvents?: Record<string, any>;
+    analyticsIdempotencyIndex?: Record<string, string>;
+    questionProblemReports?: Record<string, QuestionProblemReport>;
+    adminDailyGenerations?: Record<string, Record<string, number>>;
   } = {
     users: {},
     sessions: {},
@@ -170,7 +281,13 @@ class DatabaseStore {
     dailyUsage: {},
     promoCodes: {},
     promoRedemptions: {},
-    paymentOrders: {}
+    paymentOrders: {},
+    otpChallenges: {},
+    aiDraftExams: {},
+    analyticsEvents: {},
+    analyticsIdempotencyIndex: {},
+    questionProblemReports: {},
+    adminDailyGenerations: {}
   };
 
   constructor() {
@@ -195,12 +312,15 @@ class DatabaseStore {
         }
         if (!this.data.promoRedemptions) this.data.promoRedemptions = {};
         if (!this.data.paymentOrders) this.data.paymentOrders = {};
+        if (!this.data.otpChallenges) this.data.otpChallenges = {};
+        if (!this.data.aiDraftExams) this.data.aiDraftExams = {};
+        if (!this.data.analyticsEvents) this.data.analyticsEvents = {};
+        if (!this.data.analyticsIdempotencyIndex) this.data.analyticsIdempotencyIndex = {};
       } else {
         this.data.promoCodes = { ...DEFAULT_PROMO_CODES };
         this.persistSync();
       }
     } catch (err) {
-      console.warn('[DB] Failed to load store, initializing fresh store:', err);
       this.data.promoCodes = { ...DEFAULT_PROMO_CODES };
     }
   }
@@ -230,6 +350,12 @@ class DatabaseStore {
     return this.data.users[id] || null;
   }
 
+  public findUserByFirebaseUid(firebaseUid: string): ServerUser | null {
+    if (!firebaseUid) return null;
+    if (this.data.users[firebaseUid]) return this.data.users[firebaseUid];
+    return Object.values(this.data.users).find((u) => u.firebaseUid === firebaseUid) || null;
+  }
+
   public findUserByEmail(email: string): ServerUser | null {
     const clean = email.trim().toLowerCase();
     return Object.values(this.data.users).find((u) => u.email.toLowerCase() === clean) || null;
@@ -237,6 +363,25 @@ class DatabaseStore {
 
   public findUserByGoogleId(googleId: string): ServerUser | null {
     return Object.values(this.data.users).find((u) => u.googleId === googleId) || null;
+  }
+
+  public saveOtpChallenge(challenge: PhoneOtpChallenge): PhoneOtpChallenge {
+    if (!this.data.otpChallenges) this.data.otpChallenges = {};
+    this.data.otpChallenges[challenge.userId] = challenge;
+    this.scheduleSave();
+    return challenge;
+  }
+
+  public getOtpChallenge(userId: string): PhoneOtpChallenge | null {
+    if (!this.data.otpChallenges) return null;
+    return this.data.otpChallenges[userId] || null;
+  }
+
+  public deleteOtpChallenge(userId: string): void {
+    if (this.data.otpChallenges && this.data.otpChallenges[userId]) {
+      delete this.data.otpChallenges[userId];
+      this.scheduleSave();
+    }
   }
 
   public saveUser(user: ServerUser): ServerUser {
@@ -535,13 +680,33 @@ class DatabaseStore {
 
   public incrementDailyUsage(
     userId: string,
-    feature: 'speakingEvaluations' | 'writingEvaluations',
+    feature: 'speakingEvaluations' | 'writingEvaluations' | 'mockExamsGenerated',
     dateStr?: string
   ): DailyUsageRecord {
     const usage = this.getDailyUsage(userId, dateStr);
     usage[feature] = (usage[feature] || 0) + 1;
     this.scheduleSave();
     return usage;
+  }
+
+  public getMonthlyUsage(
+    userId: string,
+    dateOrMonthStr?: string
+  ): { mockExamsPerMonth: number; monthKey: string } {
+    const rawStr = dateOrMonthStr && typeof dateOrMonthStr === 'string' && dateOrMonthStr.trim()
+      ? dateOrMonthStr.trim()
+      : new Date().toISOString().split('T')[0];
+    const monthKey = rawStr.slice(0, 7);
+    if (!this.data.dailyUsage || !this.data.dailyUsage[userId]) {
+      return { mockExamsPerMonth: 0, monthKey };
+    }
+    let totalMockExams = 0;
+    for (const [dKey, rec] of Object.entries(this.data.dailyUsage[userId])) {
+      if (dKey.startsWith(monthKey) && rec && typeof rec.mockExamsGenerated === 'number') {
+        totalMockExams += rec.mockExamsGenerated;
+      }
+    }
+    return { mockExamsPerMonth: totalMockExams, monthKey };
   }
 
   /**
@@ -658,6 +823,180 @@ class DatabaseStore {
 
     this.scheduleSave();
     return { success: true, order };
+  }
+
+  /**
+   * User-scoped bounded retention cleanup for AI drafts (Phase 5.5H.12F.2 — MED-02 & Phase 5.5H.12F.3).
+   * Preserves all PENDING_REVIEW, APPROVED, REJECTED, and active in-progress (REQUESTED, GENERATING,
+   * VALIDATING, REPAIRING) drafts, as well as the activeDraftId currently being saved.
+   * Only prunes excess terminal failed drafts (VALIDATION_FAILED, FAILED)
+   * belonging to the same userId beyond maxFailedDrafts (newest retained, oldest pruned).
+   */
+  public pruneUserAiDraftExams(
+    userId: string,
+    activeDraftId?: string,
+    maxFailedDrafts: number = this.maxRetainedFailedDraftsPerUser
+  ): number {
+    if (!userId || !this.data.aiDraftExams) return 0;
+    const safeLimit = Math.max(1, Math.floor(maxFailedDrafts));
+    const prunableStatuses = new Set(['VALIDATION_FAILED', 'FAILED']);
+
+    const prunableUserDrafts = Object.values(this.data.aiDraftExams)
+      .filter((d) => d && d.userId === userId && prunableStatuses.has(d.status))
+      .sort((a, b) => {
+        if (a.id === activeDraftId) return -1;
+        if (b.id === activeDraftId) return 1;
+        if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      });
+
+    if (prunableUserDrafts.length <= safeLimit) {
+      return 0;
+    }
+
+    const toDelete = prunableUserDrafts.slice(safeLimit).filter((d) => d.id !== activeDraftId);
+    for (const draft of toDelete) {
+      delete this.data.aiDraftExams[draft.id];
+    }
+    return toDelete.length;
+  }
+
+  public saveAiDraftExam(draft: AIDraftExam): AIDraftExam {
+    if (!this.data.aiDraftExams) this.data.aiDraftExams = {};
+    const now = Date.now();
+    draft.updatedAt = now;
+    const storedDraft: AIDraftExam = {
+      ...draft,
+      updatedAt: now,
+      validationFindings: draft.validationFindings
+        ? {
+            ...draft.validationFindings,
+            errors: Array.isArray(draft.validationFindings.errors) ? [...draft.validationFindings.errors] : [],
+            warnings: Array.isArray(draft.validationFindings.warnings) ? [...draft.validationFindings.warnings] : []
+          }
+        : draft.validationFindings
+    };
+    this.data.aiDraftExams[storedDraft.id] = storedDraft;
+    this.pruneUserAiDraftExams(storedDraft.userId, storedDraft.id);
+    this.scheduleSave();
+    return storedDraft;
+  }
+
+  public getAiDraftExam(id: string): AIDraftExam | null {
+    if (!this.data.aiDraftExams) return null;
+    return this.data.aiDraftExams[id] || null;
+  }
+
+  public getUserAiDraftExams(userId: string): AIDraftExam[] {
+    if (!this.data.aiDraftExams) return [];
+    return Object.values(this.data.aiDraftExams)
+      .filter((d) => d.userId === userId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public listAiDraftExams(): AIDraftExam[] {
+    if (!this.data.aiDraftExams) return [];
+    return Object.values(this.data.aiDraftExams).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public saveAnalyticsEvent(record: any): any {
+    if (!this.data.analyticsEvents) this.data.analyticsEvents = {};
+    if (!this.data.analyticsIdempotencyIndex) this.data.analyticsIdempotencyIndex = {};
+
+    this.data.analyticsEvents[record.id] = record;
+    if (record.userId && record.idempotencyKey) {
+      this.data.analyticsIdempotencyIndex[`${record.userId}:${record.idempotencyKey}`] = record.id;
+    }
+
+    // Bounded Retention: enforce maximum 5,000 events to prevent unbounded storage growth
+    const MAX_ANALYTICS_EVENTS = 5000;
+    const eventKeys = Object.keys(this.data.analyticsEvents);
+    if (eventKeys.length > MAX_ANALYTICS_EVENTS) {
+      // Sort oldest first by serverTimestamp
+      const sortedEvents = Object.values(this.data.analyticsEvents)
+        .sort((a: any, b: any) => (a.serverTimestamp || 0) - (b.serverTimestamp || 0));
+
+      const excessCount = sortedEvents.length - MAX_ANALYTICS_EVENTS;
+      for (let i = 0; i < excessCount; i++) {
+        const oldest = sortedEvents[i];
+        if (oldest) {
+          delete this.data.analyticsEvents[oldest.id];
+          // Clean corresponding idempotency index reference
+          if (oldest.userId && oldest.idempotencyKey) {
+            delete this.data.analyticsIdempotencyIndex[`${oldest.userId}:${oldest.idempotencyKey}`];
+          }
+        }
+      }
+    }
+
+    this.scheduleSave();
+    return record;
+  }
+
+  public getAnalyticsEventById(id: string): any | null {
+    if (!this.data.analyticsEvents) return null;
+    return this.data.analyticsEvents[id] || null;
+  }
+
+  public getAnalyticsEventByIdempotencyKey(userId: string, idempotencyKey: string): any | null {
+    if (!this.data.analyticsIdempotencyIndex || !this.data.analyticsEvents) return null;
+    const eventId = this.data.analyticsIdempotencyIndex[`${userId}:${idempotencyKey}`];
+    if (!eventId) return null;
+    return this.data.analyticsEvents[eventId] || null;
+  }
+
+  public getUserAnalyticsEvents(userId: string, limit = 100): any[] {
+    if (!this.data.analyticsEvents) return [];
+    return Object.values(this.data.analyticsEvents)
+      .filter((e: any) => e.userId === userId && e.category === 'candidate')
+      .sort((a: any, b: any) => b.serverTimestamp - a.serverTimestamp)
+      .slice(0, limit);
+  }
+
+  public getFactoryOperationalEvents(limit = 200): any[] {
+    if (!this.data.analyticsEvents) return [];
+    return Object.values(this.data.analyticsEvents)
+      .filter((e: any) => e.category === 'factory_operational')
+      .sort((a: any, b: any) => b.serverTimestamp - a.serverTimestamp)
+      .slice(0, limit);
+  }
+
+  public saveQuestionProblemReport(report: QuestionProblemReport): QuestionProblemReport {
+    if (!this.data.questionProblemReports) {
+      this.data.questionProblemReports = {};
+    }
+    this.data.questionProblemReports[report.id] = report;
+    this.scheduleSave();
+    return report;
+  }
+
+  public listQuestionProblemReports(): QuestionProblemReport[] {
+    if (!this.data.questionProblemReports) return [];
+    return Object.values(this.data.questionProblemReports).sort((a, b) => b.reportedAt - a.reportedAt);
+  }
+
+  public getQuestionProblemReport(id: string): QuestionProblemReport | null {
+    if (!this.data.questionProblemReports) return null;
+    return this.data.questionProblemReports[id] || null;
+  }
+
+  public getAdminDailyGenerations(adminId: string, dateStr: string): number {
+    if (!this.data.adminDailyGenerations) return 0;
+    return this.data.adminDailyGenerations[dateStr]?.[adminId] || 0;
+  }
+
+  public incrementAdminDailyGenerations(adminId: string, dateStr: string): number {
+    if (!this.data.adminDailyGenerations) {
+      this.data.adminDailyGenerations = {};
+    }
+    if (!this.data.adminDailyGenerations[dateStr]) {
+      this.data.adminDailyGenerations[dateStr] = {};
+    }
+    const current = this.data.adminDailyGenerations[dateStr][adminId] || 0;
+    const next = current + 1;
+    this.data.adminDailyGenerations[dateStr][adminId] = next;
+    this.scheduleSave();
+    return next;
   }
 }
 

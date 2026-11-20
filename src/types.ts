@@ -115,9 +115,9 @@ export interface ExamEvaluation {
 export interface ExamHistoryRecord {
   id: string;
   timestamp: number;
-  examType?: 'full_mock' | 'listening_only';
+  examType?: 'full_mock' | 'incomplete_mock' | 'listening_only' | 'partial_lrw' | 'reading_only' | 'writing_only' | 'speaking_only';
   overallBand?: number | null;
-  listeningBand: number;
+  listeningBand?: number | null;
   readingBand?: number | null;
   writingBand?: number | null;
   speakingBand?: number | null;
@@ -125,14 +125,25 @@ export interface ExamHistoryRecord {
   submissionType: 'timer' | 'manual';
   correctCount: number;
   totalQuestions: number;
+  completedSkills?: {
+    listening?: boolean;
+    reading?: boolean;
+    writing?: boolean;
+    speaking?: boolean;
+  };
 }
 
 export interface UserProgress {
   completedModules: string[];
   targetBand: number;
+  currentBandEstimate?: number | null;
   examDate?: string;
   targetCountry: string;
   intendedFormat: 'Academic' | 'General Training';
+  weakestSkill?: 'listening' | 'reading' | 'writing' | 'speaking';
+  dailyMinutes?: number;
+  studyGoal?: string;
+  coachingPainPoint?: string;
   examHistory: ExamHistoryRecord[];
   streakDays: number;
   lastActiveDate: string;

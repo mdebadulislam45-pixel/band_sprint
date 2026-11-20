@@ -10,7 +10,8 @@ import {
   BookOpen,
   Lightbulb,
   Compass,
-  AlertCircle
+  AlertCircle,
+  Bookmark
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 
@@ -23,8 +24,8 @@ interface VocabSprintHeaderProps {
   weakAreaNote?: string;
   onStartSprint: () => void;
   onStartReview: () => void;
-  activeTab: 'sprint' | 'vocab' | 'idioms' | 'phrases' | 'review';
-  onSelectTab: (tab: 'sprint' | 'vocab' | 'idioms' | 'phrases' | 'review') => void;
+  activeTab: 'sprint' | 'vocab' | 'quiz' | 'savedQuiz' | 'idioms' | 'phrases' | 'review';
+  onSelectTab: (tab: 'sprint' | 'vocab' | 'quiz' | 'savedQuiz' | 'idioms' | 'phrases' | 'review') => void;
 }
 
 export const VocabSprintHeader: React.FC<VocabSprintHeaderProps> = ({
@@ -53,7 +54,7 @@ export const VocabSprintHeader: React.FC<VocabSprintHeaderProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-mono font-bold">
                 <Flame className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                <span>DAILY IELTS SPRINT</span>
+                <span>DAILY BANDSPRINT</span>
               </span>
 
               <span className="text-xs text-indigo-200 font-medium flex items-center gap-1">
@@ -91,6 +92,18 @@ export const VocabSprintHeader: React.FC<VocabSprintHeaderProps> = ({
               <Sparkles className="w-4 h-4 fill-slate-950" />
               <span>Start Today's Sprint</span>
               <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playBeep(620, 0.06);
+                onSelectTab('quiz');
+              }}
+              className="min-h-[42px] w-full px-4 py-2.5 rounded-2xl bg-indigo-500/30 hover:bg-indigo-500/40 text-white font-bold text-xs border border-indigo-400/40 transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-300" />
+              <span>C1/C2 Flashcard Quiz</span>
             </button>
 
             {reviewDueCount > 0 && (
@@ -153,6 +166,8 @@ export const VocabSprintHeader: React.FC<VocabSprintHeaderProps> = ({
         {[
           { id: 'sprint' as const, label: "Today's Sprint", icon: Flame, badge: `${todayCompleted}/${todayTarget}` },
           { id: 'vocab' as const, label: 'Vocabulary', icon: BookOpen, badge: 'Words' },
+          { id: 'savedQuiz' as const, label: 'Saved Vocab Quiz', icon: Bookmark, badge: 'Bangla→En' },
+          { id: 'quiz' as const, label: 'C1/C2 Quiz', icon: Award, badge: 'C1/C2' },
           { id: 'idioms' as const, label: 'Idioms', icon: Lightbulb, badge: 'Speaking' },
           { id: 'phrases' as const, label: 'Phrases', icon: Sparkles, badge: 'Discourse' },
           { id: 'review' as const, label: 'Review & Mastery', icon: RotateCcw, badge: reviewDueCount > 0 ? `${reviewDueCount}` : undefined }

@@ -59,8 +59,8 @@ export const BandCalculatorModal: React.FC<BandCalculatorModalProps> = ({ isOpen
 
   if (!isOpen) return null;
 
-  // Cambridge arithmetic rounding function
-  const calculateCambridgeBand = (l: number, r: number, w: number, s: number) => {
+  // Practice arithmetic rounding function
+  const calculatePracticeBand = (l: number, r: number, w: number, s: number) => {
     const raw = (l + r + w + s) / 4;
     const whole = Math.floor(raw);
     const frac = raw - whole;
@@ -76,14 +76,14 @@ export const BandCalculatorModal: React.FC<BandCalculatorModalProps> = ({ isOpen
     return { raw, rounded };
   };
 
-  const currentScore = calculateCambridgeBand(listening, reading, writing, speaking);
+  const currentScore = calculatePracticeBand(listening, reading, writing, speaking);
 
   // Recalculate with OSR
   const osrL = osrSkill === 'listening' ? osrTarget : listening;
   const osrR = osrSkill === 'reading' ? osrTarget : reading;
   const osrW = osrSkill === 'writing' ? osrTarget : writing;
   const osrS = osrSkill === 'speaking' ? osrTarget : speaking;
-  const osrScore = calculateCambridgeBand(osrL, osrR, osrW, osrS);
+  const osrScore = calculatePracticeBand(osrL, osrR, osrW, osrS);
 
   // Convert raw score to Band
   const getBandFromRaw = (score: number, moduleType: 'listening' | 'academic_reading' | 'gt_reading'): number => {
@@ -149,8 +149,8 @@ export const BandCalculatorModal: React.FC<BandCalculatorModalProps> = ({ isOpen
           <Calculator className="w-5 h-5" />
         </div>
       }
-      title="Official Band Calculator & Cambridge Scoring Matrix"
-      subtitle="Accurate Cambridge rounding rules, raw score to band conversion, and visa benchmarks."
+      title="Band Calculator & Practice Scoring Matrix"
+      subtitle="Accurate Practice rounding rules, raw score to band conversion, and visa benchmarks."
     >
       <div className="space-y-5">
         {/* Navigation Tabs */}
@@ -209,7 +209,7 @@ export const BandCalculatorModal: React.FC<BandCalculatorModalProps> = ({ isOpen
             <div className="bg-gradient-to-r from-[#0B1224] via-blue-900 to-indigo-950 text-white rounded-2xl p-4 sm:p-5 flex items-center justify-between border border-blue-500/20 shadow-md">
               <div>
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-300">
-                  Official Cambridge Overall
+                  Practice Overall
                 </span>
                 <div className="text-xs text-blue-100 mt-1">
                   Arithmetic Average: <span className="font-mono font-bold text-white text-sm">{currentScore.raw.toFixed(3)}</span>
@@ -314,7 +314,7 @@ export const BandCalculatorModal: React.FC<BandCalculatorModalProps> = ({ isOpen
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200 text-xs uppercase tracking-wide">
                   <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  Official One Skill Retake (OSR) Projection
+                  One Skill Retake (OSR) Projection
                 </div>
                 <span className="text-[10px] font-mono text-amber-900 dark:text-amber-300 bg-amber-200/80 dark:bg-amber-900/60 px-2.5 py-0.5 rounded-full font-bold">
                   Valid 60 Days Post-Exam
@@ -408,7 +408,7 @@ export const BandCalculatorModal: React.FC<BandCalculatorModalProps> = ({ isOpen
               </div>
             </div>
 
-            {/* Official Cambridge Table */}
+            {/* Practice Table */}
             <div className="border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-[#0B1224]">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -511,7 +511,7 @@ export const BandCalculatorModal: React.FC<BandCalculatorModalProps> = ({ isOpen
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                     <GraduationCap className="w-4 h-4 text-blue-600" />
-                    Oxford, Cambridge & Ivy League
+                    Oxford, Practice & Ivy League
                   </span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     isOxbridgeEligible ? 'bg-blue-200 text-blue-900' : 'bg-slate-100 text-slate-600'

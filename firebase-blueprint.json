@@ -5,15 +5,15 @@
       "description": "Candidate profile data and test preferences",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "description": "Firebase Auth user ID" },
-        "email": { "type": "string", "format": "email", "description": "Candidate email address" },
-        "displayName": { "type": "string", "description": "Candidate display name" },
-        "photoURL": { "type": "string", "description": "Avatar URL" },
-        "targetBand": { "type": "number", "description": "Target IELTS band score (e.g. 7.5, 8.0, 8.5)" },
-        "testDate": { "type": "string", "description": "Scheduled official IELTS test date" },
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Firebase Auth user ID" },
+        "email": { "type": "string", "format": "email", "maxLength": 254, "description": "Candidate email address" },
+        "displayName": { "type": "string", "maxLength": 120, "description": "Candidate display name" },
+        "photoURL": { "type": "string", "maxLength": 1024, "description": "Avatar URL" },
+        "targetBand": { "type": "number", "description": "Target IELTS band score (4.0 to 9.0)" },
+        "testDate": { "type": "string", "maxLength": 32, "description": "Scheduled IELTS test date" },
         "streakDays": { "type": "number", "description": "Daily study streak count" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },
       "required": ["uid", "email"]
     },
@@ -22,25 +22,25 @@
       "description": "Item logged in the candidate's personal mistake vault for SuperMemo SM-2 active recall",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique mistake item ID" },
-        "userId": { "type": "string", "description": "Owner candidate UID" },
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Unique mistake item ID" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Owner candidate UID" },
         "module": { "type": "string", "enum": ["listening", "reading", "writing", "speaking", "vocab"] },
-        "item": { "type": "string", "description": "Term, question prompt, or phrase" },
-        "category": { "type": "string", "description": "Category or error pattern" },
-        "questionType": { "type": "string", "description": "Specific IELTS question format" },
-        "userAnswer": { "type": "string", "description": "Candidate's original incorrect response" },
-        "correctAnswer": { "type": "string", "description": "Official Band 8.5+ or Cambridge answer" },
-        "notes": { "type": "string", "description": "Candidate learning notes or mistake explanation" },
-        "trapExplanationBn": { "type": "string", "description": "Bilingual Bengali distractor trap note" },
-        "sourceContext": { "type": "string", "description": "Passage or transcript anchor context" },
+        "item": { "type": "string", "maxLength": 2000, "description": "Term, question prompt, or phrase" },
+        "category": { "type": "string", "maxLength": 120, "description": "Category or error pattern" },
+        "questionType": { "type": "string", "maxLength": 120, "description": "Specific IELTS question format" },
+        "userAnswer": { "type": "string", "maxLength": 2000, "description": "Candidate's original incorrect response" },
+        "correctAnswer": { "type": "string", "maxLength": 2000, "description": "Band 8.5+ or Sprint answer" },
+        "notes": { "type": "string", "maxLength": 5000, "description": "Candidate learning notes or mistake explanation" },
+        "trapExplanationBn": { "type": "string", "maxLength": 3000, "description": "Bilingual Bengali distractor trap note" },
+        "sourceContext": { "type": "string", "maxLength": 2000, "description": "Passage or transcript anchor context" },
         "mastered": { "type": "boolean", "description": "Whether the mistake has been reviewed and mastered" },
         "repetition": { "type": "number", "description": "SM-2 consecutive successful recall count" },
         "intervalDays": { "type": "number", "description": "SM-2 current review interval in days" },
         "easeFactor": { "type": "number", "description": "SM-2 ease factor multiplier (>= 1.3)" },
         "nextReviewAt": { "type": "number", "description": "Epoch ms timestamp for next scheduled review" },
         "lastReviewedAt": { "type": "number", "description": "Epoch ms timestamp of last active recall review" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },
       "required": ["id", "userId", "module", "item"]
     },
@@ -49,15 +49,15 @@
       "description": "Candidate test or exam attempt record and score breakdown",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique submission ID" },
-        "userId": { "type": "string", "description": "Candidate UID" },
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Unique submission ID" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Candidate UID" },
         "module": { "type": "string", "enum": ["listening", "reading", "writing", "speaking", "full_mock"] },
-        "testId": { "type": "string", "description": "Reference ID of the completed test or section" },
+        "testId": { "type": "string", "maxLength": 128, "description": "Reference ID of the completed test or section" },
         "bandScore": { "type": "number", "description": "Achieved overall band score" },
         "correctCount": { "type": "number", "description": "Number of correct answers" },
         "totalQuestions": { "type": "number", "description": "Total question count in this test" },
         "timeSpentSec": { "type": "number", "description": "Duration spent on exam in seconds" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },
       "required": ["id", "userId", "module", "bandScore"]
     },
@@ -66,16 +66,73 @@
       "description": "Candidate multi-turn AI tutor or Gemini Live Voice session history",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique chat session or turn ID" },
-        "userId": { "type": "string", "description": "Owner candidate UID" },
-        "persona": { "type": "string", "description": "AI Tutor persona or examiner ID" },
-        "model": { "type": "string", "description": "Gemini model used (gemini-4-argon, gemini-3.8-flash, gemini-3.1-flash-lite, gemini-3.8-live)" },
-        "userMessage": { "type": "string", "description": "Candidate prompt or transcribed voice utterance" },
-        "aiReply": { "type": "string", "description": "AI tutor or examiner response" },
-        "module": { "type": "string", "description": "Active IELTS module context" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Unique chat session or turn ID" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Owner candidate UID" },
+        "persona": { "type": "string", "maxLength": 120, "description": "AI Tutor persona or examiner ID" },
+        "model": { "type": "string", "maxLength": 120, "description": "Gemini model used" },
+        "userMessage": { "type": "string", "maxLength": 4000, "description": "Candidate prompt or transcribed voice utterance" },
+        "aiReply": { "type": "string", "maxLength": 8000, "description": "AI tutor or examiner response" },
+        "module": { "type": "string", "maxLength": 64, "description": "Active IELTS module context" },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },
       "required": ["id", "userId", "userMessage", "aiReply"]
+    },
+    "StudyState": {
+      "title": "StudyState",
+      "description": "Cross-device candidate study state for diagnostic results, exam setup, and spelling mastery",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "enum": ["diagnostic", "examSetup", "spellingProgress"], "description": "Fixed state document identifier" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Owner candidate UID" },
+        "kind": { "type": "string", "enum": ["diagnostic", "examSetup", "spellingProgress"], "description": "Study state category" },
+        "payload": { "type": "object", "description": "Structured native map containing diagnostic, exam setup, or spelling mastery fields" },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "kind", "payload", "updatedAt"]
+    },
+    "VerifiedQuestionSet": {
+      "title": "VerifiedQuestionSet",
+      "description": "Original Cambridge-blueprint IELTS practice drill verified by 2-pass blind examiner validation and shared across authenticated learners",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Unique question set ID" },
+        "createdBy": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Creator candidate UID" },
+        "module": { "type": "string", "enum": ["reading", "listening", "writing", "speaking"], "description": "Target IELTS skill module" },
+        "examTrack": { "type": "string", "enum": ["Academic", "General Training"], "description": "IELTS test format" },
+        "questionType": { "type": "string", "maxLength": 120, "description": "Specific IELTS task or question format" },
+        "topic": { "type": "string", "maxLength": 120, "description": "Thematic IELTS domain" },
+        "targetBand": { "type": "number", "description": "Calibrated target band difficulty (4.0 to 9.0)" },
+        "title": { "type": "string", "maxLength": 220, "description": "Concise practice set title" },
+        "passageOrScript": { "type": "string", "maxLength": 12000, "description": "Reading passage or Listening transcript" },
+        "prompt": { "type": "string", "maxLength": 3000, "description": "Main task prompt or instructions" },
+        "modelAnswer": { "type": "string", "maxLength": 8000, "description": "Band 8.5+ exemplar response or notes" },
+        "keyVocab": { "type": "array", "description": "Bounded list of up to 15 high-band lexical items" },
+        "questions": { "type": "array", "description": "Bounded list of up to 15 structured question maps" },
+        "chartData": { "type": "object", "description": "Optional structured Task 1 SVG chart specification" },
+        "qualityScore": { "type": "number", "description": "Blind-verifier confidence score (0 to 100)" },
+        "verificationStatus": { "type": "string", "enum": ["blind-verified"], "description": "Verification gate status" },
+        "verificationNotes": { "type": "string", "maxLength": 1000, "description": "Summary from Pass-2 blind examiner check" },
+        "reportCount": { "type": "number", "description": "Count of learner quality flags" },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": [
+        "id",
+        "createdBy",
+        "module",
+        "examTrack",
+        "questionType",
+        "topic",
+        "targetBand",
+        "title",
+        "prompt",
+        "qualityScore",
+        "verificationStatus",
+        "reportCount",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -94,6 +151,14 @@
     "/users/{userId}/chats/{chatId}": {
       "schema": { "$ref": "#/entities/ChatSession" },
       "description": "Candidate multi-turn AI chat and live voice transcripts"
+    },
+    "/users/{userId}/studyState/{stateId}": {
+      "schema": { "$ref": "#/entities/StudyState" },
+      "description": "Cross-device synced diagnostic result, exam setup, and spelling lab mastery"
+    },
+    "/verifiedQuestions/{questionSetId}": {
+      "schema": { "$ref": "#/entities/VerifiedQuestionSet" },
+      "description": "Shared blind-verified Cambridge-blueprint IELTS practice question sets"
     }
   }
 }

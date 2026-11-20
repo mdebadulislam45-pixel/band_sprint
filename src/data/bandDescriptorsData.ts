@@ -1,5 +1,5 @@
 /**
- * Official IELTS Band Descriptors Decoder
+ * IELTS Band Descriptors Decoder
  * Comparative matrix across Task 1, Task 2, and Speaking criteria for Bands 6, 7, 8, and 9.
  * Includes precise actionable advice for jumping from Band 6.5 to 7.5+.
  */

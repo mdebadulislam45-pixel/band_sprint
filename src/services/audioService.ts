@@ -1,5 +1,5 @@
 /**
- * IELTS Sprint - Studio-Mastered British MP3 & Synchronous Mobile Audio Engine (v7)
+ * BandSprint - Studio-Mastered British MP3 & Synchronous Mobile Audio Engine (v7)
  *
  * Engineered specifically to guarantee 100% reliable, consistent British RP audio across:
  * - Android Chrome & WebView (including cross-origin preview iframes)
@@ -26,9 +26,41 @@ import {
   getPreferredVoiceGender,
   setPreferredVoiceGender as setConfigVoiceGender,
   selectBestDeviceMaleVoice,
-  selectBestDeviceFemaleVoice
+  selectBestDeviceFemaleVoice,
+  resolveExaminerVoiceProfile,
+  BARNABY_VOICE_PROFILE,
+  isBarnabyCompanionVoice
 } from '../config/voiceConfig';
 import { SpeechDeliveryProfileId } from '../config/speechDirection';
+
+export interface SpeechDeliveryMetrics {
+  wordCount: number;
+  durationSec: number;
+  estimatedWpm: number;
+  withinTargetRange: boolean;
+}
+
+/**
+ * Measures spoken word count and actual delivery rate (WPM) from sample duration.
+ * Target examiner prompt cadence is ~125-135 WPM (with 115-145 WPM natural variance).
+ */
+export function estimateSpeechDeliveryMetrics(
+  text: string,
+  durationSec: number
+): SpeechDeliveryMetrics {
+  const clean = cleanSpeechText(text);
+  const words = clean ? clean.split(/\s+/).filter(Boolean) : [];
+  const wordCount = words.length;
+  const validDuration = durationSec > 0 && isFinite(durationSec) ? durationSec : 0;
+  const estimatedWpm =
+    wordCount > 0 && validDuration > 0 ? Math.round((wordCount / validDuration) * 60) : 0;
+  return {
+    wordCount,
+    durationSec: Number(validDuration.toFixed(2)),
+    estimatedWpm,
+    withinTargetRange: estimatedWpm >= 115 && estimatedWpm <= 145
+  };
+}
 
 export interface SpeakerDefinition {
   id: string;
@@ -45,18 +77,18 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
   // British English (RP)
   speaker_04: {
     id: 'speaker_04',
-    name: 'Arthur (Chief IELTS Examiner)',
-    role: 'Official Cambridge British Male Examiner (RP)',
+    name: 'Prof. Arthur Pendelton (Chief IELTS Examiner)',
+    role: 'Senior British Male Examiner (RP)',
     accent: 'British Received Pronunciation (en-GB)',
     gender: 'male',
-    geminiVoiceName: 'Fenrir',
+    geminiVoiceName: 'Charon',
     defaultRate: 0.98,
     defaultPitch: 1.0
   },
   speaker_05: {
     id: 'speaker_05',
-    name: 'Charlotte (University Lecturer)',
-    role: 'British Academic Admissions Tutor & Lecturer (RP)',
+    name: 'Dr. Clara Sterling (Senior IELTS Examiner)',
+    role: 'Senior British Female Examiner (RP)',
     accent: 'British Received Pronunciation (en-GB)',
     gender: 'female',
     geminiVoiceName: 'Aoede',
@@ -65,32 +97,32 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
   },
   speaker_01: {
     id: 'speaker_01',
-    name: 'Thomas (Student / Receptionist)',
-    role: 'British Male · Conversational Student / Campus Services',
-    accent: 'British English (en-GB)',
+    name: 'Thomas (Sprint Academic Assessor)',
+    role: 'Official British Male Assessor & Presenter (RP)',
+    accent: 'British Received Pronunciation (en-GB)',
     gender: 'male',
     geminiVoiceName: 'Puck',
-    defaultRate: 0.98,
+    defaultRate: 1.0,
     defaultPitch: 1.0
   },
   speaker_02: {
     id: 'speaker_02',
-    name: 'Libby (Student Support / Librarian)',
-    role: 'British Female · Campus Librarian & Support Officer',
-    accent: 'British English (en-GB)',
+    name: 'Libby (Sprint Academic Coordinator)',
+    role: 'Official British Female Academic Officer (RP)',
+    accent: 'British Received Pronunciation (en-GB)',
     gender: 'female',
-    geminiVoiceName: 'Aoede',
-    defaultRate: 0.98,
+    geminiVoiceName: 'Kore',
+    defaultRate: 1.0,
     defaultPitch: 1.0
   },
   speaker_03: {
     id: 'speaker_03',
-    name: 'Dr. Sterling (Professor / Senior Tutor)',
-    role: 'Senior Academic Lecturer & Department Chair',
-    accent: 'Academic English (en-US / Academic)',
+    name: 'Dr. Alistair Sterling (Senior Professor)',
+    role: 'Senior Sprint Academic Examiner & Chair (RP)',
+    accent: 'British Received Pronunciation (en-GB)',
     gender: 'male',
-    geminiVoiceName: 'Charon',
-    defaultRate: 0.97,
+    geminiVoiceName: 'Fenrir',
+    defaultRate: 1.0,
     defaultPitch: 1.0
   },
 
@@ -101,7 +133,7 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
     role: 'Australian Male · Academic & Environmental Sciences Lecturer',
     accent: 'Australian English (en-AU)',
     gender: 'male',
-    geminiVoiceName: 'Orpheus',
+    geminiVoiceName: 'Fenrir',
     defaultRate: 0.98,
     defaultPitch: 1.0
   },
@@ -121,7 +153,7 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
     role: 'Postgraduate Candidate & Field Assistant',
     accent: 'Commonwealth English (en-ZA)',
     gender: 'male',
-    geminiVoiceName: 'Orpheus',
+    geminiVoiceName: 'Puck',
     defaultRate: 0.98,
     defaultPitch: 1.0
   },
@@ -215,13 +247,55 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
   },
   speaker_barnaby: {
     id: 'speaker_barnaby',
-    name: 'Barnaby (Cambridge AI Mascot)',
-    role: 'Cute AI Tutor & Vocabulary Study Buddy',
-    accent: 'British English (en-GB)',
+    name: 'Barnaby (Friendly & Playful Sprint AI Companion)',
+    role: 'Cute, friendly, warm, and gently playful Sprint AI Study Companion',
+    accent: 'British English (en-GB · Companion)',
+    gender: 'male',
+    geminiVoiceName: 'Puck',
+    defaultRate: 1.0,
+    defaultPitch: 1.04
+  },
+
+  // British Regional Speaking Examiners (Northern UK & Scottish Standard)
+  speaker_uk_northern_m: {
+    id: 'speaker_uk_northern_m',
+    name: 'Prof. Arthur Pendelton (Northern UK)',
+    role: 'Sprint Speaking Assessor · Manchester & Yorkshire Cadence',
+    accent: 'Northern British English (en-GB)',
+    gender: 'male',
+    geminiVoiceName: 'Puck',
+    defaultRate: 0.97,
+    defaultPitch: 1.0
+  },
+  speaker_uk_northern_f: {
+    id: 'speaker_uk_northern_f',
+    name: 'Dr. Clara Sterling (Northern UK)',
+    role: 'Sprint Speaking Assessor · Manchester & Yorkshire Cadence',
+    accent: 'Northern British English (en-GB)',
     gender: 'female',
     geminiVoiceName: 'Aoede',
-    defaultRate: 1.02,
-    defaultPitch: 1.06
+    defaultRate: 0.97,
+    defaultPitch: 1.0
+  },
+  speaker_uk_scottish_m: {
+    id: 'speaker_uk_scottish_m',
+    name: 'Prof. Arthur Pendelton (Scottish)',
+    role: 'Sprint Speaking Assessor · Edinburgh & Glasgow Standard',
+    accent: 'Scottish Standard English (en-GB)',
+    gender: 'male',
+    geminiVoiceName: 'Fenrir',
+    defaultRate: 0.96,
+    defaultPitch: 1.0
+  },
+  speaker_uk_scottish_f: {
+    id: 'speaker_uk_scottish_f',
+    name: 'Dr. Clara Sterling (Scottish)',
+    role: 'Sprint Speaking Assessor · Edinburgh & Glasgow Standard',
+    accent: 'Scottish Standard English (en-GB)',
+    gender: 'female',
+    geminiVoiceName: 'Aoede',
+    defaultRate: 0.96,
+    defaultPitch: 1.0
   }
 };
 
@@ -231,7 +305,7 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
  */
 export function isInterruptedPlaybackError(err: any): boolean {
   if (!err) return false;
-  if (err.name === 'AbortError' || err.name === 'NotAllowedError' || err.name === 'NotSupportedError') return true;
+  if (err.name === 'AbortError') return true;
   const msg =
     typeof err === 'string'
       ? err
@@ -240,14 +314,11 @@ export function isInterruptedPlaybackError(err: any): boolean {
     const lower = msg.toLowerCase();
     return (
       lower.includes('interrupted') ||
-      lower.includes('load request') ||
+      lower.includes('new load request') ||
+      lower.includes('call to pause') ||
       lower.includes('pause()') ||
-      lower.includes('abort') ||
-      lower.includes('failed to load') ||
-      lower.includes('no supported source') ||
-      lower.includes('not supported') ||
-      lower.includes('play() request was interrupted') ||
-      lower.includes('user gesture')
+      lower.includes('operation was aborted') ||
+      lower.includes('the play() request was interrupted')
     );
   }
   return false;
@@ -360,9 +431,13 @@ export interface AudioPlaybackState {
   currentSpeakerId: string;
   currentSpeakerName?: string;
   currentAccent?: string;
+  activeSynthesisProvider?: 'cloud-neural' | 'browser-speech-synthesis';
+  activeVoiceId?: string;
   error: string | null;
   activeText: string;
   isAmbienceEnabled: boolean;
+  isInterLinePause?: boolean;
+  pauseRemainingSec?: number;
 }
 
 export interface SpeakOptions {
@@ -387,10 +462,17 @@ export interface DialoguePlaybackOptions {
   examId?: string;
   recordingId?: string;
   contentVersion?: string;
+  rate?: number;
+  accent?: string;
+  deliveryProfile?: SpeechDeliveryProfileId;
+  onStart?: () => void;
   onLineStart?: (index: number, line: DialogueLine) => void;
+  onLineSkipped?: (index: number, line: DialogueLine, error: any) => void;
+  onLineRetry?: (index: number, line: DialogueLine, attempt: number, error: any) => void;
   onComplete?: () => void;
   onEnd?: () => void;
   onError?: (err: any) => void;
+  requireAllLinesComplete?: boolean;
   startIndex?: number;
   initialElapsed?: number;
 }
@@ -403,6 +485,10 @@ class AudioService {
   private ambienceGain: GainNode | null = null;
   private ambienceSource: AudioBufferSourceNode | null = null;
   private activePlayPromise: Promise<void> | null = null;
+  private activePlaybackResolver: (() => void) | null = null;
+  private dialoguePauseTimer: ReturnType<typeof setTimeout> | null = null;
+  private dialoguePauseResolver: (() => void) | null = null;
+  private loadTimeoutMs = 25000;
 
   private state: AudioPlaybackState = {
     isPlaying: false,
@@ -415,7 +501,9 @@ class AudioService {
     currentSpeakerId: 'speaker_04',
     error: null,
     activeText: '',
-    isAmbienceEnabled: false
+    isAmbienceEnabled: false,
+    isInterLinePause: false,
+    pauseRemainingSec: 0
   };
 
   private listeners: Set<StateListener> = new Set();
@@ -429,6 +517,23 @@ class AudioService {
   private playlistDurations: number[] = [];
   private playlistIndex = 0;
   private lineStartElapsed = 0;
+  private skippedDialogueTurns: Array<{
+    lineIndex: number;
+    speaker: string;
+    speakerId: string;
+    text: string;
+    error: any;
+  }> = [];
+
+  public getSkippedDialogueTurns(): Array<{
+    lineIndex: number;
+    speaker: string;
+    speakerId: string;
+    text: string;
+    error: any;
+  }> {
+    return [...this.skippedDialogueTurns];
+  }
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -449,16 +554,141 @@ class AudioService {
     }
   }
 
-  private ensureSharedAudioElement(): HTMLAudioElement | null {
-    if (typeof window === 'undefined') return null;
-    if (!this.sharedAudio) {
-      const el = new Audio();
-      el.preload = 'auto';
-      (el as any).playsInline = true;
-      el.setAttribute('playsinline', 'true');
-      el.setAttribute('webkit-playsinline', 'true');
-      this.sharedAudio = el;
+  /**
+   * Test hook for injecting a mock or instrumented HTMLAudioElement in automated tests
+   */
+  public setAudioElementForTesting(el: HTMLAudioElement | null): void {
+    this.sharedAudio = el;
+  }
+
+  /**
+   * Test hook for configuring startup load watchdog timeout in automated tests
+   */
+  public setLoadTimeoutForTesting(timeoutMs: number): void {
+    this.loadTimeoutMs = Math.max(20, timeoutMs);
+  }
+
+  private detachAudioHandlers(audio: HTMLAudioElement | null): void {
+    if (!audio) return;
+    try {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.ontimeupdate = null;
+      audio.onloadedmetadata = null;
+      audio.onplay = null;
+      audio.onpause = null;
+      audio.onabort = null;
+    } catch {}
+  }
+
+  private clearActivePlaybackResolver(): void {
+    if (this.activePlaybackResolver) {
+      const resolve = this.activePlaybackResolver;
+      this.activePlaybackResolver = null;
+      resolve();
     }
+  }
+
+  private clearDialoguePauseTimer(): void {
+    if (this.dialoguePauseTimer) {
+      clearTimeout(this.dialoguePauseTimer);
+      this.dialoguePauseTimer = null;
+    }
+    if (this.state.isInterLinePause) {
+      this.updateState({ isInterLinePause: false, pauseRemainingSec: 0 });
+    }
+    if (this.dialoguePauseResolver) {
+      const resolve = this.dialoguePauseResolver;
+      this.dialoguePauseResolver = null;
+      resolve();
+    }
+  }
+
+  private waitForInterLinePause(
+    pauseMs: number,
+    myGen: number,
+    onPauseTick?: (elapsedPauseSec: number) => void
+  ): Promise<void> {
+    if (pauseMs <= 0 || this.isDialogueCancelled || this.playbackGeneration !== myGen) {
+      return Promise.resolve();
+    }
+    this.clearDialoguePauseTimer();
+    const isSignificantPause = pauseMs >= 1000;
+    if (isSignificantPause) {
+      this.updateState({
+        isInterLinePause: true,
+        pauseRemainingSec: Math.ceil(pauseMs / 1000)
+      });
+    }
+
+    return new Promise<void>((resolve) => {
+      this.dialoguePauseResolver = () => {
+        if (isSignificantPause) {
+          this.updateState({ isInterLinePause: false, pauseRemainingSec: 0 });
+        }
+        resolve();
+      };
+      let accumulatedMs = 0;
+      const stepMs = Math.max(10, Math.min(100, pauseMs));
+
+      const tick = () => {
+        if (this.isDialogueCancelled || this.playbackGeneration !== myGen) {
+          this.dialoguePauseTimer = null;
+          this.dialoguePauseResolver = null;
+          if (isSignificantPause) {
+            this.updateState({ isInterLinePause: false, pauseRemainingSec: 0 });
+          }
+          resolve();
+          return;
+        }
+        if (!this.state.isPaused) {
+          accumulatedMs += stepMs;
+          const remainingSec = Math.max(0, Math.ceil((pauseMs - accumulatedMs) / 1000));
+          if (isSignificantPause) {
+            this.updateState({
+              isInterLinePause: true,
+              pauseRemainingSec: remainingSec
+            });
+          }
+          onPauseTick?.(Math.min(pauseMs, accumulatedMs) / 1000);
+        }
+        if (accumulatedMs >= pauseMs) {
+          this.dialoguePauseTimer = null;
+          this.dialoguePauseResolver = null;
+          if (isSignificantPause) {
+            this.updateState({ isInterLinePause: false, pauseRemainingSec: 0 });
+          }
+          resolve();
+          return;
+        }
+        this.dialoguePauseTimer = setTimeout(tick, stepMs);
+      };
+
+      this.dialoguePauseTimer = setTimeout(tick, stepMs);
+    });
+  }
+
+  private ensureSharedAudioElement(): HTMLAudioElement | null {
+    if (this.sharedAudio) {
+      if (this.sharedAudio.muted) {
+        this.sharedAudio.muted = false;
+      }
+      if (this.sharedAudio.volume <= 0 && this.state.volume > 0) {
+        this.sharedAudio.volume = Math.max(0.05, Math.min(1, this.state.volume));
+      }
+      return this.sharedAudio;
+    }
+    if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
+    const el = new Audio();
+    el.preload = 'auto';
+    el.muted = false;
+    el.defaultPlaybackRate = 1.0;
+    el.playbackRate = 1.0;
+    el.volume = this.state.volume > 0 ? Math.max(0.05, Math.min(1, this.state.volume)) : 1.0;
+    (el as any).playsInline = true;
+    el.setAttribute('playsinline', 'true');
+    el.setAttribute('webkit-playsinline', 'true');
+    this.sharedAudio = el;
     return this.sharedAudio;
   }
 
@@ -628,17 +858,23 @@ class AudioService {
     const clean = cleanSpeechText(text);
     const spDef = IELTS_SPEAKERS[speakerId];
     const resolvedGender = genderOverride || spDef?.gender || getPreferredVoiceGender();
+    const isBarnaby = isBarnabyCompanionVoice(speakerId) || meta?.deliveryProfile === 'barnaby_companion';
+    const defaultVersion = isBarnaby ? 'barnaby_v1' : 'v22';
     const params = new URLSearchParams({
       text: clean,
       speakerId,
       gender: resolvedGender,
       speed: String(speed || this.state.playbackRate || 1.0),
-      v: meta?.contentVersion || 'v9'
+      v: meta?.contentVersion || defaultVersion
     });
     if (meta?.accent) params.set('accent', meta.accent);
     if (meta?.examId) params.set('examId', meta.examId);
     if (meta?.recordingId) params.set('recId', meta.recordingId);
-    if (meta?.deliveryProfile) params.set('profile', meta.deliveryProfile);
+    if (meta?.deliveryProfile) {
+      params.set('profile', meta.deliveryProfile);
+    } else if (isBarnaby) {
+      params.set('profile', 'barnaby_companion');
+    }
     return `/api/tts/stream?${params.toString()}`;
   }
 
@@ -669,10 +905,38 @@ class AudioService {
 
     return new Promise<void>((resolve) => {
       let settled = false;
+      let hasFiredStart = false;
+      let loadTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearLoadTimer = () => {
+        if (loadTimer) {
+          clearTimeout(loadTimer);
+          loadTimer = null;
+        }
+      };
+
+      const settlePromise = () => {
+        if (this.activePlaybackResolver === cancelPlayback) {
+          this.activePlaybackResolver = null;
+        }
+        resolve();
+      };
+
+      const cancelPlayback = () => {
+        if (settled) return;
+        settled = true;
+        clearLoadTimer();
+        settlePromise();
+      };
+
+      this.activePlaybackResolver = cancelPlayback;
+
       const done = () => {
         if (settled) return;
         settled = true;
+        clearLoadTimer();
         if (this.playbackGeneration === myGen) {
+          this.detachAudioHandlers(audio);
           this.stopTimeUpdater();
           this.stopRoomTone();
           this.updateState({
@@ -683,11 +947,37 @@ class AudioService {
           });
           options?.onEnd?.();
         }
-        resolve();
+        settlePromise();
       };
 
+      const failPlayback = (err: any) => {
+        if (settled) return;
+        settled = true;
+        clearLoadTimer();
+        if (this.playbackGeneration === myGen) {
+          this.detachAudioHandlers(audio);
+          this.stopTimeUpdater();
+          this.stopRoomTone();
+          this.updateState({
+            isPlaying: false,
+            isPaused: false,
+            isLoading: false,
+            error: 'Licensed audio playback error'
+          });
+          options?.onError?.(err);
+        }
+        settlePromise();
+      };
+
+      loadTimer = setTimeout(() => {
+        if (!settled && this.playbackGeneration === myGen) {
+          failPlayback(new Error('Audio load timeout'));
+        }
+      }, this.loadTimeoutMs);
+
       audio.onloadedmetadata = () => {
-        if (this.playbackGeneration !== myGen) return;
+        if (this.playbackGeneration !== myGen || settled) return;
+        clearLoadTimer();
         this.updateState({
           isLoading: false,
           isPlaying: true,
@@ -696,13 +986,18 @@ class AudioService {
       };
 
       audio.onplay = () => {
-        if (this.playbackGeneration !== myGen) return;
+        if (this.playbackGeneration !== myGen || settled) return;
+        clearLoadTimer();
         this.updateState({ isLoading: false, isPlaying: true, isPaused: false });
-        options?.onStart?.();
+        if (!hasFiredStart) {
+          hasFiredStart = true;
+          options?.onStart?.();
+        }
       };
 
       audio.ontimeupdate = () => {
-        if (this.playbackGeneration !== myGen) return;
+        if (this.playbackGeneration !== myGen || settled) return;
+        clearLoadTimer();
         this.updateState({
           isLoading: false,
           isPlaying: !audio.paused,
@@ -710,15 +1005,24 @@ class AudioService {
         });
       };
 
-      audio.onended = () => done();
-      audio.onerror = (err) => {
-        if (!settled && this.playbackGeneration === myGen) {
-          settled = true;
-          this.updateState({ isPlaying: false, isLoading: false, error: 'Licensed audio playback error' });
-          options?.onError?.(err);
-        }
-        resolve();
+      audio.onpause = () => {
+        if (this.playbackGeneration !== myGen || settled || audio.ended) return;
+        this.updateState({ isPlaying: false, isPaused: true, isLoading: false });
       };
+
+      audio.onabort = () => {
+        if (settled) return;
+        settled = true;
+        clearLoadTimer();
+        if (this.playbackGeneration === myGen) {
+          this.detachAudioHandlers(audio);
+          this.updateState({ isPlaying: false, isPaused: false, isLoading: false });
+        }
+        settlePromise();
+      };
+
+      audio.onended = () => done();
+      audio.onerror = (err) => failPlayback(err);
 
       try {
         if (!audio.paused) {
@@ -731,14 +1035,10 @@ class AudioService {
           this.activePlayPromise = p;
           p.catch((err) => {
             if (isInterruptedPlaybackError(err)) {
-              resolve();
+              cancelPlayback();
               return;
             }
-            if (!settled) {
-              settled = true;
-              options?.onError?.(err);
-              resolve();
-            }
+            failPlayback(err);
           }).finally(() => {
             if (this.activePlayPromise === p) {
               this.activePlayPromise = null;
@@ -746,10 +1046,11 @@ class AudioService {
           });
         }
       } catch (err) {
-        if (!isInterruptedPlaybackError(err)) {
-          options?.onError?.(err);
+        if (isInterruptedPlaybackError(err)) {
+          cancelPlayback();
+        } else {
+          failPlayback(err);
         }
-        resolve();
       }
     });
   }
@@ -790,33 +1091,26 @@ class AudioService {
     this.playbackGeneration += 1;
     const gen = this.playbackGeneration;
     this.isDialogueCancelled = true;
+    this.clearDialoguePauseTimer();
+    this.clearActivePlaybackResolver();
     this.stopTimeUpdater();
     this.stopRoomTone();
 
     if (this.sharedAudio) {
       try {
-        this.sharedAudio.onended = null;
-        this.sharedAudio.onerror = null;
-        this.sharedAudio.ontimeupdate = null;
-        this.sharedAudio.onloadedmetadata = null;
-        this.sharedAudio.onplay = null;
-        const el = this.sharedAudio;
-        if (this.activePlayPromise) {
-          this.activePlayPromise
-            .then(() => {
-              try { el.pause(); } catch {}
-            })
-            .catch(() => {});
-          this.activePlayPromise = null;
-        } else {
-          el.pause();
+        this.detachAudioHandlers(this.sharedAudio);
+        this.activePlayPromise = null;
+        if (!this.sharedAudio.paused) {
+          this.sharedAudio.pause();
         }
       } catch {}
     }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
-        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+          window.speechSynthesis.cancel();
+        }
       } catch {}
     }
 
@@ -845,13 +1139,14 @@ class AudioService {
    * Unified `speak(text, options)` method used by AudioManager, ShadowingPractice, etc.
    */
   public speak(text: string, options?: SpeakOptions): Promise<void> {
-    const speakerId = options?.speakerId || 'speaker_04';
+    const speakerId = options?.speakerId || (options?.gender === 'female' ? 'speaker_05' : 'speaker_04');
     return this.speakText(text, speakerId, options);
   }
 
   /**
    * Helper to parse multi-line transcripts or long scripts into structured DialogueLine turns
    * so speaker labels are not read aloud and long scripts never cut off mid-passage.
+   * Preserves locked single-speaker identity when speaking coaching notes or single-examiner prompts.
    */
   private parseLongOrMultiSpeakerScript(
     rawText: string,
@@ -863,9 +1158,39 @@ class AudioService {
       .map((l) => l.trim())
       .filter(Boolean);
 
-    const hasSpeakerTags = rawLines.some((l) => /^([A-Za-z0-9\s().-]{2,38}):\s*(.+)$/.test(l));
-    if (!hasSpeakerTags && rawLines.length <= 1 && rawText.length <= 280) {
+    const NON_SPEAKER_LABEL_REGEX =
+      /\b(tip|note|part|section|task|step|question|example|band|rule|time|warning|hint|score|target|answer|summary|topic|cue|card|instruction|module|test|phase|grammar|lexical|fluency|pronunciation)\b/i;
+
+    const isGenuineSpeakerTagLine = (line: string): RegExpMatchArray | null => {
+      const m = line.match(/^([A-Za-z0-9\s().-]{2,32}):\s*(.+)$/);
+      if (!m) return null;
+      const label = m[1].trim();
+      if (NON_SPEAKER_LABEL_REGEX.test(label)) return null;
+      return m;
+    };
+
+    // Only parse speaker tags when the input is a multi-line script with at least 2 lines
+    const hasMultiLineSpeakerTags =
+      rawLines.length >= 2 && rawLines.some((l) => isGenuineSpeakerTagLine(l) !== null);
+
+    // Preserve natural cross-sentence intonation and connected speech for single-speaker examiner prompts:
+    // Synthesize single-speaker prompts up to 850 characters in a single contextual pass rather than splitting
+    // every framing phrase or sentence into separate fragments.
+    if (!hasMultiLineSpeakerTags && rawText.length <= 850) {
       return null;
+    }
+
+    // If this is a single-speaker very long passage (>850 chars), split at sentence boundaries up to 600 chars
+    // while strictly preserving the caller's defaultSpeakerId and defaultGender!
+    if (!hasMultiLineSpeakerTags) {
+      const clauses = chunkTextIntoSafeClauses(rawText, 600);
+      if (clauses.length <= 1) return null;
+      return clauses.map((cl, idx) => ({
+        speakerId: defaultSpeakerId,
+        gender: defaultGender,
+        text: cl,
+        pauseAfterMs: idx === clauses.length - 1 ? 0 : 260
+      }));
     }
 
     const speakerMap = new Map<string, { speakerId: string; gender: 'male' | 'female' }>();
@@ -874,14 +1199,14 @@ class AudioService {
     const inferGender = (label: string): 'male' | 'female' => {
       const lower = label.toLowerCase();
       if (
-        /\b(ms|mrs|miss|woman|female|girl|lady|sarah|elena|charlotte|eleanor|fiona|claire|hannah|rachel|emily|sophia|receptionist|librarian|nurse)\b/.test(
+        /\b(ms|mrs|miss|woman|female|girl|lady|clara|sarah|elena|charlotte|eleanor|fiona|claire|hannah|rachel|emily|sophia|natasha|libby|sonia|maisie|molly|beatrice|receptionist|librarian|nurse)\b/.test(
           lower
         )
       ) {
         return 'female';
       }
       if (
-        /\b(mr|man|male|boy|arthur|oliver|liam|david|george|julian|marcus|tariq|daniel|thomas|james|officer|professor|director)\b/.test(
+        /\b(mr|man|male|boy|arthur|oliver|liam|david|george|julian|marcus|tariq|daniel|thomas|james|william|connor|mitchell|alistair|officer|professor|director)\b/.test(
           lower
         )
       ) {
@@ -894,7 +1219,7 @@ class AudioService {
     const parsed: DialogueLine[] = [];
 
     for (const line of rawLines) {
-      const match = line.match(/^([A-Za-z0-9\s().-]{2,38}):\s*(.+)$/);
+      const match = isGenuineSpeakerTagLine(line);
       if (match) {
         const speakerLabel = match[1].trim();
         const content = match[2].replace(/^["“”']+|["“”']+$/g, '').trim();
@@ -908,29 +1233,33 @@ class AudioService {
           });
         }
         const assigned = speakerMap.get(speakerLabel)!;
-        const clauses = chunkTextIntoSafeClauses(content, 240);
+        const clauses = chunkTextIntoSafeClauses(content, 550);
         clauses.forEach((cl, idx) => {
           parsed.push({
             speakerId: assigned.speakerId,
             speakerName: speakerLabel,
             gender: assigned.gender,
             text: cl,
-            pauseAfterMs: idx === clauses.length - 1 ? 420 : 180
+            pauseAfterMs: idx === clauses.length - 1 ? 240 : 120
           });
         });
       } else {
         const content = line.replace(/^["“”']+|["“”']+$/g, '').trim();
         if (!content) continue;
-        const clauses = chunkTextIntoSafeClauses(content, 240);
+        const clauses = chunkTextIntoSafeClauses(content, 550);
         clauses.forEach((cl, idx) => {
           parsed.push({
             speakerId: defaultSpeakerId,
             gender: defaultGender,
             text: cl,
-            pauseAfterMs: idx === clauses.length - 1 ? 420 : 180
+            pauseAfterMs: idx === clauses.length - 1 ? 240 : 120
           });
         });
       }
+    }
+
+    if (parsed.length > 0) {
+      parsed[parsed.length - 1].pauseAfterMs = 0;
     }
 
     return parsed.length > 1 ? parsed : null;
@@ -938,14 +1267,19 @@ class AudioService {
 
   /**
    * Plays a single text passage using synchronous HTML5 <audio> streaming from `/api/tts/stream`,
-   * automatically segmenting multi-speaker or long passages so playback never truncates or cuts off.
+   * automatically segmenting multi-speaker or very long passages so playback never truncates or cuts off.
    */
   public speakText(
     text: string,
     speakerId: string = 'speaker_04',
     options?: SpeakOptions
   ): Promise<void> {
-    const resolvedSpeakerId = speakerId || (options?.gender === 'female' ? 'speaker_05' : 'speaker_04');
+    const resolvedSpeakerId =
+      options?.gender === 'female' && (!speakerId || speakerId === 'speaker_04')
+        ? 'speaker_05'
+        : options?.gender === 'male' && speakerId === 'speaker_05'
+        ? 'speaker_04'
+        : speakerId || (options?.gender === 'female' ? 'speaker_05' : 'speaker_04');
     const speakerMeta = IELTS_SPEAKERS[resolvedSpeakerId];
     const resolvedGender: 'male' | 'female' =
       options?.gender ||
@@ -953,17 +1287,18 @@ class AudioService {
       getPreferredVoiceGender();
     const activeAccent = options?.accent || speakerMeta?.accent;
 
-    // Automatically segment multi-speaker transcripts or long scripts (>280 chars) into sequential turns
-    // so turn 0 starts in <200ms and the entire passage plays to completion without cutting off!
+    // Automatically segment multi-speaker transcripts or very long scripts (>850 chars) into sequential turns
+    // while preserving rate, accent, deliveryProfile, and exact start/end callbacks
     const multiTurns = this.parseLongOrMultiSpeakerScript(text, resolvedSpeakerId, resolvedGender);
     if (multiTurns && multiTurns.length > 1) {
       return this.playDialogueSequentially(multiTurns, {
         examId: options?.examId,
         recordingId: options?.recordingId,
         contentVersion: options?.contentVersion,
-        onLineStart: (idx) => {
-          if (idx === 0) options?.onStart?.();
-        },
+        rate: options?.rate,
+        accent: activeAccent,
+        deliveryProfile: options?.deliveryProfile,
+        onStart: options?.onStart,
         onComplete: () => options?.onEnd?.(),
         onError: options?.onError
       });
@@ -1016,10 +1351,38 @@ class AudioService {
 
     return new Promise<void>((resolve) => {
       let settled = false;
+      let hasFiredStart = false;
+      let loadTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearLoadTimer = () => {
+        if (loadTimer) {
+          clearTimeout(loadTimer);
+          loadTimer = null;
+        }
+      };
+
+      const settlePromise = () => {
+        if (this.activePlaybackResolver === cancelPlayback) {
+          this.activePlaybackResolver = null;
+        }
+        resolve();
+      };
+
+      const cancelPlayback = () => {
+        if (settled) return;
+        settled = true;
+        clearLoadTimer();
+        settlePromise();
+      };
+
+      this.activePlaybackResolver = cancelPlayback;
+
       const finish = () => {
         if (settled) return;
         settled = true;
+        clearLoadTimer();
         if (this.playbackGeneration === myGen) {
+          this.detachAudioHandlers(audio);
           this.stopTimeUpdater();
           this.stopRoomTone();
           this.updateState({
@@ -1030,20 +1393,38 @@ class AudioService {
           });
           options?.onEnd?.();
         }
-        resolve();
+        settlePromise();
       };
 
-      const fallbackToSynthesis = () => {
+      const fallbackToSynthesis = (mediaError?: any) => {
         if (settled || this.playbackGeneration !== myGen) {
-          resolve();
+          clearLoadTimer();
+          settlePromise();
           return;
         }
         settled = true;
-        this.speakWithBrowserFallback(clean, resolvedGender, myGen, options).then(resolve);
+        clearLoadTimer();
+        this.detachAudioHandlers(audio);
+        this.speakWithBrowserFallback(
+          clean,
+          resolvedGender,
+          myGen,
+          options,
+          mediaError || new Error('Audio stream playback failed')
+        ).then(settlePromise);
       };
 
+      // Startup watchdog: only fires if audio fails to load or start within loadTimeoutMs.
+      // Cleared immediately once metadata/play/timeupdate arrives so active playback always waits for real `ended`.
+      loadTimer = setTimeout(() => {
+        if (!settled && this.playbackGeneration === myGen) {
+          fallbackToSynthesis(new Error('Audio stream load timeout'));
+        }
+      }, this.loadTimeoutMs);
+
       audio.onloadedmetadata = () => {
-        if (this.playbackGeneration !== myGen) return;
+        if (this.playbackGeneration !== myGen || settled) return;
+        clearLoadTimer();
         const realDur =
           audio.duration && isFinite(audio.duration) && audio.duration > 0
             ? audio.duration
@@ -1056,16 +1437,29 @@ class AudioService {
       };
 
       audio.onplay = () => {
-        if (this.playbackGeneration !== myGen) return;
-        this.updateState({ isLoading: false, isPlaying: true, isPaused: false });
+        if (this.playbackGeneration !== myGen || settled) return;
+        clearLoadTimer();
+        this.updateState({
+          isLoading: false,
+          isPlaying: true,
+          isPaused: false,
+          activeSynthesisProvider: 'cloud-neural',
+          activeVoiceId: speakerMeta?.geminiVoiceName
+            ? `gemini-neural-tts:${speakerMeta.geminiVoiceName}`
+            : resolvedSpeakerId
+        });
         if (this.state.isAmbienceEnabled) {
           this.startRoomTone();
         }
-        options?.onStart?.();
+        if (!hasFiredStart) {
+          hasFiredStart = true;
+          options?.onStart?.();
+        }
       };
 
       audio.ontimeupdate = () => {
-        if (this.playbackGeneration !== myGen) return;
+        if (this.playbackGeneration !== myGen || settled) return;
+        clearLoadTimer();
         this.updateState({
           isLoading: false,
           isPlaying: !audio.paused,
@@ -1073,12 +1467,17 @@ class AudioService {
         });
       };
 
+      audio.onpause = () => {
+        if (this.playbackGeneration !== myGen || settled || audio.ended) return;
+        this.updateState({ isPlaying: false, isPaused: true, isLoading: false });
+      };
+
       audio.onended = () => {
         finish();
       };
 
-      audio.onerror = () => {
-        fallbackToSynthesis();
+      audio.onerror = (err) => {
+        fallbackToSynthesis(err || new Error('HTMLAudioElement error event'));
       };
 
       // SYNCHRONOUS assignment and .play() on the exact user-gesture tick!
@@ -1086,16 +1485,22 @@ class AudioService {
         if (!audio.paused) {
           try { audio.pause(); } catch {}
         }
-        audio.volume = Math.max(0, Math.min(1, this.state.volume));
+        // Server stream URL already includes `speed`, which is calibrated via server-side rubberband/atempo.
+        // Keep client HTMLAudioElement playbackRate at 1.0 to prevent double rate compounding and phase artifacts.
+        audio.muted = false;
+        audio.defaultPlaybackRate = 1.0;
+        audio.volume = this.state.volume > 0 ? Math.max(0.05, Math.min(1, this.state.volume)) : 1.0;
         audio.src = streamUrl;
+        audio.playbackRate = 1.0;
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           this.activePlayPromise = playPromise;
           playPromise.catch((err) => {
-            if (isInterruptedPlaybackError(err)) {
+            if (isInterruptedPlaybackError(err) && (this.isDialogueCancelled || this.playbackGeneration !== myGen)) {
+              cancelPlayback();
               return;
             }
-            fallbackToSynthesis();
+            fallbackToSynthesis(err);
           }).finally(() => {
             if (this.activePlayPromise === playPromise) {
               this.activePlayPromise = null;
@@ -1103,8 +1508,10 @@ class AudioService {
           });
         }
       } catch (err) {
-        if (!isInterruptedPlaybackError(err)) {
-          fallbackToSynthesis();
+        if (isInterruptedPlaybackError(err) && (this.isDialogueCancelled || this.playbackGeneration !== myGen)) {
+          cancelPlayback();
+        } else {
+          fallbackToSynthesis(err);
         }
       }
     });
@@ -1125,6 +1532,11 @@ class AudioService {
       contentVersion?: string;
       accent?: string;
       deliveryProfile?: SpeechDeliveryProfileId;
+      rate?: number;
+      onFirstPlay?: () => void;
+      onMetadataLoaded?: (durationSec: number) => void;
+      onLineCompleted?: (playedSec: number) => void;
+      onError?: (err: any) => void;
     }
   ): Promise<void> {
     const clean = cleanSpeechText(text);
@@ -1134,67 +1546,193 @@ class AudioService {
 
     const audio = this.ensureSharedAudioElement();
     if (!audio) {
-      return this.speakWithBrowserFallback(clean, gender, myGen);
+      return this.speakWithBrowserFallback(clean, gender, myGen, {
+        rate: meta?.rate,
+        onStart: meta?.onFirstPlay,
+        onEnd: () => meta?.onLineCompleted?.(0),
+        onError: meta?.onError
+      });
     }
 
-    const streamUrl = this.buildStreamUrl(clean, speakerId, gender, this.state.playbackRate, meta);
+    const effectiveRate = meta?.rate || this.state.playbackRate || 1.0;
+    const streamUrl = this.buildStreamUrl(clean, speakerId, gender, effectiveRate, meta);
 
     return new Promise<void>((resolve) => {
       let done = false;
-      const completeLine = () => {
+      let hasNotifiedPlay = false;
+      let hasProgressedAudio = false;
+      let validDurationSec = 0;
+      let maxCurrentTimeSec = 0;
+      let loadTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearLoadTimer = () => {
+        if (loadTimer) {
+          clearTimeout(loadTimer);
+          loadTimer = null;
+        }
+      };
+
+      const completeLine = (playedSecOverride?: number) => {
         if (done) return;
         done = true;
+        clearLoadTimer();
+        if (this.activePlaybackResolver === completeLine) {
+          this.activePlaybackResolver = null;
+        }
+        if (this.playbackGeneration === myGen) {
+          this.detachAudioHandlers(audio);
+          const actualPlayed =
+            playedSecOverride !== undefined
+              ? playedSecOverride
+              : Math.max(validDurationSec, maxCurrentTimeSec);
+          meta?.onLineCompleted?.(actualPlayed);
+        }
         resolve();
       };
 
+      this.activePlaybackResolver = completeLine;
+
+      const handleLineFailure = (err: any) => {
+        if (done || this.playbackGeneration !== myGen || this.isDialogueCancelled) {
+          completeLine(0);
+          return;
+        }
+        done = true;
+        clearLoadTimer();
+        if (this.activePlaybackResolver === completeLine) {
+          this.activePlaybackResolver = null;
+        }
+        this.detachAudioHandlers(audio);
+
+        const errName = String(err?.name || '');
+        const errMsg = String(err?.message || '');
+        const isAutoplayBlocked =
+          errName === 'NotAllowedError' ||
+          /notallowed|user didn't interact|gesture|permission/i.test(errMsg);
+
+        if (isAutoplayBlocked) {
+          meta?.onError?.(
+            err instanceof Error
+              ? err
+              : new Error('Browser blocked audio playback. Please click Play / Resume Audio.')
+          );
+          resolve();
+          return;
+        }
+
+        this.speakWithBrowserFallback(
+          clean,
+          gender,
+          myGen,
+          {
+            rate: meta?.rate,
+            onStart: !hasNotifiedPlay ? meta?.onFirstPlay : undefined,
+            onEnd: () => meta?.onLineCompleted?.(0),
+            onError: meta?.onError
+          },
+          err || new Error('Dialogue line audio failed')
+        ).then(resolve);
+      };
+
+      // Startup watchdog: prevents dialogue from hanging indefinitely if a line's audio fails to load or never starts.
+      // Cleared immediately once metadata/play/timeupdate fires so normal playback strictly waits for `onended`.
+      loadTimer = setTimeout(() => {
+        if (!done && this.playbackGeneration === myGen && !this.isDialogueCancelled) {
+          handleLineFailure(new Error('Dialogue line load timeout'));
+        }
+      }, this.loadTimeoutMs);
+
       audio.onloadedmetadata = () => {
-        if (this.playbackGeneration !== myGen) return;
+        if (this.playbackGeneration !== myGen || done) return;
+        clearLoadTimer();
+        const dur =
+          audio.duration && isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+        if (dur > 0) {
+          validDurationSec = dur;
+          meta?.onMetadataLoaded?.(dur);
+        }
         this.updateState({ isLoading: false, isPlaying: true });
       };
 
       audio.onplay = () => {
-        if (this.playbackGeneration !== myGen) return;
+        if (this.playbackGeneration !== myGen || done) return;
+        clearLoadTimer();
+        hasProgressedAudio = true;
         this.updateState({ isLoading: false, isPlaying: true, isPaused: false });
+        if (!hasNotifiedPlay) {
+          hasNotifiedPlay = true;
+          meta?.onFirstPlay?.();
+        }
       };
 
       audio.ontimeupdate = () => {
         if (this.playbackGeneration !== myGen || done) return;
-        onTick?.(audio.currentTime || 0);
+        clearLoadTimer();
+        const cur = audio.currentTime || 0;
+        if (cur > 0) {
+          hasProgressedAudio = true;
+          if (cur > maxCurrentTimeSec) {
+            maxCurrentTimeSec = cur;
+          }
+        }
+        const dur =
+          audio.duration && isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+        if (dur > 0 && validDurationSec === 0) {
+          validDurationSec = dur;
+          meta?.onMetadataLoaded?.(dur);
+        }
+        onTick?.(cur);
+      };
+
+      audio.onpause = () => {
+        if (this.playbackGeneration !== myGen || done || audio.ended) return;
+        this.updateState({ isPlaying: false, isPaused: true, isLoading: false });
       };
 
       audio.onended = () => {
-        completeLine();
-      };
-
-      audio.onerror = () => {
-        if (done || this.playbackGeneration !== myGen) {
-          completeLine();
+        if (this.playbackGeneration !== myGen || done) return;
+        const dur =
+          validDurationSec ||
+          (audio.duration && isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0);
+        if (!hasProgressedAudio && dur <= 0 && maxCurrentTimeSec <= 0) {
+          handleLineFailure(new Error('Audio element ended prematurely with zero duration'));
           return;
         }
-        done = true;
-        this.speakWithBrowserFallback(clean, gender, myGen).then(resolve);
+        // Small 120ms buffer drain guard to allow mobile hardware/Bluetooth PCM buffers to flush before resolving line completion
+        setTimeout(() => {
+          if (this.playbackGeneration === myGen && !done) {
+            completeLine(Math.max(dur, maxCurrentTimeSec));
+          }
+        }, 120);
+      };
+
+      audio.onerror = (err) => {
+        handleLineFailure(err || new Error('Dialogue line HTMLAudioElement error'));
       };
 
       try {
         if (!audio.paused) {
           try { audio.pause(); } catch {}
         }
-        audio.volume = Math.max(0, Math.min(1, this.state.volume));
+        // Server stream URL already includes `speed` calibrated via server-side rubberband/atempo.
+        // Keep client HTMLAudioElement playbackRate at 1.0 to avoid compounding speed twice.
+        audio.muted = false;
+        audio.defaultPlaybackRate = 1.0;
+        audio.volume = this.state.volume > 0 ? Math.max(0.05, Math.min(1, this.state.volume)) : 1.0;
         audio.src = streamUrl;
+        audio.playbackRate = 1.0;
         const p = audio.play();
         if (p !== undefined) {
           this.activePlayPromise = p;
           p.catch((err) => {
-            if (isInterruptedPlaybackError(err)) {
-              completeLine();
+            if (
+              isInterruptedPlaybackError(err) &&
+              (this.isDialogueCancelled || this.playbackGeneration !== myGen)
+            ) {
+              completeLine(0);
               return;
             }
-            if (!done && this.playbackGeneration === myGen) {
-              done = true;
-              this.speakWithBrowserFallback(clean, gender, myGen).then(resolve);
-            } else {
-              completeLine();
-            }
+            handleLineFailure(err);
           }).finally(() => {
             if (this.activePlayPromise === p) {
               this.activePlayPromise = null;
@@ -1202,17 +1740,20 @@ class AudioService {
           });
         }
       } catch (err) {
-        if (isInterruptedPlaybackError(err)) {
-          completeLine();
+        if (
+          isInterruptedPlaybackError(err) &&
+          (this.isDialogueCancelled || this.playbackGeneration !== myGen)
+        ) {
+          completeLine(0);
         } else {
-          completeLine();
+          handleLineFailure(err);
         }
       }
     });
   }
 
   /**
-   * Alias for `playDialogueSequentially` used across ListeningLab, AudioManager, and AuthenticIELTSListeningTest
+   * Alias for `playDialogueSequentially` used across ListeningLab, AudioManager, and RealisticIELTSListeningTest
    */
   public playDialogue(
     lines: DialogueLine[],
@@ -1232,6 +1773,7 @@ class AudioService {
     this.unlockAudio();
     const myGen = this.stopActiveSync();
     this.isDialogueCancelled = false;
+    this.skippedDialogueTurns = [];
 
     if (!lines || lines.length === 0) {
       options?.onComplete?.();
@@ -1253,13 +1795,13 @@ class AudioService {
         return {
           speakerId: sp.id,
           speakerName: displayLabel || sp.name,
-          accent: sp.accent,
+          accent: line.accent || options?.accent || sp.accent,
           gender: line.gender || sp.gender
         };
       }
 
       const spText = (line.speaker || line.speakerName || '').toLowerCase();
-      const acText = (line.accent || '').toLowerCase();
+      const acText = (line.accent || options?.accent || '').toLowerCase();
 
       // Australian
       if (
@@ -1278,10 +1820,9 @@ class AudioService {
         return { speakerId: sp.id, speakerName: displayLabel || sp.name, accent: sp.accent, gender: 'male' };
       }
 
-      // Canadian
+      // Canadian (only when Canadian/CA accent is explicitly specified, so British Dr. Clara Sterling is never misrouted!)
       if (
         spText.includes('canadian') ||
-        spText.includes('clara') ||
         spText.includes('liam') ||
         acText.includes('ca') ||
         acText.includes('canadian')
@@ -1341,51 +1882,82 @@ class AudioService {
         return { speakerId: sp.id, speakerName: displayLabel || sp.name, accent: sp.accent, gender: 'male' };
       }
 
-      // British Female Lecturer or Support
+      // Female speakers
       if (
         line.gender === 'female' ||
+        spText.includes('clara') ||
         spText.includes('charlotte') ||
+        spText.includes('sonia') ||
         spText.includes('receptionist') ||
         spText.includes('librarian') ||
-        spText.includes('libby')
+        spText.includes('libby') ||
+        spText.includes('emily') ||
+        spText.includes('natasha') ||
+        spText.includes('sarah') ||
+        spText.includes('student') ||
+        spText.includes('applicant')
       ) {
-        const sp = spText.includes('libby') || spText.includes('librarian') ? IELTS_SPEAKERS['speaker_02'] : IELTS_SPEAKERS['speaker_05'];
+        let spKey = 'speaker_05'; // Dr. Clara / Charlotte
+        if (spText.includes('libby') || spText.includes('librarian') || spText.includes('receptionist') || spText.includes('student') || spText.includes('applicant') || spText.includes('support')) {
+          spKey = 'speaker_02'; // Libby (Conversational British Female)
+        } else if (spText.includes('emily') || spText.includes('irish')) {
+          spKey = 'speaker_16'; // Emily (Irish Female)
+        } else if (spText.includes('natasha') || spText.includes('australian')) {
+          spKey = 'speaker_07'; // Natasha (Australian Female)
+        } else if (spText && spText !== 'examiner' && spText !== 'speaker') {
+          // Dynamic hash distribution for named female characters
+          const femalePool = ['speaker_05', 'speaker_02', 'speaker_16', 'speaker_07'];
+          let charCodeSum = 0;
+          for (let i = 0; i < spText.length; i++) charCodeSum += spText.charCodeAt(i);
+          spKey = femalePool[charCodeSum % femalePool.length];
+        }
+        const sp = IELTS_SPEAKERS[spKey] || IELTS_SPEAKERS['speaker_05'];
         return { speakerId: sp.id, speakerName: displayLabel || sp.name, accent: sp.accent, gender: 'female' };
       }
 
-      // British Male Student / Candidate
+      // Male speakers
       if (
         spText.includes('thomas') ||
         spText.includes('student') ||
         spText.includes('applicant') ||
         spText.includes('candidate') ||
         spText.includes('customer') ||
-        spText.includes('caller')
+        spText.includes('caller') ||
+        spText.includes('alistair') ||
+        spText.includes('professor') ||
+        spText.includes('lecturer')
       ) {
-        const sp = IELTS_SPEAKERS['speaker_01'];
+        let spKey = 'speaker_01'; // Thomas (Conversational British Male)
+        if (spText.includes('alistair') || spText.includes('professor') || spText.includes('lecturer') || spText.includes('tutor')) {
+          spKey = 'speaker_03'; // Alistair (Senior Academic Male)
+        }
+        const sp = IELTS_SPEAKERS[spKey] || IELTS_SPEAKERS['speaker_01'];
         return { speakerId: sp.id, speakerName: displayLabel || sp.name, accent: sp.accent, gender: 'male' };
       }
 
-      // Default British Examiner
+      // Default British Male Examiner (Prof. Arthur Pendelton)
       const sp = IELTS_SPEAKERS['speaker_04'];
-      return { speakerId: sp.id, speakerName: displayLabel || sp.name, accent: sp.accent, gender: 'male' };
+      return { speakerId: sp.id, speakerName: displayLabel || sp.name, accent: sp.accent, gender: defaultGender && line.gender ? line.gender : 'male' };
     };
 
+    const effectiveRate = options?.rate || this.state.playbackRate || 1.0;
     this.currentPlaylist = lines;
     this.currentPlaylistOptions = options || null;
-    this.playlistDurations = lines.map((line) => {
-      const words = cleanSpeechText(line.text).split(/\s+/).length;
-      const pauseSec = (line.pauseAfterMs || 400) / 1000;
-      return Math.max(2, Math.ceil(words / 2.5)) + pauseSec;
+    this.playlistDurations = lines.map((line, idx) => {
+      const words = cleanSpeechText(line.text).split(/\s+/).filter(Boolean).length;
+      const isLastLine = idx === lines.length - 1;
+      const pauseSec = isLastLine ? 0 : (line.pauseAfterMs ?? 220) / 1000;
+      return Math.max(2, Math.ceil(words / 2.05)) + pauseSec;
     });
 
-    const totalDuration = this.playlistDurations.reduce((acc, d) => acc + d, 0);
+    let totalDuration = this.playlistDurations.reduce((acc, d) => acc + d, 0);
     const initialElapsed =
       options?.initialElapsed !== undefined
         ? options.initialElapsed
         : this.playlistDurations.slice(0, startIndex).reduce((a, b) => a + b, 0);
 
-    this.lineStartElapsed = initialElapsed;
+    let actualCumulativeElapsed = initialElapsed;
+    this.lineStartElapsed = actualCumulativeElapsed;
     const firstVoice = resolveLineVoice(lines[startIndex] || lines[0]);
 
     this.updateState({
@@ -1393,7 +1965,7 @@ class AudioService {
       isPlaying: true,
       isPaused: false,
       duration: totalDuration,
-      currentTime: initialElapsed,
+      currentTime: actualCumulativeElapsed,
       currentSpeakerId: firstVoice.speakerId,
       currentSpeakerName: firstVoice.speakerName,
       currentAccent: firstVoice.accent,
@@ -1405,41 +1977,33 @@ class AudioService {
       this.startRoomTone();
     }
 
-    // Pre-warm lookahead lines (startIndex + 1, startIndex + 2) immediately in background
-    for (let k = startIndex + 1; k <= Math.min(lines.length - 1, startIndex + 2); k++) {
-      const lv = resolveLineVoice(lines[k]);
-      const lookaheadUrl = this.buildStreamUrl(
-        lines[k].text,
-        lv.speakerId,
-        lv.gender,
-        this.state.playbackRate,
-        {
-          examId: options?.examId || options?.testId,
-          recordingId: options?.recordingId,
-          contentVersion: options?.contentVersion,
-          accent: lv.accent,
-          deliveryProfile: lines[k].deliveryProfile
-        }
-      );
-      fetch(lookaheadUrl).catch(() => {});
-    }
+    let hasFiredDialogueStart = false;
+    let fatalLineError: any = null;
+    let completedLinesCount = 0;
+    let consecutiveFailures = 0;
+    const expectedLinesCount = lines.length - startIndex;
 
     for (let i = startIndex; i < lines.length; i++) {
       if (this.isDialogueCancelled || this.playbackGeneration !== myGen) return;
 
       // Wait while paused
       while (this.state.isPaused && !this.isDialogueCancelled && this.playbackGeneration === myGen) {
-        await new Promise((r) => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 80));
       }
       if (this.isDialogueCancelled || this.playbackGeneration !== myGen) return;
 
       this.playlistIndex = i;
       const line = lines[i];
       const lv = resolveLineVoice(line);
-      const baseElapsedForLine = this.playlistDurations
-        .slice(0, i)
-        .reduce((a, b) => a + b, 0);
-      this.lineStartElapsed = baseElapsedForLine;
+      const isLastLine = i === lines.length - 1;
+      const nextLine = !isLastLine ? lines[i + 1] : null;
+      const nextLv = nextLine ? resolveLineVoice(nextLine) : null;
+      const defaultTurnPauseMs = nextLv && nextLv.speakerId === lv.speakerId ? 140 : 220;
+      const pauseMs = isLastLine ? 0 : (line.pauseAfterMs ?? defaultTurnPauseMs);
+      const pauseSec = pauseMs / 1000;
+
+      const lineBaseElapsed = actualCumulativeElapsed;
+      this.lineStartElapsed = lineBaseElapsed;
 
       options?.onLineStart?.(i, line);
       this.updateState({
@@ -1447,27 +2011,11 @@ class AudioService {
         currentSpeakerName: lv.speakerName,
         currentAccent: lv.accent,
         activeText: line.text,
-        currentTime: baseElapsedForLine
+        currentTime: lineBaseElapsed
       });
 
-      // Pre-warm line i + 2 in background while line i plays
-      if (i + 2 < lines.length) {
-        const nextLv = resolveLineVoice(lines[i + 2]);
-        const nextUrl = this.buildStreamUrl(
-          lines[i + 2].text,
-          nextLv.speakerId,
-          nextLv.gender,
-          this.state.playbackRate,
-          {
-            examId: options?.examId || options?.testId,
-            recordingId: options?.recordingId,
-            contentVersion: options?.contentVersion,
-            accent: nextLv.accent,
-            deliveryProfile: lines[i + 2].deliveryProfile
-          }
-        );
-        fetch(nextUrl).catch(() => {});
-      }
+      let lineErrorOccurred: any = null;
+      let linePlayedDurationSec = 0;
 
       await this.playSingleLineOnSharedAudio(
         line.text,
@@ -1477,7 +2025,7 @@ class AudioService {
         (elapsedInLine) => {
           if (this.playbackGeneration === myGen && !this.state.isPaused) {
             this.updateState({
-              currentTime: Math.min(totalDuration, baseElapsedForLine + elapsedInLine)
+              currentTime: Math.min(totalDuration, lineBaseElapsed + elapsedInLine)
             });
           }
         },
@@ -1486,27 +2034,222 @@ class AudioService {
           recordingId: options?.recordingId,
           contentVersion: options?.contentVersion,
           accent: lv.accent,
-          deliveryProfile: line.deliveryProfile
+          deliveryProfile: line.deliveryProfile || options?.deliveryProfile,
+          rate: effectiveRate,
+          onMetadataLoaded: (realDurSec) => {
+            if (this.playbackGeneration === myGen && realDurSec > 0) {
+              this.playlistDurations[i] = realDurSec + pauseSec;
+              totalDuration = Math.max(
+                lineBaseElapsed + realDurSec + pauseSec,
+                this.playlistDurations.reduce((acc, d) => acc + d, 0)
+              );
+              this.updateState({ duration: totalDuration });
+            }
+          },
+          onFirstPlay: () => {
+            if (!hasFiredDialogueStart && this.playbackGeneration === myGen) {
+              hasFiredDialogueStart = true;
+              options?.onStart?.();
+            }
+            // Stagger lookahead pre-warming by 1200ms to allow active line's audio stream to buffer without socket contention
+            if (i + 1 < lines.length && typeof fetch === 'function') {
+              setTimeout(() => {
+                if (this.playbackGeneration === myGen && !this.isDialogueCancelled) {
+                  const lookaheadLv = resolveLineVoice(lines[i + 1]);
+                  const lookaheadUrl = this.buildStreamUrl(
+                    lines[i + 1].text,
+                    lookaheadLv.speakerId,
+                    lookaheadLv.gender,
+                    effectiveRate,
+                    {
+                      examId: options?.examId || options?.testId,
+                      recordingId: options?.recordingId,
+                      contentVersion: options?.contentVersion,
+                      accent: lookaheadLv.accent,
+                      deliveryProfile: lines[i + 1].deliveryProfile || options?.deliveryProfile
+                    }
+                  );
+                  fetch(lookaheadUrl).catch(() => {});
+                }
+              }, 1200);
+            }
+          },
+          onLineCompleted: (playedSec) => {
+            linePlayedDurationSec = playedSec;
+          },
+          onError: (err) => {
+            lineErrorOccurred = err;
+          }
         }
       );
 
       if (this.isDialogueCancelled || this.playbackGeneration !== myGen) return;
 
-      const pauseMs = line.pauseAfterMs || 380;
-      await new Promise((r) => setTimeout(r, pauseMs));
+      let turnSucceeded = false;
+      let turnPlayedDurationSec = 0;
+
+      if (!lineErrorOccurred) {
+        turnSucceeded = true;
+        turnPlayedDurationSec = linePlayedDurationSec;
+        consecutiveFailures = 0;
+      } else {
+        const errName = String(lineErrorOccurred?.name || '');
+        const errMsg = String(lineErrorOccurred?.message || lineErrorOccurred || '');
+        const isAutoplayBlocked =
+          errName === 'NotAllowedError' ||
+          /notallowed|user didn't interact|gesture|permission/i.test(errMsg);
+
+        if (isAutoplayBlocked) {
+          // Browser audio output is blocked by policy; continuing would silently drop all sound
+          fatalLineError = lineErrorOccurred;
+          break;
+        }
+
+        // Bounded retry: attempt at most one retry for transient line failures
+        if (!this.isDialogueCancelled && this.playbackGeneration === myGen) {
+          options?.onLineRetry?.(i, line, 2, lineErrorOccurred);
+
+          // Cancellable 200ms cooldown to allow transient buffer or network drop to settle
+          await new Promise((r) => setTimeout(r, 200));
+          if (this.isDialogueCancelled || this.playbackGeneration !== myGen) return;
+
+          let retryErrorOccurred: any = null;
+          let retryPlayedSec = 0;
+
+          await this.playSingleLineOnSharedAudio(
+            line.text,
+            lv.speakerId,
+            lv.gender,
+            myGen,
+            (elapsedInLine) => {
+              if (this.playbackGeneration === myGen && !this.state.isPaused) {
+                this.updateState({
+                  currentTime: Math.min(totalDuration, lineBaseElapsed + elapsedInLine)
+                });
+              }
+            },
+            {
+              examId: options?.examId || options?.testId,
+              recordingId: options?.recordingId,
+              contentVersion: options?.contentVersion,
+              accent: lv.accent,
+              deliveryProfile: line.deliveryProfile || options?.deliveryProfile,
+              rate: effectiveRate,
+              onMetadataLoaded: (realDurSec) => {
+                if (this.playbackGeneration === myGen && realDurSec > 0) {
+                  this.playlistDurations[i] = realDurSec + pauseSec;
+                  totalDuration = Math.max(
+                    lineBaseElapsed + realDurSec + pauseSec,
+                    this.playlistDurations.reduce((acc, d) => acc + d, 0)
+                  );
+                  this.updateState({ duration: totalDuration });
+                }
+              },
+              onLineCompleted: (playedSec) => {
+                retryPlayedSec = playedSec;
+              },
+              onError: (err) => {
+                retryErrorOccurred = err;
+              }
+            }
+          );
+
+          if (this.isDialogueCancelled || this.playbackGeneration !== myGen) return;
+
+          if (!retryErrorOccurred) {
+            turnSucceeded = true;
+            turnPlayedDurationSec = retryPlayedSec;
+            consecutiveFailures = 0;
+          } else {
+            consecutiveFailures += 1;
+            const finalLineError = retryErrorOccurred || lineErrorOccurred;
+
+            // If 3 consecutive turns fail completely even after retry, audio connection is permanently broken
+            if (consecutiveFailures >= 3) {
+              fatalLineError = finalLineError;
+              console.error(
+                `[AudioService] 3 consecutive dialogue turns failed after retries. Halting dialogue safely to prevent inconsistent state.`
+              );
+              break;
+            }
+
+            // Record skipped turn clearly in diagnostics without terminating the exam
+            const skippedTurnRecord = {
+              lineIndex: i,
+              speaker: lv.speakerName || line.speaker || 'Speaker',
+              speakerId: lv.speakerId,
+              text: line.text,
+              error: finalLineError
+            };
+            this.skippedDialogueTurns.push(skippedTurnRecord);
+            options?.onLineSkipped?.(i, line, finalLineError);
+          }
+        }
+      }
+
+      if (turnSucceeded) {
+        completedLinesCount += 1;
+        const spokenAdvanceSec =
+          turnPlayedDurationSec > 0
+            ? turnPlayedDurationSec
+            : Math.max(0.5, this.playlistDurations[i] - pauseSec);
+        actualCumulativeElapsed = Math.min(totalDuration, lineBaseElapsed + spokenAdvanceSec);
+      } else {
+        // Advance timeline using estimated duration so cues and questions stay in sync
+        const estimatedAdvanceSec = Math.max(1.0, this.playlistDurations[i] - pauseSec);
+        actualCumulativeElapsed = Math.min(totalDuration, lineBaseElapsed + estimatedAdvanceSec);
+      }
+      const postSpeechElapsed = actualCumulativeElapsed;
+
+      // Only pause between consecutive lines; never add an artificial delay after the final line finishes
+      if (!isLastLine && pauseMs > 0) {
+        await this.waitForInterLinePause(pauseMs, myGen, (elapsedPauseSec) => {
+          if (!this.isDialogueCancelled && this.playbackGeneration === myGen) {
+            const currentWithPause = Math.min(totalDuration, postSpeechElapsed + elapsedPauseSec);
+            actualCumulativeElapsed = currentWithPause;
+            this.updateState({ currentTime: currentWithPause });
+          }
+        });
+        actualCumulativeElapsed = Math.min(totalDuration, postSpeechElapsed + pauseSec);
+      }
     }
 
     if (!this.isDialogueCancelled && this.playbackGeneration === myGen) {
       this.stopTimeUpdater();
       this.stopRoomTone();
-      this.updateState({
-        isPlaying: false,
-        isPaused: false,
-        isLoading: false,
-        currentTime: totalDuration
-      });
-      options?.onComplete?.();
-      options?.onEnd?.();
+      const allowSkippedLines = options?.requireAllLinesComplete === false;
+      const hasFatalFailure =
+        fatalLineError !== null ||
+        (!allowSkippedLines && this.skippedDialogueTurns.length > 0) ||
+        (completedLinesCount === 0 && this.skippedDialogueTurns.length > 0);
+
+      if (hasFatalFailure) {
+        const errObj =
+          fatalLineError ||
+          this.skippedDialogueTurns[0]?.error ||
+          new Error('Audio playback interrupted before completion.');
+        this.updateState({
+          isPlaying: false,
+          isPaused: false,
+          isLoading: false,
+          error:
+            typeof errObj?.message === 'string'
+              ? errObj.message
+              : 'Audio playback error. Please click Resume / Retry Audio.'
+        });
+        options?.onError?.(errObj);
+      } else {
+        this.playlistIndex = this.currentPlaylist.length;
+        this.lineStartElapsed = totalDuration;
+        this.updateState({
+          isPlaying: false,
+          isPaused: false,
+          isLoading: false,
+          currentTime: totalDuration
+        });
+        options?.onComplete?.();
+        options?.onEnd?.();
+      }
     }
   }
 
@@ -1517,36 +2260,106 @@ class AudioService {
     text: string,
     gender: 'male' | 'female',
     myGen: number,
-    options?: SpeakOptions
+    options?: SpeakOptions,
+    fromMediaError?: any
   ): Promise<void> {
     return new Promise((resolve) => {
+      let settled = false;
+      const settleOnce = (cb?: () => void) => {
+        if (settled) return;
+        settled = true;
+        if (this.activePlaybackResolver === cancelFallback) {
+          this.activePlaybackResolver = null;
+        }
+        cb?.();
+        resolve();
+      };
+
+      const cancelFallback = () => {
+        settleOnce();
+      };
+
+      this.activePlaybackResolver = cancelFallback;
+
       if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-        this.updateState({ isPlaying: false, isLoading: false });
-        options?.onEnd?.();
-        resolve();
+        settleOnce(() => {
+          if (this.playbackGeneration === myGen) {
+            if (fromMediaError) {
+              const errMsg =
+                typeof fromMediaError?.message === 'string'
+                  ? fromMediaError.message
+                  : 'Audio playback failed';
+              this.updateState({
+                isPlaying: false,
+                isPaused: false,
+                isLoading: false,
+                error: errMsg
+              });
+              options?.onError?.(fromMediaError);
+            } else {
+              this.updateState({ isPlaying: false, isPaused: false, isLoading: false });
+              options?.onEnd?.();
+            }
+          }
+        });
         return;
       }
 
-      const clauses = chunkTextIntoSafeClauses(text, 110);
+      // Avoid splitting prompts into small fragments; keep up to 320 chars per sentence group
+      const clauses = chunkTextIntoSafeClauses(text, 320);
       if (clauses.length === 0) {
-        this.updateState({ isPlaying: false, isLoading: false });
-        options?.onEnd?.();
-        resolve();
+        settleOnce(() => {
+          if (this.playbackGeneration === myGen) {
+            this.updateState({ isPlaying: false, isPaused: false, isLoading: false });
+            options?.onEnd?.();
+          }
+        });
         return;
       }
 
+      const isBarnaby =
+        isBarnabyCompanionVoice(options?.speakerId) ||
+        isBarnabyCompanionVoice(this.state.currentSpeakerId) ||
+        options?.deliveryProfile === 'barnaby_companion';
+      const persona = resolveExaminerVoiceProfile(gender);
       const selection =
         gender === 'female' ? selectBestDeviceFemaleVoice() : selectBestDeviceMaleVoice();
       const chosenVoice = selection.voice;
 
+      // Clearly distinguish browser speech synthesis fallback from cloud neural TTS
+      this.updateState({
+        activeSynthesisProvider: 'browser-speech-synthesis',
+        activeVoiceId: chosenVoice?.name || `browser-${isBarnaby ? BARNABY_VOICE_PROFILE.locale : persona.locale}`
+      });
+
+      const targetBrowserRatePref = isBarnaby
+        ? BARNABY_VOICE_PROFILE.browserRatePreference
+        : persona.browserRatePreference;
+      const targetBrowserPitchPref = isBarnaby
+        ? BARNABY_VOICE_PROFILE.pitchPreference
+        : persona.pitchPreference || 1.0;
+
+      // Apply conservative browser speaking rate preference per persona (~0.92-0.94 for examiners, 0.98 for Barnaby)
+      const requestedRate = options?.rate || this.state.playbackRate;
+      const safeBrowserRate =
+        requestedRate && isFinite(requestedRate) && requestedRate > 0.5 && requestedRate <= 1.25
+          ? Math.min(requestedRate, targetBrowserRatePref)
+          : targetBrowserRatePref;
+
       let idx = 0;
       const speakNext = () => {
-        if (this.playbackGeneration !== myGen || this.isDialogueCancelled || idx >= clauses.length) {
-          if (this.playbackGeneration === myGen) {
-            this.updateState({ isPlaying: false, isLoading: false });
-            options?.onEnd?.();
-          }
-          resolve();
+        if (settled || this.playbackGeneration !== myGen || this.isDialogueCancelled) {
+          settleOnce();
+          return;
+        }
+
+        if (idx >= clauses.length) {
+          settleOnce(() => {
+            if (this.playbackGeneration === myGen && !this.isDialogueCancelled) {
+              this.updateState({ isPlaying: false, isPaused: false, isLoading: false });
+              options?.onEnd?.();
+            }
+          });
           return;
         }
 
@@ -1554,52 +2367,98 @@ class AudioService {
         const utt = new SpeechSynthesisUtterance(chunk);
         if (chosenVoice) {
           utt.voice = chosenVoice;
-          utt.lang = chosenVoice.lang || 'en-GB';
+          utt.lang = chosenVoice.lang || persona.locale || 'en-GB';
         } else {
-          utt.lang = 'en-GB';
+          utt.lang = persona.locale || 'en-GB';
         }
-        utt.rate = options?.rate || this.state.playbackRate || 0.96;
-        utt.pitch = 1.0;
-        utt.volume = Math.max(0, Math.min(1, this.state.volume));
+        utt.rate = safeBrowserRate;
+        utt.pitch = targetBrowserPitchPref;
+        utt.volume = this.state.volume > 0 ? Math.max(0.05, Math.min(1, this.state.volume)) : 1.0;
 
         let done = false;
-        const safetyMs = Math.max(4000, chunk.split(/\s+/).length * 600 + 2500);
+        let hasUtteranceStarted = false;
+        const safetyMs = Math.max(4500, chunk.split(/\s+/).length * 600 + 2500);
         const timer = setTimeout(() => {
           if (!done) {
             done = true;
+            if (!hasUtteranceStarted && fromMediaError && this.playbackGeneration === myGen) {
+              settleOnce(() => {
+                this.updateState({
+                  isPlaying: false,
+                  isPaused: false,
+                  isLoading: false,
+                  error:
+                    typeof fromMediaError?.message === 'string'
+                      ? fromMediaError.message
+                      : 'Audio playback failed'
+                });
+                options?.onError?.(fromMediaError);
+              });
+              return;
+            }
             idx++;
             speakNext();
           }
         }, safetyMs);
 
         utt.onstart = () => {
-          if (idx === 0 && this.playbackGeneration === myGen) {
+          hasUtteranceStarted = true;
+          if (idx === 0 && this.playbackGeneration === myGen && !settled) {
             this.updateState({ isLoading: false, isPlaying: true });
             options?.onStart?.();
           }
         };
 
         utt.onend = () => {
-          if (done) return;
+          if (done || settled) return;
           done = true;
           clearTimeout(timer);
           idx++;
-          speakNext();
+          if (idx < clauses.length && !settled && this.playbackGeneration === myGen && !this.isDialogueCancelled) {
+            setTimeout(() => speakNext(), 240);
+          } else {
+            speakNext();
+          }
         };
 
-        utt.onerror = () => {
-          if (done) return;
+        utt.onerror = (err) => {
+          if (done || settled) return;
           done = true;
           clearTimeout(timer);
+          if (fromMediaError && this.playbackGeneration === myGen) {
+            settleOnce(() => {
+              this.updateState({
+                isPlaying: false,
+                isPaused: false,
+                isLoading: false,
+                error: 'Audio playback failed'
+              });
+              options?.onError?.(err || fromMediaError);
+            });
+            return;
+          }
           idx++;
           speakNext();
         };
 
         try {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
           window.speechSynthesis.speak(utt);
-        } catch {
+        } catch (err) {
           clearTimeout(timer);
-          resolve();
+          settleOnce(() => {
+            if (this.playbackGeneration === myGen) {
+              this.updateState({
+                isPlaying: false,
+                isPaused: false,
+                isLoading: false,
+                error: 'Audio playback failed'
+              });
+              options?.onError?.(err || fromMediaError);
+            }
+          });
         }
       };
 
@@ -1622,7 +2481,35 @@ class AudioService {
     this.updateState({ isPlaying: false, isPaused: true });
   }
 
+  public getCurrentPlaylistIndex(): number {
+    return this.playlistIndex;
+  }
+
   public resume(): void {
+    // If a playlist has already completed all lines, never replay or restart it on resume().
+    if (this.currentPlaylist.length > 0 && this.playlistIndex >= this.currentPlaylist.length) {
+      return;
+    }
+
+    // If a multi-line playlist was interrupted by an error or lost its media element source,
+    // resume playDialogueSequentially from the active playlistIndex rather than restarting from 0.
+    if (
+      this.currentPlaylist.length > 0 &&
+      this.playlistIndex < this.currentPlaylist.length &&
+      (!this.sharedAudio ||
+        !this.sharedAudio.src ||
+        this.sharedAudio.ended ||
+        Boolean(this.state.error)) &&
+      !this.dialoguePauseTimer
+    ) {
+      void this.playDialogueSequentially(this.currentPlaylist, {
+        ...this.currentPlaylistOptions,
+        startIndex: this.playlistIndex,
+        initialElapsed: this.lineStartElapsed
+      });
+      return;
+    }
+
     if (
       this.sharedAudio &&
       this.sharedAudio.paused &&
@@ -1641,7 +2528,7 @@ class AudioService {
     if (this.state.isAmbienceEnabled) {
       this.startRoomTone();
     }
-    this.updateState({ isPlaying: true, isPaused: false });
+    this.updateState({ isPlaying: true, isPaused: false, error: null });
   }
 
   public seek(seconds: number): void {
@@ -1660,7 +2547,7 @@ class AudioService {
       this.playDialogueSequentially(this.currentPlaylist, {
         ...this.currentPlaylistOptions,
         startIndex: targetIdx,
-        initialElapsed: target
+        initialElapsed: accumulated
       });
       return;
     }

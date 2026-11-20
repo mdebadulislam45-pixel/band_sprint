@@ -66,7 +66,7 @@ Conversely, Germany commenced at a negligible 6% in 2000. Over the ensuing years
             Module 5: Writing Task 1 Interactive Visualizer
           </h2>
           <p className="text-xs sm:text-sm text-slate-500">
-            Click data milestones on the graph to inspect generated Band 8.5+ reporting clauses and master the Cambridge 4-paragraph structure.
+            Click data milestones on the graph to inspect generated Band 8.5+ reporting clauses and master the Practice Set 4-paragraph structure.
           </p>
         </div>
 
@@ -210,7 +210,7 @@ Conversely, Germany commenced at a negligible 6% in 2000. Over the ensuing years
         <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Formula</span>
-            <h3 className="text-lg font-bold text-slate-900 mt-1">The 4-Paragraph Cambridge Architecture</h3>
+            <h3 className="text-lg font-bold text-slate-900 mt-1">The 4-Paragraph Practice Architecture</h3>
             <p className="text-xs text-slate-500">Master this blueprint to guarantee Band 7.0+ in Task Achievement.</p>
           </div>
 

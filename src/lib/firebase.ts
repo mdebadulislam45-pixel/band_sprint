@@ -9,16 +9,31 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   updateProfile,
-  signOut as firebaseSignOut
+  signOut as firebaseSignOut,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Resolve dynamic auth domain if running under custom branded domain
-const resolvedAuthDomain =
-  typeof window !== 'undefined' && window.location.hostname.includes('ieltssprint.com')
-    ? 'auth.ieltssprint.com'
-    : firebaseConfig.authDomain;
+// Use explicit VITE_FIREBASE_AUTH_DOMAIN if configured; otherwise use the provisioned Firebase authDomain
+const envAuthDomain =
+  typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN
+    ? String((import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN).trim()
+    : '';
+
+const resolvedAuthDomain = envAuthDomain || firebaseConfig.authDomain;
+const resolvedOAuthClientId = String((firebaseConfig as { oAuthClientId?: string }).oAuthClientId || '').trim();
+
+export const FIREBASE_GOOGLE_OAUTH_SCOPES = ['openid', 'email', 'profile'] as const;
+
+export const FIREBASE_GOOGLE_OAUTH_CONFIG = {
+  projectId: firebaseConfig.projectId,
+  authDomain: resolvedAuthDomain,
+  oAuthClientId: resolvedOAuthClientId,
+  redirectUrl: `https://${resolvedAuthDomain}/__/auth/handler`,
+  scopes: [...FIREBASE_GOOGLE_OAUTH_SCOPES]
+} as const;
 
 const resolvedConfig = {
   ...firebaseConfig,
@@ -31,12 +46,21 @@ export const app = initializeApp(resolvedConfig);
 // Initialize Cloud Firestore using the configured database ID
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Initialize Firebase Authentication
+// Initialize Firebase Authentication & set local persistence
 export const auth = getAuth(app);
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+  });
+}
+
 export const googleAuthProvider = new GoogleAuthProvider();
-googleAuthProvider.setCustomParameters({
-  prompt: 'select_account'
+FIREBASE_GOOGLE_OAUTH_SCOPES.forEach((scope) => {
+  googleAuthProvider.addScope(scope);
 });
+// NOTE: no prompt:'select_account' here on purpose. Forcing the account
+// chooser on every sign-in added a full extra step for returning users and
+// made Google sign-in feel slow. Google still shows the chooser when the
+// user has multiple accounts or is signed out.
 
 export {
   signInWithPopup,
@@ -99,19 +123,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-/**
- * Connection verification test on startup per Firebase Integration guidelines
- */
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client offline. Please verify connectivity.');
-    }
-  }
-}
-
-if (typeof window !== 'undefined') {
-  testConnection();
-}
+// NOTE: removed the startup testConnection() Firestore read (getDocFromServer
+// on test/connection 1.2s after load). It was a dev diagnostic that cost a
+// server round-trip on every first visit and slowed the pre-login page.

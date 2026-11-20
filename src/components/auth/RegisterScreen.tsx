@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   ArrowLeft
 } from 'lucide-react';
-import { IELTSSprintLogo } from '../common/IELTSSprintLogo';
+import { BandSprintLogo } from '../common/BandSprintLogo';
 import { registerCandidateWithServer } from '../../services/authService';
 import { UserProfile } from '../../types';
 
@@ -122,7 +122,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <IELTSSprintLogo variant="full" size="sm" className="brightness-125" />
+        <BandSprintLogo variant="full" size="sm" className="brightness-125" />
         <div className="w-8" />
       </header>
 

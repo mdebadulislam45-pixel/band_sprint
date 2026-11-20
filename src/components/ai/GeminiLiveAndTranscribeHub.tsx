@@ -58,7 +58,7 @@ export const GeminiLiveAndTranscribeHub: React.FC<GeminiLiveAndTranscribeHubProp
     {
       id: 'live_init',
       role: 'examiner',
-      text: "Good afternoon. I am Arthur Davies, your Cambridge IELTS Speaking Examiner powered by Gemini 3.8 Live. Let's begin Part 1: Could you tell me about your daily study or work routine and what part of the day you find most productive?",
+      text: "Good afternoon. I am Arthur Davies, your IELTS Speaking Examiner powered by Gemini 3.8 Live. Let's begin Part 1: Could you tell me about your daily study or work routine and what part of the day you find most productive?",
       bandNote: 'Gemini 3.8 Live Audio Session Ready · Tap the microphone or type below to converse.',
       timestamp: Date.now()
     }
@@ -315,7 +315,7 @@ export const GeminiLiveAndTranscribeHub: React.FC<GeminiLiveAndTranscribeHubProp
   };
 
   // ================= 3. MULTI-MODEL GEMINI CHAT STUDIO STATE =================
-  const [chatModel, setChatModel] = useState<'gemini-4-argon' | 'gemini-3.8-flash' | 'gemini-3.1-flash-lite'>('gemini-3.8-flash');
+  const [chatModel, setChatModel] = useState<'gemini-3.5-flash-lite' | 'gemini-3.1-flash-lite'>('gemini-3.5-flash-lite');
   const [chatPersona, setChatPersona] = useState<'examiner_arthur' | 'writing_charlotte' | 'lexical_barnaby'>('examiner_arthur');
   const [chatInput, setChatInput] = useState('');
   const [isSendingChat, setIsSendingChat] = useState(false);
@@ -326,7 +326,7 @@ export const GeminiLiveAndTranscribeHub: React.FC<GeminiLiveAndTranscribeHubProp
       text: 'Welcome to the Multi-Model Gemini Academic Hub. Choose between Gemini 4 Argon (Deep Reasoning & Complex Essay Critique), Gemini 3.8 Flash (Balanced Coaching), or Gemini 3.1 Flash-Lite (High-Speed Lexical Drills). How can I elevate your band score today?',
       strategyTip: 'All multi-turn conversations are automatically synced to your candidate Cloud Firestore profile.',
       collocations: ['empirical substantiation', 'cognitive agility', 'lexical sophistication'],
-      modelUsed: 'gemini-3.8-flash'
+      modelUsed: 'gemini-3.5-flash-lite'
     }
   ]);
 
@@ -691,7 +691,7 @@ export const GeminiLiveAndTranscribeHub: React.FC<GeminiLiveAndTranscribeHubProp
     );
   }
 
-  // RENDER 3: MULTI-MODEL GEMINI CHAT HUB (gemini-4-argon, gemini-3.8-flash, gemini-3.1-flash-lite)
+  // RENDER 3: MULTI-MODEL GEMINI CHAT HUB (gemini-3.5-flash-lite, gemini-3.1-flash-lite)
   return (
     <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#101B32] border border-slate-200 dark:border-slate-800 space-y-4 shadow-md">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
@@ -727,9 +727,8 @@ export const GeminiLiveAndTranscribeHub: React.FC<GeminiLiveAndTranscribeHubProp
             aria-label="Select Gemini Model"
             className="bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-indigo-700 dark:text-indigo-300"
           >
-            <option value="gemini-3.8-flash">gemini-3.8-flash (General)</option>
+            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (General)</option>
             <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fast)</option>
-            <option value="gemini-4-argon">gemini-4-argon (Deep Reasoning)</option>
           </select>
         </div>
       </div>

@@ -1,18 +1,38 @@
 {
-  "name": "IELTS SPRINT",
-  "short_name": "IELTS SPRINT",
-  "description": "IELTS SPRINT - Premier IELTS Preparation Suite with Cambridge Rubrics, Live Mock Tests, and AI Scoring.",
+  "id": "/",
+  "name": "BandSprint — IELTS Preparation",
+  "short_name": "BandSprint",
+  "description": "IELTS-style practice suite with CD-IELTS mock tests, Shadowing & Pronunciation Studio, Writing Band 8.5+ Diff Studio, and offline 683-word Spelling Lab.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0B1120",
-  "theme_color": "#101B32",
+  "background_color": "#F7F9F8",
+  "theme_color": "#0F4C45",
   "orientation": "any",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": [

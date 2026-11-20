@@ -83,7 +83,7 @@ export const SpeakingVaultPage: React.FC<SpeakingVaultPageProps> = ({ onBack, on
           IELTS Speaking Band 9 Audio Vault
         </h1>
         <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
-          Listen to how Band 9 candidates handle actual Cambridge test prompts with natural hesitations, rhetorical discourse markers, and rich academic vocabulary.
+          Listen to how Band 9 candidates handle actual Practice test prompts with natural hesitations, rhetorical discourse markers, and rich academic vocabulary.
         </p>
       </div>
 
@@ -210,7 +210,7 @@ export const SpeakingVaultPage: React.FC<SpeakingVaultPageProps> = ({ onBack, on
               ))}
             </div>
 
-            {/* Examiner Advice */}
+            {/* Coach tip */}
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 flex items-start gap-2">
               <Award className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
               <div>

@@ -5,34 +5,36 @@ const rootDir = process.cwd();
 const distDir = path.resolve(rootDir, 'dist');
 const buildDir = path.resolve(rootDir, 'build');
 const outDir = path.resolve(rootDir, 'out');
+const publicAiStudioDir = path.resolve(rootDir, 'public', 'assets', 'aistudio');
+const distAiStudioDir = path.resolve(distDir, 'assets', 'aistudio');
 
 try {
+  // Remove temporary chat attachment directories and binary zip archives so they never break deployment
+  for (const target of [
+    publicAiStudioDir,
+    distAiStudioDir,
+    buildDir,
+    outDir,
+    path.resolve(rootDir, 'public', 'bandsprint-source-code.zip'),
+    path.resolve(distDir, 'bandsprint-source-code.zip')
+  ]) {
+    if (fs.existsSync(target)) {
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+  }
+
   if (fs.existsSync(distDir)) {
     const files = fs.readdirSync(distDir);
     if (files.length === 0) {
-      console.error('[IELTS Sprint Build] Error: dist/ directory is empty.');
+      console.error('[BandSprint Build] Error: dist/ directory is empty.');
       process.exit(1);
     }
-
-    // Mirror to build/
-    if (!fs.existsSync(buildDir)) {
-      fs.mkdirSync(buildDir, { recursive: true });
-    }
-    fs.cpSync(distDir, buildDir, { recursive: true });
-
-    // Mirror to out/
-    if (!fs.existsSync(outDir)) {
-      fs.mkdirSync(outDir, { recursive: true });
-    }
-    fs.cpSync(distDir, outDir, { recursive: true });
-
-    console.log(`[IELTS Sprint Build] Artifacts successfully validated: ${files.length} top-level entries synchronized across dist/, build/, and out/.`);
+    console.log(`[BandSprint Build] Artifacts validated: ${files.length} top-level entries in dist/.`);
   } else {
-    console.error('[IELTS Sprint Build] Fatal: dist/ directory does not exist after build.');
+    console.error('[BandSprint Build] Fatal: dist/ directory does not exist after build.');
     process.exit(1);
   }
 } catch (err) {
-  console.error('[IELTS Sprint Build] Error syncing build artifacts:', err);
+  console.error('[BandSprint Build] Error validating build artifacts:', err);
   process.exit(1);
 }
-

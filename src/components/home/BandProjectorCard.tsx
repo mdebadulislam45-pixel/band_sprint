@@ -94,7 +94,7 @@ export const BandProjectorCard: React.FC<BandProjectorCardProps> = ({
               Target Band Projector
             </h3>
             <span className="text-[10px] text-slate-400">
-              Raw score requirements for Cambridge {examMode}
+              Raw score requirements for Practice {examMode}
             </span>
           </div>
         </div>

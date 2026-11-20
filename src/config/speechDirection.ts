@@ -1,11 +1,18 @@
 /**
- * IELTS Sprint - Centralized Speech Direction & Delivery System
+ * BandSprint - Centralized Speech Direction & Delivery System
  *
  * Defines typed delivery profiles for conversational, expressive, and context-appropriate speech synthesis.
  * Fully compatible with Edge Neural TTS prosody controls (rate, pitch, volume, natural punctuation pauses).
  */
 
 export type SpeechDeliveryProfileId =
+  | 'examiner_question'
+  | 'examiner_instruction'
+  | 'natural_conversation'
+  | 'listening_dialogue'
+  | 'pronunciation_model'
+  | 'vocabulary_example'
+  | 'feedback_explanation'
   | 'friendly_conversation'
   | 'polite_enquiry'
   | 'curious_question'
@@ -15,7 +22,8 @@ export type SpeechDeliveryProfileId =
   | 'warm_tour_guide'
   | 'academic_discussion'
   | 'formal_lecture'
-  | 'vocabulary_coaching';
+  | 'vocabulary_coaching'
+  | 'barnaby_companion';
 
 export interface SpeechDeliveryProfile {
   id: SpeechDeliveryProfileId;
@@ -29,34 +37,104 @@ export interface SpeechDeliveryProfile {
 }
 
 export const SPEECH_DELIVERY_PROFILES: Record<SpeechDeliveryProfileId, SpeechDeliveryProfile> = {
+  examiner_question: {
+    id: 'examiner_question',
+    name: 'Examiner Question',
+    description: 'Calm, articulate, formal British RP examiner question with measured sentence-final inquiry intonation',
+    rateOffsetPercent: -4,
+    pitchOffsetHz: 0,
+    commaPauseMs: 145,
+    sentencePauseMs: 400,
+    punctuationEnhancement: true
+  },
+  examiner_instruction: {
+    id: 'examiner_instruction',
+    name: 'Examiner Instruction',
+    description: 'Measured, authoritative, crystal-clear CD-IELTS rubric and part transition delivery',
+    rateOffsetPercent: -5,
+    pitchOffsetHz: 0,
+    commaPauseMs: 155,
+    sentencePauseMs: 430,
+    punctuationEnhancement: true
+  },
+  natural_conversation: {
+    id: 'natural_conversation',
+    name: 'Natural Conversation',
+    description: 'Composed, professional conversational delivery for IELTS Speaking Examiner turns',
+    rateOffsetPercent: -3,
+    pitchOffsetHz: 0,
+    commaPauseMs: 135,
+    sentencePauseMs: 380,
+    punctuationEnhancement: true
+  },
+  listening_dialogue: {
+    id: 'listening_dialogue',
+    name: 'Listening Dialogue',
+    description: 'Realistic multi-speaker IELTS Listening dialogue pacing with natural turn-taking rhythm',
+    rateOffsetPercent: -3,
+    pitchOffsetHz: 0,
+    commaPauseMs: 135,
+    sentencePauseMs: 380,
+    punctuationEnhancement: true
+  },
+  pronunciation_model: {
+    id: 'pronunciation_model',
+    name: 'Pronunciation Model',
+    description: 'Deliberate, high-clarity Received Pronunciation for lexical headwords and shadowing sentences',
+    rateOffsetPercent: -6,
+    pitchOffsetHz: 0,
+    commaPauseMs: 165,
+    sentencePauseMs: 440,
+    punctuationEnhancement: true
+  },
+  vocabulary_example: {
+    id: 'vocabulary_example',
+    name: 'Vocabulary Example',
+    description: 'Articulate academic sentence delivery highlighting lexical collocations in context',
+    rateOffsetPercent: -4,
+    pitchOffsetHz: 0,
+    commaPauseMs: 145,
+    sentencePauseMs: 400,
+    punctuationEnhancement: true
+  },
+  feedback_explanation: {
+    id: 'feedback_explanation',
+    name: 'Feedback Explanation',
+    description: 'Authoritative, constructive Senior IELTS Examiner assessment and band descriptor coaching',
+    rateOffsetPercent: -4,
+    pitchOffsetHz: 0,
+    commaPauseMs: 145,
+    sentencePauseMs: 400,
+    punctuationEnhancement: true
+  },
   friendly_conversation: {
     id: 'friendly_conversation',
     name: 'Friendly Conversation',
-    description: 'Warm, natural conversational cadence for Part 1 social dialogue',
-    rateOffsetPercent: -2,
-    pitchOffsetHz: 1,
-    commaPauseMs: 120,
-    sentencePauseMs: 350,
+    description: 'Composed, courteous cadence for Part 1 social dialogue',
+    rateOffsetPercent: -3,
+    pitchOffsetHz: 0,
+    commaPauseMs: 130,
+    sentencePauseMs: 370,
     punctuationEnhancement: true
   },
   polite_enquiry: {
     id: 'polite_enquiry',
     name: 'Polite Enquiry',
-    description: 'Courteous customer/applicant enquiry cadence',
-    rateOffsetPercent: -2,
-    pitchOffsetHz: 1,
-    commaPauseMs: 120,
-    sentencePauseMs: 360,
+    description: 'Courteous applicant/officer enquiry cadence',
+    rateOffsetPercent: -3,
+    pitchOffsetHz: 0,
+    commaPauseMs: 130,
+    sentencePauseMs: 375,
     punctuationEnhancement: true
   },
   curious_question: {
     id: 'curious_question',
     name: 'Curious Question',
-    description: 'Inquiring, slightly rising inflection for student questions',
-    rateOffsetPercent: -1,
-    pitchOffsetHz: 2,
-    commaPauseMs: 110,
-    sentencePauseMs: 340,
+    description: 'Inquiring academic inflection for seminar questions',
+    rateOffsetPercent: -3,
+    pitchOffsetHz: 1,
+    commaPauseMs: 130,
+    sentencePauseMs: 370,
     punctuationEnhancement: true
   },
   thoughtful_response: {
@@ -66,70 +144,125 @@ export const SPEECH_DELIVERY_PROFILES: Record<SpeechDeliveryProfileId, SpeechDel
     rateOffsetPercent: -4,
     pitchOffsetHz: -1,
     commaPauseMs: 150,
-    sentencePauseMs: 400,
+    sentencePauseMs: 410,
     punctuationEnhancement: true
   },
   uncertain_student: {
     id: 'uncertain_student',
     name: 'Uncertain Student',
-    description: 'Slightly slower, hesitant student response in seminar',
-    rateOffsetPercent: -5,
-    pitchOffsetHz: 1,
-    commaPauseMs: 160,
-    sentencePauseMs: 420,
+    description: 'Measured student response in academic seminar',
+    rateOffsetPercent: -4,
+    pitchOffsetHz: 0,
+    commaPauseMs: 155,
+    sentencePauseMs: 415,
     punctuationEnhancement: true
   },
   confident_explanation: {
     id: 'confident_explanation',
     name: 'Confident Explanation',
-    description: 'Clear, authoritative explanation from an advisor or lead',
-    rateOffsetPercent: -2,
+    description: 'Clear, authoritative explanation from a Senior Academic Tutor',
+    rateOffsetPercent: -4,
     pitchOffsetHz: -1,
-    commaPauseMs: 120,
-    sentencePauseMs: 360,
+    commaPauseMs: 140,
+    sentencePauseMs: 390,
     punctuationEnhancement: true
   },
   warm_tour_guide: {
     id: 'warm_tour_guide',
     name: 'Warm Tour Guide',
-    description: 'Welcoming, clear presentation for Part 2 social monologues',
-    rateOffsetPercent: -2,
-    pitchOffsetHz: 1,
-    commaPauseMs: 130,
-    sentencePauseMs: 380,
+    description: 'Clear, formal public presentation for Part 2 monologues',
+    rateOffsetPercent: -3,
+    pitchOffsetHz: 0,
+    commaPauseMs: 140,
+    sentencePauseMs: 390,
     punctuationEnhancement: true
   },
   academic_discussion: {
     id: 'academic_discussion',
     name: 'Academic Discussion',
     description: 'Thoughtful, articulate dialogue for Part 3 academic seminars',
-    rateOffsetPercent: -3,
+    rateOffsetPercent: -4,
     pitchOffsetHz: 0,
-    commaPauseMs: 140,
-    sentencePauseMs: 380,
+    commaPauseMs: 145,
+    sentencePauseMs: 400,
     punctuationEnhancement: true
   },
   formal_lecture: {
     id: 'formal_lecture',
     name: 'Formal Lecture',
     description: 'Authoritative, measured Received Pronunciation for Part 4 academic lectures',
-    rateOffsetPercent: -4,
+    rateOffsetPercent: -5,
     pitchOffsetHz: -2,
-    commaPauseMs: 150,
-    sentencePauseMs: 420,
+    commaPauseMs: 160,
+    sentencePauseMs: 430,
     punctuationEnhancement: true
   },
   vocabulary_coaching: {
     id: 'vocabulary_coaching',
     name: 'Vocabulary Coaching',
-    description: 'Upbeat, clear enunciation for Barnaby AI study buddy',
-    rateOffsetPercent: 1,
+    description: 'Authoritative, measured British RP Senior IELTS Examiner academic guidance',
+    rateOffsetPercent: -4,
+    pitchOffsetHz: -1,
+    commaPauseMs: 145,
+    sentencePauseMs: 400,
+    punctuationEnhancement: true
+  },
+  barnaby_companion: {
+    id: 'barnaby_companion',
+    name: 'Barnaby AI Companion',
+    description: 'Cute, friendly, warm, bright, and gently playful British study companion cadence',
+    rateOffsetPercent: 2,
     pitchOffsetHz: 2,
-    commaPauseMs: 100,
-    sentencePauseMs: 300,
+    commaPauseMs: 120,
+    sentencePauseMs: 320,
     punctuationEnhancement: true
   }
 };
+
+/**
+ * Normalizes raw text for natural, human-like British/Commonwealth IELTS speech synthesis:
+ * - Expands titles & academic abbreviations (Prof., Dr., e.g., i.e.) so TTS does not clip mid-sentence
+ * - Formats currencies (£45 -> 45 pounds), times (9:30 a.m. -> 9 30 a.m.), and spelled-out letters
+ * - Formats UK postcodes and phone numbers with natural spoken grouping
+ * - Preserves colons in ordinary text (never deletes text before a colon unless it is an explicit speaker tag)
+ */
+export function normalizeTextForNaturalSpeech(
+  rawText: string,
+  _deliveryProfile?: SpeechDeliveryProfileId
+): string {
+  if (!rawText) return '';
+  return rawText
+    .replace(/\[\s*(?:\d+|_+)\s*\]/g, ' ')
+    .replace(/\bProf\.\s+/g, 'Professor ')
+    .replace(/\bDr\.\s+/g, 'Doctor ')
+    .replace(/\bMr\.\s+/g, 'Mister ')
+    .replace(/\bMrs\.\s+/g, 'Missus ')
+    .replace(/\bMs\.\s+/g, 'Miz ')
+    .replace(/\be\.g\.,?\s*/gi, 'for example, ')
+    .replace(/\bi\.e\.,?\s*/gi, 'that is, ')
+    .replace(/£(\d+(?:\.\d{1,2})?)/g, '$1 pounds')
+    .replace(/\$(\d+(?:\.\d{1,2})?)/g, '$1 dollars')
+    .replace(/€(\d+(?:\.\d{1,2})?)/g, '$1 euros')
+    .replace(/\b(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)\b/gi, (_m, h: string, min: string, mer: string) =>
+      min === '00' ? `${h} ${mer}` : `${h} ${min} ${mer}`
+    )
+    .replace(/\b([A-Z])(?:-[A-Z]){2,}\b/g, (match) => match.split('-').join(', '))
+    .replace(
+      /\b([A-Z]{1,2})(\d{1,2}[A-Z]?)\s+(\d)([A-Z]{2})\b/g,
+      (_m, area: string, district: string, sector: string, unit: string) =>
+        `${area.split('').join(' ')} ${district}, ${sector} ${unit.split('').join(' ')}`
+    )
+    .replace(
+      /\b(0\d{3,4})\s+(\d{3})(\d{3})\b/g,
+      (_m, p1: string, p2: string, p3: string) =>
+        `${p1.split('').join(' ')}, ${p2.split('').join(' ')}, ${p3.split('').join(' ')}`
+    )
+    .replace(/\s*—\s*/g, ', ')
+    .replace(/\s*;\s*/g, '; ')
+    .replace(/\.{3,}/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 /**
  * Infers the optimal SpeechDeliveryProfileId based on dialogue line context, speaker role, and section number.
@@ -143,19 +276,57 @@ export function inferSpeechDeliveryProfile(
   const lowerSpeaker = (line.speaker || '').toLowerCase();
   const lowerRole = (line.role || '').toLowerCase();
 
-  if (line.speakerId === 'speaker_barnaby' || lowerSpeaker.includes('barnaby')) {
-    return 'vocabulary_coaching';
+  if (line.speakerId === 'speaker_barnaby' || lowerSpeaker.includes('barnaby') || lowerRole.includes('companion')) {
+    return 'barnaby_companion';
   }
 
-  if (section === 4 || lowerRole.includes('lecture') || lowerRole.includes('examiner')) {
+  if (
+    lowerRole.includes('vocab') ||
+    lowerSpeaker.includes('vocab') ||
+    /meaning:|definition:|example:|idiom:|phrase:/i.test(text)
+  ) {
+    return 'vocabulary_example';
+  }
+
+  if (text.split(/\s+/).length <= 3 && !text.endsWith('?')) {
+    return 'pronunciation_model';
+  }
+
+  if (
+    lowerText.startsWith('part ') ||
+    lowerText.startsWith('section ') ||
+    lowerText.includes('you will hear') ||
+    lowerText.includes('you now have') ||
+    lowerText.includes('first, you have some time')
+  ) {
+    return 'examiner_instruction';
+  }
+
+  const isQuestion =
+    text.endsWith('?') ||
+    /^(what|where|when|why|how|who|can|could|would|is|are|do|does|did|shall|should|may)\b/i.test(text);
+
+  const isExaminer =
+    line.speakerId === 'speaker_04' ||
+    line.speakerId === 'speaker_05' ||
+    line.speakerId === 'speaker_uk_northern_m' ||
+    line.speakerId === 'speaker_uk_northern_f' ||
+    line.speakerId === 'speaker_uk_scottish_m' ||
+    line.speakerId === 'speaker_uk_scottish_f' ||
+    lowerRole.includes('examiner') ||
+    lowerSpeaker.includes('examiner');
+
+  if (isExaminer) {
+    return isQuestion ? 'examiner_question' : 'examiner_instruction';
+  }
+
+  if (section === 4 || lowerRole.includes('lecture')) {
     return 'formal_lecture';
   }
 
   if (section === 2 || lowerRole.includes('tour') || lowerRole.includes('guide') || lowerRole.includes('social monologue')) {
     return 'warm_tour_guide';
   }
-
-  const isQuestion = text.endsWith('?') || /^(what|where|when|why|how|who|can|could|would|is|are|do|does|did|shall|should|may)\b/i.test(text);
 
   if (section === 3 || lowerRole.includes('tutor') || lowerRole.includes('seminar') || lowerRole.includes('student')) {
     if (lowerRole.includes('tutor') || lowerRole.includes('prof') || lowerRole.includes('dr.')) {
@@ -179,5 +350,5 @@ export function inferSpeechDeliveryProfile(
     return 'friendly_conversation';
   }
 
-  return 'friendly_conversation';
+  return 'listening_dialogue';
 }

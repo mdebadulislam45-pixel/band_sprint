@@ -34,7 +34,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Booking Agent (Oliver)', gender: 'male', text: 'Certainly! May I take your full name first, please?' },
       { speaker: 'Customer (David)', gender: 'male', text: 'Yes, it is David Hawthorne. Spelled H-A-W-T-H-O-R-N-E.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -54,7 +54,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Booking Agent (Oliver)', gender: 'male', text: 'And which week in July were you planning to arrive?' },
       { speaker: 'Customer (David)', gender: 'male', text: 'We originally considered the 11th, but my wife has work commitments, so our arrival will definitely be the 18th of July.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -74,7 +74,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Booking Agent (Oliver)', gender: 'male', text: 'How many bedrooms will your party require?' },
       { speaker: 'Customer (David)', gender: 'male', text: 'A two-bedroom place was suggested, but since our teenage children need separate rooms, we need exactly three bedrooms.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -94,7 +94,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Booking Agent (Oliver)', gender: 'male', text: 'Are there any specific amenities you require on site?' },
       { speaker: 'Customer (David)', gender: 'male', text: 'Yes, we are traveling with our family dog, so a secure, enclosed garden is absolutely essential.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -114,7 +114,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Booking Agent (Oliver)', gender: 'male', text: 'For the Stonegate Croft property, the weekly peak rate comes to seven hundred and eighty pounds.' },
       { speaker: 'Customer (David)', gender: 'male', text: '£780 is well within our summer holiday budget. That sounds splendid.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -134,7 +134,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Booking Agent (Oliver)', gender: 'male', text: 'You can collect the cottage keys at our village office. The postcode is LA23 1BL.' },
       { speaker: 'Customer (David)', gender: 'male', text: 'Let me note that: L-A-2-3, 1-B-L. Perfect, thank you!' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -156,7 +156,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Coordinator (George)', gender: 'male', text: 'Homestay Advisory Office. Welcome! Could I take your first name for our accommodation records?' },
       { speaker: 'Student (Tariq)', gender: 'male', text: 'Yes, it is Tariq. That is spelled T-A-R-I-Q.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -176,7 +176,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Coordinator (George)', gender: 'male', text: 'And which department will you be studying in this semester?' },
       { speaker: 'Student (Tariq)', gender: 'male', text: 'I am taking the postgraduate MSc course in Biomedical Engineering.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -196,7 +196,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Coordinator (George)', gender: 'male', text: 'Do you have any dietary preferences or medical food allergies that host families should know?' },
       { speaker: 'Student (Tariq)', gender: 'male', text: 'Yes, I am a strict vegetarian. I do not eat meat or fish.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -216,7 +216,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Coordinator (George)', gender: 'male', text: 'What is your preferred transport commute tolerance?' },
       { speaker: 'Student (Tariq)', gender: 'male', text: 'I do not have a car, so the house must be within a 10-minute walk of a bus stop connecting to university.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -236,7 +236,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Coordinator (George)', gender: 'male', text: 'How long do you intend to reside with the host family?' },
       { speaker: 'Student (Tariq)', gender: 'male', text: 'I would like to sign for six months initially, covering my first two academic terms.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -256,7 +256,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Coordinator (George)', gender: 'male', text: 'Could I have your mobile number for WhatsApp alerts?' },
       { speaker: 'Student (Tariq)', gender: 'male', text: 'Sure, it is 07890 432190.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -278,7 +278,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Kennel Manager (Fiona)', gender: 'female', text: 'Paws & Meadow Boarding Kennels. How can I help you today?' },
       { speaker: 'Owner (Philip)', gender: 'male', text: 'Hi! I need to register my dog for five days of boarding next month. He is a Miniature Schnauzer.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -298,7 +298,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Kennel Manager (Fiona)', gender: 'female', text: 'Does your dog require any daily medications or clinical care?' },
       { speaker: 'Owner (Philip)', gender: 'male', text: 'Yes, he had minor irritation last week, so he needs eye drops administered every morning and evening.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -318,7 +318,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Kennel Manager (Fiona)', gender: 'female', text: 'Will you supply his usual food to prevent digestive upset?' },
       { speaker: 'Owner (Philip)', gender: 'male', text: 'Yes, I will drop off two bags of Royal Canine dry kibble.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -338,7 +338,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Kennel Manager (Fiona)', gender: 'female', text: 'Which veterinary clinic do you use in case of emergencies?' },
       { speaker: 'Owner (Philip)', gender: 'male', text: 'He is registered at Oakridge Clinic. That is O-A-K-R-I-D-G-E.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -358,7 +358,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Kennel Manager (Fiona)', gender: 'female', text: 'We offer meadow play or woodland trail walks. What does he prefer?' },
       { speaker: 'Owner (Philip)', gender: 'male', text: 'He loves exploring scents under trees, so two woodland walks daily would be ideal.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -378,7 +378,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Kennel Manager (Fiona)', gender: 'female', text: 'To confirm the reservation, we require an advance deposit of thirty-five pounds.' },
       { speaker: 'Owner (Philip)', gender: 'male', text: 'I can pay the £35 right now with my debit card.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -403,7 +403,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Park Ranger (Gary)', gender: 'male', text: 'Welcome to Highfield Zoo! Take a look at your visitor maps. Starting from the main entrance gates, if you walk straight north past the gift kiosk, you will find the flamingo lagoon on your left at Position A. Crossing the wooden suspension bridge eastward brings you directly into our large African Elephant Savannah at Position B. Farther north past the observation tower stands the Nocturnal Rainforest Pavilion at Position C, and in the far western corner sits the Vet Hospital at Position D.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -422,7 +422,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Park Ranger (Gary)', gender: 'male', text: 'Directly on the left of the main entrance boulevard sits our shallow flamingo lagoon, clearly marked as Position A.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -441,7 +441,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Park Ranger (Gary)', gender: 'male', text: 'Continuing northward up the ridge past our viewing platform brings you to the temperature-controlled Nocturnal Rainforest Pavilion at Position C.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -460,7 +460,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Park Ranger (Gary)', gender: 'male', text: 'For those taking the behind-the-scenes tour, our specialized Veterinary Hospital is tucked away in the secluded western woodland marked as Position D.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -479,7 +479,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Park Ranger (Gary)', gender: 'male', text: 'During our 2 PM penguin feeding demonstration, please remember that flash photography is strictly prohibited, as the strobe lights disorient the birds while diving.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -498,7 +498,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Park Ranger (Gary)', gender: 'male', text: 'If anyone gets tired, our zero-emission electric safari tram departs from the central plaza every 15 minutes throughout the afternoon.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -519,7 +519,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Safety Director (Helen)', gender: 'female', text: 'When the continuous fire alarm sounds, evacuate immediately via the nearest fire stairs. Do not congregate in corridors or the canteen. Our designated hospital assembly point is Car Park Zone C behind the pharmacy.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -538,7 +538,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Safety Director (Helen)', gender: 'female', text: 'Never allow colleagues to piggyback on your badge. If you forget your security pass, report directly to reception where security will issue a temporary one-day badge upon verifying your driving licence.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -557,7 +557,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Safety Director (Helen)', gender: 'female', text: 'In accordance with national hygiene guidelines, every nurse and physician must sanitize their hands with antiseptic foam for a full 30 seconds between patient interactions.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -576,7 +576,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Safety Director (Helen)', gender: 'female', text: 'To comply with health data protection laws, all ward computers will lock automatically if left unattended for more than two minutes.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -602,7 +602,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Tutor (Prof. Lawson)', gender: 'male', text: 'Your research methodology looks comprehensive, Chloe and Marcus. However, what was your rationale for excluding night shift workers?' },
       { speaker: 'Student (Marcus)', gender: 'male', text: 'Well, rotating night shifts cause erratic baseline melatonin and cortisol disruptions, which would confound our study on screen light alone.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -621,7 +621,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Chloe)', gender: 'female', text: 'To ensure identical behavior while isolating the blue spectrum, our control cohort wore amber blue-blocking glasses that filter 99% of blue wavelengths.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -641,7 +641,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Tutor (Prof. Lawson)', gender: 'male', text: 'And which biometrical parameter revealed the clearest statistical deviation?' },
       { speaker: 'Student (Marcus)', gender: 'male', text: 'Without question, salivary melatonin onset showed a statistically significant 75-minute delay in participants exposed to untreated screens.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -660,7 +660,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Tutor (Prof. Lawson)', gender: 'male', text: 'Bear in mind that your cohort consisted purely of undergraduates aged 19 to 23. You must discuss how lens crystalline yellowing in older adults might alter susceptibility in your thesis discussion.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -682,7 +682,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Tutor (Dr. Sterling)', gender: 'male', text: 'Let us examine your geothermal HVAC proposal, Samira. Why did you dismiss horizontal trench loops?' },
       { speaker: 'Student (Samira)', gender: 'female', text: 'Horizontal loops require extensive land clearance—nearly three times the plot footprint. Vertical closed-loop boreholes drill down 120 meters, utilizing minimal surface space.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -701,7 +701,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Samira)', gender: 'female', text: 'To ensure zero aquifer contamination if a subterranean pipe microcracks, we specified non-toxic food-grade propylene glycol mixed with distilled water.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -726,7 +726,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Evelyn)', gender: 'female', text: 'In today\'s archaeology lecture, we investigate the dawn of farming in the Levant. Wild ancestral wheats possessed a brittle stalk joint known as the rachis. When the spikelets ripened in early summer, the brittle rachis shattered in the breeze, dispersing seeds across the ground.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -745,7 +745,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Evelyn)', gender: 'female', text: 'Flint microliths found at Natufian settlements exhibit a unique, glass-like sheen termed sickle polish. Microscopic friction against phytolith-rich plant stems altered the stone surface permanently.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -764,7 +764,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Evelyn)', gender: 'female', text: 'Excavations at Jericho reveal that early sedentary communities constructed subterranean pits sealed with lime plaster exclusively dedicated to long-term grain storage.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -783,7 +783,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Evelyn)', gender: 'female', text: 'Paleopathological analysis reveals a startling paradox: early agriculturalists experienced significantly higher rates of dental caries and enamel hypoplasia compared to mobile hunter-gatherers who consumed varied protein.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -804,7 +804,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Julian)', gender: 'male', text: 'Turning now to neurobiology, the primary bidirectional communications superhighway between gut bacteria and the cerebral cortex is the tenth cranial nerve—the vagus nerve.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -823,7 +823,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Julian)', gender: 'male', text: 'Remarkably, more than ninety percent of the human body serotonin—a monoamine neurotransmitter responsible for mood regulation and peristalsis—is synthesized directly in the gut epithelium.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -842,7 +842,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Julian)', gender: 'male', text: 'Commensal anaerobic bacteria ferment prebiotic dietary fiber into bioactive short-chain fatty acids, predominantly butyrate, which fortifies the blood-brain barrier.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -861,7 +861,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Julian)', gender: 'male', text: 'When the mucosal barrier becomes permeable, lipopolysaccharide endotoxins spill into the bloodstream, triggering systemic inflammation and microglial activation in the hippocampus.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -883,7 +883,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Dispatcher (Liam)', gender: 'male', text: 'Heathrow Direct Shuttles. How may I arrange your airport transfer?' },
       { speaker: 'Passenger (Elena)', gender: 'female', text: 'Hello, I need an express van transfer for two passengers. My flight is BA 742 arriving at Terminal 5.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -903,7 +903,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Dispatcher (Liam)', gender: 'male', text: 'Do you have standard luggage or any bulky sporting equipment?' },
       { speaker: 'Passenger (Elena)', gender: 'female', text: 'We have two standard suitcases plus two oversized ski bags.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -923,7 +923,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Dispatcher (Liam)', gender: 'male', text: 'And where will our driver be dropping you off in Central London?' },
       { speaker: 'Passenger (Elena)', gender: 'female', text: 'At The Millennium Hotel in South Kensington. That is M-I-L-L-E-N-N-I-U-M.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -943,7 +943,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Dispatcher (Liam)', gender: 'male', text: 'Our fixed flat rate for Terminal 5 to Kensington is sixty-eight pounds.' },
       { speaker: 'Passenger (Elena)', gender: 'female', text: '£68 is very fair, please confirm that.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -964,7 +964,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Warden (Nigel)', gender: 'male', text: 'Welcome visitors to Bramble Hill! As you examine our trail brochure: directly north from the car park along the wooden boardwalk sits the Heron Bird Hide at Position A, overlooking the reedbeds. Turning southeast takes you past the Butterfly Meadow at Position B. At the eastern crossroads sits the Old Watermill at Position C, and the Hilltop Beacon viewing summit is at Position D.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -983,7 +983,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Warden (Nigel)', gender: 'male', text: 'If you branch southeast from the trail fork, you will enter the wildflower conservation meadow marked as Position B.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1002,7 +1002,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Warden (Nigel)', gender: 'male', text: 'Further along the valley stream stands our historic 18th-century watermill at Position C, where stone-ground flour is demonstrated on weekends.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1021,7 +1021,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Warden (Nigel)', gender: 'male', text: 'And for ambitious hikers, following the steep chalk ridge leads right up to the historic Hilltop Beacon at Position D, offering views across three counties.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1043,7 +1043,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Tutor (Dr. Alvarez)', gender: 'male', text: 'How did your autonomous micro-rovers handle the 30-degree slopes in the Mosel valley trials, Thomas?' },
       { speaker: 'Student (Thomas)', gender: 'male', text: 'Standard pneumatic wheels suffered extreme slippage on the wet shale terraces. We had to replace them with articulated rubber tracks to maintain stability.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1062,7 +1062,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Thomas)', gender: 'male', text: 'By analyzing near-infrared to red reflectance ratios, our convolutional classifier identifies bindweed foliage with 96% precision even when intertwined with grape shoots.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1082,7 +1082,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Tutor (Dr. Alvarez)', gender: 'male', text: 'And how did you recharge the swarm without running a diesel generator in an eco-certified vineyard?' },
       { speaker: 'Student (Thomas)', gender: 'male', text: 'We deployed a solar-paneled trailer equipped with lithium buffer batteries where rovers dock autonomously when their charge drops below 15%.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1101,7 +1101,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Thomas)', gender: 'male', text: 'Our financial modeling demonstrates that elimination of manual hand-weeding labor costs allows a 15-hectare estate to break even within three seasons.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1122,7 +1122,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Alistair)', gender: 'male', text: 'Good morning everyone. Today we examine acoustic ecology in marine conservation. Healthy tropical reefs produce a continuous, crackling soundscape generated primarily by millions of snapping shrimp and territorial reef fish. Following mass thermal bleaching events, however, this bio-acoustic symphony falls eerily silent.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1141,7 +1141,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Alistair)', gender: 'male', text: 'Free-swimming juvenile larvae develop early hearing organs. They rely on the bio-acoustic signature of healthy reefs as their primary navigational cue to orient and settle after drifting in open ocean currents.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1160,7 +1160,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Alistair)', gender: 'male', text: 'Marine biologists deployed omnidirectional underwater loudspeakers powered by solar surface buoys to broadcast soundscapes recorded from pristine protected marine parks.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1179,7 +1179,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Alistair)', gender: 'male', text: 'After forty days of continuous acoustic enrichment, monitored rubble plots recruited twice as many juvenile fish—a full two-fold increase in species diversity compared to silent control sites.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1200,7 +1200,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Historian (Alistair)', gender: 'male', text: 'Welcome to Castleton! While William the Conqueror raised an earth motte here in 1086, the imposing stone keep towering above us was commissioned in 1172 by King Henry II.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1219,7 +1219,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Historian (Alistair)', gender: 'male', text: 'A quick safety advisory before we ascend: because our medieval stone battlements have low parapets, children under the age of 12 must be accompanied by an adult at all times.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1238,7 +1238,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Historian (Alistair)', gender: 'male', text: 'For those interested in historical craftsmanship, our resident blacksmith will demonstrate live iron forging in the lower bailey forge at 1:15 PM.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1257,7 +1257,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Historian (Alistair)', gender: 'male', text: 'Remember that all family tickets include complimentary multimedia audio wand headsets available at the ticket desk.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1279,7 +1279,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
       { speaker: 'Tutor (Dr. Klein)', gender: 'male', text: 'Why did you select pre-cultivated Sedum mats rather than meadow grass for your rooftop testbeds, Priya?' },
       { speaker: 'Student (Priya)', gender: 'female', text: 'Sedum succulents utilize Crassulacean Acid Metabolism. They store water in fleshy leaves and survive six-week summer droughts without any supplemental sprinkler irrigation.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1298,7 +1298,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Jordan)', gender: 'male', text: 'During the July heatwave, the bare bitumen membrane peaked at 58 degrees Celsius, while our sedum plot stayed at 34 degrees—a reduction of exactly 24 degrees.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1317,7 +1317,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Priya)', gender: 'female', text: 'Our flow meters showed that the 80mm expanded clay substrate retained 65 percent of precipitation, significantly delaying runoff spikes into municipal storm drains.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1336,7 +1336,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Tutor (Dr. Klein)', gender: 'male', text: 'Structural load capacity is the critical engineering constraint. When fully saturated, extensive sedum adds a dead load of roughly 80 kilograms per square meter that the joists must support.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1355,7 +1355,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Student (Jordan)', gender: 'male', text: 'Dynamic thermal modeling using EnergyPlus showed a 19 percent reduction in cooling electricity on the top floor throughout the summer quarter.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1376,7 +1376,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Malcolm)', gender: 'male', text: 'In today oceanography lecture, we delve into the hadal zone—the extreme trenches plunging beneath 6,000 meters. At the base of the Mariana Trench, hydrostatic pressure surpasses one thousand times ambient atmospheric pressure at sea level.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1395,7 +1395,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Malcolm)', gender: 'male', text: 'How do hadal organisms prevent cell membranes from rupturing? They accumulate high intracellular concentrations of a piezolyte molecule known as TMAO, or trimethylamine N-oxide, which counteracts protein denaturing under crushing force.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1414,7 +1414,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Malcolm)', gender: 'male', text: 'Autonomous lander cameras filmed the deepest vertebrate known to science: the translucent Mariana snailfish, foraging at a depth of 8,145 meters without scales or brittle skeletal bones.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1433,7 +1433,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Malcolm)', gender: 'male', text: 'Steep trench topography acts like an organic funnel, channeling descending biological detritus called marine snow into benthic depocenters where microbial activity flourishes.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1452,7 +1452,7 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Malcolm)', gender: 'male', text: 'Tragically, even the deepest abyssal trenches bear human fingerprints. Gut assays of hadal amphipods revealed synthetic microfibers originating predominantly from laundered domestic textiles.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
   },
@@ -1471,8 +1471,270 @@ export const EXPANDED_LISTENING_QUESTIONS: IELTSQuestion[] = [
     dialogue: [
       { speaker: 'Professor (Malcolm)', gender: 'male', text: 'Finally, in geophysics, trenches represent subduction zones where the cold, dense oceanic lithosphere plunges into the mantle, accumulating tremendous frictional strain that triggers devastating megathrust tsunamigenic earthquakes.' }
     ],
-    source: 'cambridge_standard',
+    source: 'sprint_standard',
     version: 1,
     createdAt: 1711000000000
+  },
+
+  // =========================================================================
+  // NEW EXPANSION: SECTION 1–4 MULTI-SCENARIO REPOSITORY (40+ ITEMS)
+  // =========================================================================
+
+  // Section 1 Scenario: Edinburgh Botanical Conservatory Membership & Workshop
+  {
+    id: 'lis_s1_exp_74',
+    module: 'listening',
+    section: 1,
+    questionType: 'form_completion',
+    difficulty: 'easy',
+    topic: 'Edinburgh Botanical Conservatory Membership',
+    skillTags: ['spelling', 'names'],
+    prompt: 'Applicant Surname: Ms. [74]',
+    correctAnswer: 'ABERCROMBIE',
+    acceptableAnswers: ['abercrombie', 'Abercrombie'],
+    explanation: 'Caller spells surname explicitly: A-B-E-R-C-R-O-M-B-I-E.',
+    dialogue: [
+      { speaker: 'Administrator (Geraint)', gender: 'male', text: 'Good morning, Royal Botanical Conservatory Membership Desk. May I take your surname, please?' },
+      { speaker: 'Caller (Fiona)', gender: 'female', text: 'Yes, it is Abercrombie. Spelled A-B-E-R-C-R-O-M-B-I-E.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000000
+  },
+  {
+    id: 'lis_s1_exp_75',
+    module: 'listening',
+    section: 1,
+    questionType: 'form_completion',
+    difficulty: 'easy',
+    topic: 'Edinburgh Botanical Conservatory Membership',
+    skillTags: ['postcode', 'self_correction'],
+    prompt: 'Residential Postcode: [75]',
+    correctAnswer: 'EH3 5NZ',
+    acceptableAnswers: ['eh3 5nz', 'EH35NZ', 'EH3 5nz'],
+    explanation: 'Caller corrects EH3 5NY to EH3 5NZ.',
+    dialogue: [
+      { speaker: 'Administrator (Geraint)', gender: 'male', text: 'And what is your current Edinburgh postcode for dispatching the membership card?' },
+      { speaker: 'Caller (Fiona)', gender: 'female', text: 'It is EH3 5NY... oh, wait, forgive me, the final letter is Z for Zebra, so EH3 5NZ.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000001
+  },
+  {
+    id: 'lis_s1_exp_76',
+    module: 'listening',
+    section: 1,
+    questionType: 'form_completion',
+    difficulty: 'medium',
+    topic: 'Edinburgh Botanical Conservatory Membership',
+    skillTags: ['workshop', 'vocabulary'],
+    prompt: 'Selected weekend course: Botanical [76]',
+    correctAnswer: 'ILLUSTRATION',
+    acceptableAnswers: ['illustration', 'Illustration', 'botanical illustration'],
+    explanation: 'Orchid pruning is full, so she registers for Botanical Illustration.',
+    dialogue: [
+      { speaker: 'Administrator (Geraint)', gender: 'male', text: 'Which autumn weekend workshop would you like to enroll in?' },
+      { speaker: 'Caller (Fiona)', gender: 'female', text: 'I hoped to join Orchid Pruning, but since that is fully booked, please put me down for Botanical Illustration.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000002
+  },
+  {
+    id: 'lis_s1_exp_77',
+    module: 'listening',
+    section: 1,
+    questionType: 'form_completion',
+    difficulty: 'easy',
+    topic: 'Edinburgh Botanical Conservatory Membership',
+    skillTags: ['numbers', 'currency'],
+    prompt: 'Annual Friend-of-the-Glasshouse subscription fee: £[77]',
+    correctAnswer: '68',
+    acceptableAnswers: ['68', 'sixty-eight', 'sixty eight'],
+    explanation: 'Individual membership is £52, but adding glasshouse guest privileges brings it to £68.',
+    dialogue: [
+      { speaker: 'Administrator (Geraint)', gender: 'male', text: 'Standard single entry is fifty-two pounds a year, or sixty-eight pounds for the Friend-of-the-Glasshouse tier which includes a free guest pass.' },
+      { speaker: 'Caller (Fiona)', gender: 'female', text: 'I will take the sixty-eight pound Friend-of-the-Glasshouse package, please.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000003
+  },
+
+  // Section 2 Scenario: National Maritime Heritage Dockyard Audio Tour
+  {
+    id: 'lis_s2_exp_78',
+    module: 'listening',
+    section: 2,
+    questionType: 'map_labeling',
+    difficulty: 'medium',
+    topic: 'National Maritime Heritage Dockyard Orientation',
+    skillTags: ['spatial_orientation', 'map_directions'],
+    prompt: 'The historic Ropewalk Gallery is housed in the long brick building along the [78] boundary wall.',
+    correctAnswer: 'EASTERN',
+    acceptableAnswers: ['eastern', 'Eastern', 'east'],
+    explanation: 'Curator states the quarter-mile brick building running along the eastern boundary wall is the Ropewalk Gallery.',
+    dialogue: [
+      { speaker: 'Curator (Brian)', gender: 'male', text: 'Welcome to the Royal Naval Dockyard. If you look towards the eastern boundary wall on your right, that extraordinarily long red-brick structure spanning a quarter of a mile is the historic Ropewalk Gallery.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000004
+  },
+  {
+    id: 'lis_s2_exp_79',
+    module: 'listening',
+    section: 2,
+    questionType: 'multiple_choice',
+    difficulty: 'medium',
+    topic: 'National Maritime Heritage Dockyard Orientation',
+    skillTags: ['distractor_handling', 'dates'],
+    prompt: 'Why is Dry Dock Number 3 temporarily closed to visitors this week?',
+    options: [
+      'A) Routine caisson gate repainting',
+      'B) Archaeological sonar scanning of hull timbers',
+      'C) Filming of a historical documentary'
+    ],
+    correctAnswer: 'B',
+    acceptableAnswers: ['B', 'B) Archaeological sonar scanning of hull timbers'],
+    explanation: 'Repainting finished last month; this week marine archaeologists are conducting sonar scanning of 18th-century oak hull timbers.',
+    dialogue: [
+      { speaker: 'Curator (Brian)', gender: 'male', text: 'Please note Dry Dock Number 3 is cordoned off this week. We completed the caisson gate repainting last month, and a film crew was here in spring, but right now marine archaeologists are conducting high-resolution sonar scanning of the eighteenth-century oak hull timbers.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000005
+  },
+  {
+    id: 'lis_s2_exp_80',
+    module: 'listening',
+    section: 2,
+    questionType: 'form_completion',
+    difficulty: 'medium',
+    topic: 'National Maritime Heritage Dockyard Orientation',
+    skillTags: ['vocabulary', 'facilities'],
+    prompt: 'Visitors boarding the submarine must deposit backpacks in the secure [80] lockers beside the pier.',
+    correctAnswer: 'BIOMETRIC',
+    acceptableAnswers: ['biometric', 'Biometric', 'fingerprint'],
+    explanation: 'Because submarine hatches are narrow, rucksacks must be stored in the biometric lockers beside the pier.',
+    dialogue: [
+      { speaker: 'Curator (Brian)', gender: 'male', text: 'Before descending the watertight hatches of the Oberon-class submarine, all visitors must stow large backpacks inside the complimentary biometric lockers located immediately beside the pier.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000006
+  },
+
+  // Section 3 Scenario: Vertical Farming & Aeroponic LED Spectrum Optimization
+  {
+    id: 'lis_s3_exp_81',
+    module: 'listening',
+    section: 3,
+    questionType: 'multiple_choice',
+    difficulty: 'hard',
+    topic: 'Aeroponic Vertical Farming Research Seminar',
+    skillTags: ['academic_discussion', 'consensus_tracking'],
+    prompt: 'Why did the students switch from hydroponic troughs to high-pressure aeroponic misting nozzles?',
+    options: [
+      'A) To reduce water consumption by 40%',
+      'B) To double dissolved oxygen availability at the root zone',
+      'C) To lower electricity costs for circulation pumps'
+    ],
+    correctAnswer: 'B',
+    acceptableAnswers: ['B', 'B) To double dissolved oxygen availability at the root zone'],
+    explanation: 'Suspending roots in air with 50-micron mist droplets doubled root-zone oxygenation and accelerated biomass accumulation.',
+    dialogue: [
+      { speaker: 'Tutor (Dr. Emma)', gender: 'female', text: 'Why did you abandon the nutrient-film hydroponic troughs midway through the trial?' },
+      { speaker: 'Student (Marcus)', gender: 'male', text: 'While water savings were nice, our decisive reason was root-zone hypoxia in standing water. Switching to high-pressure aeroponic misting suspended the roots in air, doubling oxygen availability and eliminating Pythium root rot.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000007
+  },
+  {
+    id: 'lis_s3_exp_82',
+    module: 'listening',
+    section: 3,
+    questionType: 'multiple_choice',
+    difficulty: 'hard',
+    topic: 'Aeroponic Vertical Farming Research Seminar',
+    skillTags: ['academic_discussion', 'experimental_results'],
+    prompt: 'What unexpected problem occurred during the first week of the aeroponic trial?',
+    options: [
+      'A) Calcium nitrate crystals clogged the misting nozzles',
+      'B) Red LED diodes overheated the upper canopy',
+      'C) Backup battery inverters failed overnight'
+    ],
+    correctAnswer: 'A',
+    acceptableAnswers: ['A', 'A) Calcium nitrate crystals clogged the misting nozzles'],
+    explanation: 'Calcium nitrate precipitated inside the 50-micron brass orifices, clogging the misting nozzles until an inline ultrasonic filter was added.',
+    dialogue: [
+      { speaker: 'Tutor (Dr. Emma)', gender: 'female', text: 'And did the 50-micron atomizing nozzles perform reliably throughout?' },
+      { speaker: 'Student (Marcus)', gender: 'male', text: 'Not in week one! Mineral salts—specifically calcium nitrate crystals—precipitated and clogged the nozzle orifices, causing wilting in tray B until we installed an inline membrane filter.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000008
+  },
+
+  // Section 4 Scenario: The Indus Valley Script & Computational Epigraphy
+  {
+    id: 'lis_s4_exp_83',
+    module: 'listening',
+    section: 4,
+    questionType: 'summary_completion',
+    difficulty: 'hard',
+    topic: 'Computational Epigraphy of the Indus Valley Script',
+    skillTags: ['academic_lecture', 'archaeology'],
+    prompt: 'Over 4,000 Harappan inscriptions survive primarily on miniature carved [83] stone seals.',
+    correctAnswer: 'STEATITE',
+    acceptableAnswers: ['steatite', 'Steatite', 'soapstone'],
+    explanation: 'The vast majority of Indus inscriptions are intaglio carvings on fired steatite (soapstone) stamp seals.',
+    dialogue: [
+      { speaker: 'Professor (Arthur)', gender: 'male', text: 'In today’s epigraphy lecture we examine the undeciphered Indus script of circa 2600 BCE. Over four thousand inscriptions survive, etched predominantly onto miniature square steatite stamp seals.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000009
+  },
+  {
+    id: 'lis_s4_exp_84',
+    module: 'listening',
+    section: 4,
+    questionType: 'summary_completion',
+    difficulty: 'hard',
+    topic: 'Computational Epigraphy of the Indus Valley Script',
+    skillTags: ['academic_lecture', 'linguistics'],
+    prompt: 'The primary obstacle to decipherment is the complete absence of a [84] artifact like the Rosetta Stone.',
+    correctAnswer: 'BILINGUAL',
+    acceptableAnswers: ['bilingual', 'Bilingual', 'multilingual'],
+    explanation: 'Despite trading with Mesopotamia, no bilingual cuneiform-Harappan inscription has ever been excavated.',
+    dialogue: [
+      { speaker: 'Professor (Arthur)', gender: 'male', text: 'Why has the script defied translation for a century? First, the average text is only five signs long; second, archaeologists have never unearthed a bilingual artifact comparable to Egypt’s Rosetta Stone.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000010
+  },
+  {
+    id: 'lis_s4_exp_85',
+    module: 'listening',
+    section: 4,
+    questionType: 'summary_completion',
+    difficulty: 'hard',
+    topic: 'Computational Epigraphy of the Indus Valley Script',
+    skillTags: ['academic_lecture', 'information_theory'],
+    prompt: 'Markov-chain computational analysis calculated the conditional [85] of sign sequences to prove the script encodes spoken language.',
+    correctAnswer: 'ENTROPY',
+    acceptableAnswers: ['entropy', 'Entropy', 'information entropy'],
+    explanation: 'Conditional entropy measurements matched natural linguistic scripts rather than random heraldic symbols.',
+    dialogue: [
+      { speaker: 'Professor (Arthur)', gender: 'male', text: 'Using Markov-chain models, computer scientists measured the conditional entropy of adjacent sign pairs, demonstrating that Harappan syntax exhibits the exact statistical rigidity of natural spoken languages.' }
+    ],
+    source: 'sprint_standard',
+    version: 1,
+    createdAt: 1711001000011
   }
 ];
+

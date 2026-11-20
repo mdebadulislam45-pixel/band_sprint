@@ -309,7 +309,7 @@ export const BanglaIELTSGuide: React.FC<BanglaIELTSGuideProps> = ({
                   <span>পরীক্ষার প্রধান শহর ও টেস্ট সেন্টার</span>
                 </h4>
                 <ul className="text-xs space-y-2 text-slate-600 leading-relaxed">
-                  <li><strong>ঢাকা:</strong> গুলশান, ধানমন্ডি, বনানী, উত্তরা (British Council ও IDP উভয় সেন্টারেই নিয়মিত পরীক্ষা হয়)।</li>
+                  <li><strong>ঢাকা:</strong> গুলশান, ধানমন্ডি, বনানী, উত্তরা (Coach ও IDP উভয় সেন্টারেই নিয়মিত পরীক্ষা হয়)।</li>
                   <li><strong>চট্টগ্রাম:</strong> জিইসি মোড়, আগ্রাবাদ।</li>
                   <li><strong>সিলেট:</strong> জিন্দাবাজার ও উপশহর এলাকা।</li>
                   <li><strong>অন্যান্য শহর:</strong> রাজশাহী, খুলনা, কুমিল্লা, বরিশাল (সেশন অনুযায়ী নির্ধারিত)।</li>
@@ -704,7 +704,7 @@ export const BanglaIELTSGuide: React.FC<BanglaIELTSGuideProps> = ({
                   প্রশ্ন ১: বাংলাদেশে কি IELTS One Skill Retake (OSR) সুবিধা চালু আছে?
                 </strong>
                 <p className="text-slate-600 leading-relaxed">
-                  <strong>উত্তর:</strong> হ্যাঁ! বাংলাদেশে British Council এবং IDP উভয় সেন্টারের <em>Computer-Delivered</em> পরীক্ষায় OSR সুবিধা চালু রয়েছে। মূল পরীক্ষার ৬০ দিনের মধ্যে যেকোনো একটি মডিউলে (যেমন Writing বা Reading) আশানুরূপ স্কোর না পেলে পুরো পরীক্ষা না দিয়ে শুধু সেই মডিউলটি পুনরায় দেওয়া যায়।
+                  <strong>উত্তর:</strong> হ্যাঁ! বাংলাদেশে Coach এবং IDP উভয় সেন্টারের <em>Computer-Delivered</em> পরীক্ষায় OSR সুবিধা চালু রয়েছে। মূল পরীক্ষার ৬০ দিনের মধ্যে যেকোনো একটি মডিউলে (যেমন Writing বা Reading) আশানুরূপ স্কোর না পেলে পুরো পরীক্ষা না দিয়ে শুধু সেই মডিউলটি পুনরায় দেওয়া যায়।
                 </p>
               </div>
 

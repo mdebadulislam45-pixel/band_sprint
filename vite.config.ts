@@ -1,34 +1,72 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    dedupe: ['react', 'react-dom']
+    alias: {
+      'react': path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom')
+    },
+    dedupe: ['react', 'react-dom', 'react-dom/client']
   },
   optimizeDeps: {
-    include: ['react', 'react-dom']
+    include: [
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime'
+    ]
   },
   server: {
     port: 3000,
-    host: '0.0.0.0'
+    host: '0.0.0.0',
+    hmr: false,
+    allowedHosts: true
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 3500,
+    // No sourcemaps in production: they would add ~MBs to the deploy for
+    // files nobody reads on the live site. (Vite default is already off;
+    // this pins the intent so a future config change can't re-enable them.)
+    sourcemap: false,
+    chunkSizeWarningLimit: 2500,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
           if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('framer-motion') || id.includes('motion')) {
-              return 'vendor';
+            // React core changes far less often than app code: keep it in
+            // its own chunk so repeat visitors keep a stable cached copy
+            // while the rest of vendor churns. Still part of the initial
+            // load (App needs React immediately) — this is a caching win,
+            // not a byte saving.
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
+              return 'react-vendor';
+            }
+            if (id.includes('three')) {
+              return 'three-vendor';
+            }
+            if (id.includes('firebase')) {
+              return 'firebase-vendor';
+            }
+            if (id.includes('pdfjs-dist')) {
+              return 'pdf-vendor';
+            }
+            if (id.includes('recharts') || id.includes('d3-')) {
+              return 'charts-vendor';
             }
             if (id.includes('lucide-react')) {
-              return 'lucide';
+              return 'icons-vendor';
             }
-            return 'deps';
+            return 'vendor';
           }
           if (id.includes('masterVocabDatabase')) {
             return 'vocab-master';
@@ -36,8 +74,8 @@ export default defineConfig({
           if (id.includes('vocabularyData')) {
             return 'vocab-general';
           }
-          if (id.includes('cambridgeLibraryData') || id.includes('cambridgeTestGenerator')) {
-            return 'cambridge-data';
+          if (id.includes('sprintLibraryData') || id.includes('sprintTestGenerator')) {
+            return 'sprint-data';
           }
         }
       }

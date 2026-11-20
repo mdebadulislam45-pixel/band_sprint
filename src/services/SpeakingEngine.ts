@@ -82,7 +82,7 @@ export class SpeakingEngineService {
   }
 
   /**
-   * Builds an authentic, non-repetitive Cambridge test plan:
+   * Builds an authentic, non-repetitive Sprint test plan:
    * Part 1: 3-4 natural questions across familiar personal topics
    * Part 2: 1 authentic individual cue card
    * Part 3: 3 analytical discussion questions linked to Part 2 theme
@@ -375,7 +375,7 @@ export class SpeakingEngineService {
       part: currentQ.part,
       topic: currentQ.topic,
       questionText: currentQ.questionText,
-      transcript: finalTranscript || '(No audible candidate response recorded)',
+      transcript: finalTranscript.trim(),
       startTime: this.turnStartTime,
       endTime: Date.now(),
       durationSec: duration,

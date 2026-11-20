@@ -283,7 +283,7 @@ export const VocabCardView: React.FC<VocabCardViewProps> = ({
               {/* Example Sentence */}
               <div className="space-y-1">
                 <div className="text-[11px] font-mono font-bold uppercase text-blue-700">
-                  Cambridge Example Sentence
+                  Practice Example Sentence
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-serif italic text-slate-800 leading-relaxed">
                   "{card.exampleSentence}"

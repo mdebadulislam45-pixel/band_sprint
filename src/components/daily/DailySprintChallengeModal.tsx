@@ -18,6 +18,7 @@ import { ResponsiveModal } from '../common/ResponsiveModal';
 import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { SpeechRecognitionService } from '../../services/SpeechRecognitionService';
+import { SHADOWING_ITEMS } from '../../data/shadowingSentences';
 
 interface DailySprintChallengeModalProps {
   isOpen: boolean;
@@ -39,13 +40,12 @@ interface QuestionItem {
   targetSpeakingPhrase?: string;
 }
 
-const DAILY_QUESTIONS: QuestionItem[] = [
+const LISTENING_POOL: Omit<QuestionItem, 'id'>[] = [
   {
-    id: 1,
     skill: 'Listening',
     title: 'Question 1: Numerical & Date Trap',
     badge: 'Listening · Section 1 Form Filling',
-    prompt: 'Listen to the British Council registrar and identify the confirmed start date of the symposium.',
+    prompt: 'Listen to the registrar and identify the confirmed start date of the symposium.',
     audioPrompt: 'The orientation symposium was originally scheduled for Wednesday the 15th of October, but due to venue renovation, it has been rescheduled definitively to Tuesday the 14th of October.',
     options: [
       'A) Wednesday, 15th October',
@@ -54,41 +54,104 @@ const DAILY_QUESTIONS: QuestionItem[] = [
       'D) Monday, 13th October'
     ],
     correctAnswer: 1,
-    explanation: 'The speaker uses a classic Cambridge distractor: "originally scheduled for the 15th... but rescheduled definitively to Tuesday the 14th". The correct answer is B.'
+    explanation: 'The speaker uses a classic distractor: "originally scheduled for the 15th... but rescheduled definitively to Tuesday the 14th". The correct answer is B.'
   },
   {
-    id: 2,
+    skill: 'Listening',
+    title: 'Question 1: Self-Correction Fee Trap',
+    badge: 'Listening · Section 1 Registration',
+    prompt: 'Listen to the librarian and select the exact annual membership fee for postgraduate students.',
+    audioPrompt: 'Standard external membership is 85 pounds per year, and until last term postgraduates paid 45 pounds—actually, excuse me, the senate lowered that rate to 30 pounds starting this autumn.',
+    options: [
+      'A) £85 per year',
+      'B) £45 per year',
+      'C) £30 per year',
+      'D) £55 per year'
+    ],
+    correctAnswer: 2,
+    explanation: 'Watch for the mid-sentence self-correction ("actually, excuse me, the senate lowered that rate to 30 pounds"). The confirmed fee is C.'
+  },
+  {
+    skill: 'Listening',
+    title: 'Question 1: Venue Change Distractor',
+    badge: 'Listening · Section 2 Campus Tour',
+    prompt: 'Listen to the coordinator and identify where the afternoon seminar will take place.',
+    audioPrompt: 'Your printed timetable lists the Darwin Auditorium for the afternoon seminar, though because the projector is being replaced, we have moved everyone across to the Newton Lecture Hall on level two.',
+    options: [
+      'A) Darwin Auditorium',
+      'B) Newton Lecture Hall',
+      'C) Faraday Lab',
+      'D) Main Library Annex'
+    ],
+    correctAnswer: 1,
+    explanation: 'The printed timetable is an outdated distractor; the confirmed room is the Newton Lecture Hall (Option B).'
+  }
+];
+
+const READING_POOL: Omit<QuestionItem, 'id'>[] = [
+  {
     skill: 'Reading',
     title: 'Question 2: Academic Inference (TFNG)',
     badge: 'Reading · Passage 2 Logic',
     prompt: 'Read the academic excerpt: "While early robotic automation predominantly displaced manual manufacturing laborers, contemporary machine learning algorithms increasingly perform high-order cognitive tasks once considered the exclusive province of white-collar analysts."\n\nStatement: Modern artificial intelligence is now capable of performing analytical tasks previously restricted to human professionals.',
-    options: [
-      'A) TRUE',
-      'B) FALSE',
-      'C) NOT GIVEN'
-    ],
+    options: ['A) TRUE', 'B) FALSE', 'C) NOT GIVEN'],
     correctAnswer: 0,
     explanation: 'TRUE. The text explicitly confirms contemporary algorithms perform cognitive tasks once considered "the exclusive province of white-collar analysts".'
   },
   {
-    id: 3,
+    skill: 'Reading',
+    title: 'Question 2: Extreme Qualifier Trap (TFNG)',
+    badge: 'Reading · Passage 3 Precision',
+    prompt: 'Read the excerpt: "Although urban rooftop gardens consistently lower building cooling costs during peak summer months, municipal surveys indicate that maintenance expenses remain prohibitive for many older residential blocks."\n\nStatement: Installing rooftop gardens has proven financially affordable for all residential buildings.',
+    options: ['A) TRUE', 'B) FALSE', 'C) NOT GIVEN'],
+    correctAnswer: 1,
+    explanation: 'FALSE. The statement claims "affordable for all", which directly contradicts "maintenance expenses remain prohibitive for many older residential blocks".'
+  },
+  {
+    skill: 'Reading',
+    title: 'Question 2: Unstated Comparison (TFNG)',
+    badge: 'Reading · Passage 1 Logic',
+    prompt: 'Read the excerpt: "Deep-sea hydrothermal vents sustain thriving colonies of tube worms through chemosynthesis, a biochemical process driven by dissolved minerals rather than sunlight."\n\nStatement: Tube worms living near hydrothermal vents grow faster than shallow-water marine species.',
+    options: ['A) TRUE', 'B) FALSE', 'C) NOT GIVEN'],
+    correctAnswer: 2,
+    explanation: 'NOT GIVEN. The excerpt explains how tube worms obtain energy, but makes no comparison of growth speed against shallow-water species.'
+  }
+];
+
+const COLLOCATION_POOL: Omit<QuestionItem, 'id'>[] = [
+  {
     skill: 'Collocation',
     title: 'Question 3: Band 8.5+ Academic Collocation',
     badge: 'Lexical Resource · High-Yield Collocation',
     prompt: 'Select the precise native collocation to complete the sentence:\n\n"The conflicting survey results have cast profound ________ on the validity of the preliminary hypothesis."',
-    options: [
-      'A) suspicion',
-      'B) doubt',
-      'C) distrust',
-      'D) uncertainty'
-    ],
+    options: ['A) suspicion', 'B) doubt', 'C) distrust', 'D) uncertainty'],
     correctAnswer: 1,
-    explanation: '"Cast doubt on" is the fixed academic collocation recognized by Cambridge examiners. The phrase "cast suspicion" or "cast uncertainty" is unidiomatic.'
+    explanation: '"Cast doubt on" is the fixed academic collocation recognized by IELTS examiners.'
   },
   {
-    id: 4,
+    skill: 'Collocation',
+    title: 'Question 3: Band 8.5+ Policy Collocation',
+    badge: 'Lexical Resource · Task 2 Precision',
+    prompt: 'Select the precise collocation to complete the sentence:\n\n"Governments must ________ stringent regulations to curb industrial carbon emissions."',
+    options: ['A) impose', 'B) do', 'C) push', 'D) force'],
+    correctAnswer: 0,
+    explanation: '"Impose stringent regulations" is the natural Band 8.5+ academic verb-noun collocation.'
+  },
+  {
+    skill: 'Collocation',
+    title: 'Question 3: Band 8.5+ Research Collocation',
+    badge: 'Lexical Resource · Academic Register',
+    prompt: 'Select the precise collocation to complete the sentence:\n\n"Longitudinal trials have ________ compelling evidence linking sleep deprivation to impaired memory consolidation."',
+    options: ['A) made', 'B) yielded', 'C) done', 'D) brought out'],
+    correctAnswer: 1,
+    explanation: '"Yield compelling evidence" is an authentic C1/C2 academic collocation ideal for Writing Task 2 and Speaking Part 3.'
+  }
+];
+
+const GRAMMAR_POOL: Omit<QuestionItem, 'id'>[] = [
+  {
     skill: 'Grammar',
-    title: 'Question 4: Cambridge Inverted Conditional',
+    title: 'Question 4: Inverted Conditional',
     badge: 'Grammar Range & Accuracy · Band 9 Inversion',
     prompt: 'Which sentence demonstrates flawless Band 9 inverted conditional syntax?',
     options: [
@@ -98,19 +161,74 @@ const DAILY_QUESTIONS: QuestionItem[] = [
       'D) Had the government intervene sooner, the recession would had been mitigated.'
     ],
     correctAnswer: 0,
-    explanation: 'Inverted third conditionals follow the formula: "Had + Subject + Past Participle, Subject + would have + Past Participle". Option A is grammatically pristine.'
+    explanation: 'Inverted third conditionals follow: "Had + Subject + Past Participle, Subject + would have + Past Participle". Option A is grammatically pristine.'
   },
   {
-    id: 5,
-    skill: 'Speaking',
-    title: 'Question 5: Pronunciation & Fluency Rapid Turn',
-    badge: 'Speaking · Intonation & Stress',
-    prompt: 'Speak this Band 9 academic sentence into your microphone clearly with natural British intonation:',
-    targetSpeakingPhrase: 'The university comprehensively substantiated the socioeconomic disparity with empirical evidence.',
-    correctAnswer: 'speaking',
-    explanation: 'Key stress points: com-pre-HEN-sive-ly, sub-STAN-ti-a-ted, so-ci-o-ec-o-NOM-ic, dis-PAR-i-ty, em-PIR-i-cal.'
+    skill: 'Grammar',
+    title: 'Question 4: Negative Adverbial Inversion',
+    badge: 'Grammar Range & Accuracy · Band 8.5 Syntax',
+    prompt: 'Which sentence correctly applies negative inversion at the start of the clause?',
+    options: [
+      'A) Not only public transport reduces traffic, but it also lowers emissions.',
+      'B) Not only does public transport reduce traffic, but it also lowers emissions.',
+      'C) Not only does public transport reduces traffic, but it also lowers emissions.',
+      'D) Not only public transport does reduce traffic, it also lowers emissions.'
+    ],
+    correctAnswer: 1,
+    explanation: 'After front-placed "Not only", invert the auxiliary verb before the subject and keep the main verb in base form: "Not only does public transport reduce...".'
+  },
+  {
+    skill: 'Grammar',
+    title: 'Question 4: Concession Clause Control',
+    badge: 'Grammar Range & Accuracy · Band 8.5 Linking',
+    prompt: 'Which sentence uses "Despite" with accurate grammatical structure?',
+    options: [
+      'A) Despite she had limited funding, the researcher completed the study.',
+      'B) Despite of the limited funding, the researcher completed the study.',
+      'C) Despite facing severe funding constraints, the researcher completed the study.',
+      'D) Despite that funding was limited, the researcher completed the study.'
+    ],
+    correctAnswer: 2,
+    explanation: '"Despite" must be followed by a noun phrase or gerund (-ing) without "of": "Despite facing severe funding constraints...".'
   }
 ];
+
+function buildDailySprintQuestions(roundSeed: number): QuestionItem[] {
+  const lItem = LISTENING_POOL[roundSeed % LISTENING_POOL.length];
+  const rItem = READING_POOL[roundSeed % READING_POOL.length];
+  const cItem = COLLOCATION_POOL[roundSeed % COLLOCATION_POOL.length];
+  const gItem = GRAMMAR_POOL[roundSeed % GRAMMAR_POOL.length];
+
+  const shadowPool = SHADOWING_ITEMS.length > 0 ? SHADOWING_ITEMS : [];
+  const shadowItem = shadowPool[roundSeed % Math.max(1, shadowPool.length)];
+  const speakingItem: Omit<QuestionItem, 'id'> = shadowItem
+    ? {
+        skill: 'Speaking',
+        title: `Question 5: Pronunciation & Fluency (${shadowItem.topic})`,
+        badge: `Speaking · ${shadowItem.bandTarget} Shadowing Turn`,
+        prompt: 'Speak this IELTS Band 8.5+ sentence clearly into your microphone with natural British intonation:',
+        targetSpeakingPhrase: shadowItem.targetSentence,
+        correctAnswer: 'speaking',
+        explanation: `${shadowItem.focusTip} Key phonetic focus: ${shadowItem.phoneticKeyWords.join(', ')}.`
+      }
+    : {
+        skill: 'Speaking',
+        title: 'Question 5: Pronunciation & Fluency Rapid Turn',
+        badge: 'Speaking · Intonation & Stress',
+        prompt: 'Speak this Band 9 academic sentence into your microphone clearly with natural British intonation:',
+        targetSpeakingPhrase: 'The university comprehensively substantiated the socioeconomic disparity with empirical evidence.',
+        correctAnswer: 'speaking',
+        explanation: 'Key stress points: com-pre-HEN-sive-ly, sub-STAN-ti-a-ted, so-ci-o-ec-o-NOM-ic, dis-PAR-i-ty, em-PIR-i-cal.'
+      };
+
+  return [
+    { ...lItem, id: 1 },
+    { ...rItem, id: 2 },
+    { ...cItem, id: 3 },
+    { ...gItem, id: 4 },
+    { ...speakingItem, id: 5 }
+  ];
+}
 
 export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps> = ({
   isOpen,
@@ -118,6 +236,15 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
   onShowToast,
   onStreakUpdate
 }) => {
+  const [roundCounter, setRoundCounter] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem('ielts_daily_sprint_round_v1') || '0');
+      return Number.isFinite(saved) ? saved : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [questions, setQuestions] = useState<QuestionItem[]>(() => buildDailySprintQuestions(roundCounter));
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, any>>({});
   const [submittedAnswers, setSubmittedAnswers] = useState<Record<number, boolean>>({});
@@ -130,7 +257,19 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
   const [spokenTranscript, setSpokenTranscript] = useState('');
   const recognitionRef = useRef<SpeechRecognitionService | null>(null);
 
-  const q = DAILY_QUESTIONS[currentIndex];
+  const q = questions[currentIndex] || questions[0];
+
+  useEffect(() => {
+    if (isOpen && isFinished) {
+      setQuestions(buildDailySprintQuestions(roundCounter));
+      setCurrentIndex(0);
+      setSelectedAnswers({});
+      setSubmittedAnswers({});
+      setScore(0);
+      setIsFinished(false);
+      setSpokenTranscript('');
+    }
+  }, [isOpen, isFinished, roundCounter]);
 
   useEffect(() => {
     return () => {
@@ -187,7 +326,7 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
 
   const handleNext = () => {
     stopSpeech();
-    if (currentIndex < DAILY_QUESTIONS.length - 1) {
+    if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
       soundManager.playBeep(580, 0.03);
     } else {
@@ -197,9 +336,12 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
       try {
         const todayKey = new Date().toISOString().split('T')[0];
         localStorage.setItem(`ielts_daily_sprint_done_${todayKey}`, 'true');
+        const nextRound = roundCounter + 1;
+        localStorage.setItem('ielts_daily_sprint_round_v1', String(nextRound));
+        setRoundCounter(nextRound);
         onStreakUpdate?.();
       } catch {}
-      onShowToast(`🎉 Daily Sprint Complete! Score: ${score + (selectedAnswers[5] === q.correctAnswer ? 1 : 0)} / 5`);
+      onShowToast(`🎉 Daily Sprint Complete! Score: ${score} / 5`);
     }
   };
 
@@ -240,6 +382,12 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
   };
 
   const handleRestart = () => {
+    const nextRound = roundCounter + 1;
+    setRoundCounter(nextRound);
+    try {
+      localStorage.setItem('ielts_daily_sprint_round_v1', String(nextRound));
+    } catch {}
+    setQuestions(buildDailySprintQuestions(nextRound));
     setCurrentIndex(0);
     setSelectedAnswers({});
     setSubmittedAnswers({});
@@ -265,7 +413,7 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
         </div>
       }
       title="5-Minute Daily Sprint Diagnostic"
-      subtitle="Bite-sized Cambridge exam challenge to protect your study streak and sharpen instincts."
+      subtitle="Bite-sized Practice exam challenge to protect your study streak and sharpen instincts."
     >
       <div className="space-y-5">
         {/* Progress Bar & Header Stats */}
@@ -421,7 +569,7 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-600" />
                   )}
-                  <span>{isCurrentCorrect ? 'Spot On! Cambridge Verified' : 'Incorrect. Notice the Examiner Traps:'}</span>
+                  <span>{isCurrentCorrect ? 'Spot On! Practice Verified' : 'Incorrect. Notice the Examiner Traps:'}</span>
                 </div>
                 <p className="text-[11px] leading-relaxed opacity-90">
                   {q.explanation}
@@ -469,7 +617,7 @@ export const DailySprintChallengeModal: React.FC<DailySprintChallengeModalProps>
                 Daily Sprint Accomplished!
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                You successfully completed today's 5-minute Cambridge multi-skill diagnostic.
+                You successfully completed today's 5-minute Practice multi-skill diagnostic.
               </p>
             </div>
 

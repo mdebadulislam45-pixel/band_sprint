@@ -1,465 +1,296 @@
 import React from 'react';
 import {
   BookOpen,
-  MessageSquare,
+  MessageSquareQuote,
   Lightbulb,
   Sparkles,
-  ArrowRight,
-  Flag,
-  Compass,
-  FileText,
-  Bookmark,
-  Layers,
+  PenTool,
+  Mic,
   Award,
-  Camera,
-  Volume2
+  Calendar,
+  Layers,
+  Globe,
+  Sliders,
+  FileText,
+  Target,
+  ArrowRight,
+  LucideIcon
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
+import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
+import { IELTS_SPELLING_TRAPS } from '../../data/ieltsSpellingData';
 
-interface LearnPageProps {
-  onNavigate: (page: string) => void;
-  onShowToast: (msg: string) => void;
+interface LearnItem {
+  id: string;
+  path: string;
+  title: string;
+  shortName: string;
+  description: string;
+  icon: LucideIcon;
+  meta: string;
 }
 
-export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate, onShowToast }) => {
-  return (
-    <div className="w-full max-w-4xl mx-auto space-y-6 animate-fade-in pb-12">
-      {/* Learning Hub Header */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 rounded-3xl shadow-md border border-purple-800/50">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-mono font-bold mb-2 border border-purple-400/30">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              LEXICAL RESOURCE & STRATEGY
+interface LearnPageProps {
+  onNavigate: (path: string) => void;
+  onShowToast?: (msg: string) => void;
+}
+
+export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate }) => {
+  const diagnostic = loadDiagnosticResult();
+
+  const lexicalItems: LearnItem[] = [
+    {
+      id: 'vocabulary',
+      path: '/learn/vocabulary',
+      title: 'Vocabulary Deck',
+      shortName: 'Vocabulary',
+      description: 'High-yield B2–C2 academic word lists with Bangla meanings and spaced review.',
+      icon: BookOpen,
+      meta: '1,000+ Words'
+    },
+    {
+      id: 'phrases',
+      path: '/learn/phrases',
+      title: 'Useful Phrases',
+      shortName: 'Phrases',
+      description: 'Academic transitions, discourse markers, and cohesive connectors for essays & speaking.',
+      icon: MessageSquareQuote,
+      meta: 'Discourse'
+    },
+    {
+      id: 'idioms',
+      path: '/learn/idioms',
+      title: 'Idiom Lab (B1–C2)',
+      shortName: 'Idioms',
+      description: 'Natural English idiomatic expressions calibrated for Speaking Parts 2 & 3.',
+      icon: Lightbulb,
+      meta: 'B1–C2 Idioms'
+    },
+    {
+      id: 'collocations',
+      path: '/learn/collocations',
+      title: 'Academic Collocations',
+      shortName: 'Collocations',
+      description: 'Natural verb-noun and adjective-noun pairings to lift Lexical Resource scores.',
+      icon: Sparkles,
+      meta: 'Word Pairs'
+    },
+    {
+      id: 'grammar',
+      path: '/learn/grammar',
+      title: 'Grammar Lab',
+      shortName: 'Grammar',
+      description: 'Complex clauses, passive voice, conditionals, and common error drills.',
+      icon: PenTool,
+      meta: 'GRA Rules'
+    },
+    {
+      id: 'spelling',
+      path: '/learn/spelling',
+      title: 'Spelling & Dictation Lab',
+      shortName: 'Spelling',
+      description: 'British voice dictation across top examiner traps and the full academic word bank.',
+      icon: Layers,
+      meta: `${IELTS_SPELLING_TRAPS.length.toLocaleString()} Words`
+    }
+  ];
+
+  const strategyItems: LearnItem[] = [
+    {
+      id: 'shadowing',
+      path: '/learn/shadowing',
+      title: 'Shadowing & Pronunciation',
+      shortName: 'Shadowing',
+      description: 'British cadence shadowing, word stress drills, and connected speech practice.',
+      icon: Mic,
+      meta: 'Pronunciation'
+    },
+    {
+      id: 'model-answers',
+      path: '/learn/model-answers',
+      title: 'Band 9 Model Answers',
+      shortName: 'Model Answers',
+      description: 'Annotated high-band sample responses for Writing Task 1, Task 2, and Speaking.',
+      icon: Award,
+      meta: 'Band 8–9'
+    },
+    {
+      id: 'band-descriptors',
+      path: '/learn/band-descriptors',
+      title: 'Band Descriptors',
+      shortName: 'Descriptors',
+      description: 'Clear breakdown of TR/TA, CC, LR, GRA, Fluency, and Pronunciation criteria.',
+      icon: FileText,
+      meta: 'Rubrics'
+    },
+    {
+      id: 'bangla-guide',
+      path: '/learn/bangla-guide',
+      title: 'Bangla IELTS Guide',
+      shortName: 'Bangla Guide',
+      description: 'Bilingual strategies and clear exam explanations written for Bangladeshi learners.',
+      icon: Globe,
+      meta: 'বাংলা গাইড'
+    },
+    {
+      id: 'beginner-101',
+      path: '/learn/beginner-101',
+      title: 'Beginner 101 Guide',
+      shortName: 'Beginner 101',
+      description: 'First-time test orientation: paper format, timing rules, and band scaling.',
+      icon: Sliders,
+      meta: 'Orientation'
+    }
+  ];
+
+  const renderCard = (item: LearnItem) => {
+    const Icon = item.icon;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        onClick={() => {
+          soundManager.playBeep(600, 0.035);
+          onNavigate(item.path);
+        }}
+        className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45] dark:hover:border-[#F4A62A]/70 transition text-left flex flex-col justify-between space-y-4 group cursor-pointer min-h-[146px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F4C45]"
+      >
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="w-10 h-10 rounded-xl bg-[#EEF3F1] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 flex items-center justify-center text-[#0F4C45] dark:text-[#F4A62A]">
+              <Icon className="w-5 h-5" />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              IELTS Learning Hub
-            </h1>
-            <p className="text-xs sm:text-sm text-purple-200 mt-1 max-w-xl">
-              Master Band 7–9 vocabulary, native discourse phrases, exam-safe idioms, collocations, and Bengali video guides.
+            <span className="text-[11px] font-mono font-semibold text-[#566664] dark:text-slate-400 tabular-nums">
+              {item.meta}
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <h3 className="font-display text-base font-bold text-[#0E1F1E] dark:text-white group-hover:text-[#0F4C45] dark:group-hover:text-[#F4A62A] transition">
+              {item.title}
+            </h3>
+            <p className="text-xs text-[#566664] dark:text-slate-400 leading-relaxed line-clamp-2">
+              {item.description}
             </p>
           </div>
-          <div className="hidden sm:flex items-center gap-2 bg-white/10 px-4 py-2 rounded-2xl border border-white/10">
-            <Layers className="w-5 h-5 text-purple-300" />
-            <div className="text-left">
-              <div className="text-[10px] text-purple-200 font-bold uppercase">Comprehensive Hub</div>
-              <div className="text-xs font-black text-white">1,360+ Items</div>
-            </div>
-          </div>
         </div>
 
-        {/* Featured 200 C1 Idioms Callout */}
-        <div
+        <div className="text-xs font-semibold text-[#0F4C45] dark:text-[#F4A62A] flex items-center gap-1">
+          <span>Open {item.shortName}</span>
+          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+        </div>
+      </button>
+    );
+  };
+
+  return (
+    <div className="w-full max-w-5xl mx-auto space-y-7 animate-fade-in pb-16">
+      {/* Unified BandSprint Pine Header */}
+      <section className="rounded-2xl bg-[#0F4C45] text-white p-5 sm:p-7 border border-[#0B3833] space-y-2">
+        <div className="text-[11px] font-mono uppercase tracking-wider text-[#F4A62A] font-semibold">
+          Free Learning Library · Bilingual EN / বাংলা
+        </div>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-white">
+          Build the vocabulary, grammar, and habits behind Band 8+
+        </h1>
+        <p className="text-xs sm:text-sm text-[#EEF3F1]/80 leading-relaxed max-w-2xl">
+          Every deck, grammar rule, spelling drill, and bilingual guide is free to study at your own pace. Start with the 10-minute diagnostic if you have not mapped your weakest skill yet.
+        </p>
+      </section>
+
+      {/* Featured Start Strip: Diagnostic + Study Plan */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button
+          type="button"
           onClick={() => {
-            soundManager.playBeep(650, 0.05);
-            onNavigate('c1idioms');
+            soundManager.playSuccess();
+            onNavigate('/learn/diagnostic');
           }}
-          className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-blue-600/40 via-indigo-600/40 to-purple-600/40 border border-blue-400/40 hover:border-blue-300 transition cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 backdrop-blur-md group"
+          className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#0F4C45]/40 dark:border-[#F4A62A]/40 hover:border-[#0F4C45] dark:hover:border-[#F4A62A] transition text-left flex flex-col justify-between gap-4 group cursor-pointer"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 font-black text-sm flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition">
-              C1
-            </div>
-            <div>
-              <div className="text-sm font-bold text-white flex items-center gap-2">
-                <span>200 C1 Idioms & Advanced Phrases (Official Guide)</span>
-                <span className="text-[9px] bg-emerald-500 text-white font-mono px-2 py-0.2 rounded-full uppercase">
-                  Verified PDF
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#0F4C45] dark:text-[#F4A62A]">
+                <Target className="w-4 h-4" />
+                <span>{diagnostic ? 'Diagnostic Completed' : 'Start Here · 10 Minutes'}</span>
+              </div>
+              {diagnostic && (
+                <span className="font-mono text-xs font-bold text-[#0E1F1E] dark:text-white tabular-nums">
+                  Est. Band {diagnostic.scores.overall.toFixed(1)}
                 </span>
-              </div>
-              <div className="text-xs text-blue-200">
-                Complete Bangla meanings, Cambridge examples, flashcards, speed quiz & British audio.
-              </div>
+              )}
             </div>
+            <h2 className="font-display text-lg font-bold text-[#0E1F1E] dark:text-white">
+              4-Skill Diagnostic Test
+            </h2>
+            <p className="text-xs text-[#566664] dark:text-slate-400 leading-relaxed">
+              {diagnostic
+                ? `Your current priority skill is ${diagnostic.weakest.charAt(0).toUpperCase() + diagnostic.weakest.slice(1)}. Retake any time to re-benchmark your progress.`
+                : 'A short real test across Listening, Reading, Writing, and Speaking to pinpoint your starting band and weakest skill.'}
+            </p>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300 group-hover:text-amber-200 shrink-0">
-            <span>Explore 200 Expressions</span>
-            <ArrowRight className="w-4 h-4" />
+          <div className="text-xs font-bold text-[#0F4C45] dark:text-[#F4A62A] flex items-center gap-1">
+            <span>{diagnostic ? 'Review or Retake Diagnostic' : 'Take 10-Min Diagnostic'}</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
           </div>
-        </div>
-      </div>
+        </button>
 
-      {/* Main Core Lexical & Grammar Cards (4-grid) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* 1. Vocabulary Lab */}
-        <div
+        <button
+          type="button"
           onClick={() => {
-            soundManager.playBeep(600, 0.05);
-            onNavigate('vocab');
+            soundManager.playBeep(600, 0.035);
+            onNavigate('/learn/study-plan');
           }}
-          className="group bg-white hover:bg-gradient-to-br hover:from-white hover:to-purple-50/50 rounded-3xl border-2 border-slate-200 hover:border-purple-500 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+          className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45] dark:hover:border-[#F4A62A] transition text-left flex flex-col justify-between gap-4 group cursor-pointer"
         >
-          <div className="space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-purple-100 group-hover:bg-purple-600 text-purple-700 group-hover:text-white flex items-center justify-center transition shadow-xs">
-              <BookOpen className="w-6 h-6" />
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-[#566664] dark:text-slate-400">
+              <Calendar className="w-4 h-4 text-[#0F4C45] dark:text-[#F4A62A]" />
+              <span>Daily Roadmap</span>
             </div>
-            <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md">
-                1,360+ Cards
-              </span>
-              <h2 className="text-base font-black text-slate-900 group-hover:text-purple-700 mt-1 transition">
-                Vocabulary Lab
-              </h2>
-              <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                A2 to C2 CEFR levels, topic filters, synonyms, collocations, and British audio.
-              </p>
-            </div>
+            <h2 className="font-display text-lg font-bold text-[#0E1F1E] dark:text-white">
+              30-Day Personal Study Plan
+            </h2>
+            <p className="text-xs text-[#566664] dark:text-slate-400 leading-relaxed">
+              Day-by-day checklist calibrated to your target band, daily study minutes, and exam countdown.
+            </p>
           </div>
+          <div className="text-xs font-bold text-[#0F4C45] dark:text-[#F4A62A] flex items-center gap-1">
+            <span>Open Study Plan</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
+      </section>
 
-          <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-700 group-hover:text-purple-700">
-            <span>Explore Words</span>
-            <ArrowRight className="w-4 h-4" />
-          </div>
+      {/* Group 1: Language & Lexical Foundations */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="font-display text-lg font-bold text-[#0E1F1E] dark:text-white">
+            Vocabulary, Grammar &amp; Spelling
+          </h2>
+          <span className="text-xs text-[#566664] dark:text-slate-400">
+            6 core language labs
+          </span>
         </div>
-
-        {/* 2. Useful Phrases */}
-        <div
-          onClick={() => {
-            soundManager.playBeep(600, 0.05);
-            onNavigate('phrases');
-          }}
-          className="group bg-white hover:bg-gradient-to-br hover:from-white hover:to-blue-50/50 rounded-3xl border-2 border-slate-200 hover:border-blue-500 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-        >
-          <div className="space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-blue-100 group-hover:bg-blue-600 text-blue-700 group-hover:text-white flex items-center justify-center transition shadow-xs">
-              <MessageSquare className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                200+ Phrases
-              </span>
-              <h2 className="text-base font-black text-slate-900 group-hover:text-blue-700 mt-1 transition">
-                Useful Phrases
-              </h2>
-              <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                Discourse markers, opinion formulas, and cohesive transitions.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-700 group-hover:text-blue-700">
-            <span>Browse Phrases</span>
-            <ArrowRight className="w-4 h-4" />
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {lexicalItems.map(renderCard)}
         </div>
+      </section>
 
-        {/* 3. Idiom Lab */}
-        <div
-          onClick={() => {
-            soundManager.playBeep(600, 0.05);
-            onNavigate('idioms');
-          }}
-          className="group bg-white hover:bg-gradient-to-br hover:from-white hover:to-amber-50/50 rounded-3xl border-2 border-slate-200 hover:border-amber-500 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-        >
-          <div className="space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 group-hover:bg-amber-500 text-amber-800 group-hover:text-slate-950 flex items-center justify-center transition shadow-xs">
-              <Lightbulb className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md">
-                Spoken Idioms
-              </span>
-              <h2 className="text-base font-black text-slate-900 group-hover:text-amber-800 mt-1 transition">
-                Idiom Lab
-              </h2>
-              <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                Conversational idioms for Speaking Parts 1-3 with writing warnings.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-700 group-hover:text-amber-800">
-            <span>Master Idioms</span>
-            <ArrowRight className="w-4 h-4" />
-          </div>
+      {/* Group 2: Speaking, Rubrics & Guides */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="font-display text-lg font-bold text-[#0E1F1E] dark:text-white">
+            Model Answers, Speaking &amp; Guides
+          </h2>
+          <span className="text-xs text-[#566664] dark:text-slate-400">
+            Examiner criteria and bilingual orientation
+          </span>
         </div>
-
-        {/* 4. Shadowing Practice Lab */}
-        <div
-          onClick={() => {
-            soundManager.playBeep(600, 0.05);
-            onNavigate('shadowing');
-          }}
-          className="group bg-white hover:bg-gradient-to-br hover:from-white hover:to-teal-50/50 rounded-3xl border-2 border-slate-200 hover:border-teal-500 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-        >
-          <div className="space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-teal-100 group-hover:bg-teal-600 text-teal-800 group-hover:text-white flex items-center justify-center transition shadow-xs">
-              <Volume2 className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md">
-                Pacing & Mic
-              </span>
-              <h2 className="text-base font-black text-slate-900 group-hover:text-teal-800 mt-1 transition">
-                Shadowing Lab
-              </h2>
-              <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                Sentence-by-sentence native British speech synchronization, live recording & WPM pacer.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-700 group-hover:text-teal-800">
-            <span>Practice Shadowing</span>
-            <ArrowRight className="w-4 h-4" />
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {strategyItems.map(renderCard)}
         </div>
-      </div>
-
-      {/* Specialized Band 8-9 Master Tools */}
-      <div className="space-y-3 pt-2">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 font-mono">
-          Specialized Band 8–9 Master Tools
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {/* Grammar Lab */}
-          <div
-            onClick={() => onNavigate('grammar')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-teal-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Grammar Lab & Memory Tricks</div>
-                <div className="text-[10px] text-slate-500">Formulas, inversion, hedging & Bengali tricks</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-          {/* 1. Band 9 Model Answers */}
-          <div
-            onClick={() => onNavigate('modelanswers')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-amber-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center shrink-0">
-                <Award className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Band 9 Model Answers</div>
-                <div className="text-[10px] text-slate-500">Task 1 & 2 with color annotations</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* 2. Spelling Trap Lab */}
-          <div
-            onClick={() => onNavigate('spelling')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-rose-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center shrink-0">
-                <Bookmark className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Spelling Trap & Dictation</div>
-                <div className="text-[10px] text-slate-500">Audio tests with mnemonics</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* 3. Academic Collocations */}
-          <div
-            onClick={() => onNavigate('collocations')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-blue-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
-                <Layers className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Academic Collocations</div>
-                <div className="text-[10px] text-slate-500">Natural Band 8-9 word pairings</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* 4. Speaking Band 9 Vault */}
-          <div
-            onClick={() => onNavigate('speakingvault')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-purple-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Speaking Band 9 Vault</div>
-                <div className="text-[10px] text-slate-500">British audio & cue card transcripts</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* 5. 30-Day Master Roadmap */}
-          <div
-            onClick={() => onNavigate('studyplan')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-emerald-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                <Compass className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">30-Day Study Roadmap</div>
-                <div className="text-[10px] text-slate-500">Interactive daily tasks checklist</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* 6. Band Descriptors Decoder */}
-          <div
-            onClick={() => onNavigate('banddescriptors')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-teal-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Band Descriptors Decoder</div>
-                <div className="text-[10px] text-slate-500">How examiners grade (Band 6 vs 9)</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* 7. Question Bank & Photo Upload */}
-          <div
-            onClick={() => onNavigate('questionbank')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-indigo-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-800 flex items-center justify-center shrink-0">
-                <Camera className="w-5 h-5 text-indigo-700" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Question Bank & Photo Upload</div>
-                <div className="text-[10px] text-slate-500">Real prompts · Snap handwritten answer</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* 8. 200 C1 Idioms & Phrases */}
-          <div
-            onClick={() => onNavigate('c1idioms')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-blue-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
-                <Award className="w-5 h-5 text-blue-700" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">200 C1 Idioms & Phrases</div>
-                <div className="text-[10px] text-slate-500">200 expressions · Bangla + Audio</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary Learning Guides */}
-      <div className="space-y-3 pt-2">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 font-mono">
-          Interactive Study Guides & Strategies
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Speed Reading Pacer */}
-          <div
-            onClick={() => onNavigate('speedreading')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-teal-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Speed Reading & Pacer</div>
-                <div className="text-[10px] text-slate-500">200–300 WPM Skimming Drills</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* Bangla Guide */}
-          <div
-            onClick={() => onNavigate('bangla')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-emerald-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                <Flag className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">বাংলা মাস্টার গাইড</div>
-                <div className="text-[10px] text-slate-500">IELTS A-to-Z Strategy in Bengali</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* Beginner 101 */}
-          <div
-            onClick={() => onNavigate('beginner')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-indigo-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-800 flex items-center justify-center">
-                <Compass className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Beginner 101 Roadmap</div>
-                <div className="text-[10px] text-slate-500">Step-by-step foundation curriculum</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* Interactive Slide Guide */}
-          <div
-            onClick={() => onNavigate('slides')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-purple-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">Visual Slide Master Guide</div>
-                <div className="text-[10px] text-slate-500">Interactive presentations for all skills</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-
-          {/* Argument Matrix */}
-          <div
-            onClick={() => onNavigate('arguments')}
-            className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-blue-500 transition shadow-2xs cursor-pointer flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center">
-                <Bookmark className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900">PESTLE Idea Generator</div>
-                <div className="text-[10px] text-slate-500">Ideas for Task 2 essay writing</div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
   );
 };

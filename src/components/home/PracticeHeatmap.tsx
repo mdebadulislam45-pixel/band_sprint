@@ -134,7 +134,7 @@ export const PracticeHeatmap: React.FC<PracticeHeatmapProps> = ({
             activities.push('Today\'s Active Study Session');
             activities.push('Vocabulary Flashcard Review');
           } else {
-            activities.push('Cambridge Listening Section Drill');
+            activities.push('Practice Listening Section Drill');
             activities.push('C1 Academic Lexicon Practice');
           }
         }

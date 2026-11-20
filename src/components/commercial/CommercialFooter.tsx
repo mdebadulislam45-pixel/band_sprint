@@ -40,15 +40,15 @@ export const CommercialFooter: React.FC<CommercialFooterProps> = ({
                 S
               </div>
               <span className="font-black text-slate-900 dark:text-white text-base tracking-tight">
-                IELTS Sprint™
+                BandSprint™
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              The premier AI-driven Cambridge IELTS preparation platform. High-fidelity audio labs, AI British voice examiners, and Band 9 model answers for ambitious candidates.
+              The premier AI-driven IELTS preparation platform. High-fidelity audio labs, AI British voice examiners, and Band 9 model answers for ambitious candidates.
             </p>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>100% Free Launch Community Access</span>
+              <span>Free to Start — No Card Needed</span>
             </div>
           </div>
 
@@ -67,7 +67,7 @@ export const CommercialFooter: React.FC<CommercialFooterProps> = ({
                   }}
                   className="hover:text-blue-600 dark:hover:text-blue-400 transition"
                 >
-                  Authentic Listening Lab
+                  Realistic Listening Lab
                 </button>
               </li>
               <li>
@@ -136,7 +136,7 @@ export const CommercialFooter: React.FC<CommercialFooterProps> = ({
                   }}
                   className="hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center gap-1"
                 >
-                  <span>Why IELTS Sprint</span>
+                  <span>Why BandSprint</span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold">New</span>
                 </button>
               </li>
@@ -190,7 +190,7 @@ export const CommercialFooter: React.FC<CommercialFooterProps> = ({
                 </button>
               </li>
               <li className="pt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                Cambridge Assessment English™ & British Council aligned standards.
+                IELTS-aligned standards.
               </li>
             </ul>
           </div>
@@ -199,10 +199,10 @@ export const CommercialFooter: React.FC<CommercialFooterProps> = ({
         {/* Disclaimer & Copyright */}
         <div className="pt-6 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-400 dark:text-slate-500">
           <p className="text-center sm:text-left">
-            IELTS® is a registered trademark of University of Cambridge, British Council, and IDP Education Australia. IELTS Sprint™ is an independent diagnostic platform.
+            IELTS® is a registered trademark of Cambridge University Press & Assessment, British Council, and IDP Education Australia. BandSprint™ is an independent diagnostic platform.
           </p>
           <div className="flex items-center gap-3 shrink-0">
-            <span>© 2026 IELTS Sprint Global. All rights reserved.</span>
+            <span>© 2026 BandSprint Global. All rights reserved.</span>
           </div>
         </div>
       </div>

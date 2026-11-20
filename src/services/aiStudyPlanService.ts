@@ -1,5 +1,5 @@
 /**
- * AI Study Plan Service for IELTS SPRINT
+ * AI Study Plan Service for BandSprint
  * Provides dynamic AI curriculum generation, calendar (.ICS) export,
  * adaptive rescheduling, and progress tracking.
  */
@@ -123,7 +123,7 @@ export async function generatePersonalizedStudyPlan(
     {
       week: 4,
       title: 'Full Exam Simulation & Peak Taper',
-      focus: 'Uninterrupted 2h 45m Cambridge Mocks + Taper',
+      focus: 'Uninterrupted 2h 45m Sprint Mocks + Taper',
       targetMilestone: `Secure Band ${config.targetBand} with calm mental endurance`
     }
   ];
@@ -136,7 +136,7 @@ export async function generatePersonalizedStudyPlan(
     daysRemaining: daysUntil,
     totalPlannedHours,
     readinessProbability: readiness,
-    executiveSummary: `Tailored ${daysUntil}-day Cambridge roadmap targeting Band ${config.targetBand}. Allocated ${totalPlannedHours} total hours with heavy emphasis on ${config.weakness.toUpperCase()} stabilization.`,
+    executiveSummary: `Tailored ${daysUntil}-day Sprint roadmap targeting Band ${config.targetBand}. Allocated ${totalPlannedHours} total hours with heavy emphasis on ${config.weakness.toUpperCase()} stabilization.`,
     weeklyThemes,
     customDailyTasks: customizedTasks
   };
@@ -188,10 +188,10 @@ export function exportStudyPlanToICS(
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//IELTS SPRINT//Cambridge AI Study Plan//EN',
+    'PRODID:-//BandSprint//Sprint AI Study Plan//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    `X-WR-CALNAME:IELTS SPRINT Study Plan (Target Band ${config.targetBand})`,
+    `X-WR-CALNAME:BandSprint Study Plan (Target Band ${config.targetBand})`,
     'X-WR-TIMEZONE:UTC'
   ];
 
@@ -202,14 +202,14 @@ export function exportStudyPlanToICS(
     const endDate = new Date(eventDate.getTime() + task.estimatedMinutes * 60 * 1000);
 
     const taskList = task.tasks.map((t, idx) => `${idx + 1}. ${t.description}`).join('\\n');
-    const description = `Phase: ${task.phase}\\nSkill: ${task.focusSkill}\\nDuration: ${task.estimatedMinutes} Mins\\n\\nChecklist:\\n${taskList}\\n\\nStrategy Tip: ${task.tipOfDay}\\n\\nLaunch in IELTS SPRINT: https://ielts-sprint.app`;
+    const description = `Phase: ${task.phase}\\nSkill: ${task.focusSkill}\\nDuration: ${task.estimatedMinutes} Mins\\n\\nChecklist:\\n${taskList}\\n\\nStrategy Tip: ${task.tipOfDay}\\n\\nLaunch in BandSprint: https://band-sprint.netlify.app`;
 
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:ielts_sprint_day_${task.day}_${Date.now()}@ielts-sprint.app`);
+    lines.push(`UID:ielts_sprint_day_${task.day}_${Date.now()}@band-sprint.netlify.app`);
     lines.push(`DTSTAMP:${formatICSDate(new Date())}`);
     lines.push(`DTSTART:${formatICSDate(eventDate)}`);
     lines.push(`DTEND:${formatICSDate(endDate)}`);
-    lines.push(`SUMMARY:IELTS Sprint: Day ${task.day} - ${task.title}`);
+    lines.push(`SUMMARY:BandSprint: Day ${task.day} - ${task.title}`);
     lines.push(`DESCRIPTION:${description}`);
     lines.push('STATUS:CONFIRMED');
 
@@ -217,7 +217,7 @@ export function exportStudyPlanToICS(
     lines.push('BEGIN:VALARM');
     lines.push('TRIGGER:-PT15M');
     lines.push('ACTION:DISPLAY');
-    lines.push(`DESCRIPTION:Upcoming IELTS Sprint: Day ${task.day} (${task.focusSkill})`);
+    lines.push(`DESCRIPTION:Upcoming BandSprint: Day ${task.day} (${task.focusSkill})`);
     lines.push('END:VALARM');
 
     lines.push('END:VEVENT');
@@ -230,7 +230,7 @@ export function exportStudyPlanToICS(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `IELTS_SPRINT_Band_${config.targetBand}_Schedule.ics`;
+  link.download = `BandSprint_Band_${config.targetBand}_Schedule.ics`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

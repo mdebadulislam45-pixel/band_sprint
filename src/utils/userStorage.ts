@@ -37,11 +37,14 @@ export function getActiveUser(): UserProfile | null {
   try {
     const activeId = localStorage.getItem(ACTIVE_USER_KEY);
     if (!activeId) return null;
+    if (activeId.startsWith('demo_candidate_')) {
+      localStorage.removeItem(ACTIVE_USER_KEY);
+      return null;
+    }
 
     const users = getAllUsers();
     const found = users.find(u => u.id === activeId);
-    if (found) {
-      checkAndUpdateStreak(found);
+    if (found && !found.id.startsWith('demo_candidate_')) {
       return found;
     }
     // Stale or deleted active ID
@@ -92,7 +95,9 @@ export function saveUser(user: UserProfile): void {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(USERS_DIR_KEY, JSON.stringify(users));
       if (localStorage.getItem(ACTIVE_USER_KEY) === user.id && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('user_progress_updated', { detail: user }));
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('user_progress_updated', { detail: user }));
+        }, 0);
       }
     }
   } catch (e) {
@@ -127,7 +132,9 @@ export function loginUser(
   // Set active session in memory
   localStorage.setItem(ACTIVE_USER_KEY, found.id);
   checkAndUpdateStreak(found);
-  window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: found }));
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: found }));
+  }, 0);
   trackLogin({ id: found.id, name: found.name, email: found.email });
   return { success: true, message: `Welcome back, ${found.name}!`, user: found };
 }
@@ -177,18 +184,29 @@ export function registerUser(
 
   saveUser(newUser);
   localStorage.setItem(ACTIVE_USER_KEY, newUser.id);
-  window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: newUser }));
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: newUser }));
+  }, 0);
   trackLogin({ id: newUser.id, name: newUser.name, email: newUser.email });
   return {
     success: true,
-    message: `Account registered successfully! Welcome to IELTS Sprint, ${newUser.name}.`,
+    message: `Account registered successfully! Welcome to BandSprint, ${newUser.name}.`,
     user: newUser
   };
 }
 
 export function logoutUser(): void {
-  localStorage.removeItem(ACTIVE_USER_KEY);
-  window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: null }));
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(ACTIVE_USER_KEY);
+    localStorage.removeItem('ielts_auth_session');
+    localStorage.removeItem('ielts_session_token_v2');
+    localStorage.removeItem('ielts_user_subscription_v2');
+  }
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: null }));
+    }, 0);
+  }
 }
 
 export function switchActiveUser(userId: string): UserProfile | null {
@@ -197,7 +215,9 @@ export function switchActiveUser(userId: string): UserProfile | null {
   if (user) {
     localStorage.setItem(ACTIVE_USER_KEY, user.id);
     checkAndUpdateStreak(user);
-    window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: user }));
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('user_auth_updated', { detail: user }));
+    }, 0);
     return user;
   }
   return null;
@@ -266,14 +286,301 @@ export function toggleModuleCompleted(moduleId: string): boolean {
  */
 export function isFullMockExamRecord(rec: ExamHistoryRecord | null | undefined): boolean {
   if (!rec) return false;
-  if (rec.examType === 'listening_only') return false;
-  if (rec.examType === 'full_mock') return true;
-  return (
-    typeof rec.readingBand === 'number' &&
-    rec.readingBand > 0 &&
-    typeof rec.writingBand === 'number' &&
-    rec.writingBand > 0
-  );
+  if (
+    rec.examType === 'incomplete_mock' ||
+    rec.examType === 'partial_lrw' ||
+    rec.examType === 'listening_only' ||
+    rec.examType === 'reading_only' ||
+    rec.examType === 'writing_only' ||
+    rec.examType === 'speaking_only'
+  ) {
+    return false;
+  }
+
+  if (rec.completedSkills) {
+    if (
+      rec.completedSkills.listening === false ||
+      rec.completedSkills.reading === false ||
+      rec.completedSkills.writing === false ||
+      rec.completedSkills.speaking === false
+    ) {
+      return false;
+    }
+  }
+
+  const explicitlyAllFourComplete =
+    rec.completedSkills?.listening === true &&
+    rec.completedSkills?.reading === true &&
+    rec.completedSkills?.writing === true &&
+    rec.completedSkills?.speaking === true;
+
+  if (explicitlyAllFourComplete && rec.examType === 'full_mock' && typeof rec.overallBand === 'number') {
+    return true;
+  }
+
+  const hasValidOverall = typeof rec.overallBand === 'number' && rec.overallBand > 0;
+  const hasValidListening = typeof rec.listeningBand === 'number' && rec.listeningBand > 0;
+  const hasValidReading = typeof rec.readingBand === 'number' && rec.readingBand > 0;
+  const hasValidWriting = typeof rec.writingBand === 'number' && rec.writingBand > 0;
+  const hasInvalidSpeaking =
+    rec.speakingBand !== undefined &&
+    rec.speakingBand !== null &&
+    rec.speakingBand <= 0;
+
+  if (
+    !hasValidOverall ||
+    !hasValidListening ||
+    !hasValidReading ||
+    !hasValidWriting ||
+    hasInvalidSpeaking
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export interface ExamHistorySummaryCounts {
+  total: number;
+  completedCount: number;
+  incompleteCount: number;
+  headerBadgeText: string;
+}
+
+export function summarizeExamHistoryCounts(
+  history: ExamHistoryRecord[] | null | undefined
+): ExamHistorySummaryCounts {
+  const list = Array.isArray(history) ? history : [];
+  const incompleteCount = list.filter((rec) => rec?.examType === 'incomplete_mock').length;
+  const completedCount = list.length - incompleteCount;
+  const headerBadgeText =
+    incompleteCount > 0
+      ? `${completedCount} Completed · ${incompleteCount} Incomplete`
+      : `${completedCount} Completed`;
+
+  return {
+    total: list.length,
+    completedCount,
+    incompleteCount,
+    headerBadgeText
+  };
+}
+
+export interface ExamHistoryDisplayDescriptor {
+  title: string;
+  badgeScore: string;
+  isFullMock: boolean;
+  isIncompleteMock: boolean;
+  lBand: number | null;
+  rBand: number | null;
+  wBand: number | null;
+  sBand: number | null;
+  oBand: number | null;
+  skillSummaryParts: string[];
+  statusNote: string | null;
+}
+
+export function describeExamHistoryDisplay(
+  test: ExamHistoryRecord,
+  attemptNumber: number
+): ExamHistoryDisplayDescriptor {
+  const isFullMock = isFullMockExamRecord(test);
+  const isIncompleteMock = test.examType === 'incomplete_mock';
+  const hasExplicitSkills = Boolean(test.completedSkills);
+
+  const lBand =
+    typeof test.listeningBand === 'number' &&
+    (hasExplicitSkills ? test.completedSkills?.listening === true : test.listeningBand > 0)
+      ? test.listeningBand
+      : null;
+  const rBand =
+    typeof test.readingBand === 'number' &&
+    (hasExplicitSkills ? test.completedSkills?.reading === true : test.readingBand > 0)
+      ? test.readingBand
+      : null;
+  const wBand =
+    typeof test.writingBand === 'number' &&
+    (hasExplicitSkills ? test.completedSkills?.writing === true : test.writingBand > 0)
+      ? test.writingBand
+      : null;
+  const sBand =
+    typeof test.speakingBand === 'number' &&
+    (hasExplicitSkills ? test.completedSkills?.speaking === true : test.speakingBand > 0)
+      ? test.speakingBand
+      : null;
+  const oBand =
+    isFullMock && typeof test.overallBand === 'number' && test.overallBand >= 0
+      ? test.overallBand
+      : null;
+
+  if (isFullMock) {
+    const parts = [
+      `L: ${lBand !== null ? lBand.toFixed(1) : '—'}`,
+      `R: ${rBand !== null ? rBand.toFixed(1) : '—'}`,
+      `W: ${wBand !== null ? wBand.toFixed(1) : '—'}`
+    ];
+    if (sBand !== null) parts.push(`S: ${sBand.toFixed(1)}`);
+
+    return {
+      title: `Full Mock Test #${attemptNumber}`,
+      badgeScore: oBand !== null ? oBand.toFixed(1) : '—',
+      isFullMock: true,
+      isIncompleteMock: false,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand,
+      skillSummaryParts: parts,
+      statusNote: null
+    };
+  }
+
+  if (isIncompleteMock) {
+    return {
+      title: `Incomplete Mock Test #${attemptNumber}`,
+      badgeScore: 'INC',
+      isFullMock: false,
+      isIncompleteMock: true,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand: null,
+      skillSummaryParts: [
+        `L: ${lBand !== null ? lBand.toFixed(1) : '—'}`,
+        `R: ${rBand !== null ? rBand.toFixed(1) : '—'}`,
+        `W: ${wBand !== null ? wBand.toFixed(1) : '—'}`,
+        `S: ${sBand !== null ? sBand.toFixed(1) : '—'}`
+      ],
+      statusNote: 'Incomplete — No Overall Band'
+    };
+  }
+
+  if (test.examType === 'partial_lrw') {
+    return {
+      title: `3-Skill Mock (L/R/W) #${attemptNumber}`,
+      badgeScore: '3-S',
+      isFullMock: false,
+      isIncompleteMock: false,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand: null,
+      skillSummaryParts: [
+        `L: ${lBand !== null ? lBand.toFixed(1) : '—'}`,
+        `R: ${rBand !== null ? rBand.toFixed(1) : '—'}`,
+        `W: ${wBand !== null ? wBand.toFixed(1) : '—'}`
+      ],
+      statusNote: 'Speaking not administered'
+    };
+  }
+
+  if (test.examType === 'reading_only') {
+    return {
+      title: `Reading Practice Test #${attemptNumber}`,
+      badgeScore: rBand !== null ? rBand.toFixed(1) : '—',
+      isFullMock: false,
+      isIncompleteMock: false,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand: null,
+      skillSummaryParts: [
+        `${rBand !== null ? `Reading Band ${rBand.toFixed(1)}` : 'Band not evaluated'} (${test.correctCount ?? 0}/${test.totalQuestions ?? 0})`
+      ],
+      statusNote: null
+    };
+  }
+
+  if (test.examType === 'writing_only') {
+    return {
+      title: `Writing Assessment #${attemptNumber}`,
+      badgeScore: wBand !== null ? wBand.toFixed(1) : '—',
+      isFullMock: false,
+      isIncompleteMock: false,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand: null,
+      skillSummaryParts: [
+        `${wBand !== null ? `Writing Band ${wBand.toFixed(1)}` : 'Band not evaluated'} (${test.wordCount ?? 0} words)`
+      ],
+      statusNote: null
+    };
+  }
+
+  if (test.examType === 'speaking_only') {
+    return {
+      title: `Speaking Assessment #${attemptNumber}`,
+      badgeScore: sBand !== null ? sBand.toFixed(1) : '—',
+      isFullMock: false,
+      isIncompleteMock: false,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand: null,
+      skillSummaryParts: [
+        sBand !== null ? `Speaking Band ${sBand.toFixed(1)}` : 'Band not evaluated'
+      ],
+      statusNote: null
+    };
+  }
+
+  // Legacy single-skill fallback
+  if (lBand !== null && rBand === null) {
+    return {
+      title: `Listening Mock Test #${attemptNumber}`,
+      badgeScore: lBand.toFixed(1),
+      isFullMock: false,
+      isIncompleteMock: false,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand: null,
+      skillSummaryParts: [
+        `Listening Band ${lBand.toFixed(1)} (${test.correctCount ?? 0}/${test.totalQuestions ?? 0})`
+      ],
+      statusNote: null
+    };
+  }
+
+  if (rBand !== null && lBand === null) {
+    return {
+      title: `Reading Practice Test #${attemptNumber}`,
+      badgeScore: rBand.toFixed(1),
+      isFullMock: false,
+      isIncompleteMock: false,
+      lBand,
+      rBand,
+      wBand,
+      sBand,
+      oBand: null,
+      skillSummaryParts: [
+        `Reading Band ${rBand.toFixed(1)} (${test.correctCount ?? 0}/${test.totalQuestions ?? 0})`
+      ],
+      statusNote: null
+    };
+  }
+
+  return {
+    title: `Practice Test #${attemptNumber}`,
+    badgeScore: '—',
+    isFullMock: false,
+    isIncompleteMock: false,
+    lBand,
+    rBand,
+    wBand,
+    sBand,
+    oBand: null,
+    skillSummaryParts: ['Band not evaluated'],
+    statusNote: null
+  };
 }
 
 export function recordExamAttempt(
@@ -304,8 +611,25 @@ export function recordExamAttempt(
       user.progress.completedModules.push('livemock');
     }
   } else {
-    if (!user.progress.completedModules.includes('listening')) {
-      user.progress.completedModules.push('listening');
+    if (typeof newRecord.listeningBand === 'number' && newRecord.listeningBand > 0) {
+      if (!user.progress.completedModules.includes('listening')) {
+        user.progress.completedModules.push('listening');
+      }
+    }
+    if (typeof newRecord.readingBand === 'number' && newRecord.readingBand > 0) {
+      if (!user.progress.completedModules.includes('reading')) {
+        user.progress.completedModules.push('reading');
+      }
+    }
+    if (typeof newRecord.writingBand === 'number' && newRecord.writingBand > 0) {
+      if (!user.progress.completedModules.includes('writing')) {
+        user.progress.completedModules.push('writing');
+      }
+    }
+    if (typeof newRecord.speakingBand === 'number' && newRecord.speakingBand > 0) {
+      if (!user.progress.completedModules.includes('speaking')) {
+        user.progress.completedModules.push('speaking');
+      }
     }
   }
 

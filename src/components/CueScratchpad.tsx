@@ -154,7 +154,6 @@ export const CueScratchpad: React.FC<CueScratchpadProps> = ({ onShowToast }) => 
 
         recognitionRef.current = recognition;
       } catch (e) {
-        console.warn('SpeechRecognition error:', e);
       }
     }
 
@@ -266,7 +265,7 @@ export const CueScratchpad: React.FC<CueScratchpadProps> = ({ onShowToast }) => 
           // Time is up for 2-minute monologue
           soundManager.playChimeTimeUp();
           stopRecording();
-          onShowToast('2-minute monologue completed! Ready for genuine Cambridge feedback.');
+          onShowToast('2-minute monologue completed! Ready for genuine Practice feedback.');
           return 0;
         }
         return prev - 1;
@@ -329,7 +328,7 @@ export const CueScratchpad: React.FC<CueScratchpadProps> = ({ onShowToast }) => 
       onShowToast('Diagnostic Band Feedback Generated!');
     } catch (err) {
       console.error('Error generating cue card feedback:', err);
-      onShowToast('Evaluation generated with local Cambridge diagnostic rubric.');
+      onShowToast('Evaluation generated with local Practice diagnostic rubric.');
     } finally {
       setIsEvaluating(false);
     }
@@ -353,7 +352,7 @@ export const CueScratchpad: React.FC<CueScratchpadProps> = ({ onShowToast }) => 
             Speaking Part 2: Cue Card Scratchpad & Live Monologue
           </h2>
           <p className="text-xs sm:text-sm text-slate-500">
-            Train the 1-minute shorthand plan, speak your 2-minute monologue with live mic recognition, and receive genuine Cambridge Band feedback.
+            Train the 1-minute shorthand plan, speak your 2-minute monologue with live mic recognition, and receive genuine Practice Band feedback.
           </p>
         </div>
 
