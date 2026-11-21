@@ -5,7 +5,7 @@ import {
   calculateOfficialGeneralTrainingReadingBand,
   isAnswerCorrect,
   normalizeCompletionAnswer
-} from '../listeningAnswerEvaluator';
+} from '../../utils/listeningAnswerEvaluator';
 import {
   checkWritingWordThreshold,
   evaluateWritingSubmission
@@ -16,12 +16,12 @@ import {
   getQuestionsForMistakeVault,
   deriveActiveListeningHeading,
   deriveActiveReadingHeading
-} from '../mockExamScoring';
+} from '../../utils/mockExamScoring';
 import {
   isFullMockExamRecord,
   summarizeExamHistoryCounts,
   describeExamHistoryDisplay
-} from '../userStorage';
+} from '../../utils/userStorage';
 import { testPersistenceService } from '../../services/testPersistenceService';
 import { MOCK_EXAM_SETS, SPEAKING_TOPIC_BANK } from '../../data/mockExams';
 import { SpeakingAnswerRecord } from '../../types/speakingTypes';
@@ -44,6 +44,8 @@ function buildSpeakingRecord(
     omitFeedback = false
   } = options;
 
+  const isCompleteValid = isValidAttempt && band >= 1.0 && band <= 9.0;
+
   return {
     questionId,
     part,
@@ -56,13 +58,34 @@ function buildSpeakingRecord(
     wordCount,
     wordsPerMinute: 75,
     fillerCount: 0,
-    pauseCount: 0,
+    pauseCount: null,
+    longPauseCount: null,
+    detectedFillers: [],
     instantFeedback: omitFeedback
       ? undefined
       : ({
           isValidAttempt,
-          overallBand: band,
-          estimatedBand: band
+          assessmentStatus: isCompleteValid ? 'evaluated' : 'insufficient_evidence',
+          evidenceMode: isCompleteValid ? 'audio_and_transcript' : 'transcript_only',
+          pronunciationObservable: isCompleteValid,
+          isPartialAssessment: !isCompleteValid,
+          unassessedCriteria: isCompleteValid ? [] : ['Pronunciation'],
+          overallBand: isCompleteValid ? band : null,
+          estimatedBand: isCompleteValid ? band : null,
+          partialThreeCriterionIndex: null,
+          criteria: {
+            fc: isCompleteValid ? band : null,
+            lr: isCompleteValid ? band : null,
+            gra: isCompleteValid ? band : null,
+            pr: isCompleteValid ? band : null
+          },
+          estimatedBands: {
+            fluency: isCompleteValid ? band : null,
+            lexical: isCompleteValid ? band : null,
+            grammar: isCompleteValid ? band : null,
+            pronunciation: isCompleteValid ? band : null,
+            overall: isCompleteValid ? band : null
+          }
         } as any)
   } as SpeakingAnswerRecord;
 }
@@ -349,7 +372,7 @@ async function runScoringAndReviewIntegrityTests() {
 
   // ================= 5. PRODUCTION SCORING MODULE (DEF-3 & DEF-4 ENFORCED) =================
   console.log('\n[Test Suite 5]: Production calculateMockExamScores() Completeness, Writing 150w/250w & 3-Part Speaking');
-  const sprint18 = MOCK_EXAM_SETS.find(e => e.id === 'sprint-18')!;
+  const sprint18 = MOCK_EXAM_SETS.find(e => e.id === 'practice-18' || e.id === 'sprint-18')!;
 
   // Target-compliant Task 1 (>= 150 words)
   const validTask1Text = `

@@ -6,6 +6,193 @@ import { addMistake } from '../utils/vaultStorage';
 import { speakBritish, stopSpeech } from '../utils/britishVoice';
 import { checkWritingWordThreshold } from '../services/WritingEvaluationService';
 import { checkSpeakingInputGate } from '../services/SpeakingEvaluationService';
+import { getStoredSessionToken } from '../services/authService';
+import {
+  formatNullableBand,
+  validateClientWritingEvaluation
+} from '../utils/scoringIntegrity';
+
+/**
+ * Pure parser for /api/evaluate-writing responses used by AIMockSuite.
+ * Strictly enforces the Phase 3B.1/3B.4 nullable Writing contract and NEVER fabricates fallback scores.
+ */
+export function parseAIMockWritingResponse(params: {
+  httpOk: boolean;
+  httpStatus: number;
+  data: any;
+  testType: 'task1' | 'task2' | 'speaking';
+}): ExamEvaluation {
+  const { httpOk, httpStatus, data, testType } = params;
+
+  if (httpStatus === 401) {
+    return {
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      overallBand: null,
+      proficiencyTitle: 'Sign In Required for AI Evaluation',
+      trScore: null,
+      trComment: '',
+      ccScore: null,
+      ccComment: '',
+      lrScore: null,
+      lrComment: '',
+      graScore: null,
+      graComment: '',
+      strengths: [],
+      weaknesses: [],
+      vocabUpgrades: [],
+      grammaticalErrors: [],
+      betterAnswerBand8: '',
+      verdict: 'Please sign in to run a live AI Writing evaluation. No fallback band score was generated.',
+      error: data?.error || 'Authentication required to evaluate writing. Please sign in.',
+      canRetry: true
+    };
+  }
+
+  if (!httpOk) {
+    if (data?.assessmentStatus === 'insufficient_evidence') {
+      return {
+        isValidAttempt: false,
+        assessmentStatus: 'insufficient_evidence',
+        overallBand: null,
+        proficiencyTitle: data?.proficiencyTitle || 'Submission Too Short or Unassessable',
+        trScore: null,
+        trComment: data?.trComment || data?.error || 'Insufficient writing evidence for IELTS evaluation.',
+        ccScore: null,
+        ccComment: data?.ccComment || '',
+        lrScore: null,
+        lrComment: '',
+        graScore: null,
+        graComment: '',
+        strengths: [],
+        weaknesses: Array.isArray(data?.weaknesses) ? data.weaknesses : [],
+        vocabUpgrades: [],
+        grammaticalErrors: [],
+        betterAnswerBand8: '',
+        verdict: data?.verdict || data?.error || 'Not assessed due to insufficient evidence.',
+        error: data?.error,
+        canRetry: false
+      };
+    }
+
+    return {
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      overallBand: null,
+      proficiencyTitle: 'AI Evaluation Temporarily Unavailable',
+      trScore: null,
+      trComment: '',
+      ccScore: null,
+      ccComment: '',
+      lrScore: null,
+      lrComment: '',
+      graScore: null,
+      graComment: '',
+      strengths: [],
+      weaknesses: [],
+      vocabUpgrades: [],
+      grammaticalErrors: [],
+      betterAnswerBand8: '',
+      verdict:
+        data?.error ||
+        `AI evaluation service responded with HTTP ${httpStatus}. No fallback IELTS band score was fabricated.`,
+      error: data?.error || `AI evaluation service unavailable (HTTP ${httpStatus}).`,
+      canRetry: true
+    };
+  }
+
+  // Speaking transcript in AIMockSuite cannot receive an acoustic IELTS Writing/Speaking score via /api/evaluate-writing
+  if (testType === 'speaking') {
+    return {
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      overallBand: null,
+      proficiencyTitle: 'Speaking Transcript Requires Speaking Studio',
+      trScore: null,
+      trComment: '',
+      ccScore: null,
+      ccComment: '',
+      lrScore: null,
+      lrComment: '',
+      graScore: null,
+      graComment: '',
+      strengths: [],
+      weaknesses: [],
+      vocabUpgrades: [],
+      grammaticalErrors: [],
+      betterAnswerBand8: '',
+      verdict:
+        'Speaking transcripts cannot be scored through the Writing evaluator. Use the Speaking Lab for dedicated Speaking diagnostics.',
+      error: 'Use Speaking Lab for Speaking assessments.',
+      canRetry: false
+    };
+  }
+
+  const validated = validateClientWritingEvaluation(data);
+  if (!validated.valid || validated.overallBand === null) {
+    const isInsufficient = validated.assessmentStatus === 'insufficient_evidence';
+    return {
+      isValidAttempt: false,
+      assessmentStatus: isInsufficient ? 'insufficient_evidence' : 'unavailable',
+      overallBand: null,
+      proficiencyTitle: isInsufficient
+        ? data?.proficiencyTitle || 'Submission Too Short or Unassessable'
+        : 'AI Evaluation Could Not Be Verified',
+      trScore: null,
+      trComment: isInsufficient ? data?.trComment || validated.reason || '' : '',
+      ccScore: null,
+      ccComment: isInsufficient ? data?.ccComment || '' : '',
+      lrScore: null,
+      lrComment: '',
+      graScore: null,
+      graComment: '',
+      strengths: [],
+      weaknesses: Array.isArray(data?.weaknesses) ? data.weaknesses : [],
+      vocabUpgrades: [],
+      grammaticalErrors: [],
+      betterAnswerBand8: '',
+      verdict: validated.reason || data?.error || 'Writing evaluation unavailable. No fallback score was generated.',
+      error: validated.reason || data?.error,
+      canRetry: !isInsufficient
+    };
+  }
+
+  return {
+    isValidAttempt: true,
+    assessmentStatus: 'evaluated',
+    overallBand: validated.overallBand,
+    proficiencyTitle:
+      typeof data?.proficiencyTitle === 'string' && data.proficiencyTitle.trim()
+        ? data.proficiencyTitle
+        : validated.overallBand >= 8.0
+        ? 'Very Good User'
+        : validated.overallBand >= 7.0
+        ? 'Good User'
+        : validated.overallBand >= 6.0
+        ? 'Competent User'
+        : 'Developing User',
+    trScore: validated.criteria.ta,
+    trComment: typeof data?.trComment === 'string' ? data.trComment : '',
+    ccScore: validated.criteria.cc,
+    ccComment: typeof data?.ccComment === 'string' ? data.ccComment : '',
+    lrScore: validated.criteria.lr,
+    lrComment: typeof data?.lrComment === 'string' ? data.lrComment : '',
+    graScore: validated.criteria.gra,
+    graComment: typeof data?.graComment === 'string' ? data.graComment : '',
+    strengths: Array.isArray(data?.strengths) ? data.strengths : [],
+    weaknesses: Array.isArray(data?.weaknesses) ? data.weaknesses : [],
+    vocabUpgrades: Array.isArray(data?.vocabUpgrades) ? data.vocabUpgrades : [],
+    grammaticalErrors: Array.isArray(data?.grammaticalErrors) ? data.grammaticalErrors : [],
+    betterAnswerBand8: typeof data?.betterAnswerBand8 === 'string' ? data.betterAnswerBand8 : '',
+    verdict:
+      typeof data?.verdict === 'string' && data.verdict.trim()
+        ? data.verdict
+        : `AI diagnostic writing assessment complete: Band ${validated.overallBand.toFixed(1)}.`,
+    disclaimer:
+      data?.disclaimer ||
+      'AI diagnostic estimate aligned with IELTS descriptors. Not an official IELTS test result.'
+  };
+}
 
 interface AIMockSuiteProps {
   initialPrompt?: string;
@@ -26,7 +213,15 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
   const [timerActive, setTimerActive] = useState(false);
   const [activeTab, setActiveTab] = useState<'editor' | 'heatmap' | 'evaluation'>('editor');
   const [isEvaluating, setIsEvaluating] = useState(false);
+  // Keep attempt submission state strictly separate from verified AI evaluation completion state
+  const [hasSubmittedAttempt, setHasSubmittedAttempt] = useState(false);
   const [evaluation, setEvaluation] = useState<ExamEvaluation | null>(null);
+
+  const isWritingEvaluationComplete =
+    evaluation?.assessmentStatus === 'evaluated' &&
+    evaluation.isValidAttempt !== false &&
+    typeof evaluation.overallBand === 'number' &&
+    Number.isFinite(evaluation.overallBand);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -125,67 +320,76 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
     return Object.entries(counts).filter(([_, count]) => count >= 3).sort((a, b) => b[1] - a[1]);
   };
 
-  // Gemini AI Examiner with 3x Exponential Backoff + Diagnostic Fallback
+  // Live Server-Side AI Examiner Evaluation (Strictly fail-closed — ZERO local fallback IELTS scoring)
   const handleEvaluate = async () => {
+    setHasSubmittedAttempt(true);
+
     if (testType === 'speaking') {
       const spkGate = checkSpeakingInputGate(essayText);
-      if (!spkGate.isValidAttempt) {
-        setEvaluation({
-          overallBand: 0.0,
-          proficiencyTitle: spkGate.feedbackTitle,
-          trScore: 0.0,
-          trComment: spkGate.feedbackEn,
-          ccScore: 0.0,
-          ccComment: spkGate.feedbackBn,
-          lrScore: 0.0,
-          lrComment: '',
-          graScore: 0.0,
-          graComment: '',
-          strengths: [],
-          weaknesses: [spkGate.feedbackEn, spkGate.feedbackBn],
-          vocabUpgrades: [],
-          grammaticalErrors: [],
-          betterAnswerBand8: '',
-          verdict: `${spkGate.feedbackEn} ${spkGate.feedbackBn}`
-        });
-        setActiveTab('evaluation');
-        soundManager.playBeep(360, 0.1);
-        return;
-      }
-    } else {
-      const wrtGate = checkWritingWordThreshold(essayText, testType === 'task1' ? 'task1' : 'task2');
-      if (!wrtGate.isValidAttempt) {
-        setEvaluation({
-          overallBand: 0.0,
-          proficiencyTitle: wrtGate.feedbackTitle,
-          trScore: 0.0,
-          trComment: wrtGate.feedbackEn,
-          ccScore: 0.0,
-          ccComment: wrtGate.feedbackBn,
-          lrScore: 0.0,
-          lrComment: '',
-          graScore: 0.0,
-          graComment: '',
-          strengths: [],
-          weaknesses: [wrtGate.feedbackEn, wrtGate.feedbackBn],
-          vocabUpgrades: [],
-          grammaticalErrors: [],
-          betterAnswerBand8: '',
-          verdict: `${wrtGate.feedbackEn} ${wrtGate.feedbackBn}`
-        });
-        setActiveTab('evaluation');
-        soundManager.playBeep(360, 0.1);
-        return;
-      }
+      const spkResult = !spkGate.isValidAttempt
+        ? {
+            isValidAttempt: false,
+            assessmentStatus: 'insufficient_evidence' as const,
+            overallBand: null,
+            proficiencyTitle: spkGate.feedbackTitle,
+            trScore: null,
+            trComment: spkGate.feedbackEn,
+            ccScore: null,
+            ccComment: spkGate.feedbackBn,
+            lrScore: null,
+            lrComment: '',
+            graScore: null,
+            graComment: '',
+            strengths: [],
+            weaknesses: [spkGate.feedbackEn, spkGate.feedbackBn],
+            vocabUpgrades: [],
+            grammaticalErrors: [],
+            betterAnswerBand8: '',
+            verdict: `${spkGate.feedbackEn} ${spkGate.feedbackBn}`,
+            canRetry: false
+          }
+        : parseAIMockWritingResponse({ httpOk: true, httpStatus: 200, data: {}, testType: 'speaking' });
+      setEvaluation(spkResult);
+      setActiveTab('evaluation');
+      soundManager.playBeep(360, 0.1);
+      return;
+    }
+
+    const wrtGate = checkWritingWordThreshold(essayText, testType === 'task1' ? 'task1' : 'task2');
+    if (!wrtGate.isValidAttempt) {
+      setEvaluation({
+        isValidAttempt: false,
+        assessmentStatus: 'insufficient_evidence',
+        overallBand: null,
+        proficiencyTitle: wrtGate.feedbackTitle,
+        trScore: null,
+        trComment: wrtGate.feedbackEn,
+        ccScore: null,
+        ccComment: wrtGate.feedbackBn,
+        lrScore: null,
+        lrComment: '',
+        graScore: null,
+        graComment: '',
+        strengths: [],
+        weaknesses: [wrtGate.feedbackEn, wrtGate.feedbackBn],
+        vocabUpgrades: [],
+        grammaticalErrors: [],
+        betterAnswerBand8: '',
+        verdict: `${wrtGate.feedbackEn} ${wrtGate.feedbackBn}`,
+        canRetry: false
+      });
+      setActiveTab('evaluation');
+      soundManager.playBeep(360, 0.1);
+      return;
     }
 
     setIsEvaluating(true);
     soundManager.playBeep(580, 0.1);
 
-    let result: ExamEvaluation | null = null;
+    let result: ExamEvaluation;
 
     try {
-      const token = localStorage.getItem('ielts_session_token_v2');
+      const token = getStoredSessionToken();
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -199,159 +403,50 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
         })
       });
 
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && typeof data.overallBand === 'number') {
-          result = data;
-        }
-      }
-    } catch (err) {
-    }
-
-    // If server was unreachable or in offline mode, execute the calibrated Practice Diagnostic Evaluation Algorithm
-    if (!result) {
-      result = generateDiagnosticEvaluation(essayText, testType, wordCount, targetWords);
+      const data = await resp.json().catch(() => null);
+      result = parseAIMockWritingResponse({
+        httpOk: resp.ok,
+        httpStatus: resp.status,
+        data,
+        testType
+      });
+    } catch {
+      result = {
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        overallBand: null,
+        proficiencyTitle: 'AI Evaluation Service Unreachable',
+        trScore: null,
+        trComment: '',
+        ccScore: null,
+        ccComment: '',
+        lrScore: null,
+        lrComment: '',
+        graScore: null,
+        graComment: '',
+        strengths: [],
+        weaknesses: [],
+        vocabUpgrades: [],
+        grammaticalErrors: [],
+        betterAnswerBand8: '',
+        verdict:
+          'Unable to reach the AI Writing evaluation server. No fallback IELTS band score was fabricated. Your draft is preserved — please retry.',
+        error: 'Network error reaching /api/evaluate-writing.',
+        canRetry: true
+      };
     }
 
     setEvaluation(result);
     setIsEvaluating(false);
     setActiveTab('evaluation');
-    soundManager.playSuccess();
-    onShowToast(`Evaluation complete! Assessed at Band ${result.overallBand}.`);
-  };
 
-  // Local Practice algorithmic scorecard generator
-  const generateDiagnosticEvaluation = (
-    text: string,
-    type: string,
-    words: number,
-    target: number
-  ): ExamEvaluation => {
-    const lower = text.toLowerCase();
-    const hasEnoughWords = words >= target;
-    const penalty = hasEnoughWords ? 0 : Math.min((target - words) / 40, 1.5);
-
-    // Cohesion markers
-    const linkers = ['furthermore', 'moreover', 'consequently', 'however', 'nevertheless', 'in contrast', 'hence', 'therefore'];
-    const linkerCount = linkers.filter(l => lower.includes(l)).length;
-
-    // Academic collocations check
-    const advancedVocab = ['predominance', 'trajectory', 'mitigate', 'resilience', 'biodiversity', 'disparity', 'accelerated', 'disproportionate', 'paradigm', 'imperative'];
-    const vocabCount = advancedVocab.filter(v => lower.includes(v)).length;
-
-    // Base sub-scores calculated authentically
-    const grammarErrors: { observed: string; corrected: string; explanation: string; ruleCategory: string }[] = [];
-    if (/it make\b/i.test(text)) {
-      grammarErrors.push({
-        observed: 'it make',
-        corrected: 'it makes',
-        explanation: 'Subject-verb agreement: third-person singular subjects take "-s" in present simple.',
-        ruleCategory: 'Subject-Verb Agreement'
-      });
+    if (result.assessmentStatus === 'evaluated' && typeof result.overallBand === 'number') {
+      soundManager.playSuccess();
+      onShowToast(`AI Diagnostic Evaluation complete: Band ${result.overallBand.toFixed(1)}.`);
+    } else {
+      soundManager.playBeep(340, 0.09);
+      onShowToast(result.error || 'Writing evaluation unavailable — no band score was generated.');
     }
-    if (/people is\b/i.test(text)) {
-      grammarErrors.push({
-        observed: 'people is',
-        corrected: 'people are',
-        explanation: '"People" is a plural collective noun requiring the plural verb "are".',
-        ruleCategory: 'Subject-Verb Agreement'
-      });
-    }
-    if (/they has\b/i.test(text)) {
-      grammarErrors.push({
-        observed: 'they has',
-        corrected: 'they have',
-        explanation: 'Plural pronoun "they" requires "have" instead of third-person singular "has".',
-        ruleCategory: 'Subject-Verb Agreement'
-      });
-    }
-    if (/depend of\b/i.test(text)) {
-      grammarErrors.push({
-        observed: 'depend of',
-        corrected: 'depend on / depend upon',
-        explanation: 'Incorrect dependent preposition: the verb "depend" collocates with "on" or "upon".',
-        ruleCategory: 'Preposition Choice'
-      });
-    }
-    if (/more better\b/i.test(text)) {
-      grammarErrors.push({
-        observed: 'more better',
-        corrected: 'far better / substantially superior',
-        explanation: 'Double comparative error: "better" is already comparative.',
-        ruleCategory: 'Comparative Form'
-      });
-    }
-
-    let tr = Math.max(4.5, 7.5 - penalty);
-    let cc = Math.min(8.5, 6.0 + Math.min(linkerCount * 0.4, 2.0));
-    let lr = Math.min(8.5, 5.5 + Math.min(vocabCount * 0.4, 2.5));
-    let rawGra = 6.5 - grammarErrors.length * 0.5 + (/, (which|while|whereas|although)\b/i.test(text) ? 0.5 : 0);
-    if (!hasEnoughWords) rawGra -= 0.5;
-    let gra = Math.max(4.0, Math.min(9.0, rawGra));
-
-    // Rounding to nearest 0.5
-    const roundHalf = (num: number) => Math.round(num * 2) / 2;
-    tr = roundHalf(tr);
-    cc = roundHalf(cc);
-    lr = roundHalf(lr);
-    gra = roundHalf(gra);
-
-    const rawAvg = (tr + cc + lr + gra) / 4;
-    // Practice arithmetic rounding (.25 -> .5, .75 -> next whole)
-    const remainder = rawAvg - Math.floor(rawAvg);
-    let overall = Math.floor(rawAvg);
-    if (remainder >= 0.75) overall += 1.0;
-    else if (remainder >= 0.25) overall += 0.5;
-
-    const candidateVocabOpportunities = [
-      { regex: /\b(big impact|large impact)\b/i, original: 'big impact', upgraded: 'profound repercussion / far-reaching consequence', explanation: 'Band 8.5 academic collocation for cause-and-effect.' },
-      { regex: /\bgood idea\b/i, original: 'good idea', upgraded: 'viable proposition / pragmatic initiative', explanation: 'Elevates colloquial informal phrasing to formal register.' },
-      { regex: /\b(shows clearly|clearly shows)\b/i, original: 'shows clearly', upgraded: 'readily delineates / distinctly illustrates', explanation: 'Essential reporting phrase for high-band lexical precision.' },
-      { regex: /\ba lot of\b/i, original: 'a lot of', upgraded: 'a substantial volume of / an extensive proportion of', explanation: 'Replaces informal quantifier with formal academic phrasing.' },
-      { regex: /\bvery important\b/i, original: 'very important', upgraded: 'of paramount importance / imperative', explanation: 'Replaces weak modifier with high-impact C1 adjective.' },
-      { regex: /\bbig problem\b/i, original: 'big problem', upgraded: 'pressing dilemma / acute impediment', explanation: 'Replaces basic noun phrase with precise C1 academic terminology.' },
-      { regex: /\bvery good\b/i, original: 'very good', upgraded: 'exceptionally advantageous / commendable', explanation: 'Replaces colloquial modifier with academic register.' },
-      { regex: /\bhelp\b/i, original: 'help', upgraded: 'facilitate / expedite / bolster', explanation: 'Elevates basic action verb to C1 precision.' }
-    ];
-    const verifiedVocabUpgrades = candidateVocabOpportunities
-      .filter(item => item.regex.test(text))
-      .map(item => ({ original: item.original, upgraded: item.upgraded, explanation: item.explanation }));
-
-    const dynamicStrengths: string[] = [];
-    if (hasEnoughWords) dynamicStrengths.push(`Satisfied recommended length target (${words}/${target} words).`);
-    if (linkerCount >= 3) dynamicStrengths.push(`Deployed ${linkerCount} clear discourse markers bridging logical flow.`);
-    if (grammarErrors.length === 0) dynamicStrengths.push('High grammatical accuracy with no major subject-verb or verb form slips.');
-    if (vocabCount >= 2) dynamicStrengths.push('Included targeted C1/C2 academic lexical items.');
-    if (dynamicStrengths.length === 0) dynamicStrengths.push('Communicated core message with understandable phrasing.');
-
-    const modelBand8 = testType === 'task2'
-      ? `In contemporary socio-economic discourse, the democratization of tertiary education remains a fiercely contested topic. While detractors contend that state-funded university tuition imposes an unsustainable burden upon public coffers, I firmly maintain that free higher education constitutes an indispensable civic investment. Primarily, removing tuition barriers unlocks social mobility for underprivileged students, ensuring merit rather than wealth determines intellectual achievement. Furthermore, highly trained graduates generate substantial economic returns through innovation, research, and augmented tax revenues, thereby yielding dividends that far outstrip initial public expenditure. Consequently, governments ought to treat tertiary education not as a fiscal liability, but as a catalyst for collective national prosperity.`
-      : testType === 'task1'
-      ? `The graph illustrates the trajectory of renewable power generation across Norway and Germany between 2000 and 2024. Overall, both nations witnessed an unmistakable upward progression in sustainable energy adoption, with Norway maintaining an overwhelming predominance throughout the examined timeframe. Starting at approximately 68% in 2000, Norway experienced a steady ascent to culminate at 94% by 2024. In stark contrast, Germany embarked from a modest 12%, yet underwent exponential acceleration after 2012, ultimately tripling its share to 52%. In summary, while Norway reinforced its established green leadership, Germany recorded the most pronounced rate of transformative growth.`
-      : `Reflecting upon a pivotal personal ambition, completing my advanced data analytics certification while juggling full-time professional commitments stands out prominently. The principal impediment was temporal scarcity; finding cognitive bandwidth following grueling work shifts proved extraordinarily arduous. To mitigate burnout, I instituted an uncompromising dawn schedule, dedicating two uninterrupted hours each morning to complex algorithms. Ultimately, achieving this certification bolstered my analytical confidence and catalyzed a substantial promotion, cementing the lesson that structured persistence invariably triumphs over fleeting motivation.`;
-
-    return {
-      overallBand: overall,
-      proficiencyTitle: overall >= 8.0 ? 'Expert User' : overall >= 7.0 ? 'Good User - Operational Command' : 'Competent User',
-      trScore: tr,
-      trComment: hasEnoughWords ? 'Thorough exploration of all facets with a consistent viewpoint.' : `Underlength penalty applied (${words}/${target} words required).`,
-      ccScore: cc,
-      ccComment: linkerCount >= 3 ? 'Clear paragraphing with well-deployed transitional devices.' : 'Paragraph transitions are slightly mechanical; incorporate more referential pronouns.',
-      lrScore: lr,
-      lrComment: vocabCount >= 2 ? 'Commendable usage of academic collocations and domain-specific lexicon.' : 'Occasional reliance on high-frequency everyday vocabulary.',
-      graScore: gra,
-      graComment: grammarErrors.length === 0 ? 'Good control of clause structures with error-free sentence construction.' : `Identified ${grammarErrors.length} grammatical issue(s) needing refinement.`,
-      strengths: dynamicStrengths,
-      weaknesses: [
-        !hasEnoughWords ? 'Expand on supporting arguments to satisfy the mandatory word threshold.' : 'Vary introductory sentence connectors to avoid repetitive pattern.',
-        'Integrate more C1/C2 collocations instead of simple adjectives.',
-        'Ensure passive voice constructions are deployed naturally for objective reports.'
-      ],
-      vocabUpgrades: verifiedVocabUpgrades,
-      grammaticalErrors: grammarErrors,
-      betterAnswerBand8: modelBand8,
-      verdict: `Assessed ${words} words against IELTS criteria. Overall Band ${overall.toFixed(1)}.`
-    };
   };
 
   const handleSaveUpgradeToVault = (item: { original: string; upgraded: string; explanation: string }) => {
@@ -506,7 +601,13 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'evaluation' ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
             >
               <Award className="w-3.5 h-3.5" />
-              <span>Scorecard (Band {evaluation.overallBand})</span>
+              <span>
+                {isWritingEvaluationComplete
+                  ? `Scorecard (Band ${formatNullableBand(evaluation.overallBand)})`
+                  : evaluation.assessmentStatus === 'unavailable'
+                  ? 'Evaluation Unavailable'
+                  : 'Unassessed Draft'}
+              </span>
             </button>
           )}
         </div>
@@ -621,39 +722,77 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       {/* Evaluation Scorecard Tab */}
       {activeTab === 'evaluation' && evaluation && (
         <div className="space-y-6">
-          {/* Overall Band Banner or Zero-State Warning Card */}
-          {evaluation.overallBand <= 0 ? (
-            <div className="bg-rose-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border-2 border-rose-500/40 space-y-4">
+          {/* Overall Band Banner or Explicit Unassessed / Unavailable Card */}
+          {!isWritingEvaluationComplete ? (
+            <div
+              className={`${
+                evaluation.assessmentStatus === 'unavailable'
+                  ? 'bg-amber-950 border-amber-500/40'
+                  : 'bg-rose-950 border-rose-500/40'
+              } text-white rounded-3xl p-6 sm:p-8 shadow-xl border-2 space-y-4`}
+            >
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-300">
+                <div
+                  className={`w-11 h-11 rounded-2xl flex items-center justify-center ${
+                    evaluation.assessmentStatus === 'unavailable'
+                      ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300'
+                      : 'bg-rose-500/20 border border-rose-500/40 text-rose-300'
+                  }`}
+                >
                   <AlertTriangle className="w-6 h-6" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold uppercase tracking-widest text-rose-300 font-mono">
-                    Unattempted / Below Minimum Threshold · Overall Band 0.0
+                  <span
+                    className={`text-xs font-bold uppercase tracking-widest font-mono ${
+                      evaluation.assessmentStatus === 'unavailable' ? 'text-amber-300' : 'text-rose-300'
+                    }`}
+                  >
+                    {evaluation.assessmentStatus === 'unavailable'
+                      ? 'AI Evaluation Unavailable · No Band Assigned'
+                      : 'Insufficient Evidence · Not Assessed (No Band Assigned)'}
                   </span>
                   <h3 className="text-xl sm:text-2xl font-extrabold mt-0.5">{evaluation.proficiencyTitle}</h3>
                 </div>
               </div>
-              <p className="text-sm text-rose-100 leading-relaxed">{evaluation.trComment}</p>
+              <p className="text-sm text-slate-100 leading-relaxed">
+                {evaluation.trComment || evaluation.verdict}
+              </p>
               {evaluation.ccComment && (
-                <p className="text-xs text-rose-200 leading-relaxed pt-2 border-t border-rose-800/60">
+                <p className="text-xs text-slate-200 leading-relaxed pt-2 border-t border-white/15">
                   {evaluation.ccComment}
                 </p>
               )}
-              <button
-                onClick={() => setActiveTab('editor')}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md transition inline-flex items-center gap-2 cursor-pointer"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>Return to Editor &amp; Continue Writing</span>
-              </button>
+              {hasSubmittedAttempt && (
+                <p className="text-[11px] text-slate-300 font-mono">
+                  Draft submitted ({wordCount} words) — evaluation status: Incomplete (not counted toward Full Mock scoring).
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-3">
+                {evaluation.canRetry && (
+                  <button
+                    onClick={handleEvaluate}
+                    disabled={isEvaluating}
+                    className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isEvaluating ? 'animate-spin' : ''}`} />
+                    <span>Retry AI Evaluation</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setActiveTab('editor')}
+                  className="px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <span>Return to Editor</span>
+                </button>
+              </div>
             </div>
           ) : (
             <>
               <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                 <div>
-                  <span className="text-xs font-bold uppercase tracking-widest text-amber-400 font-mono">Practice Scorecard</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-amber-400 font-mono">
+                    AI Diagnostic Practice Scorecard
+                  </span>
                   <h3 className="text-2xl sm:text-3xl font-extrabold mt-1">{evaluation.proficiencyTitle}</h3>
                   <p className="text-xs sm:text-sm text-blue-200 mt-2 max-w-xl leading-relaxed">{evaluation.verdict}</p>
                 </div>
@@ -661,7 +800,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                 <div className="bg-white/10 backdrop-blur-md border border-white/20 p-5 rounded-3xl text-center shrink-0 w-36">
                   <span className="text-[11px] uppercase tracking-wider text-blue-200 font-bold block">Overall Band</span>
                   <span className="font-mono text-5xl font-black text-amber-300 my-1 block">
-                    {evaluation.overallBand.toFixed(1)}
+                    {formatNullableBand(evaluation.overallBand)}
                   </span>
                   <span className="text-[10px] text-emerald-300 font-semibold">Scale: 1.0 - 9.0</span>
                 </div>
@@ -672,7 +811,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase text-slate-500">TR / TA</span>
-                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.trScore.toFixed(1)}</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{formatNullableBand(evaluation.trScore)}</span>
                   </div>
                   <h5 className="font-bold text-slate-900 text-sm">Task Response</h5>
                   <p className="text-xs text-slate-600 leading-relaxed">{evaluation.trComment}</p>
@@ -681,7 +820,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase text-slate-500">CC</span>
-                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.ccScore.toFixed(1)}</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{formatNullableBand(evaluation.ccScore)}</span>
                   </div>
                   <h5 className="font-bold text-slate-900 text-sm">Coherence &amp; Cohesion</h5>
                   <p className="text-xs text-slate-600 leading-relaxed">{evaluation.ccComment}</p>
@@ -690,7 +829,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase text-slate-500">LR</span>
-                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.lrScore.toFixed(1)}</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{formatNullableBand(evaluation.lrScore)}</span>
                   </div>
                   <h5 className="font-bold text-slate-900 text-sm">Lexical Resource</h5>
                   <p className="text-xs text-slate-600 leading-relaxed">{evaluation.lrComment}</p>
@@ -699,7 +838,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase text-slate-500">GRA</span>
-                    <span className="font-mono text-lg font-black text-blue-700">{evaluation.graScore.toFixed(1)}</span>
+                    <span className="font-mono text-lg font-black text-blue-700">{formatNullableBand(evaluation.graScore)}</span>
                   </div>
                   <h5 className="font-bold text-slate-900 text-sm">Grammatical Accuracy</h5>
                   <p className="text-xs text-slate-600 leading-relaxed">{evaluation.graComment}</p>
@@ -709,66 +848,70 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
           )}
 
           {/* Strengths & Weaknesses */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-3xl border border-emerald-200 p-6 shadow-sm space-y-3">
-              <h4 className="font-bold text-emerald-900 text-sm flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Examiner Commendations (Strengths)
-              </h4>
-              <ul className="space-y-2 text-xs text-slate-700">
-                {evaluation.strengths.map((str, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-1.5"></span>
-                    <span>{str}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {isWritingEvaluationComplete && (evaluation.strengths.length > 0 || evaluation.weaknesses.length > 0) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white rounded-3xl border border-emerald-200 p-6 shadow-sm space-y-3">
+                <h4 className="font-bold text-emerald-900 text-sm flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  Examiner Commendations (Strengths)
+                </h4>
+                <ul className="space-y-2 text-xs text-slate-700">
+                  {evaluation.strengths.map((str, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-1.5"></span>
+                      <span>{str}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-            <div className="bg-white rounded-3xl border border-rose-200 p-6 shadow-sm space-y-3">
-              <h4 className="font-bold text-rose-900 text-sm flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-600" />
-                Priority Weaknesses to Fix for Next Band
-              </h4>
-              <ul className="space-y-2 text-xs text-slate-700">
-                {evaluation.weaknesses.map((w, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 mt-1.5"></span>
-                    <span>{w}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* Side-by-side Vocabulary Upgrades */}
-          <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-slate-900 text-base">Examiner Vocabulary Upgrades</h4>
-                <p className="text-xs text-slate-500">Transform everyday phrases into Band 8.5+ academic collocations.</p>
+              <div className="bg-white rounded-3xl border border-rose-200 p-6 shadow-sm space-y-3">
+                <h4 className="font-bold text-rose-900 text-sm flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  Priority Weaknesses to Fix for Next Band
+                </h4>
+                <ul className="space-y-2 text-xs text-slate-700">
+                  {evaluation.weaknesses.map((w, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 mt-1.5"></span>
+                      <span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {evaluation.vocabUpgrades.map((item, idx) => (
-                <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 flex flex-col justify-between">
-                  <div>
-                    <div className="text-xs text-slate-500 line-through">"{item.original}"</div>
-                    <div className="font-bold text-indigo-900 text-sm mt-0.5">➔ "{item.upgraded}"</div>
-                    <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">{item.explanation}</p>
-                  </div>
-                  <button
-                    onClick={() => handleSaveUpgradeToVault(item)}
-                    className="mt-3 text-xs font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1.5 pt-2 border-t border-slate-200"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Save to Mistake Vault</span>
-                  </button>
+          {/* Side-by-side Vocabulary Upgrades */}
+          {isWritingEvaluationComplete && evaluation.vocabUpgrades.length > 0 && (
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base">Examiner Vocabulary Upgrades</h4>
+                  <p className="text-xs text-slate-500">Transform everyday phrases into Band 8.5+ academic collocations.</p>
                 </div>
-              ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {evaluation.vocabUpgrades.map((item, idx) => (
+                  <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 flex flex-col justify-between">
+                    <div>
+                      <div className="text-xs text-slate-500 line-through">"{item.original}"</div>
+                      <div className="font-bold text-indigo-900 text-sm mt-0.5">➔ "{item.upgraded}"</div>
+                      <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">{item.explanation}</p>
+                    </div>
+                    <button
+                      onClick={() => handleSaveUpgradeToVault(item)}
+                      className="mt-3 text-xs font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1.5 pt-2 border-t border-slate-200"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Save to Mistake Vault</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Examiner Grammatical Errors & Sentence Corrections */}
           {evaluation.grammaticalErrors && evaluation.grammaticalErrors.length > 0 && (

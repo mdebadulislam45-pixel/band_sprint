@@ -30,26 +30,17 @@ import { addMistake } from '../../utils/vaultStorage';
 import { AudioWaveformVisualizer } from '../audio/AudioWaveformVisualizer';
 import { PronunciationDrillStudio } from './PronunciationDrillStudio';
 import { SpeakingTranscriptHighlighter } from './SpeakingTranscriptHighlighter';
+import {
+  evaluateShadowingAttempt,
+  type ShadowingPracticeEvaluation
+} from '../../utils/scoringIntegrity';
 
 interface ShadowingPracticeProps {
   onShowToast: (msg: string) => void;
   onNavigateToVault?: () => void;
 }
 
-interface EvaluationResult {
-  accuracyScore: number;
-  fluencyScore: number;
-  spokenWordsCount: number;
-  targetWordsCount: number;
-  wpm: number;
-  bandEstimate: string;
-  matchedTokens: Array<{
-    word: string;
-    status: 'correct' | 'near' | 'missing' | 'extra';
-    spoken?: string;
-  }>;
-  feedback: string;
-}
+type EvaluationResult = ShadowingPracticeEvaluation;
 
 export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
   onShowToast,
@@ -96,6 +87,9 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const isRecordingRef = useRef<boolean>(false);
   const transcriptRef = useRef<string>('');
+  const recognitionConfidenceRef = useRef<number[]>([]);
+  const recognitionErrorRef = useRef<string | null>(null);
+  const hasAudioBlobRef = useRef<boolean>(false);
   const recordingStartTimeRef = useRef<number>(0);
   const handleStopRecordingRef = useRef<() => void>(() => {});
 
@@ -174,94 +168,13 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
     });
   }, [isPlayingAudio, currentItem, selectedVoice, playbackSpeed, practiceMode, isRecording]);
 
-  // Word-by-word accuracy evaluation algorithm
-  const evaluatePronunciation = (target: string, spokenText: string, durationSec: number): EvaluationResult => {
-    const cleanWord = (w: string) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    const targetWords = target.split(/\s+/).filter(Boolean);
-    const spokenWords = spokenText.split(/\s+/).filter(Boolean);
-
-    const matchedTokens: EvaluationResult['matchedTokens'] = [];
-    let correctCount = 0;
-    let spokenIdx = 0;
-
-    targetWords.forEach((tWord) => {
-      const cleanT = cleanWord(tWord);
-      let found = false;
-
-      // Look ahead up to 3 tokens for match or near-match
-      for (let offset = 0; offset <= 3; offset++) {
-        const testIdx = spokenIdx + offset;
-        if (testIdx < spokenWords.length) {
-          const cleanS = cleanWord(spokenWords[testIdx]);
-          if (cleanS === cleanT) {
-            matchedTokens.push({ word: tWord, status: 'correct', spoken: spokenWords[testIdx] });
-            correctCount++;
-            spokenIdx = testIdx + 1;
-            found = true;
-            break;
-          } else if (cleanS.length >= 4 && cleanT.length >= 4 && (cleanS.includes(cleanT) || cleanT.includes(cleanS))) {
-            matchedTokens.push({ word: tWord, status: 'near', spoken: spokenWords[testIdx] });
-            correctCount += 0.75;
-            spokenIdx = testIdx + 1;
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        matchedTokens.push({ word: tWord, status: 'missing' });
-      }
-    });
-
-    const accuracyScore = Math.min(100, Math.round((correctCount / Math.max(1, targetWords.length)) * 100));
-    const effectiveSec = Math.max(2, durationSec);
-    const wpm = Math.round((spokenWords.length / effectiveSec) * 60);
-
-    // Fluency score based on pacing (ideal 130-165 WPM for native IELTS speaking)
-    let fluencyScore = 85;
-    if (wpm >= 120 && wpm <= 175) {
-      fluencyScore = 95;
-    } else if (wpm < 90) {
-      fluencyScore = Math.max(50, 80 - (90 - wpm));
-    } else if (wpm > 190) {
-      fluencyScore = Math.max(60, 90 - (wpm - 190));
-    }
-
-    // Band Estimate
-    let bandEstimate = '6.5';
-    let feedback = 'Good attempt. Focus on sentence stress and linking consonants.';
-    if (accuracyScore >= 95 && fluencyScore >= 90) {
-      bandEstimate = '9.0';
-      feedback = 'Outstanding Practice fluency! Native-level linking, stress patterns, and flawless pronunciation.';
-    } else if (accuracyScore >= 88 && fluencyScore >= 80) {
-      bandEstimate = '8.5';
-      feedback = 'Exceptional clarity and rhythm. Intonation mirrors authentic British RP delivery.';
-    } else if (accuracyScore >= 80) {
-      bandEstimate = '7.5';
-      feedback = 'Strong communicative confidence. Minor word stress variations, but completely natural rhythm.';
-    } else if (accuracyScore >= 68) {
-      bandEstimate = '7.0';
-      feedback = 'Clear delivery. Pay close attention to multi-syllabic words and weak vowel reduction.';
-    }
-
-    return {
-      accuracyScore,
-      fluencyScore,
-      spokenWordsCount: spokenWords.length,
-      targetWordsCount: targetWords.length,
-      wpm,
-      bandEstimate,
-      matchedTokens,
-      feedback
-    };
-  };
-
   // Start Mic Recording & Speech Recognition
   const handleStartRecording = async () => {
     soundManager.playBeep(520, 0.08);
     transcriptRef.current = '';
+    recognitionConfidenceRef.current = [];
+    recognitionErrorRef.current = null;
+    hasAudioBlobRef.current = false;
     setTranscript('');
     setEvaluation(null);
     setRecordedAudioUrl((prev) => {
@@ -343,7 +256,7 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
         };
 
         recognition.onerror = (e: any) => {
-          if (e.error === 'no-speech') return;
+          recognitionErrorRef.current = e?.error || 'speech_recognition_error';
         };
 
         recognition.onend = () => {
@@ -351,12 +264,15 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
         };
 
         recognition.start();
-      } catch (err) {
+      } catch (err: any) {
+        recognitionErrorRef.current = err?.message || 'speech_recognition_unavailable';
       }
+    } else {
+      recognitionErrorRef.current = 'browser_speech_recognition_unsupported';
     }
   };
 
-  // Stop Recording & Process Evaluation
+  // Stop Recording & Process Honest Shadowing Practice Metrics (Never Fabricates an IELTS Band)
   const handleStopRecording = () => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (!isRecordingRef.current && !isRecording) return;
@@ -373,6 +289,9 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
 
     try {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        if (audioChunksRef.current.length > 0) {
+          hasAudioBlobRef.current = true;
+        }
         mediaRecorderRef.current.stop();
       }
     } catch {}
@@ -383,14 +302,36 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
 
     setTimeout(() => {
       setIsEvaluating(false);
-      const textToEval = (transcriptRef.current || transcript).trim() || 'Good attempt recorded';
-      const result = evaluatePronunciation(currentItem.targetSentence, textToEval, durationSec);
+      // NEVER fabricate a fake transcript when speech recognition fails or captures silence
+      const rawSpoken = (transcriptRef.current || transcript).trim();
+      const confSamples = recognitionConfidenceRef.current;
+      const avgConf =
+        confSamples.length > 0
+          ? confSamples.reduce((a, b) => a + b, 0) / confSamples.length
+          : null;
+      const targetWordCount = currentItem.targetSentence.split(/\s+/).filter(Boolean).length;
+      const expectedDurationSec = (targetWordCount / 140) * 60 / Math.max(0.5, playbackSpeed);
+
+      const result = evaluateShadowingAttempt({
+        targetText: currentItem.targetSentence,
+        spokenTranscript: rawSpoken,
+        elapsedSec: durationSec,
+        expectedDurationSec,
+        hasAudioBlob: hasAudioBlobRef.current || Boolean(recordedAudioUrl),
+        recognitionConfidence: avgConf,
+        recognitionError: recognitionErrorRef.current
+      });
       setEvaluation(result);
 
-      // Update Session Stats
+      if (result.status !== 'valid') {
+        onShowToast(result.honestSummary);
+        return;
+      }
+
+      // Update Session Practice Stats ONLY on valid speech capture
       setPracticedCount((prev) => prev + 1);
-      setAccuracySum((prev) => prev + result.accuracyScore);
-      if (result.accuracyScore >= 80) {
+      setAccuracySum((prev) => prev + result.wordAccuracyPct);
+      if (result.wordAccuracyPct >= 80) {
         setCurrentStreak((prev) => prev + 1);
         soundManager.playSuccess();
       } else {
@@ -400,10 +341,10 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
       // Check loop mode condition
       if (practiceMode === 'loop') {
         setLoopAttempts((prev) => prev + 1);
-        if (result.accuracyScore >= 90) {
-          onShowToast('🎉 Mastered! 90%+ Accuracy reached in Loop Drill.');
+        if (result.wordAccuracyPct >= 90) {
+          onShowToast('90%+ transcript alignment reached in Loop Drill. Listen back to verify rhythm and stress.');
         } else {
-          onShowToast(`Score: ${result.accuracyScore}%. Drill again to reach 90%!`);
+          onShowToast(`Word alignment: ${result.wordAccuracyPct}%. Try another pass to reach 90%+.`);
         }
       }
     }, 450);
@@ -780,94 +721,157 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
             </div>
           )}
 
-          {/* Evaluation & Pronunciation Result */}
+          {/* Honest Shadowing Practice Metrics (Never Fabricates an IELTS Band) */}
           {evaluation && (
-            <div className="p-4 rounded-2xl bg-slate-50 border-2 border-slate-200 space-y-3.5 animate-fade-in max-h-[30vh] overflow-y-auto overscroll-contain">
-              {/* Header Score Row */}
-              <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-black text-white shadow-sm shrink-0 ${
-                      evaluation.accuracyScore >= 85
-                        ? 'bg-emerald-600'
-                        : evaluation.accuracyScore >= 70
-                        ? 'bg-blue-600'
-                        : 'bg-amber-600'
-                    }`}
-                  >
-                    <span className="text-base leading-none">{evaluation.accuracyScore}%</span>
-                    <span className="text-[8px] uppercase font-mono opacity-80">Match</span>
+            <div className="p-4 rounded-2xl bg-slate-50 border-2 border-slate-200 space-y-3.5 animate-fade-in max-h-[38vh] overflow-y-auto overscroll-contain">
+              {evaluation.status !== 'valid' ? (
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-rose-800">
+                      {evaluation.status === 'recognition_failed'
+                        ? 'Speech Recognition Unavailable'
+                        : 'No Clear Speech Captured'}
+                    </span>
+                    <button
+                      onClick={handleStartRecording}
+                      className="min-h-[34px] px-3 py-1 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Try Recording Again</span>
+                    </button>
                   </div>
-                  <div>
-                    <div className="text-sm font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
-                      <span>Pronunciation: Band {evaluation.bandEstimate}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold font-mono">
-                        {evaluation.wpm} WPM
+                  <p className="text-xs font-semibold text-rose-900">{evaluation.honestSummary}</p>
+                  <p className="text-[11px] text-rose-700">{evaluation.practiceGuidance}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Header Score Row */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-slate-200">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-black text-white shadow-sm shrink-0 ${
+                          evaluation.wordAccuracyPct >= 85
+                            ? 'bg-emerald-600'
+                            : evaluation.wordAccuracyPct >= 70
+                            ? 'bg-blue-600'
+                            : 'bg-amber-600'
+                        }`}
+                      >
+                        <span className="text-base leading-none">{evaluation.wordAccuracyPct}%</span>
+                        <span className="text-[8px] uppercase font-mono opacity-80">Words</span>
+                      </div>
+                      <div>
+                        <div className="text-sm font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
+                          <span>Shadowing Alignment (Practice Only)</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold font-mono">
+                            {evaluation.wpm} WPM · {evaluation.paceStatus.replace('_', ' ')}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold font-mono">
+                            Not an IELTS Band
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-600 mt-0.5">{evaluation.honestSummary}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{evaluation.practiceGuidance}</div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons: Save to Vault & Retry */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={handleSaveToVault}
+                        disabled={savedToVault}
+                        className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                          savedToVault
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 shadow-2xs'
+                        }`}
+                        title="Save sentence to Mistake Vault for targeted spaced repetition"
+                      >
+                        <Archive className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>{savedToVault ? 'Saved' : 'Save'}</span>
+                      </button>
+
+                      <button
+                        onClick={handleStartRecording}
+                        className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Retry</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Transparent Metric Breakdown */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-[11px]">
+                    <div className="p-2 rounded-lg bg-white border border-slate-200">
+                      <div className="text-slate-400 font-mono uppercase text-[9px]">Matched</div>
+                      <div className="font-black text-emerald-700">{evaluation.matchedCount}/{evaluation.targetWordCount}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200">
+                      <div className="text-slate-400 font-mono uppercase text-[9px]">Missing</div>
+                      <div className="font-black text-rose-700">{evaluation.missingCount}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200">
+                      <div className="text-slate-400 font-mono uppercase text-[9px]">Substituted</div>
+                      <div className="font-black text-amber-700">{evaluation.substitutedCount}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200">
+                      <div className="text-slate-400 font-mono uppercase text-[9px]">Extra</div>
+                      <div className="font-black text-purple-700">{evaluation.extraCount}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200">
+                      <div className="text-slate-400 font-mono uppercase text-[9px]">Timing Sync</div>
+                      <div className="font-black text-slate-700 capitalize">{evaluation.timingSyncStatus.replace('_', ' ')}</div>
+                    </div>
+                  </div>
+
+                  {/* Word-by-Word DP Alignment Grid */}
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-slate-700 font-mono uppercase tracking-wider flex items-center justify-between flex-wrap gap-1">
+                      <span>Transcript Word Alignment</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        Green = Match · Amber = Near/Sub · Red = Missing · Purple = Extra
                       </span>
                     </div>
-                    <div className="text-xs text-slate-500">{evaluation.feedback}</div>
+
+                    <div className="p-3 rounded-xl bg-white border border-slate-200 flex flex-wrap gap-1.5 text-sm leading-relaxed">
+                      {evaluation.alignment.map((token, i) => (
+                        <span
+                          key={i}
+                          className={`px-2 py-0.5 rounded-lg font-bold transition text-xs ${
+                            token.status === 'matched'
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : token.status === 'near_match' || token.status === 'substituted'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                              : token.status === 'extra'
+                              ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                              : 'bg-rose-50 text-rose-800 border border-rose-300 line-through opacity-75'
+                          }`}
+                          title={
+                            token.status === 'matched'
+                              ? 'Word matched in speech recognition'
+                              : token.status === 'near_match'
+                              ? `Close match (heard "${token.spokenWord}")`
+                              : token.status === 'substituted'
+                              ? `Expected "${token.targetWord}", heard "${token.spokenWord}"`
+                              : token.status === 'extra'
+                              ? `Extra spoken word "${token.spokenWord}"`
+                              : `Missing word "${token.targetWord}"`
+                          }
+                        >
+                          {token.status === 'extra'
+                            ? `+${token.spokenWord}`
+                            : token.status === 'substituted'
+                            ? `${token.targetWord} → ${token.spokenWord}`
+                            : token.targetWord}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* Action Buttons: Save to Vault & Retry */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleSaveToVault}
-                    disabled={savedToVault}
-                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
-                      savedToVault
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 shadow-2xs'
-                    }`}
-                    title="Save sentence to Mistake Vault for targeted spaced repetition"
-                  >
-                    <Archive className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>{savedToVault ? 'Saved' : 'Save'}</span>
-                  </button>
-
-                  <button
-                    onClick={handleStartRecording}
-                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Retry</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Word-by-Word Alignment Grid */}
-              <div className="space-y-1.5">
-                <div className="text-[11px] font-bold text-slate-700 font-mono uppercase tracking-wider flex items-center justify-between">
-                  <span>Phonetic Alignment</span>
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    Green = Accurate · Orange = Variation
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-xl bg-white border border-slate-200 flex flex-wrap gap-1.5 text-sm leading-relaxed">
-                  {evaluation.matchedTokens.map((token, i) => (
-                    <span
-                      key={i}
-                      className={`px-2 py-0.5 rounded-lg font-bold transition text-xs ${
-                        token.status === 'correct'
-                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                          : token.status === 'near'
-                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                          : 'bg-rose-50 text-rose-800 border border-rose-300 line-through opacity-70'
-                      }`}
-                      title={
-                        token.status === 'correct'
-                          ? 'Pronounced accurately'
-                          : token.status === 'near'
-                          ? `Variation: "${token.spoken}"`
-                          : 'Omitted or mispronounced'
-                      }
-                    >
-                      {token.word}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                  <p className="text-[11px] text-slate-500 italic">{evaluation.disclaimer}</p>
+                </>
+              )}
 
               {/* Candidate Voice Playback & Filler-Word Highlighter */}
               {(transcript || recordedAudioUrl) && (
@@ -914,9 +918,9 @@ export const ShadowingPractice: React.FC<ShadowingPracticeProps> = ({
             <Award className="w-5 h-5" />
           </div>
           <div>
-            <div className="font-bold text-blue-950 text-sm">How to Score Band 8.5+ with Shadowing</div>
+            <div className="font-bold text-blue-950 text-sm">How Shadowing Builds Spoken Rhythm &amp; Chunking</div>
             <p className="text-blue-800 mt-0.5 leading-relaxed">
-              Practicing 10 sentences daily trains articulatory muscles for continuous connected speech, eliminates foreign mother-tongue stress interference, and guarantees examiners award Band 8+ in Pronunciation & Fluency.
+              Shadowing 10 sentences daily helps train natural phrase chunking, pacing, and sentence stress. Always compare your playback against the model audio — shadowing is a rhythm drill and does not produce an IELTS band score.
             </p>
           </div>
         </div>

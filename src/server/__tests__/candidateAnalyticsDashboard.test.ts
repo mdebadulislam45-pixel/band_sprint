@@ -97,21 +97,24 @@ describe('Phase 5.5H.12C — Candidate Performance Analytics & Retention Tests',
     });
 
     it('3. isolates candidate analytics and prevents cross-user leakage', () => {
-      analyticsService.recordCandidateEvent({
+      const resA = analyticsService.recordCandidateEvent({
         userId: candidateA,
         eventInput: {
           eventType: 'practice_completed',
-          payload: { moduleId: 'speaking', overallBandScore: 8.0 }
+          payload: { moduleId: 'speaking', completionStatus: 'completed', durationSeconds: 600 }
         }
       });
 
-      analyticsService.recordCandidateEvent({
+      const resB = analyticsService.recordCandidateEvent({
         userId: candidateB,
         eventInput: {
           eventType: 'practice_completed',
-          payload: { moduleId: 'writing', overallBandScore: 6.5 }
+          payload: { moduleId: 'writing', completionStatus: 'completed', durationSeconds: 2400 }
         }
       });
+
+      assert.equal(resA.success, true);
+      assert.equal(resB.success, true);
 
       const candAEvents = analyticsService.getCandidateEvents(candidateA);
       const candBEvents = analyticsService.getCandidateEvents(candidateB);
@@ -126,8 +129,8 @@ describe('Phase 5.5H.12C — Candidate Performance Analytics & Retention Tests',
     });
   });
 
-  describe('2. Four-Module & Criterion Scoring Validation', () => {
-    it('4. correctly processes Writing criterion scores (TA, CC, LR, GRA)', () => {
+  describe('2. Four-Module & Subjective Score Trust-Boundary Enforcement (SP-1)', () => {
+    it('4. rejects unverified client-submitted Writing criterion & overall band scores', () => {
       const res = analyticsService.recordCandidateEvent({
         userId: candidateA,
         eventInput: {
@@ -142,17 +145,13 @@ describe('Phase 5.5H.12C — Candidate Performance Analytics & Retention Tests',
         }
       });
 
-      assert.equal(res.success, true);
-      const event = serverDb.getAnalyticsEventById(res.eventId!);
-      assert.ok(event);
-      assert.equal(event.payload.criterionScores.ta, 7.0);
-      assert.equal(event.payload.criterionScores.cc, 6.5);
-      assert.equal(event.payload.criterionScores.lr, 7.5);
-      assert.equal(event.payload.criterionScores.gra, 7.0);
+      assert.equal(res.success, false);
+      assert.match(res.error || '', /Unverified client-submitted Writing and Speaking scores/i);
+      assert.equal(analyticsService.getCandidateEvents(candidateA).length, 0);
     });
 
-    it('5. correctly processes Speaking criterion scores (FC, LR, GRA, PR)', () => {
-      const res = analyticsService.recordCandidateEvent({
+    it('5. rejects unverified client-submitted Speaking criterion & overall band scores while allowing unscored activity events', () => {
+      const rejected = analyticsService.recordCandidateEvent({
         userId: candidateA,
         eventInput: {
           eventType: 'module_evaluated',
@@ -166,10 +165,27 @@ describe('Phase 5.5H.12C — Candidate Performance Analytics & Retention Tests',
         }
       });
 
-      assert.equal(res.success, true);
-      const event = serverDb.getAnalyticsEventById(res.eventId!);
+      assert.equal(rejected.success, false);
+      assert.match(rejected.error || '', /Unverified client-submitted Writing and Speaking scores/i);
+
+      const activityRes = analyticsService.recordCandidateEvent({
+        userId: candidateA,
+        eventInput: {
+          eventType: 'practice_completed',
+          payload: {
+            moduleId: 'speaking',
+            completionStatus: 'completed',
+            durationSeconds: 820,
+            isAiPilot: true
+          }
+        }
+      });
+
+      assert.equal(activityRes.success, true);
+      const event = serverDb.getAnalyticsEventById(activityRes.eventId!);
       assert.ok(event);
-      assert.equal(event.payload.criterionScores.fc, 8.0);
+      assert.equal(event.payload.moduleId, 'speaking');
+      assert.equal(event.payload.overallBandScore, undefined);
       assert.equal(event.payload.isAiPilot, true);
     });
   });

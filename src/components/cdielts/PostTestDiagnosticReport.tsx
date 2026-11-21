@@ -29,6 +29,7 @@ import {
 import { QuestionItem } from '../../data/mockExams';
 import { addMistake } from '../../utils/vaultStorage';
 import { speakBritish } from '../../utils/britishVoice';
+import { isAnswerCorrect } from '../../utils/listeningAnswerEvaluator';
 import {
   ComprehensiveWritingEvaluation,
   evaluateCDIELTSWritingSuite,
@@ -190,12 +191,14 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
   const totalQuestions = questions.length;
   let correctCount = 0;
 
-  const normalize = (s?: string) => (s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const checkQuestionCorrect = (q: QuestionItem) => {
+    const raw = (userAnswers[q.id] || '').trim();
+    if (!raw) return false;
+    return isAnswerCorrect(q as any, raw);
+  };
 
   questions.forEach((q) => {
-    const userVal = normalize(userAnswers[q.id]);
-    const correctVal = normalize(q.correctAnswer);
-    if (userVal === correctVal || (userVal && userVal.replace(/\s+/g, '') === correctVal.replace(/\s+/g, ''))) {
+    if (checkQuestionCorrect(q)) {
       correctCount++;
     }
   });
@@ -218,9 +221,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
     categoryStats[cat].total++;
     categoryStats[cat].questions.push(q);
 
-    const userVal = normalize(userAnswers[q.id]);
-    const correctVal = normalize(q.correctAnswer);
-    if (userVal === correctVal || (userVal && userVal.replace(/\s+/g, '') === correctVal.replace(/\s+/g, ''))) {
+    if (checkQuestionCorrect(q)) {
       categoryStats[cat].correct++;
     }
   });
@@ -239,9 +240,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
 
   // Filter questions for the review list
   const filteredQuestions = questions.filter((q) => {
-    const userVal = normalize(userAnswers[q.id]);
-    const correctVal = normalize(q.correctAnswer);
-    const isCorrect = userVal === correctVal || (userVal && userVal.replace(/\s+/g, '') === correctVal.replace(/\s+/g, ''));
+    const isCorrect = checkQuestionCorrect(q);
 
     if (filterMode === 'correct') return isCorrect;
     if (filterMode === 'incorrect') return !isCorrect;
@@ -289,11 +288,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
   const handleSaveAllIncorrectToVault = () => {
     let added = 0;
     questions.forEach((q) => {
-      const userVal = normalize(userAnswers[q.id]);
-      const correctVal = normalize(q.correctAnswer);
-      const isCorrect =
-        userVal === correctVal ||
-        (userVal && userVal.replace(/\s+/g, '') === correctVal.replace(/\s+/g, ''));
+      const isCorrect = checkQuestionCorrect(q);
       if (!isCorrect && !savedToVaultIds.has(q.id)) {
         addMistake({
           module: activeSkill === 'listening' ? 'listening' : activeSkill === 'reading' ? 'reading' : 'writing',
@@ -660,26 +655,36 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
               <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 space-y-2 text-xs">
                 <div className="flex items-center justify-between font-mono font-bold text-indigo-300">
                   <span>Speaking 4-Criterion Rubric Profile</span>
-                  <span>Band {writingEval.speakingAudit.overallSpeakingBand.toFixed(1)}</span>
+                  <span>
+                    {writingEval.speakingAudit.isAssessed && writingEval.speakingAudit.overallSpeakingBand > 0
+                      ? `Band ${writingEval.speakingAudit.overallSpeakingBand.toFixed(1)}`
+                      : 'Unassessed'}
+                  </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono pt-1">
-                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Fluency (FC)</span>
-                    <span className="font-bold text-white">{writingEval.speakingAudit.fcBand.toFixed(1)}</span>
+                {writingEval.speakingAudit.isAssessed && writingEval.speakingAudit.overallSpeakingBand > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono pt-1">
+                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Fluency (FC)</span>
+                      <span className="font-bold text-white">{writingEval.speakingAudit.fcBand.toFixed(1)}</span>
+                    </div>
+                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Lexical (LR)</span>
+                      <span className="font-bold text-white">{writingEval.speakingAudit.lrBand.toFixed(1)}</span>
+                    </div>
+                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Grammar (GRA)</span>
+                      <span className="font-bold text-white">{writingEval.speakingAudit.graBand.toFixed(1)}</span>
+                    </div>
+                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Pronun. (P)</span>
+                      <span className="font-bold text-white">{writingEval.speakingAudit.pBand.toFixed(1)}</span>
+                    </div>
                   </div>
-                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Lexical (LR)</span>
-                    <span className="font-bold text-white">{writingEval.speakingAudit.lrBand.toFixed(1)}</span>
-                  </div>
-                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Grammar (GRA)</span>
-                    <span className="font-bold text-white">{writingEval.speakingAudit.graBand.toFixed(1)}</span>
-                  </div>
-                  <div className="p-2 rounded bg-slate-950/80 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Pronun. (P)</span>
-                    <span className="font-bold text-white">{writingEval.speakingAudit.pBand.toFixed(1)}</span>
-                  </div>
-                </div>
+                ) : (
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Speaking is not assessed from Writing responses. Complete the Speaking module with recorded audio for an authentic Speaking band score.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -890,9 +895,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
         <div className="space-y-4">
           {filteredQuestions.map((q) => {
             const userVal = (userAnswers[q.id] || '').trim();
-            const normUser = normalize(userVal);
-            const normCorrect = normalize(q.correctAnswer);
-            const isCorrect = normUser === normCorrect || (normUser && normUser.replace(/\s+/g, '') === normCorrect.replace(/\s+/g, ''));
+            const isCorrect = checkQuestionCorrect(q);
             const lang = langPreference[q.id] || globalLang;
             const isExpanded = expandedQuestionId === q.id;
 

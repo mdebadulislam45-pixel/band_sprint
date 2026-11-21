@@ -10,7 +10,7 @@ import { questionEngine } from './QuestionEngine';
 import { audioManager } from './AudioManager';
 import { speechRecognitionService } from './SpeechRecognitionService';
 import { speakingStorageService } from './SpeakingStorageService';
-import { evaluateSpeakingSession } from './SpeakingEvaluationService';
+import { analyzeSingleTranscriptMetrics, evaluateSpeakingSession } from './SpeakingEvaluationService';
 
 export interface SpeakingEngineListener {
   onStateChange: (state: SpeakingTestState) => void;
@@ -366,7 +366,9 @@ export class SpeakingEngineService {
     this.clearTimers();
     const finalTranscript = speechRecognitionService.stopListening(true);
     const duration = Math.max(1, Math.floor((Date.now() - this.turnStartTime) / 1000));
-    const words = finalTranscript.trim().split(/\s+/).filter(Boolean);
+    const cleanTranscript = finalTranscript.trim();
+    const transcriptMetrics = analyzeSingleTranscriptMetrics(cleanTranscript, duration);
+    const measuredAcoustic = speechRecognitionService.getLastAcousticTelemetry();
 
     const currentQ = this.activeQuestion!;
 
@@ -375,16 +377,18 @@ export class SpeakingEngineService {
       part: currentQ.part,
       topic: currentQ.topic,
       questionText: currentQ.questionText,
-      transcript: finalTranscript.trim(),
+      transcript: cleanTranscript,
       startTime: this.turnStartTime,
       endTime: Date.now(),
       durationSec: duration,
-      wordCount: words.length,
-      wordsPerMinute: Math.round((words.length / Math.max(0.1, duration / 60))),
-      pauseCount: Math.floor(duration / 12),
-      longPauseCount: Math.floor(duration / 25),
-      fillerCount: 0,
-      detectedFillers: []
+      wordCount: transcriptMetrics.wordCount,
+      wordsPerMinute: transcriptMetrics.wordsPerMinute,
+      // Acoustic pause timing is not measured in transcript-only capture; null = unmeasured (distinct from measured 0)
+      pauseCount: null,
+      longPauseCount: null,
+      fillerCount: transcriptMetrics.fillerCount,
+      detectedFillers: transcriptMetrics.detectedFillers,
+      ...(measuredAcoustic ? { acousticMetrics: measuredAcoustic } : {})
     };
 
     this.answers.push(answerRecord);

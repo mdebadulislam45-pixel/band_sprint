@@ -17,6 +17,7 @@ import {
 import { UserProfile } from '../../types';
 import { sanitizeCandidateName } from '../../utils/nameSanitizer';
 import { soundManager } from '../../utils/audioEffects';
+import { aggregateExamHistory } from '../../utils/historyAggregation';
 
 interface DiagnosticScorecardModalProps {
   isOpen: boolean;
@@ -36,58 +37,34 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
   const [copiedLink, setCopiedLink] = React.useState(false);
   const printAreaRef = useRef<HTMLDivElement>(null);
 
+  const examHistory = user?.progress?.examHistory || [];
+
+  const { scores, hasAttempts } = React.useMemo(() => {
+    const agg = aggregateExamHistory(examHistory);
+    const hasAnyValid =
+      agg.overall.latest !== null ||
+      agg.skills.listening.latest !== null ||
+      agg.skills.reading.latest !== null ||
+      agg.skills.writing.latest !== null ||
+      agg.skills.speaking.latest !== null;
+
+    return {
+      hasAttempts: hasAnyValid,
+      scores: {
+        // Strictly require verified 4-skill Full Mock for overall band (never infer from partial skills)
+        overall: agg.overall.latest,
+        listening: agg.skills.listening.latest,
+        reading: agg.skills.reading.latest,
+        writing: agg.skills.writing.latest,
+        speaking: agg.skills.speaking.latest
+      }
+    };
+  }, [examHistory]);
+
   if (!isOpen) return null;
 
   const candidateName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
   const targetBand = user?.progress?.targetBand || 7.5;
-  const examHistory = user?.progress?.examHistory || [];
-
-  const { scores, hasAttempts } = React.useMemo(() => {
-    const scoredExams = examHistory.filter(
-      (e) => (e.overallBand && e.overallBand > 0) || (e.listeningBand && e.listeningBand > 0) || (e.readingBand && e.readingBand > 0) || (e.writingBand && e.writingBand > 0)
-    );
-
-    if (scoredExams.length > 0) {
-      const latest = scoredExams[scoredExams.length - 1];
-      const l = typeof latest.listeningBand === 'number' && latest.listeningBand > 0 ? latest.listeningBand : null;
-      const r = typeof latest.readingBand === 'number' && latest.readingBand > 0 ? latest.readingBand : null;
-      const w = typeof latest.writingBand === 'number' && latest.writingBand > 0 ? latest.writingBand : null;
-      const s = typeof (latest as any).speakingBand === 'number' && (latest as any).speakingBand > 0 ? (latest as any).speakingBand : null;
-
-      const subBands = [l, r, w, s].filter((b): b is number => b !== null);
-      let ov = latest.overallBand && latest.overallBand > 0 ? latest.overallBand : null;
-      if (ov === null && subBands.length > 0) {
-        const rawAvg = subBands.reduce((a, b) => a + b, 0) / subBands.length;
-        const decimal = rawAvg - Math.floor(rawAvg);
-        let band = Math.floor(rawAvg);
-        if (decimal >= 0.75) band += 1.0;
-        else if (decimal >= 0.25) band += 0.5;
-        ov = band;
-      }
-
-      return {
-        hasAttempts: true,
-        scores: {
-          overall: ov,
-          listening: l,
-          reading: r,
-          writing: w,
-          speaking: s
-        }
-      };
-    }
-
-    return {
-      hasAttempts: false,
-      scores: {
-        overall: null,
-        listening: null,
-        reading: null,
-        writing: null,
-        speaking: null
-      }
-    };
-  }, [examHistory]);
 
   const candidateId = `IS-${Math.abs(
     (user?.id || 'candidate').split('').reduce((acc, c) => acc + c.charCodeAt(0), 1000) * 73
@@ -100,7 +77,7 @@ export const DiagnosticScorecardModal: React.FC<DiagnosticScorecardModalProps> =
   });
 
   const getCefrLevel = (band: number | null): string => {
-    if (band === null || band <= 0) return 'Unassessed';
+    if (band === null || band < 0.5) return 'Not assessed';
     if (band >= 8.5) return 'C2 Mastery';
     if (band >= 7.0) return 'C1 Operational';
     if (band >= 5.5) return 'B2 Vantage';

@@ -21,12 +21,18 @@ import {
   SpeakingPart,
   GrammarObservation
 } from '../types/speakingTypes';
+import {
+  analyzeTextQualitySignals,
+  roundOfficialIELTSBand
+} from '../utils/scoringIntegrity';
+import { getStoredSessionToken } from './authService';
 
 export interface SpeakingInputGateResult {
   isValidAttempt: boolean;
+  assessmentStatus?: 'insufficient_evidence';
   wordCount: number;
-  overallBand: number;
-  criteria: { fc: number; lr: number; gra: number; pr: number };
+  overallBand: number | null;
+  criteria: { fc: number | null; lr: number | null; gra: number | null; pr: number | null };
   feedbackTitle: string;
   feedbackEn: string;
   feedbackBn: string;
@@ -34,16 +40,17 @@ export interface SpeakingInputGateResult {
 
 /**
  * Official Strict Input Gate for IELTS Speaking Evaluation.
- * Rejects empty, unattempted, or sub-5-word transcripts with authentic 0.0 zero-state.
+ * Rejects empty, unattempted, or sub-5-word transcripts with null (unassessed) scores.
  */
 export function checkSpeakingInputGate(transcript: string): SpeakingInputGateResult {
   const cleanWords = (transcript || '').trim().split(/\s+/).filter(Boolean);
   if (cleanWords.length < 5) {
     return {
       isValidAttempt: false,
+      assessmentStatus: 'insufficient_evidence',
       wordCount: cleanWords.length,
-      overallBand: 0.0,
-      criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+      overallBand: null,
+      criteria: { fc: null, lr: null, gra: null, pr: null },
       feedbackTitle: "No Candidate Speech Detected",
       feedbackEn: "You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.",
       feedbackBn: "পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।"
@@ -53,8 +60,8 @@ export function checkSpeakingInputGate(transcript: string): SpeakingInputGateRes
   return {
     isValidAttempt: true,
     wordCount: cleanWords.length,
-    overallBand: 0.0,
-    criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+    overallBand: null,
+    criteria: { fc: null, lr: null, gra: null, pr: null },
     feedbackTitle: "Valid Speech Detected",
     feedbackEn: "",
     feedbackBn: ""
@@ -117,7 +124,8 @@ export function calculateIELTSOverallBand(fc: number, gra: number, lr: number, p
   };
 }
 
-export function getIELTSBandDescriptor(band: number): string {
+export function getIELTSBandDescriptor(band: number | null): string {
+  if (band === null || !Number.isFinite(band)) return 'Not assessed';
   if (band >= 9.0) return 'Expert user';
   if (band >= 8.5) return 'Very good user (Upper)';
   if (band >= 8.0) return 'Very good user';
@@ -142,20 +150,32 @@ function roundToHalfBand(score: number): number {
 export function computeSpeakingAnalytics(answers: SpeakingAnswerRecord[]): SpeakingTestAnalytics {
   let totalSpeakingTimeSec = 0;
   let totalWordsSpoken = 0;
-  let totalPauses = 0;
-  let totalLongPauses = 0;
   let totalFillers = 0;
 
   const fillerCounts: Record<string, number> = {};
   const allWords: string[] = [];
 
+  let totalPausesMeasured = 0;
+  let totalLongPausesMeasured = 0;
+  let hasMeasuredPauses = false;
+  let hasMeasuredLongPauses = false;
+
   for (const ans of answers) {
     const cleanWords = (ans.transcript || '').trim().split(/\s+/).filter(Boolean);
     totalSpeakingTimeSec += ans.durationSec || 0;
     totalWordsSpoken += typeof ans.wordCount === 'number' && ans.wordCount > 0 ? ans.wordCount : cleanWords.length;
-    totalPauses += ans.pauseCount || 0;
-    totalLongPauses += ans.longPauseCount || 0;
-    totalFillers += ans.fillerCount || 0;
+
+    if (typeof ans.pauseCount === 'number' && Number.isFinite(ans.pauseCount) && ans.pauseCount >= 0) {
+      totalPausesMeasured += ans.pauseCount;
+      hasMeasuredPauses = true;
+    }
+    if (typeof ans.longPauseCount === 'number' && Number.isFinite(ans.longPauseCount) && ans.longPauseCount >= 0) {
+      totalLongPausesMeasured += ans.longPauseCount;
+      hasMeasuredLongPauses = true;
+    }
+    if (typeof ans.fillerCount === 'number' && Number.isFinite(ans.fillerCount) && ans.fillerCount >= 0) {
+      totalFillers += ans.fillerCount;
+    }
 
     if (ans.detectedFillers) {
       for (const f of ans.detectedFillers) {
@@ -189,8 +209,9 @@ export function computeSpeakingAnalytics(answers: SpeakingAnswerRecord[]): Speak
     totalSpeakingTimeSec,
     totalWordsSpoken,
     averageWpm,
-    totalPauses,
-    totalLongPauses,
+    totalPauses: hasMeasuredPauses ? totalPausesMeasured : null,
+    totalLongPauses: hasMeasuredLongPauses ? totalLongPausesMeasured : null,
+    pauseTelemetryAvailable: hasMeasuredPauses || hasMeasuredLongPauses,
     totalFillers,
     mostFrequentFillers,
     uniqueVocabularyCount,
@@ -257,7 +278,7 @@ export function evaluateSpeakingSession(
     const emptyCriterion = (
       name: 'Fluency & Coherence' | 'Lexical Resource' | 'Grammatical Range & Accuracy' | 'Pronunciation'
     ): CriterionFeedback => ({
-      band: 0.0,
+      band: null,
       criterionName: name,
       strengths: [],
       improvements: [gate.feedbackEn],
@@ -266,20 +287,31 @@ export function evaluateSpeakingSession(
 
     return {
       isValidAttempt: false,
+      assessmentStatus: 'insufficient_evidence',
+      evidenceMode: 'transcript_only',
+      pronunciationObservable: false,
+      isPartialAssessment: true,
+      unassessedCriteria: [
+        'Fluency & Coherence',
+        'Lexical Resource',
+        'Grammatical Range & Accuracy',
+        'Pronunciation'
+      ],
       wordCount: gate.wordCount,
-      overallBand: 0.0,
-      fluencyBand: 0.0,
-      lexicalBand: 0.0,
-      grammarBand: 0.0,
-      pronunciationBand: 0.0,
+      overallBand: null,
+      partialThreeCriterionIndex: null,
+      fluencyBand: null,
+      lexicalBand: null,
+      grammarBand: null,
+      pronunciationBand: null,
       feedbackTitle: gate.feedbackTitle,
       feedbackEn: gate.feedbackEn,
       feedbackBn: gate.feedbackBn,
       criteria: {
-        fc: 0.0,
-        lr: 0.0,
-        gra: 0.0,
-        pr: 0.0,
+        fc: null,
+        lr: null,
+        gra: null,
+        pr: null,
         fluency: emptyCriterion('Fluency & Coherence'),
         lexical: emptyCriterion('Lexical Resource'),
         grammar: emptyCriterion('Grammatical Range & Accuracy'),
@@ -337,37 +369,48 @@ export function evaluateSpeakingSession(
     }
   }
 
-  // 1. Fluency & Coherence Scoring based strictly on actual speech output
-  let rawFluency = 5.0;
-  if (analytics.totalWordsSpoken >= 250) rawFluency += 1.5;
-  else if (analytics.totalWordsSpoken >= 120) rawFluency += 1.0;
-  else if (analytics.totalWordsSpoken >= 50) rawFluency += 0.5;
-  else if (analytics.totalWordsSpoken < 20) rawFluency -= 1.0;
+  // Extract anti-repetition & coherence signals across the combined transcript
+  const sessionSignals = analyzeTextQualitySignals(combinedTranscript);
 
-  if (analytics.averageWpm >= 110 && analytics.averageWpm <= 160) rawFluency += 0.5;
-  else if (analytics.averageWpm < 75) rawFluency -= 0.5;
+  // 1. Fluency & Coherence Scoring based on real speech continuity, repetition, fillers & pauses
+  let rawFluency = 4.5;
+  if (!sessionSignals.isHighlyRepetitive && sessionSignals.lexicalDiversityRatio >= 0.35) {
+    if (analytics.totalWordsSpoken >= 250) rawFluency += 1.5;
+    else if (analytics.totalWordsSpoken >= 120) rawFluency += 1.0;
+    else if (analytics.totalWordsSpoken >= 50) rawFluency += 0.5;
+  } else if (analytics.totalWordsSpoken >= 50) {
+    // Repetitive speech must never be rewarded for raw word count
+    rawFluency -= 0.5;
+  }
+  if (analytics.totalWordsSpoken < 20) rawFluency -= 1.0;
+
+  if (analytics.averageWpm >= 105 && analytics.averageWpm <= 165) rawFluency += 0.5;
+  else if (analytics.averageWpm > 0 && analytics.averageWpm < 75) rawFluency -= 0.5;
 
   const fillerRatio =
     analytics.totalWordsSpoken > 0 ? analytics.totalFillers / analytics.totalWordsSpoken : 0;
-  if (fillerRatio > 0.08) rawFluency -= 0.5;
-  if (analytics.totalLongPauses > 4) rawFluency -= 0.5;
+  if (fillerRatio > 0.14) rawFluency -= 1.0;
+  else if (fillerRatio > 0.08) rawFluency -= 0.5;
+  if (typeof analytics.totalLongPauses === 'number' && analytics.totalLongPauses > 4) rawFluency -= 0.5;
+  if (sessionSignals.isHighlyRepetitive) rawFluency = Math.min(rawFluency, 4.5);
 
   const fluencyBand = roundToHalfBand(rawFluency);
 
   // 2. Lexical Resource Scoring
-  let rawLexical = 5.0;
-  if (analytics.uniqueVocabularyCount >= 110) rawLexical += 1.5;
-  else if (analytics.uniqueVocabularyCount >= 65) rawLexical += 1.0;
+  let rawLexical = 4.5;
+  if (analytics.uniqueVocabularyCount >= 110 && sessionSignals.lexicalDiversityRatio >= 0.42) rawLexical += 1.5;
+  else if (analytics.uniqueVocabularyCount >= 65 && sessionSignals.lexicalDiversityRatio >= 0.38) rawLexical += 1.0;
   else if (analytics.uniqueVocabularyCount >= 30) rawLexical += 0.5;
   else if (analytics.uniqueVocabularyCount < 15) rawLexical -= 0.5;
 
   if (advancedVocabHits >= 5) rawLexical += 1.0;
   else if (advancedVocabHits >= 2) rawLexical += 0.5;
+  if (sessionSignals.isHighlyRepetitive) rawLexical = Math.min(rawLexical, 4.5);
 
   const lexicalBand = roundToHalfBand(rawLexical);
 
   // 3. Grammatical Range & Accuracy Scoring
-  let rawGrammar = 5.5;
+  let rawGrammar = 5.0;
   if (complexGrammarHits >= 6) rawGrammar += 1.5;
   else if (complexGrammarHits >= 3) rawGrammar += 1.0;
   else if (complexGrammarHits >= 1) rawGrammar += 0.5;
@@ -378,41 +421,70 @@ export function evaluateSpeakingSession(
 
   const grammarBand = roundToHalfBand(rawGrammar);
 
-  // 4. Pronunciation & Intelligibility Scoring
-  const avgClarity =
-    answers.length > 0
-      ? answers.reduce((acc, a) => acc + (a.clarityScore || 80), 0) / answers.length
-      : 80;
-
-  const avgExpressiveness =
-    answers.length > 0
-      ? answers.reduce((acc, a) => acc + (a.acousticMetrics?.expressivenessScore || 75), 0) / answers.length
-      : 75;
-
-  const totalEnergyDrops = answers.reduce(
-    (acc, a) => acc + (a.acousticMetrics?.energyDropOffs || 0),
-    0
+  // 4. Pronunciation & Intelligibility Scoring — NEVER fabricate from hardcoded 80/75/68 defaults
+  const answersWithMeasuredAudio = answers.filter(
+    (a) =>
+      (typeof a.clarityScore === 'number' && a.clarityScore > 0) ||
+      (a.acousticMetrics?.isMeasured !== false &&
+        typeof a.acousticMetrics?.expressivenessScore === 'number' &&
+        a.acousticMetrics.expressivenessScore > 0)
   );
+  const hasRealAcousticMetrics = answersWithMeasuredAudio.length > 0;
 
-  let rawPronunciation = 5.5;
-  if (avgClarity >= 90) rawPronunciation += 1.0;
-  else if (avgClarity >= 82) rawPronunciation += 0.5;
-  else if (avgClarity < 70) rawPronunciation -= 0.5;
+  let pronunciationBand: number | null = null;
+  let overallBand: number | null = null;
+  let partialThreeCriterionIndex: number | null = null;
+  let measuredAvgClarity = 0;
 
-  if (avgExpressiveness >= 82) rawPronunciation += 0.5;
-  else if (avgExpressiveness < 48) rawPronunciation -= 0.5;
+  if (hasRealAcousticMetrics) {
+    const claritySamples = answersWithMeasuredAudio
+      .map((a) => a.clarityScore)
+      .filter((v): v is number => typeof v === 'number' && v > 0);
+    const exprSamples = answersWithMeasuredAudio
+      .map((a) => a.acousticMetrics?.expressivenessScore)
+      .filter((v): v is number => typeof v === 'number' && v > 0);
 
-  if (totalEnergyDrops > 5) rawPronunciation -= 0.5;
+    const avgClarity =
+      claritySamples.length > 0
+        ? claritySamples.reduce((acc, v) => acc + v, 0) / claritySamples.length
+        : 0;
+    measuredAvgClarity = avgClarity;
+    const avgExpressiveness =
+      exprSamples.length > 0
+        ? exprSamples.reduce((acc, v) => acc + v, 0) / exprSamples.length
+        : 0;
+    const totalEnergyDrops = answersWithMeasuredAudio.reduce(
+      (acc, a) => acc + (a.acousticMetrics?.energyDropOffs || 0),
+      0
+    );
 
-  const pronunciationBand = roundToHalfBand(rawPronunciation);
+    let rawPronunciation = 5.0;
+    if (avgClarity >= 90) rawPronunciation += 1.5;
+    else if (avgClarity >= 82) rawPronunciation += 1.0;
+    else if (avgClarity >= 72) rawPronunciation += 0.5;
+    else if (avgClarity > 0 && avgClarity < 65) rawPronunciation -= 0.5;
 
-  const bandCalculation = calculateIELTSOverallBand(
-    fluencyBand,
-    grammarBand,
-    lexicalBand,
-    pronunciationBand
-  );
-  const overallBand = bandCalculation.overallBand;
+    if (avgExpressiveness >= 82) rawPronunciation += 0.5;
+    else if (avgExpressiveness > 0 && avgExpressiveness < 48) rawPronunciation -= 0.5;
+
+    if (totalEnergyDrops > 5) rawPronunciation -= 0.5;
+
+    pronunciationBand = roundToHalfBand(rawPronunciation);
+    const bandCalculation = calculateIELTSOverallBand(
+      fluencyBand,
+      grammarBand,
+      lexicalBand,
+      pronunciationBand
+    );
+    overallBand = bandCalculation.overallBand;
+    partialThreeCriterionIndex = null;
+  } else {
+    // Transcript-only session: Pronunciation is NOT acoustically observable;
+    // overallBand MUST remain null so partial results are never treated as a complete 4-criterion IELTS Speaking band.
+    pronunciationBand = null;
+    overallBand = null;
+    partialThreeCriterionIndex = roundOfficialIELTSBand((fluencyBand + grammarBand + lexicalBand) / 3);
+  }
 
   const sampleQuotes = answers
     .map((a) => (a.transcript || '').trim())
@@ -431,7 +503,7 @@ export function evaluateSpeakingSession(
       analytics.totalFillers > 2
         ? `Reduce vocal fillers (${analytics.totalFillers} detected) by using brief silent pauses.`
         : 'Use cohesive discourse markers ("From my perspective", "Having said that") to extend ideas.',
-      analytics.totalLongPauses > 1
+      typeof analytics.totalLongPauses === 'number' && analytics.totalLongPauses > 1
         ? 'Avoid hesitations exceeding 2.5 seconds between clauses.'
         : 'Develop Part 2 & Part 3 answers with concrete examples.'
     ],
@@ -470,28 +542,56 @@ export function evaluateSpeakingSession(
     evidenceQuotes: sampleQuotes
   };
 
-  const pronunciationFeedback: CriterionFeedback = {
-    band: pronunciationBand,
-    criterionName: 'Pronunciation',
-    strengths: [
-      `Speech intelligibility index: ${Math.round(avgClarity)}%.`
-    ],
-    improvements: [
-      'Emphasize primary syllable stress on multisyllabic academic words.',
-      'Maintain vocal projection through the final words of each sentence.'
-    ],
-    evidenceQuotes: sampleQuotes
-  };
+  const pronunciationFeedback: CriterionFeedback = hasRealAcousticMetrics
+    ? {
+        band: pronunciationBand,
+        criterionName: 'Pronunciation',
+        strengths: [
+          `Measured speech intelligibility index: ${Math.round(measuredAvgClarity)}%.`
+        ],
+        improvements: [
+          'Emphasize primary syllable stress on multisyllabic academic words.',
+          'Maintain vocal projection through the final words of each sentence.'
+        ],
+        evidenceQuotes: sampleQuotes
+      }
+    : {
+        band: null,
+        criterionName: 'Pronunciation',
+        strengths: [
+          'Unassessed: acoustic audio telemetry was not available for this turn (transcript-only).'
+        ],
+        improvements: [
+          'Acoustic audio evaluation is required to measure pronunciation, stress, and intonation directly.',
+          'The partial index reflects the 3 observable criteria (Fluency, Lexical Resource, Grammar) only and is not a complete IELTS Speaking band.'
+        ],
+        evidenceQuotes: []
+      };
+
+  const summaryScoreText =
+    overallBand !== null
+      ? `Overall Band ${overallBand.toFixed(1)} (FC ${fluencyBand.toFixed(1)} · LR ${lexicalBand.toFixed(1)} · GRA ${grammarBand.toFixed(1)} · PR ${pronunciationBand !== null ? pronunciationBand.toFixed(1) : 'Unassessed'})`
+      : `Partial Transcript Index (3/4 criteria) ${partialThreeCriterionIndex !== null ? partialThreeCriterionIndex.toFixed(1) : 'N/A'} (FC ${fluencyBand.toFixed(1)} · LR ${lexicalBand.toFixed(1)} · GRA ${grammarBand.toFixed(1)} · PR Unassessed — not a complete IELTS Speaking band)`;
 
   return {
     isValidAttempt: true,
+    assessmentStatus: hasRealAcousticMetrics ? 'evaluated' : 'partial_transcript_only',
+    evidenceMode: hasRealAcousticMetrics ? 'audio_and_transcript' : 'transcript_only',
+    pronunciationObservable: hasRealAcousticMetrics,
+    isPartialAssessment: !hasRealAcousticMetrics,
+    unassessedCriteria: hasRealAcousticMetrics ? [] : ['Pronunciation'],
     wordCount: analytics.totalWordsSpoken,
     overallBand,
+    partialThreeCriterionIndex,
     fluencyBand,
     lexicalBand,
     grammarBand,
     pronunciationBand,
     criteria: {
+      fc: fluencyBand,
+      lr: lexicalBand,
+      gra: grammarBand,
+      pr: pronunciationBand,
       fluency: fluencyFeedback,
       lexical: lexicalFeedback,
       grammar: grammarFeedback,
@@ -536,7 +636,7 @@ export function evaluateSpeakingSession(
     ]
       .filter((u) => u.regex.test(combinedTranscript))
       .map((u) => ({ original: u.original, upgraded: u.upgraded, reason: u.reason })),
-    overallSummary: `Assessed across ${analytics.totalWordsSpoken} spoken words (${analytics.averageWpm} WPM): Overall Band ${overallBand.toFixed(1)} (FC ${fluencyBand.toFixed(1)} · LR ${lexicalBand.toFixed(1)} · GRA ${grammarBand.toFixed(1)} · PR ${pronunciationBand.toFixed(1)}).`
+    overallSummary: `Assessed across ${analytics.totalWordsSpoken} spoken words (${analytics.averageWpm} WPM): ${summaryScoreText}.`
   };
 }
 
@@ -568,7 +668,7 @@ export async function evaluateSingleSpeakingTurn(
   } = params;
   const cueCardBulletPoints = params.cueCardBulletPoints || optionalBulletPoints || [];
 
-  // STRICT INPUT GATE: < 5 words returns immediate 0.0 zero-state without calling API or fabricating scores
+  // STRICT INPUT GATE: < 5 words returns immediate null unassessed state without calling API or fabricating scores
   const gate = checkSpeakingInputGate(transcript);
   if (!gate.isValidAttempt) {
     return {
@@ -578,25 +678,36 @@ export async function evaluateSingleSpeakingTurn(
       topic,
       candidateTranscript: (transcript || '').trim(),
       isValidAttempt: false,
+      assessmentStatus: 'insufficient_evidence',
+      evidenceMode: 'transcript_only',
+      pronunciationObservable: false,
+      isPartialAssessment: true,
+      unassessedCriteria: [
+        'Fluency & Coherence',
+        'Lexical Resource',
+        'Grammatical Range & Accuracy',
+        'Pronunciation'
+      ],
       wordCount: gate.wordCount,
-      overallBand: 0.0,
-      criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+      overallBand: null,
+      partialThreeCriterionIndex: null,
+      criteria: { fc: null, lr: null, gra: null, pr: null },
       feedbackTitle: gate.feedbackTitle,
       feedbackEn: gate.feedbackEn,
       feedbackBn: gate.feedbackBn,
       durationSec,
       wordsPerMinute: 0,
-      estimatedBand: 0.0,
+      estimatedBand: null,
       estimatedBands: {
-        fluency: 0.0,
-        lexical: 0.0,
-        grammar: 0.0,
-        pronunciation: 0.0,
-        overall: 0.0
+        fluency: null,
+        lexical: null,
+        grammar: null,
+        pronunciation: null,
+        overall: null
       },
       grammaticalErrors: [],
       pronunciation: {
-        clarityBand: 0.0,
+        clarityBand: null,
         cadenceWpm: 0,
         trickyWords: [],
         connectedSpeechTips: [],
@@ -614,10 +725,78 @@ export async function evaluateSingleSpeakingTurn(
     };
   }
 
+  const buildUnavailableTurnFeedback = (
+    title: string,
+    reasonEn: string,
+    reasonBn: string,
+    opts?: { canRetry?: boolean; authRequired?: boolean; status?: 'unavailable' | 'insufficient_evidence' }
+  ): InstantSpeakingFeedback => ({
+    isValidAttempt: false,
+    assessmentStatus: opts?.status || 'unavailable',
+    evidenceMode: 'transcript_only',
+    pronunciationObservable: false,
+    isPartialAssessment: true,
+    unassessedCriteria: [
+      'Fluency & Coherence',
+      'Lexical Resource',
+      'Grammatical Range & Accuracy',
+      'Pronunciation'
+    ],
+    canRetry: opts?.canRetry ?? true,
+    authRequired: opts?.authRequired ?? false,
+    error: reasonEn,
+    wordCount: gate.wordCount,
+    overallBand: null,
+    partialThreeCriterionIndex: null,
+    criteria: { fc: null, lr: null, gra: null, pr: null },
+    feedbackTitle: title,
+    feedbackEn: reasonEn,
+    feedbackBn: reasonBn,
+    questionId,
+    questionText,
+    part,
+    topic,
+    candidateTranscript: transcript.trim(),
+    durationSec,
+    wordsPerMinute,
+    estimatedBand: null,
+    estimatedBands: {
+      fluency: null,
+      lexical: null,
+      grammar: null,
+      pronunciation: null,
+      overall: null
+    },
+    grammaticalErrors: [],
+    pronunciation: {
+      clarityBand: null,
+      cadenceWpm: wordsPerMinute,
+      trickyWords: [],
+      connectedSpeechTips: [],
+      intonationPattern: 'Unassessed — AI speaking evaluation unavailable.',
+      rhythmVerdict: 'Assessment unavailable'
+    },
+    band8Answer: {
+      bandScore: 8.5,
+      modelAnswer: '',
+      highlightedCollocations: [],
+      keyDiscourseMarkers: [],
+      examinerRationale: '',
+      audioPromptText: ''
+    },
+    actionableTips: [reasonEn]
+  });
+
   try {
+    const token = getStoredSessionToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch('/api/evaluate-speaking-turn', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         questionId,
         question: questionText,
@@ -630,61 +809,121 @@ export async function evaluateSingleSpeakingTurn(
       })
     });
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data && data.isValidAttempt === false) {
-        return {
-          ...data,
-          questionId,
-          questionText,
-          part,
-          topic,
-          candidateTranscript: transcript.trim(),
-          estimatedBand: 0.0,
-          estimatedBands: {
-            fluency: 0.0,
-            lexical: 0.0,
-            grammar: 0.0,
-            pronunciation: 0.0,
-            overall: 0.0
-          }
-        };
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        return buildUnavailableTurnFeedback(
+          'Sign In Required for AI Evaluation',
+          errData?.error || 'Please sign in to evaluate your speaking response. No fallback score was generated.',
+          'AI স্পিকিং মূল্যায়নের জন্য অনুগ্রহ করে সাইন ইন করুন। কোনো আনুমানিক স্কোর তৈরি করা হয়নি।',
+          { canRetry: false, authRequired: true }
+        );
       }
-      if (data && data.estimatedBands && data.band8Answer) {
-        return {
-          ...data,
-          isValidAttempt: true,
-          questionId,
-          questionText,
-          part,
-          topic,
-          candidateTranscript: transcript.trim(),
-          wordCount: gate.wordCount,
-          overallBand: data.estimatedBands.overall,
-          criteria: {
-            fc: data.estimatedBands.fluency,
-            lr: data.estimatedBands.lexical,
-            gra: data.estimatedBands.grammar,
-            pr: data.estimatedBands.pronunciation
-          },
-          durationSec,
-          wordsPerMinute
-        };
+      if (response.status === 403) {
+        return buildUnavailableTurnFeedback(
+          'Evaluation Limit Reached',
+          errData?.error || 'Active subscription or daily allowance required for AI speaking evaluation.',
+          'AI স্পিকিং মূল্যায়নের দৈনিক সীমা পূর্ণ হয়েছে।',
+          { canRetry: false, authRequired: false }
+        );
       }
+      return buildUnavailableTurnFeedback(
+        'AI Assessment Temporarily Unavailable',
+        errData?.error || `Speaking evaluation service returned status ${response.status}. No score was fabricated.`,
+        'AI স্পিকিং মূল্যায়ন এই মুহূর্তে উপলব্ধ নয়। অনুগ্রহ করে পুনরায় চেষ্টা করুন।',
+        { canRetry: true, authRequired: false }
+      );
     }
-  } catch {
-    // Use deterministic rule-based linguistic evaluation on actual transcript (only when >= 5 words)
-  }
 
-  return generateDiagnosticTurnFeedback(
-    questionId,
-    questionText,
-    part,
-    topic,
-    transcript,
-    durationSec,
-    wordsPerMinute
-  );
+    const data = await response.json();
+    if (!data || data.isValidAttempt === false) {
+      const status = data?.assessmentStatus === 'insufficient_evidence' ? 'insufficient_evidence' : 'unavailable';
+      return buildUnavailableTurnFeedback(
+        data?.feedbackTitle || (status === 'insufficient_evidence' ? 'Insufficient Speech Sample' : 'AI Assessment Unavailable'),
+        data?.feedbackEn || data?.error || 'Speaking turn could not be assessed. No band score was generated.',
+        data?.feedbackBn || 'এই উত্তরটি মূল্যায়ন করা যায়নি। অনুগ্রহ করে স্পষ্টভাবে পুনরায় বলুন।',
+        { canRetry: status === 'unavailable', status }
+      );
+    }
+
+    if (data.estimatedBands && typeof data.estimatedBands === 'object') {
+      const fc = typeof data.criteria?.fc === 'number'
+        ? data.criteria.fc
+        : (typeof data.estimatedBands.fluency === 'number' ? data.estimatedBands.fluency : null);
+      const lr = typeof data.criteria?.lr === 'number'
+        ? data.criteria.lr
+        : (typeof data.estimatedBands.lexical === 'number' ? data.estimatedBands.lexical : null);
+      const gra = typeof data.criteria?.gra === 'number'
+        ? data.criteria.gra
+        : (typeof data.estimatedBands.grammar === 'number' ? data.estimatedBands.grammar : null);
+      const pr = typeof data.criteria?.pr === 'number'
+        ? data.criteria.pr
+        : (typeof data.estimatedBands.pronunciation === 'number' ? data.estimatedBands.pronunciation : null);
+      const pronunciationObservable = Boolean(data.pronunciationObservable) && pr !== null;
+      const overallBand = pronunciationObservable && typeof data.overallBand === 'number'
+        ? data.overallBand
+        : (pronunciationObservable && typeof data.estimatedBands.overall === 'number' ? data.estimatedBands.overall : null);
+      const partialThreeCriterionIndex = !pronunciationObservable
+        ? (typeof data.partialThreeCriterionIndex === 'number'
+          ? data.partialThreeCriterionIndex
+          : (fc !== null && lr !== null && gra !== null ? roundOfficialIELTSBand((fc + lr + gra) / 3) : null))
+        : null;
+
+      return {
+        ...data,
+        isValidAttempt: true,
+        assessmentStatus: data.assessmentStatus || (pronunciationObservable ? 'evaluated' : 'partial_transcript_only'),
+        evidenceMode: data.evidenceMode || (pronunciationObservable ? 'audio_and_transcript' : 'transcript_only'),
+        pronunciationObservable,
+        isPartialAssessment: typeof data.isPartialAssessment === 'boolean' ? data.isPartialAssessment : !pronunciationObservable,
+        unassessedCriteria: Array.isArray(data.unassessedCriteria)
+          ? data.unassessedCriteria
+          : (pronunciationObservable ? [] : ['Pronunciation']),
+        questionId,
+        questionText,
+        part,
+        topic,
+        candidateTranscript: transcript.trim(),
+        wordCount: typeof data.wordCount === 'number' ? data.wordCount : gate.wordCount,
+        overallBand,
+        partialThreeCriterionIndex,
+        estimatedBand: overallBand,
+        criteria: { fc, lr, gra, pr },
+        estimatedBands: {
+          fluency: fc,
+          lexical: lr,
+          grammar: gra,
+          pronunciation: pr,
+          overall: overallBand
+        },
+        pronunciation: {
+          clarityBand: pr,
+          cadenceWpm: data.pronunciation?.cadenceWpm ?? wordsPerMinute,
+          trickyWords: Array.isArray(data.pronunciation?.trickyWords) ? data.pronunciation.trickyWords : [],
+          connectedSpeechTips: Array.isArray(data.pronunciation?.connectedSpeechTips) ? data.pronunciation.connectedSpeechTips : [],
+          intonationPattern: data.pronunciation?.intonationPattern || (pronunciationObservable ? 'Assessed from audio recording.' : 'Not observable from transcript-only input.'),
+          rhythmVerdict: data.pronunciation?.rhythmVerdict || (pronunciationObservable ? 'Assessed from audio recording.' : 'Unassessed — audio recording analysis required for acoustic pronunciation scoring.')
+        },
+        durationSec,
+        wordsPerMinute
+      };
+    }
+
+    return buildUnavailableTurnFeedback(
+      'AI Assessment Temporarily Unavailable',
+      data?.error || 'AI speaking assessment returned an incomplete response. Please retry.',
+      'AI স্পিকিং মূল্যায়ন এই মুহূর্তে উপলব্ধ নয়। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।',
+      { canRetry: true }
+    );
+  } catch {
+    // Do NOT silently fabricate an IELTS Band Score when the backend AI service fails
+    return buildUnavailableTurnFeedback(
+      'AI Assessment Unavailable',
+      'Could not reach the AI speaking evaluation service. No fallback IELTS band score was fabricated — please sign in or retry.',
+      'AI স্পিকিং মূল্যায়ন সার্ভারের সাথে সংযোগ করা যায়নি। কোনো আনুমানিক ভুয়া ব্যান্ড স্কোর তৈরি করা হয়নি — অনুগ্রহ করে পুনরায় চেষ্টা করুন।',
+      { canRetry: true }
+    );
+  }
 }
 
 /**
@@ -748,25 +987,36 @@ export function generateDiagnosticTurnFeedback(
       topic,
       candidateTranscript: (transcript || '').trim(),
       isValidAttempt: false,
+      assessmentStatus: 'insufficient_evidence',
+      evidenceMode: 'transcript_only',
+      pronunciationObservable: false,
+      isPartialAssessment: true,
+      unassessedCriteria: [
+        'Fluency & Coherence',
+        'Lexical Resource',
+        'Grammatical Range & Accuracy',
+        'Pronunciation'
+      ],
       wordCount: gate.wordCount,
-      overallBand: 0.0,
-      criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
+      overallBand: null,
+      partialThreeCriterionIndex: null,
+      criteria: { fc: null, lr: null, gra: null, pr: null },
       feedbackTitle: gate.feedbackTitle,
       feedbackEn: gate.feedbackEn,
       feedbackBn: gate.feedbackBn,
       durationSec,
       wordsPerMinute: 0,
-      estimatedBand: 0.0,
+      estimatedBand: null,
       estimatedBands: {
-        fluency: 0.0,
-        lexical: 0.0,
-        grammar: 0.0,
-        pronunciation: 0.0,
-        overall: 0.0
+        fluency: null,
+        lexical: null,
+        grammar: null,
+        pronunciation: null,
+        overall: null
       },
       grammaticalErrors: [],
       pronunciation: {
-        clarityBand: 0.0,
+        clarityBand: null,
         cadenceWpm: 0,
         trickyWords: [],
         connectedSpeechTips: [],
@@ -946,74 +1196,62 @@ export function generateDiagnosticTurnFeedback(
     );
   }
 
-  // Check C1/C2 advanced vocabulary and complex grammar hits in actual transcript
-  let advVocabHits = 0;
-  for (const pattern of ADVANCED_VOCAB_PATTERNS) {
-    pattern.lastIndex = 0;
-    const matches = cleanText.match(pattern);
-    if (matches) advVocabHits += matches.length;
-  }
-  let cpxGrammarHits = 0;
-  for (const pattern of COMPLEX_GRAMMAR_PATTERNS) {
-    pattern.lastIndex = 0;
-    const matches = cleanText.match(pattern);
-    if (matches) cpxGrammarHits += matches.length;
-  }
-
-  // 4. Calculate Band Scores proportional to actual word count, lexical richness, and grammar
-  let fluency = wordCount >= 35 ? 7.5 : wordCount >= 20 ? 6.5 : wordCount >= 10 ? 5.5 : 5.0;
-  let lexical = wordCount >= 30 ? 7.0 : wordCount >= 15 ? 6.0 : 5.0;
-  if (advVocabHits >= 2) lexical += 1.0;
-  else if (advVocabHits >= 1) lexical += 0.5;
-
-  let grammar = grammaticalErrors.length === 0 ? (wordCount >= 20 ? 7.0 : 6.0) : 5.5;
-  if (cpxGrammarHits >= 2) grammar += 1.0;
-  else if (cpxGrammarHits >= 1) grammar += 0.5;
-
-  let pronunciation = wordCount >= 15 ? 6.5 : 5.5;
-
-  const overall = calculateIELTSOverallBand(fluency, grammar, lexical, pronunciation).overallBand;
-
+  // Non-scoring linguistic observation helper ONLY.
+  // Never emits IELTS band estimates, pronunciation scores, overall bands, or score floors.
   return {
     questionId,
     questionText,
     part,
     topic,
     candidateTranscript: cleanText,
-    isValidAttempt: true,
+    isValidAttempt: false,
+    assessmentStatus: 'unavailable',
+    evidenceMode: 'transcript_only',
+    pronunciationObservable: false,
+    isPartialAssessment: true,
+    unassessedCriteria: [
+      'Fluency & Coherence',
+      'Lexical Resource',
+      'Grammatical Range & Accuracy',
+      'Pronunciation'
+    ],
     wordCount,
-    overallBand: overall,
+    overallBand: null,
+    partialThreeCriterionIndex: null,
     criteria: {
-      fc: fluency,
-      lr: lexical,
-      gra: grammar,
-      pr: pronunciation
+      fc: null,
+      lr: null,
+      gra: null,
+      pr: null
     },
+    feedbackTitle: 'Linguistic Observations Only (No Band Score Assigned)',
+    feedbackEn: 'Local transcript diagnostics identify observable grammar patterns and vocabulary references only; no IELTS band score is calculated offline.',
+    feedbackBn: 'অফলাইন ডায়াগনস্টিক শুধুমাত্র ব্যাকরণগত পর্যবেক্ষণ দেখায়; কোনো IELTS ব্যান্ড স্কোর নির্ধারণ করা হয় না।',
     durationSec,
-    wordsPerMinute: wordsPerMinute || 110,
-    estimatedBand: overall,
+    wordsPerMinute: wordsPerMinute || 0,
+    estimatedBand: null,
     estimatedBands: {
-      fluency,
-      lexical,
-      grammar,
-      pronunciation,
-      overall
+      fluency: null,
+      lexical: null,
+      grammar: null,
+      pronunciation: null,
+      overall: null
     },
     grammaticalErrors,
     pronunciation: {
-      clarityBand: pronunciation,
-      cadenceWpm: wordsPerMinute || 110,
+      clarityBand: null,
+      cadenceWpm: wordsPerMinute || 0,
       trickyWords,
       connectedSpeechTips: [
         'Link final consonant sounds smoothly into following vowel words (catenation).',
         'Use weak schwa (/ə/) forms on unstressed prepositions ("to", "of", "for") to maintain British stress-timed rhythm.'
       ],
-      intonationPattern: 'Use rising-falling intonation across subordinate clauses to signal continuation before your final point.',
-      rhythmVerdict: 'Audible cadence; emphasize content words while reducing function words.'
+      intonationPattern: 'Not observable from transcript-only input.',
+      rhythmVerdict: 'Unassessed — audio recording analysis required for acoustic pronunciation scoring.'
     },
     pronunciationAnalysis: {
-      clarityBand: pronunciation,
-      cadenceWpm: wordsPerMinute || 110,
+      clarityBand: null,
+      cadenceWpm: wordsPerMinute || 0,
       trickyWords,
       problemWords: trickyWords.map((w) => ({
         word: w.word,
@@ -1025,9 +1263,9 @@ export function generateDiagnosticTurnFeedback(
         'Link final consonant sounds smoothly into following vowel words (catenation).',
         'Use weak schwa (/ə/) forms on unstressed prepositions ("to", "of", "for") to maintain British stress-timed rhythm.'
       ],
-      intonationPattern: 'Use rising-falling intonation across subordinate clauses to signal continuation before your final point.',
-      intonationGuidance: 'Use rising-falling intonation across subordinate clauses to signal continuation before your final point.',
-      rhythmVerdict: 'Audible cadence; emphasize content words while reducing function words.'
+      intonationPattern: 'Not observable from transcript-only input.',
+      intonationGuidance: 'Not observable from transcript-only input.',
+      rhythmVerdict: 'Unassessed — audio recording analysis required for acoustic pronunciation scoring.'
     },
     band8Answer: {
       bandScore: 8.5,
@@ -1050,7 +1288,7 @@ export function generateDiagnosticTurnFeedback(
       wordCount < 15
         ? 'Your response was brief. Expand your point with a concrete reason and a brief example.'
         : 'Pause briefly at clause boundaries instead of using vocal fillers.',
-      'Integrate C1 collocations from the model answer into your next attempt.'
+      'Sign in and run AI Evaluation to obtain an evidence-backed assessment.'
     ]
   };
 }

@@ -59,6 +59,187 @@ import {
   sanitizeSpellingProgress
 } from '../utils/spellingProgressStore';
 
+export type SubmissionModule = 'listening' | 'reading' | 'writing' | 'speaking' | 'full_mock';
+
+export interface SubmissionPersistenceMetadata {
+  assessmentStatus?: string;
+  isPartialAssessment?: boolean;
+  pronunciationObservable?: boolean;
+}
+
+const VALID_SUBMISSION_MODULES: ReadonlySet<SubmissionModule> = new Set([
+  'listening',
+  'reading',
+  'writing',
+  'speaking',
+  'full_mock'
+]);
+
+const NON_PERSISTABLE_ASSESSMENT_STATUSES: ReadonlySet<string> = new Set([
+  'unavailable',
+  'insufficient_evidence',
+  'partial_transcript_only'
+]);
+
+function isHalfBandIncrement(value: number): boolean {
+  return Math.abs(value * 2 - Math.round(value * 2)) < 1e-6;
+}
+
+/**
+ * Validates whether a numeric IELTS band score is legitimate for persistence/hydration.
+ * - Rejects null, undefined, NaN, Infinity, non-numbers, non-half-band increments, and out-of-range values.
+ * - Speaking, Writing, and Full Mock require a valid band in [1.0, 9.0].
+ * - Listening and Reading accept [0.0, 9.0], allowing 0.0 only when questions were genuinely attempted (totalQuestions > 0).
+ */
+export function isValidPersistedIeltsBand(
+  module: SubmissionModule,
+  bandScore: unknown,
+  totalQuestions?: number
+): bandScore is number {
+  if (typeof bandScore !== 'number' || !Number.isFinite(bandScore)) {
+    return false;
+  }
+  if (!isHalfBandIncrement(bandScore)) {
+    return false;
+  }
+  if (bandScore > 9.0 || bandScore < 0.0) {
+    return false;
+  }
+  if (module === 'listening' || module === 'reading') {
+    if (bandScore === 0) {
+      return typeof totalQuestions === 'number' && Number.isFinite(totalQuestions) && totalQuestions > 0;
+    }
+    return bandScore >= 0.5 && bandScore <= 9.0;
+  }
+  // Speaking, Writing, and Full Mock never emit Band 0.0 for valid evaluated attempts
+  return bandScore >= 1.0 && bandScore <= 9.0;
+}
+
+/**
+ * Validates a submission payload before writing to Firestore /users/{uid}/submissions.
+ * Blocks unavailable, insufficient, partial transcript-only, null, NaN, and out-of-range scores.
+ */
+export function validateSubmissionForPersistence(params: {
+  module: SubmissionModule;
+  bandScore: number | null | undefined;
+  totalQuestions?: number;
+  metadata?: SubmissionPersistenceMetadata;
+}): { valid: true; normalizedBandScore: number } | { valid: false; reason: string } {
+  const { module, bandScore, totalQuestions, metadata } = params;
+
+  if (!VALID_SUBMISSION_MODULES.has(module)) {
+    return { valid: false, reason: 'invalid_module' };
+  }
+  if (
+    typeof metadata?.assessmentStatus === 'string' &&
+    NON_PERSISTABLE_ASSESSMENT_STATUSES.has(metadata.assessmentStatus)
+  ) {
+    return { valid: false, reason: `non_persistable_status:${metadata.assessmentStatus}` };
+  }
+  if (metadata?.isPartialAssessment === true) {
+    return { valid: false, reason: 'partial_assessment_excluded' };
+  }
+  if (module === 'speaking' && metadata?.pronunciationObservable === false) {
+    return { valid: false, reason: 'speaking_pronunciation_unassessed' };
+  }
+  if (!isValidPersistedIeltsBand(module, bandScore, totalQuestions)) {
+    return { valid: false, reason: 'invalid_band_score' };
+  }
+
+  return {
+    valid: true,
+    normalizedBandScore: Math.round(bandScore * 2) / 2
+  };
+}
+
+/**
+ * Safely hydrates a single Firestore submission document into an ExamHistoryRecord.
+ * Returns null for malformed, partial, unavailable, null, NaN, or out-of-range records
+ * instead of fabricating Band 6.0 or Band 0.0.
+ */
+export function hydrateSubmissionDocToExamHistory(
+  docId: string,
+  rawData: Record<string, unknown> | null | undefined
+): ExamHistoryRecord | null {
+  if (!docId || !rawData || typeof rawData !== 'object') {
+    return null;
+  }
+
+  const rawMod = typeof rawData.module === 'string' ? rawData.module : '';
+  if (!VALID_SUBMISSION_MODULES.has(rawMod as SubmissionModule)) {
+    return null;
+  }
+  const module = rawMod as SubmissionModule;
+
+  const status = typeof rawData.assessmentStatus === 'string' ? rawData.assessmentStatus : undefined;
+  const isPartial = rawData.isPartialAssessment === true;
+  const pronunciationObservable =
+    typeof rawData.pronunciationObservable === 'boolean' ? rawData.pronunciationObservable : undefined;
+  const totalQuestions =
+    typeof rawData.totalQuestions === 'number' && Number.isFinite(rawData.totalQuestions) && rawData.totalQuestions >= 0
+      ? Math.floor(rawData.totalQuestions)
+      : 0;
+  const correctCount =
+    typeof rawData.correctCount === 'number' && Number.isFinite(rawData.correctCount) && rawData.correctCount >= 0
+      ? Math.floor(rawData.correctCount)
+      : 0;
+
+  const validation = validateSubmissionForPersistence({
+    module,
+    bandScore: rawData.bandScore as number | null | undefined,
+    totalQuestions,
+    metadata: {
+      assessmentStatus: status,
+      isPartialAssessment: isPartial,
+      pronunciationObservable
+    }
+  });
+
+  if (!validation.valid) {
+    return null;
+  }
+
+  const score = validation.normalizedBandScore;
+  const parsedTs =
+    typeof rawData.createdAt === 'string' || typeof rawData.createdAt === 'number'
+      ? new Date(rawData.createdAt).getTime()
+      : Date.now();
+  const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
+
+  const examType: ExamHistoryRecord['examType'] =
+    module === 'listening'
+      ? 'listening_only'
+      : module === 'reading'
+      ? 'reading_only'
+      : module === 'writing'
+      ? 'writing_only'
+      : module === 'speaking'
+      ? 'speaking_only'
+      : 'full_mock';
+
+  return {
+    id: docId,
+    timestamp,
+    examType,
+    // Single-skill submissions do NOT constitute a 4-skill Overall IELTS Band
+    overallBand: module === 'full_mock' ? score : null,
+    listeningBand: module === 'listening' ? score : undefined,
+    readingBand: module === 'reading' ? score : undefined,
+    writingBand: module === 'writing' ? score : undefined,
+    speakingBand: module === 'speaking' ? score : undefined,
+    wordCount: 0,
+    submissionType: 'manual',
+    correctCount,
+    totalQuestions,
+    completedSkills: {
+      listening: module === 'listening' || module === 'full_mock',
+      reading: module === 'reading' || module === 'full_mock',
+      writing: module === 'writing' || module === 'full_mock',
+      speaking: module === 'speaking' || module === 'full_mock'
+    }
+  };
+}
+
 type StudyStateKind = 'diagnostic' | 'examSetup' | 'spellingProgress';
 
 class FirebaseSyncService {
@@ -576,41 +757,16 @@ class FirebaseSyncService {
       const merged: ExamHistoryRecord[] = [...existingHistory];
 
       snap.forEach((docSnap) => {
-        const d = docSnap.data();
         if (existingIds.has(docSnap.id)) return;
-        const ts = d.createdAt ? new Date(d.createdAt).getTime() : Date.now();
-        const rawMod = String(d.module || 'full_mock');
-        const examType: ExamHistoryRecord['examType'] =
-          rawMod === 'listening'
-            ? 'listening_only'
-            : rawMod === 'reading'
-            ? 'reading_only'
-            : rawMod === 'writing'
-            ? 'writing_only'
-            : rawMod === 'speaking'
-            ? 'speaking_only'
-            : 'full_mock';
-        const score = typeof d.bandScore === 'number' ? d.bandScore : 6.0;
-        merged.push({
-          id: docSnap.id,
-          timestamp: Number.isFinite(ts) ? ts : Date.now(),
-          examType,
-          overallBand: score,
-          listeningBand: rawMod === 'listening' ? score : undefined,
-          readingBand: rawMod === 'reading' ? score : undefined,
-          writingBand: rawMod === 'writing' ? score : undefined,
-          speakingBand: rawMod === 'speaking' ? score : undefined,
-          wordCount: 0,
-          submissionType: 'manual',
-          correctCount: typeof d.correctCount === 'number' ? d.correctCount : 0,
-          totalQuestions: typeof d.totalQuestions === 'number' ? d.totalQuestions : 0,
-          completedSkills: {
-            listening: rawMod === 'listening' || rawMod === 'full_mock',
-            reading: rawMod === 'reading' || rawMod === 'full_mock',
-            writing: rawMod === 'writing' || rawMod === 'full_mock',
-            speaking: rawMod === 'speaking' || rawMod === 'full_mock'
-          }
-        });
+        const hydrated = hydrateSubmissionDocToExamHistory(
+          docSnap.id,
+          docSnap.data() as Record<string, unknown>
+        );
+        if (!hydrated) {
+          // Safely skip invalid, incomplete, or malformed historical docs without mutating history
+          return;
+        }
+        merged.push(hydrated);
       });
 
       if (merged.length !== existingHistory.length) {
@@ -751,17 +907,34 @@ class FirebaseSyncService {
   }
 
   /**
-   * Record a test submission in Firestore
+   * Record a verified, complete test submission in Firestore.
+   * Rejects null, NaN, out-of-range, unavailable, insufficient, or partial transcript-only assessments
+   * without writing invalid scores or altering existing Firestore rules/schema.
    */
   public async recordTestSubmission(
-    module: 'listening' | 'reading' | 'writing' | 'speaking' | 'full_mock',
+    module: SubmissionModule,
     testId: string,
-    bandScore: number,
+    bandScore: number | null | undefined,
     correctCount: number,
     totalQuestions: number,
-    timeSpentSec: number
-  ): Promise<void> {
-    if (!this.currentUser) return;
+    timeSpentSec: number,
+    metadata?: SubmissionPersistenceMetadata
+  ): Promise<boolean> {
+    const safeCorrectCount = Math.min(200, Math.max(0, Math.floor(Number(correctCount) || 0)));
+    const safeTotalQuestions = Math.min(200, Math.max(0, Math.floor(Number(totalQuestions) || 0)));
+    const safeTimeSpentSec = Math.min(86400, Math.max(0, Math.floor(Number(timeSpentSec) || 0)));
+
+    const validation = validateSubmissionForPersistence({
+      module,
+      bandScore,
+      totalQuestions: safeTotalQuestions,
+      metadata
+    });
+    if (!validation.valid) {
+      return false;
+    }
+
+    if (!this.currentUser) return false;
     const submissionId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const docRef = doc(db, 'users', this.currentUser.uid, 'submissions', submissionId);
     const path = `users/${this.currentUser.uid}/submissions/${submissionId}`;
@@ -772,14 +945,16 @@ class FirebaseSyncService {
         userId: this.currentUser.uid,
         module,
         testId: String(testId || 'mock').slice(0, 128),
-        bandScore: Math.min(9.0, Math.max(0, Number(bandScore) || 0)),
-        correctCount: Math.min(200, Math.max(0, Math.floor(correctCount || 0))),
-        totalQuestions: Math.min(200, Math.max(0, Math.floor(totalQuestions || 0))),
-        timeSpentSec: Math.min(86400, Math.max(0, Math.floor(timeSpentSec || 0))),
+        bandScore: validation.normalizedBandScore,
+        correctCount: safeCorrectCount,
+        totalQuestions: safeTotalQuestions,
+        timeSpentSec: safeTimeSpentSec,
         createdAt: new Date().toISOString()
       });
+      return true;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
+      return false;
     }
   }
 

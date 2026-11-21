@@ -179,14 +179,17 @@ describe('Phase 3: Professional Writing Examination Experience & Data Integrity'
     const shortT1 = 'This is a brief summary of the chart with only ten words.';
     const gateT1 = checkWritingWordThreshold(shortT1, 'task1');
     assert.strictEqual(gateT1.isValidAttempt, false, 'Under 30 words must be rejected as invalid attempt');
-    assert.strictEqual(gateT1.overallBand, 0.0, 'Under threshold must yield Band 0.0');
+    assert.strictEqual(gateT1.assessmentStatus, 'insufficient_evidence');
+    assert.strictEqual(gateT1.overallBand, null, 'Under threshold must yield null overallBand (never Band 0.0)');
+    assert.strictEqual(gateT1.criteria.ta, null);
     assert.ok(gateT1.feedbackTitle.includes('Short') || gateT1.feedbackTitle.includes('Unassessable'));
 
     // Under minimum threshold (Task 2 < 50 words)
     const shortT2 = 'I agree that education should be free for all students because it helps society flourish in many good ways.';
     const gateT2 = checkWritingWordThreshold(shortT2, 'task2');
     assert.strictEqual(gateT2.isValidAttempt, false, 'Under 50 words must be rejected as invalid attempt');
-    assert.strictEqual(gateT2.overallBand, 0.0);
+    assert.strictEqual(gateT2.assessmentStatus, 'insufficient_evidence');
+    assert.strictEqual(gateT2.overallBand, null);
 
     // Valid substantive essay (> 50 words non-repetitive)
     const substantiveT2 =
@@ -196,6 +199,7 @@ describe('Phase 3: Professional Writing Examination Experience & Data Integrity'
       'Consequently, governments ought to prioritize targeted means-tested bursaries rather than unconstrained universal subsidization.';
     const gateValid = checkWritingWordThreshold(substantiveT2, 'task2');
     assert.strictEqual(gateValid.isValidAttempt, true, 'Substantive essay must pass minimum threshold gate');
+    assert.strictEqual(gateValid.assessmentStatus, 'eligible');
     assert.ok(gateValid.wordCount >= 50);
   });
 

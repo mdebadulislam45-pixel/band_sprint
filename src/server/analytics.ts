@@ -233,7 +233,7 @@ export function validateCandidateEvent(input: any): AnalyticsValidationResult {
     );
   }
 
-  // Numerical validation: overallBandScore (0 to 9, half-band steps standard, 0-9 range)
+  // Numerical validation: overallBandScore (0.0 to 9.0 in 0.5 increments)
   if (rawPayload.overallBandScore !== undefined) {
     if (
       typeof rawPayload.overallBandScore !== 'number' ||
@@ -242,6 +242,9 @@ export function validateCandidateEvent(input: any): AnalyticsValidationResult {
       rawPayload.overallBandScore > 9
     ) {
       return new AnalyticsValidationResult(false, 'Invalid "overallBandScore". Must be a number between 0.0 and 9.0.');
+    }
+    if (Math.round(rawPayload.overallBandScore * 2) !== rawPayload.overallBandScore * 2) {
+      return new AnalyticsValidationResult(false, 'Invalid "overallBandScore". Must be in 0.5 IELTS band increments.');
     }
   }
 
@@ -280,19 +283,30 @@ export function validateCandidateEvent(input: any): AnalyticsValidationResult {
 
   // Criterion scores (e.g. { ta: 7.0, cc: 6.5, lr: 7.0, gra: 6.5 } or { fc, lr, gra, pr })
   if (rawPayload.criterionScores !== undefined) {
-    if (typeof rawPayload.criterionScores !== 'object' || Array.isArray(rawPayload.criterionScores)) {
+    if (
+      rawPayload.criterionScores === null ||
+      typeof rawPayload.criterionScores !== 'object' ||
+      Array.isArray(rawPayload.criterionScores)
+    ) {
       return new AnalyticsValidationResult(false, '"criterionScores" must be an object of criterion band scores.');
     }
     for (const [k, v] of Object.entries(rawPayload.criterionScores)) {
       if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 9) {
         return new AnalyticsValidationResult(false, `Invalid criterion score for "${k}". Must be a number between 0 and 9.`);
       }
+      if (Math.round(v * 2) !== v * 2) {
+        return new AnalyticsValidationResult(false, `Invalid criterion score for "${k}". Must be in 0.5 IELTS band increments.`);
+      }
     }
   }
 
   // Section scores (e.g. { sec1: 8, sec2: 7, sec3: 6, sec4: 7 })
   if (rawPayload.sectionScores !== undefined) {
-    if (typeof rawPayload.sectionScores !== 'object' || Array.isArray(rawPayload.sectionScores)) {
+    if (
+      rawPayload.sectionScores === null ||
+      typeof rawPayload.sectionScores !== 'object' ||
+      Array.isArray(rawPayload.sectionScores)
+    ) {
       return new AnalyticsValidationResult(false, '"sectionScores" must be an object.');
     }
     for (const [k, v] of Object.entries(rawPayload.sectionScores)) {
@@ -300,6 +314,21 @@ export function validateCandidateEvent(input: any): AnalyticsValidationResult {
         return new AnalyticsValidationResult(false, `Invalid section score for "${k}". Must be between 0 and 40.`);
       }
     }
+  }
+
+  // SP-1 Trust-Boundary Containment:
+  // Client-submitted Writing and Speaking scores cannot be accepted as authoritative analytics.
+  // Preserve non-scoring lifecycle events (practice_started, practice_exited, unscored practice_completed)
+  // and objective Reading/Listening scoring.
+  const isSubjectiveModule = rawPayload.moduleId === 'writing' || rawPayload.moduleId === 'speaking';
+  const carriesScoreFields =
+    rawPayload.overallBandScore !== undefined ||
+    rawPayload.criterionScores !== undefined;
+  if (isSubjectiveModule && (carriesScoreFields || input.eventType === 'module_evaluated')) {
+    return new AnalyticsValidationResult(
+      false,
+      'Unverified client-submitted Writing and Speaking scores cannot be recorded as authoritative analytics.'
+    );
   }
 
   return new AnalyticsValidationResult(true);

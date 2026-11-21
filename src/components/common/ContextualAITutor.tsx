@@ -514,7 +514,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
           aria-label="Expand Barnaby AI Tutor"
         >
           <div className="relative">
-            <ChubbyMascotAvatar mood={mascotMood} size="sm" />
+            <ChubbyMascotAvatar mood={mascotMood} isSpeaking={isPlayingAudio} size="sm" />
             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0B1224] animate-pulse" />
           </div>
         </button>
@@ -571,7 +571,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
             title="Open Barnaby — Your Live IELTS AI Tutor"
           >
             <div className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr from-amber-100 via-amber-50 to-blue-100 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center border border-amber-300/60 shadow-inner">
-              <ChubbyMascotAvatar mood={mascotMood} size="sm" />
+              <ChubbyMascotAvatar mood={mascotMood} isSpeaking={isPlayingAudio} size="sm" />
               <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0B1224]" />
             </div>
 
@@ -648,7 +648,7 @@ export const ContextualAITutor: React.FC<ContextualAITutorProps> = ({
       <div className="p-3 sm:p-3.5 bg-[#0B1224] text-white flex items-center justify-between gap-2.5 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-100 to-blue-100 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center shrink-0 border border-amber-300/50">
-            <ChubbyMascotAvatar mood={mascotMood} size="sm" />
+            <ChubbyMascotAvatar mood={mascotMood} isSpeaking={isPlayingAudio} size="sm" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">

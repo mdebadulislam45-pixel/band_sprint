@@ -577,17 +577,35 @@ export const SprintLibraryPage: React.FC<SprintLibraryPageProps> = ({
         topic: topicLabel
       });
       setSpeakingEvaluations((prev) => ({ ...prev, [questionKey]: result }));
-      const overall = result.estimatedBands.overall.toFixed(1);
-      onShowToast(`Examiner Evaluation Complete: Estimated Band ${overall}`);
-      speakPracticeExaminerPrompt(
-        `Thank you for that response. I have assessed your answer at approximately Band ${overall}. ${
-          result.band8Answer?.modelAnswer
-            ? `For a Band 9 structure, consider: ${result.band8Answer.modelAnswer}`
-            : ''
-        }`,
-        examinerGender,
-        questionKey
-      );
+      if (result.isValidAttempt === false || result.assessmentStatus === 'unavailable' || result.assessmentStatus === 'insufficient_evidence') {
+        onShowToast(result.error || 'AI speaking evaluation is unavailable. No band score was generated.');
+      } else if (typeof result.overallBand === 'number') {
+        const overall = result.overallBand.toFixed(1);
+        onShowToast(`Examiner Evaluation Complete: Estimated Band ${overall}`);
+        speakPracticeExaminerPrompt(
+          `Thank you for that response. I have assessed your answer at approximately Band ${overall}. ${
+            result.band8Answer?.modelAnswer
+              ? `For a Band 9 structure, consider: ${result.band8Answer.modelAnswer}`
+              : ''
+          }`,
+          examinerGender,
+          questionKey
+        );
+      } else if (typeof result.partialThreeCriterionIndex === 'number') {
+        const idxStr = result.partialThreeCriterionIndex.toFixed(1);
+        onShowToast(`Partial Transcript Index (3/4 criteria): ${idxStr} · Pronunciation Unassessed`);
+        speakPracticeExaminerPrompt(
+          `Thank you for that response. Based on your transcript across fluency, vocabulary, and grammar, your partial diagnostic index is ${idxStr}. Acoustic pronunciation requires audio analysis. ${
+            result.band8Answer?.modelAnswer
+              ? `For a Band 9 structure, consider: ${result.band8Answer.modelAnswer}`
+              : ''
+          }`,
+          examinerGender,
+          questionKey
+        );
+      } else {
+        onShowToast('Speaking turn recorded without a complete band score.');
+      }
     } catch {
       onShowToast('Could not complete evaluation. Please try again.');
     } finally {
@@ -694,11 +712,18 @@ export const SprintLibraryPage: React.FC<SprintLibraryPageProps> = ({
     }
 
     const evalBandValues = Object.values(speakingEvaluations);
+    const completeSpeakingEvaluations = evalBandValues.filter(
+      (ev) =>
+        ev.isValidAttempt !== false &&
+        ev.pronunciationObservable === true &&
+        typeof ev.overallBand === 'number' &&
+        Number.isFinite(ev.overallBand)
+    );
     const computedSpeakingBand =
-      selectedModule === 'speaking' && evalBandValues.length > 0
+      selectedModule === 'speaking' && completeSpeakingEvaluations.length > 0
         ? Math.round(
-            (evalBandValues.reduce((acc, ev) => acc + (ev.estimatedBands?.overall || 7.0), 0) /
-              evalBandValues.length) *
+            (completeSpeakingEvaluations.reduce((acc, ev) => acc + (ev.overallBand as number), 0) /
+              completeSpeakingEvaluations.length) *
               2
           ) / 2
         : null;
@@ -2415,22 +2440,44 @@ export const SprintLibraryPage: React.FC<SprintLibraryPageProps> = ({
                               </div>
 
                               {evalResult && (
-                                <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
-                                  <div className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-3 flex-wrap">
-                                    <span>Estimated Band: {evalResult.estimatedBands.overall.toFixed(1)}</span>
-                                    <span className="font-mono text-[11px] font-normal">
-                                      FC: {evalResult.estimatedBands.fluency.toFixed(1)} · LR:{' '}
-                                      {evalResult.estimatedBands.lexical.toFixed(1)} · GRA:{' '}
-                                      {evalResult.estimatedBands.grammar.toFixed(1)} · PRON:{' '}
-                                      {evalResult.estimatedBands.pronunciation.toFixed(1)}
-                                    </span>
-                                  </div>
-                                  {evalResult.band8Answer?.modelAnswer && (
-                                    <p className="text-[11px] text-slate-700 dark:text-slate-300">
-                                      <strong>Band 8.5+ Upgrade:</strong> {evalResult.band8Answer.modelAnswer}
+                                evalResult.isValidAttempt === false || evalResult.assessmentStatus === 'unavailable' || evalResult.assessmentStatus === 'insufficient_evidence' ? (
+                                  <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs space-y-1">
+                                    <div className="font-bold text-amber-800 dark:text-amber-300">
+                                      Assessment Unavailable — No Score Generated
+                                    </div>
+                                    <p className="text-[11px] text-amber-900 dark:text-amber-200">
+                                      {evalResult.error || 'Could not evaluate this spoken response. Please sign in and retry.'}
                                     </p>
-                                  )}
-                                </div>
+                                  </div>
+                                ) : (
+                                  <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
+                                    <div className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-3 flex-wrap">
+                                      <span>
+                                        {typeof evalResult.overallBand === 'number'
+                                          ? `Estimated Band: ${evalResult.overallBand.toFixed(1)}`
+                                          : typeof evalResult.partialThreeCriterionIndex === 'number'
+                                          ? `Partial Transcript Index (3/4): ${evalResult.partialThreeCriterionIndex.toFixed(1)}`
+                                          : 'Unassessed'}
+                                      </span>
+                                      <span className="font-mono text-[11px] font-normal">
+                                        FC: {typeof evalResult.estimatedBands.fluency === 'number' ? evalResult.estimatedBands.fluency.toFixed(1) : '—'} · LR:{' '}
+                                        {typeof evalResult.estimatedBands.lexical === 'number' ? evalResult.estimatedBands.lexical.toFixed(1) : '—'} · GRA:{' '}
+                                        {typeof evalResult.estimatedBands.grammar === 'number' ? evalResult.estimatedBands.grammar.toFixed(1) : '—'} · PRON:{' '}
+                                        {typeof evalResult.estimatedBands.pronunciation === 'number' ? evalResult.estimatedBands.pronunciation.toFixed(1) : 'Unassessed'}
+                                      </span>
+                                    </div>
+                                    {evalResult.overallBand === null && (
+                                      <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                                        Transcript-only partial estimate — acoustic Pronunciation unassessed (not a complete IELTS Speaking band).
+                                      </p>
+                                    )}
+                                    {evalResult.band8Answer?.modelAnswer && (
+                                      <p className="text-[11px] text-slate-700 dark:text-slate-300">
+                                        <strong>Band 8.5+ Upgrade:</strong> {evalResult.band8Answer.modelAnswer}
+                                      </p>
+                                    )}
+                                  </div>
+                                )
                               )}
                             </div>
                           </div>
@@ -2593,28 +2640,51 @@ export const SprintLibraryPage: React.FC<SprintLibraryPageProps> = ({
                             : 'Evaluate Part 2 Long Turn'}
                         </button>
                       </div>
-                      {speakingEvaluations['p2_cue'] && (
-                        <div className="p-3.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
-                          <div className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-3 flex-wrap">
-                            <span>
-                              Part 2 Estimated Band:{' '}
-                              {speakingEvaluations['p2_cue'].estimatedBands.overall.toFixed(1)}
-                            </span>
-                            <span className="font-mono text-[11px] font-normal">
-                              FC: {speakingEvaluations['p2_cue'].estimatedBands.fluency.toFixed(1)} · LR:{' '}
-                              {speakingEvaluations['p2_cue'].estimatedBands.lexical.toFixed(1)} · GRA:{' '}
-                              {speakingEvaluations['p2_cue'].estimatedBands.grammar.toFixed(1)} · PRON:{' '}
-                              {speakingEvaluations['p2_cue'].estimatedBands.pronunciation.toFixed(1)}
-                            </span>
+                      {speakingEvaluations['p2_cue'] && (() => {
+                        const p2Eval = speakingEvaluations['p2_cue'];
+                        if (p2Eval.isValidAttempt === false || p2Eval.assessmentStatus === 'unavailable' || p2Eval.assessmentStatus === 'insufficient_evidence') {
+                          return (
+                            <div className="p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs space-y-1">
+                              <div className="font-bold text-amber-800 dark:text-amber-300">
+                                Part 2 Assessment Unavailable — No Score Generated
+                              </div>
+                              <p className="text-[11px] text-amber-900 dark:text-amber-200">
+                                {p2Eval.error || 'Could not evaluate this Part 2 response. Please sign in and retry.'}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="p-3.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
+                            <div className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-3 flex-wrap">
+                              <span>
+                                {typeof p2Eval.overallBand === 'number'
+                                  ? `Part 2 Estimated Band: ${p2Eval.overallBand.toFixed(1)}`
+                                  : typeof p2Eval.partialThreeCriterionIndex === 'number'
+                                  ? `Part 2 Partial Index (3/4): ${p2Eval.partialThreeCriterionIndex.toFixed(1)}`
+                                  : 'Part 2 Unassessed'}
+                              </span>
+                              <span className="font-mono text-[11px] font-normal">
+                                FC: {typeof p2Eval.estimatedBands.fluency === 'number' ? p2Eval.estimatedBands.fluency.toFixed(1) : '—'} · LR:{' '}
+                                {typeof p2Eval.estimatedBands.lexical === 'number' ? p2Eval.estimatedBands.lexical.toFixed(1) : '—'} · GRA:{' '}
+                                {typeof p2Eval.estimatedBands.grammar === 'number' ? p2Eval.estimatedBands.grammar.toFixed(1) : '—'} · PRON:{' '}
+                                {typeof p2Eval.estimatedBands.pronunciation === 'number' ? p2Eval.estimatedBands.pronunciation.toFixed(1) : 'Unassessed'}
+                              </span>
+                            </div>
+                            {p2Eval.overallBand === null && (
+                              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                                Transcript-only partial estimate — acoustic Pronunciation unassessed (not a complete IELTS Speaking band).
+                              </p>
+                            )}
+                            {p2Eval.band8Answer?.modelAnswer && (
+                              <p className="text-[11px] text-slate-700 dark:text-slate-300">
+                                <strong>Band 8.5+ Upgrade:</strong>{' '}
+                                {p2Eval.band8Answer.modelAnswer}
+                              </p>
+                            )}
                           </div>
-                          {speakingEvaluations['p2_cue'].band8Answer?.modelAnswer && (
-                            <p className="text-[11px] text-slate-700 dark:text-slate-300">
-                              <strong>Band 8.5+ Upgrade:</strong>{' '}
-                              {speakingEvaluations['p2_cue'].band8Answer.modelAnswer}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -2747,22 +2817,44 @@ export const SprintLibraryPage: React.FC<SprintLibraryPageProps> = ({
                               </div>
 
                               {evalResult && (
-                                <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
-                                  <div className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-3 flex-wrap">
-                                    <span>Estimated Band: {evalResult.estimatedBands.overall.toFixed(1)}</span>
-                                    <span className="font-mono text-[11px] font-normal">
-                                      FC: {evalResult.estimatedBands.fluency.toFixed(1)} · LR:{' '}
-                                      {evalResult.estimatedBands.lexical.toFixed(1)} · GRA:{' '}
-                                      {evalResult.estimatedBands.grammar.toFixed(1)} · PRON:{' '}
-                                      {evalResult.estimatedBands.pronunciation.toFixed(1)}
-                                    </span>
-                                  </div>
-                                  {evalResult.band8Answer?.modelAnswer && (
-                                    <p className="text-[11px] text-slate-700 dark:text-slate-300">
-                                      <strong>Band 8.5+ Upgrade:</strong> {evalResult.band8Answer.modelAnswer}
+                                evalResult.isValidAttempt === false || evalResult.assessmentStatus === 'unavailable' || evalResult.assessmentStatus === 'insufficient_evidence' ? (
+                                  <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs space-y-1">
+                                    <div className="font-bold text-amber-800 dark:text-amber-300">
+                                      Assessment Unavailable — No Score Generated
+                                    </div>
+                                    <p className="text-[11px] text-amber-900 dark:text-amber-200">
+                                      {evalResult.error || 'Could not evaluate this Part 3 response. Please sign in and retry.'}
                                     </p>
-                                  )}
-                                </div>
+                                  </div>
+                                ) : (
+                                  <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
+                                    <div className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-3 flex-wrap">
+                                      <span>
+                                        {typeof evalResult.overallBand === 'number'
+                                          ? `Estimated Band: ${evalResult.overallBand.toFixed(1)}`
+                                          : typeof evalResult.partialThreeCriterionIndex === 'number'
+                                          ? `Partial Transcript Index (3/4): ${evalResult.partialThreeCriterionIndex.toFixed(1)}`
+                                          : 'Unassessed'}
+                                      </span>
+                                      <span className="font-mono text-[11px] font-normal">
+                                        FC: {typeof evalResult.estimatedBands.fluency === 'number' ? evalResult.estimatedBands.fluency.toFixed(1) : '—'} · LR:{' '}
+                                        {typeof evalResult.estimatedBands.lexical === 'number' ? evalResult.estimatedBands.lexical.toFixed(1) : '—'} · GRA:{' '}
+                                        {typeof evalResult.estimatedBands.grammar === 'number' ? evalResult.estimatedBands.grammar.toFixed(1) : '—'} · PRON:{' '}
+                                        {typeof evalResult.estimatedBands.pronunciation === 'number' ? evalResult.estimatedBands.pronunciation.toFixed(1) : 'Unassessed'}
+                                      </span>
+                                    </div>
+                                    {evalResult.overallBand === null && (
+                                      <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                                        Transcript-only partial estimate — acoustic Pronunciation unassessed (not a complete IELTS Speaking band).
+                                      </p>
+                                    )}
+                                    {evalResult.band8Answer?.modelAnswer && (
+                                      <p className="text-[11px] text-slate-700 dark:text-slate-300">
+                                        <strong>Band 8.5+ Upgrade:</strong> {evalResult.band8Answer.modelAnswer}
+                                      </p>
+                                    )}
+                                  </div>
+                                )
                               )}
                             </div>
                           </div>

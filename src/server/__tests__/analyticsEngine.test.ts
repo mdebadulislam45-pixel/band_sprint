@@ -49,10 +49,28 @@ describe('Phase 5.5H.12B — Privacy-First Analytics Event Collector & Persisten
   });
 
   describe('1. Schema & Validation Rules', () => {
-    it('1. accepts a valid candidate practice_completed event', () => {
-      const input: CandidateEventInput = {
+    it('1. accepts a valid objective candidate practice_completed event and rejects unverified subjective client scores', () => {
+      const objectiveInput: CandidateEventInput = {
         eventType: 'practice_completed',
         idempotencyKey: 'idemp_key_001',
+        payload: {
+          moduleId: 'reading',
+          format: 'Academic',
+          completionStatus: 'completed',
+          overallBandScore: 7.5,
+          durationSeconds: 1840,
+          questionCount: 40,
+          answeredCount: 40
+        }
+      };
+
+      const objectiveResult = validateCandidateEvent(objectiveInput);
+      assert.equal(objectiveResult.valid, true);
+      assert.equal(objectiveResult.error, undefined);
+
+      const unverifiedSpeakingInput: CandidateEventInput = {
+        eventType: 'practice_completed',
+        idempotencyKey: 'idemp_key_002',
         payload: {
           moduleId: 'speaking',
           format: 'Academic',
@@ -64,9 +82,9 @@ describe('Phase 5.5H.12B — Privacy-First Analytics Event Collector & Persisten
         }
       };
 
-      const result = validateCandidateEvent(input);
-      assert.equal(result.valid, true);
-      assert.equal(result.error, undefined);
+      const subjectiveResult = validateCandidateEvent(unverifiedSpeakingInput);
+      assert.equal(subjectiveResult.valid, false);
+      assert.match(subjectiveResult.error || '', /Unverified client-submitted Writing and Speaking scores/i);
     });
 
     it('2. rejects invalid eventType', () => {

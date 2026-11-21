@@ -73,7 +73,7 @@ export const SmartRecommendationBanner: React.FC<SmartRecommendationBannerProps>
   onNavigate,
   onShowToast,
   targetBand = 7.5,
-  estimatedBand = 7.0
+  estimatedBand = 0
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [vaultTopCategory, setVaultTopCategory] = useState<{ category: string; count: number; module: string } | null>(null);

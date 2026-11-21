@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { generatePersonalizedStudyPlan } from '../../services/aiStudyPlanService';
 import { soundManager } from '../../utils/audioEffects';
+import { analyzeTextQualitySignals, roundOfficialIELTSBand } from '../../utils/scoringIntegrity';
 import { saveDiagnosticResult } from '../../services/diagnosticResultStore';
 import type {
   DiagnosticResult,
@@ -149,13 +150,14 @@ const READING_QS: Mcq[] = [
 /* ---------------- Scoring ---------------- */
 
 function rawToBand(correct: number, total: number): number {
-  const ratio = total === 0 ? 0 : correct / total;
+  if (total <= 0 || correct <= 0) return 1.0;
+  const ratio = correct / total;
   if (ratio >= 0.99) return 7.5;
-  if (ratio >= 0.79) return 7.0;
-  if (ratio >= 0.59) return 6.0;
-  if (ratio >= 0.39) return 5.0;
-  if (ratio >= 0.19) return 4.5;
-  return 4.0;
+  if (ratio >= 0.79) return 6.5;
+  if (ratio >= 0.59) return 5.5;
+  if (ratio >= 0.39) return 4.5;
+  if (ratio >= 0.19) return 3.5;
+  return 2.0;
 }
 
 const LINKING_WORDS = [
@@ -167,24 +169,45 @@ const LINKING_WORDS = [
 function scoreWriting(text: string): { band: number; words: number; feedback: string[] } {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const wordCount = text.trim() ? words.length : 0;
+  const signals = analyzeTextQualitySignals(text);
   const lower = text.toLowerCase();
   const paragraphs = text.split(/\n+/).filter((p) => p.trim().length > 20).length;
   const linking = LINKING_WORDS.filter((w) => lower.includes(w)).length;
   const sentences = text.split(/[.!?]+/).filter((s) => s.trim().length > 3);
   const avgSentence = sentences.length ? wordCount / sentences.length : 0;
-  const unique = new Set(words.map((w) => w.toLowerCase().replace(/[^a-z]/g, ''))).size;
-  const lexicalRatio = wordCount ? unique / wordCount : 0;
+  const lexicalRatio = signals.lexicalDiversityRatio;
 
-  let band = 5.0;
+  if (wordCount < 30 || signals.isGibberish) {
+    return {
+      band: 0.0,
+      words: wordCount,
+      feedback: [
+        wordCount < 30
+          ? `Write at least 30 words to generate a diagnostic estimate (${wordCount} written; Task 2 target is 250+).`
+          : 'Draft appears unassessable or gibberish. Write clear, complete sentences.'
+      ]
+    };
+  }
+
+  let band = 4.5;
   if (wordCount >= 250) band += 1.0;
   else if (wordCount >= 200) band += 0.5;
-  else if (wordCount < 120) band -= 0.5;
+  else if (wordCount < 120) band -= 1.0;
   if (paragraphs >= 4) band += 0.5;
   if (linking >= 4) band += 0.5;
   else if (linking >= 2) band += 0.25;
   if (avgSentence >= 12 && avgSentence <= 24) band += 0.5;
   if (lexicalRatio > 0.55) band += 0.5;
-  band = Math.max(4.0, Math.min(8.0, Math.round(band * 2) / 2));
+  else if (lexicalRatio < 0.3) band -= 1.5;
+
+  if (signals.isHighlyRepetitive || signals.repeatedSentenceRatio >= 0.35) {
+    band = Math.min(band - 2.0, 3.5);
+  }
+  if (signals.memorizedTemplateHits.length > 0) {
+    band -= 0.5;
+  }
+
+  band = roundOfficialIELTSBand(Math.max(1.0, Math.min(8.0, band)));
 
   const feedback: string[] = [];
   if (wordCount < 250) feedback.push(`Aim for 250+ words — you wrote ${wordCount}. Task 2 needs at least 250.`);
@@ -193,12 +216,13 @@ function scoreWriting(text: string): { band: number; words: number; feedback: st
   else feedback.push('Clear paragraph structure.');
   if (linking < 2) feedback.push('Add linking words — however, furthermore, for example, in conclusion.');
   else feedback.push(`Good linking — ${linking} linking phrases found.`);
-  if (lexicalRatio <= 0.55) feedback.push('Vary your vocabulary — avoid repeating the same words.');
+  if (signals.isHighlyRepetitive) feedback.push('High sentence or word repetition detected — write original ideas without repeating lines.');
+  else if (lexicalRatio <= 0.55) feedback.push('Vary your vocabulary — avoid repeating the same words.');
   return { band, words: wordCount, feedback };
 }
 
 function roundHalf(n: number): number {
-  return Math.round(n * 2) / 2;
+  return roundOfficialIELTSBand(n);
 }
 
 type Step = 'setup' | 'listening' | 'reading' | 'writing' | 'speaking' | 'results';
@@ -295,7 +319,7 @@ export const DiagnosticTest: React.FC<DiagnosticTestProps> = ({ onBack, onNaviga
     const listeningBand = rawToBand(listeningCorrect, LISTENING_QS.length);
     const readingBand = rawToBand(readingCorrect, READING_QS.length);
     const speakingAvg = (speakingRatings.fluency + speakingRatings.vocabulary + speakingRatings.grammar + speakingRatings.pronunciation) / 4;
-    const speakingBand = roundHalf(4.0 + (speakingAvg - 1) * 1.0);
+    const speakingBand = roundHalf(3.0 + (speakingAvg - 1) * 1.125);
     const scores = {
       listening: listeningBand,
       reading: readingBand,
@@ -529,14 +553,20 @@ export const DiagnosticTest: React.FC<DiagnosticTestProps> = ({ onBack, onNaviga
             <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
               Target Band {result.targetBand.toFixed(1)} · gap {Math.max(0, result.targetBand - result.scores.overall).toFixed(1)} band{result.targetBand - result.scores.overall > 1 ? 's' : ''} · weakest skill: <strong>{SKILL_LABEL[result.weakest]}</strong>
             </p>
-            <p className="text-xs text-slate-500 mt-2">Listening {listeningCorrect}/5 correct · Reading {readingCorrect}/5 correct · Writing {result.writingWords} words{result.speakingRecorded ? ' · Speaking recorded' : ''}</p>
+            <p className="text-xs text-slate-500 mt-2">
+              Listening {listeningCorrect}/5 correct · Reading {readingCorrect}/5 correct · Writing {result.writingWords} words (heuristic estimate) · Speaking: Self-Estimated{result.speakingRecorded ? ' (audio recorded locally, not AI-scored)' : ' (self-rated only)'}
+            </p>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-3">
             {(Object.keys(SKILL_LABEL) as DiagnosticSkill[]).map((skill) => (
               <div key={skill} className={`rounded-2xl border p-4 ${result.weakest === skill ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700' : 'bg-white dark:bg-[#11201E] border-slate-200 dark:border-[#1F8A70]/40'}`}>
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-slate-900 dark:text-white">{SKILL_LABEL[skill]}{result.weakest === skill ? ' · focus here' : ''}</span>
+                  <span className="font-bold text-sm text-slate-900 dark:text-white">
+                    {SKILL_LABEL[skill]}
+                    {skill === 'speaking' ? ' (Self-Rated)' : ''}
+                    {result.weakest === skill ? ' · focus here' : ''}
+                  </span>
                   <span className="font-black text-lg text-[#0F4C45] dark:text-[#F4A62A]">Band {result.scores[skill].toFixed(1)}</span>
                 </div>
                 <div className="h-2 bg-slate-200 dark:bg-white/10 rounded-full mt-2 overflow-hidden">

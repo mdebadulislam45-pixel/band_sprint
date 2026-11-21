@@ -28,12 +28,14 @@ async function runSpeakingIntegrityTests() {
     }
   }
 
-  // Test 1: Rejects sub-5-word attempts with isValidAttempt: false
+  // Test 1: Rejects sub-5-word attempts with isValidAttempt: false and null overallBand
   const gateResultShort = checkSpeakingInputGate('Hello yes');
   assert(
-    gateResultShort.isValidAttempt === false && gateResultShort.overallBand === 0.0,
-    'Test 1: Rejects sub-5-word attempts without calling AI evaluation',
-    `Got isValidAttempt=${gateResultShort.isValidAttempt}, overallBand=${gateResultShort.overallBand}`
+    gateResultShort.isValidAttempt === false &&
+      gateResultShort.overallBand === null &&
+      gateResultShort.assessmentStatus === 'insufficient_evidence',
+    'Test 1: Rejects sub-5-word attempts without calling AI evaluation (null overallBand)',
+    `Got isValidAttempt=${gateResultShort.isValidAttempt}, overallBand=${gateResultShort.overallBand}, status=${gateResultShort.assessmentStatus}`
   );
 
   // Test 2: Accepts valid spoken transcripts (>= 5 words)
@@ -47,9 +49,11 @@ async function runSpeakingIntegrityTests() {
   // Test 3: Does NOT replace transcripts with placeholder strings
   const emptyDiag = generateDiagnosticTurnFeedback('q1', 'Tell me about yourself.', 1, 'Hometown', '', 10, 0);
   assert(
-    emptyDiag.candidateTranscript === '' && emptyDiag.isValidAttempt === false,
+    emptyDiag.candidateTranscript === '' &&
+      emptyDiag.isValidAttempt === false &&
+      emptyDiag.overallBand === null,
     'Test 3: Does NOT replace empty transcript with placeholder string',
-    `Got transcript="${emptyDiag.candidateTranscript}"`
+    `Got transcript="${emptyDiag.candidateTranscript}", overallBand=${emptyDiag.overallBand}`
   );
 
   // Test 4: Does NOT inject unsaid tricky words
@@ -75,35 +79,49 @@ async function runSpeakingIntegrityTests() {
   const flawedSpeech = 'My brother live in Dhaka and he have many friends';
   const flawedDiag = generateDiagnosticTurnFeedback('q3', 'Tell me about your brother.', 1, 'Family', flawedSpeech, 15, 90);
   assert(
-    flawedDiag.grammaticalErrors.length >= 1,
-    'Test 6: Returns real detected grammatical errors when candidate makes a mistake',
-    `Errors detected: ${flawedDiag.grammaticalErrors.map((e) => e.observed).join(', ')}`
+    flawedDiag.grammaticalErrors.length >= 1 && flawedDiag.overallBand === null,
+    'Test 6: Returns real detected grammatical errors without fabricating any band score',
+    `Errors detected: ${flawedDiag.grammaticalErrors.map((e) => e.observed).join(', ')}, overallBand=${flawedDiag.overallBand}`
   );
 
-  // Test 7: Evaluates Part 1 turn accurately
+  // Test 7: Diagnostic helper NEVER fabricates Part 1 IELTS band scores
   const p1Diag = generateDiagnosticTurnFeedback('q_p1', 'What is your favorite subject?', 1, 'Studies', 'My favorite subject in university was computer science because I love solving complex algorithms', 20, 110);
   assert(
-    p1Diag.part === 1 && p1Diag.overallBand >= 5.0 && p1Diag.overallBand <= 9.0,
-    'Test 7: Evaluates Part 1 turn accurately',
-    `Got overallBand=${p1Diag.overallBand}`
+    p1Diag.part === 1 &&
+      p1Diag.isValidAttempt === false &&
+      p1Diag.assessmentStatus === 'unavailable' &&
+      p1Diag.overallBand === null &&
+      p1Diag.partialThreeCriterionIndex === null &&
+      p1Diag.estimatedBands.overall === null &&
+      p1Diag.pronunciation.clarityBand === null,
+    'Test 7: Diagnostic helper returns non-scoring Part 1 observations with all bands null',
+    `Got status=${p1Diag.assessmentStatus}, overallBand=${p1Diag.overallBand}, clarity=${p1Diag.pronunciation.clarityBand}`
   );
 
-  // Test 8: Evaluates Part 2 Monologue turn accurately
+  // Test 8: Diagnostic helper NEVER fabricates Part 2 IELTS band scores
   const p2Speech = 'I would like to describe a memorable journey I took to Coxs Bazar two years ago. The scenery was absolutely breathtaking and it gave me a fresh perspective on life.';
   const p2Diag = generateDiagnosticTurnFeedback('q_p2', 'Describe a trip you took.', 2, 'Travel', p2Speech, 60, 120);
   assert(
-    p2Diag.part === 2 && p2Diag.overallBand >= 6.0,
-    'Test 8: Evaluates Part 2 Monologue turn accurately',
-    `Got overallBand=${p2Diag.overallBand}`
+    p2Diag.part === 2 &&
+      p2Diag.isValidAttempt === false &&
+      p2Diag.overallBand === null &&
+      p2Diag.criteria?.fc === null &&
+      p2Diag.criteria?.pr === null,
+    'Test 8: Diagnostic helper returns non-scoring Part 2 observations with all bands null',
+    `Got overallBand=${p2Diag.overallBand}, criteria=${JSON.stringify(p2Diag.criteria)}`
   );
 
-  // Test 9: Evaluates Part 3 Discussion turn accurately
+  // Test 9: Diagnostic helper NEVER fabricates Part 3 IELTS band scores
   const p3Speech = 'From an international perspective, technological advances have undeniably reshaped economic frameworks. Having said that, governments must address socioeconomic disparities.';
   const p3Diag = generateDiagnosticTurnFeedback('q_p3', 'How has technology affected society?', 3, 'Society', p3Speech, 30, 115);
   assert(
-    p3Diag.part === 3 && p3Diag.overallBand >= 6.5,
-    'Test 9: Evaluates Part 3 Discussion turn accurately',
-    `Got overallBand=${p3Diag.overallBand}`
+    p3Diag.part === 3 &&
+      p3Diag.isValidAttempt === false &&
+      p3Diag.overallBand === null &&
+      p3Diag.estimatedBands.fluency === null &&
+      p3Diag.estimatedBands.pronunciation === null,
+    'Test 9: Diagnostic helper returns non-scoring Part 3 observations with all bands null',
+    `Got overallBand=${p3Diag.overallBand}, estimatedBands=${JSON.stringify(p3Diag.estimatedBands)}`
   );
 
   // Test 10: Calculates WPM, duration, and pause metrics accurately
@@ -140,15 +158,20 @@ async function runSpeakingIntegrityTests() {
     `Got wordCount=${paddedGate.wordCount}`
   );
 
-  // Test 12: Zero-state returns valid structured object on unattempted/sub-5 words
-  const zeroReport = evaluateSpeakingSession(records);
+  // Test 12: Transcript-only session report exposes partialThreeCriterionIndex and keeps overallBand/pronunciationBand null
+  const sessionReport = evaluateSpeakingSession(records);
   assert(
-    zeroReport.isValidAttempt === true && zeroReport.overallBand >= 4.0,
-    'Test 12: Session evaluation produces valid band scores for valid answers',
-    `Got overallBand=${zeroReport.overallBand}`
+    sessionReport.isValidAttempt === true &&
+      sessionReport.assessmentStatus === 'partial_transcript_only' &&
+      sessionReport.overallBand === null &&
+      sessionReport.pronunciationBand === null &&
+      typeof sessionReport.partialThreeCriterionIndex === 'number' &&
+      sessionReport.partialThreeCriterionIndex >= 4.0,
+    'Test 12: Transcript-only session report produces partialThreeCriterionIndex with null overallBand & pronunciationBand',
+    `Got status=${sessionReport.assessmentStatus}, overallBand=${sessionReport.overallBand}, partial=${sessionReport.partialThreeCriterionIndex}, pr=${sessionReport.pronunciationBand}`
   );
 
-  // Test 13: Single turn evaluation handles async execution without throwing
+  // Test 13: Single turn evaluation fails closed honestly when AI endpoint is unreachable (no fabricated score)
   const asyncResult = await evaluateSingleSpeakingTurn({
     questionId: 'q_async',
     questionText: 'What do you do in your free time?',
@@ -159,12 +182,19 @@ async function runSpeakingIntegrityTests() {
     wordsPerMinute: 110
   });
   assert(
-    asyncResult.isValidAttempt === true && asyncResult.wordCount === 14,
-    'Test 13: Single turn evaluation handles execution cleanly',
-    `Got isValidAttempt=${asyncResult.isValidAttempt}, wordCount=${asyncResult.wordCount}`
+    asyncResult.isValidAttempt === false &&
+      asyncResult.assessmentStatus === 'unavailable' &&
+      asyncResult.overallBand === null &&
+      asyncResult.partialThreeCriterionIndex === null &&
+      asyncResult.criteria?.fc === null &&
+      asyncResult.criteria?.pr === null &&
+      asyncResult.wordCount === 14 &&
+      asyncResult.canRetry === true,
+    'Test 13: Single turn evaluation fails closed with unavailable status and null bands when API is unreachable',
+    `Got isValidAttempt=${asyncResult.isValidAttempt}, status=${asyncResult.assessmentStatus}, overall=${asyncResult.overallBand}, wordCount=${asyncResult.wordCount}`
   );
 
-  // Test 14: Input gate rejects single turn with fewer than 5 words
+  // Test 14: Input gate rejects single turn with fewer than 5 words with null overallBand
   const shortAsyncResult = await evaluateSingleSpeakingTurn({
     questionId: 'q_short',
     questionText: 'What is your name?',
@@ -175,12 +205,14 @@ async function runSpeakingIntegrityTests() {
     wordsPerMinute: 60
   });
   assert(
-    shortAsyncResult.isValidAttempt === false && shortAsyncResult.overallBand === 0.0,
-    'Test 14: Input gate rejects single turn with fewer than 5 words',
-    `Got isValidAttempt=${shortAsyncResult.isValidAttempt}, band=${shortAsyncResult.overallBand}`
+    shortAsyncResult.isValidAttempt === false &&
+      shortAsyncResult.assessmentStatus === 'insufficient_evidence' &&
+      shortAsyncResult.overallBand === null,
+    'Test 14: Input gate rejects single turn with fewer than 5 words (null overallBand)',
+    `Got isValidAttempt=${shortAsyncResult.isValidAttempt}, status=${shortAsyncResult.assessmentStatus}, band=${shortAsyncResult.overallBand}`
   );
 
-  // Test 15: Session report handles 0 valid answers cleanly
+  // Test 15: Session report handles 0 valid answers cleanly with null bands
   const emptySessionReport = evaluateSpeakingSession([
     {
       questionId: 'q_empty',
@@ -200,9 +232,12 @@ async function runSpeakingIntegrityTests() {
     }
   ]);
   assert(
-    emptySessionReport.isValidAttempt === false && emptySessionReport.overallBand === 0.0,
-    'Test 15: Session report returns 0.0 zero-state when all turns have < 5 words',
-    `Got isValidAttempt=${emptySessionReport.isValidAttempt}, band=${emptySessionReport.overallBand}`
+    emptySessionReport.isValidAttempt === false &&
+      emptySessionReport.assessmentStatus === 'insufficient_evidence' &&
+      emptySessionReport.overallBand === null &&
+      emptySessionReport.pronunciationBand === null,
+    'Test 15: Session report returns null bands with insufficient_evidence when all turns have < 5 words',
+    `Got isValidAttempt=${emptySessionReport.isValidAttempt}, status=${emptySessionReport.assessmentStatus}, band=${emptySessionReport.overallBand}`
   );
 
   console.log(`\n--- RESULTS: ${passedCount} PASSED, ${failedCount} FAILED ---`);

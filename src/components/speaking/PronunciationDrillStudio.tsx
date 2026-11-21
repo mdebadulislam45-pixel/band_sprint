@@ -784,23 +784,32 @@ export const PronunciationDrillStudio: React.FC<PronunciationDrillStudioProps> =
               {matchScore !== null && (
                 <div
                   className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center font-mono font-black text-white shrink-0 ${
-                    matchScore >= 80
+                    !spokenTranscript.trim()
+                      ? 'bg-slate-600'
+                      : matchScore >= 80
                       ? 'bg-[#0F4C45]'
                       : matchScore >= 55
                       ? 'bg-[#D0891F]'
                       : 'bg-[#CC3333]'
                   }`}
                 >
-                  <span className="text-base leading-none tabular-nums">{matchScore}%</span>
-                  <span className="text-[9px] uppercase opacity-80 mt-0.5">Match</span>
+                  <span className="text-base leading-none tabular-nums">
+                    {spokenTranscript.trim() ? `${matchScore}%` : '—'}
+                  </span>
+                  <span className="text-[8px] uppercase opacity-80 mt-0.5">Words</span>
                 </div>
               )}
               <div className="space-y-1">
                 <div className="text-xs font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
-                  {matchScore !== null && matchScore >= 80
-                    ? 'Crisp articulation! Your stress and phoneme contrast registered cleanly.'
-                    : 'Compare your playback with the 0.75× British model and try one more pass.'}
+                  {!spokenTranscript.trim()
+                    ? 'No speech recognized by browser STT. Listen to your recording and compare directly against the British model.'
+                    : matchScore !== null && matchScore >= 80
+                    ? 'High word-recognition match! Play back your audio alongside the British model to self-check syllable stress and phoneme accuracy.'
+                    : 'Partial word match. Compare your playback with the 0.75× British model and try one more pass.'}
                 </div>
+                <p className="text-[10.5px] text-[#566664] dark:text-slate-400">
+                  Practice word-recognition metric only — not an IELTS Pronunciation band score or acoustic phoneme grade.
+                </p>
                 {spokenTranscript && (
                   <p className="text-xs text-[#566664] dark:text-slate-400 italic">
                     Heard: “{spokenTranscript}”

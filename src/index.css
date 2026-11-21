@@ -439,40 +439,106 @@ html, body {
   line-height: 1.65;
 }
 
-/* Barnaby Living Pet Animations */
+/* Barnaby Living Pet & 2.5D Dragon Companion Animations (GPU-composited transform/opacity only) */
 @keyframes barnaby-float {
-  0%, 100% { transform: translateY(0px) rotate(0deg); }
-  50% { transform: translateY(-5px) rotate(1.5deg); }
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(0, -4px, 0) rotate(1.2deg); }
 }
 
 @keyframes barnaby-hop {
-  0%, 100% { transform: translateY(0px) scale(1); }
-  30% { transform: translateY(-12px) scale(1.07, 0.95); }
-  55% { transform: translateY(0px) scale(0.95, 1.05); }
-  75% { transform: translateY(-6px) scale(1.03, 0.98); }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  30% { transform: translate3d(0, -10px, 0) scale(1.06, 0.96); }
+  55% { transform: translate3d(0, 0, 0) scale(0.96, 1.04); }
+  75% { transform: translate3d(0, -5px, 0) scale(1.02, 0.98); }
 }
 
 @keyframes barnaby-wiggle {
   0%, 100% { transform: rotate(0deg) scale(1); }
-  20% { transform: rotate(-9deg) scale(1.06); }
-  45% { transform: rotate(9deg) scale(1.08); }
-  70% { transform: rotate(-6deg) scale(1.04); }
-  85% { transform: rotate(4deg) scale(1.02); }
+  20% { transform: rotate(-7deg) scale(1.05); }
+  45% { transform: rotate(7deg) scale(1.06); }
+  70% { transform: rotate(-4deg) scale(1.03); }
+  85% { transform: rotate(3deg) scale(1.01); }
 }
 
 @keyframes barnaby-nap {
-  0%, 100% { transform: scale(1, 1) translateY(0px); }
-  50% { transform: scale(1.04, 0.94) translateY(2px); }
+  0%, 100% { transform: scale(1, 1) translate3d(0, 0, 0); }
+  50% { transform: scale(1.03, 0.96) translate3d(0, 1.5px, 0); }
 }
 
 @keyframes barnaby-particle-rise {
-  0% { opacity: 0; transform: translateY(4px) scale(0.6); }
-  25% { opacity: 1; transform: translateY(-8px) scale(1.1); }
-  100% { opacity: 0; transform: translateY(-28px) scale(0.9); }
+  0% { opacity: 0; transform: translate3d(0, 4px, 0) scale(0.6); }
+  25% { opacity: 1; transform: translate3d(0, -8px, 0) scale(1.1); }
+  100% { opacity: 0; transform: translate3d(0, -26px, 0) scale(0.9); }
+}
+
+/* 2.5D Dragon Internal Rig Keyframes (transform & opacity only for Intel HD 520 smoothness) */
+@keyframes barnaby-dragon-breathe {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1, 1); }
+  50% { transform: translate3d(0, -1.6px, 0) scale(1.014, 0.988); }
+}
+
+@keyframes barnaby-dragon-blink {
+  0%, 91%, 96%, 100% { transform: scaleY(1); }
+  93.5% { transform: scaleY(0.08); }
+}
+
+@keyframes barnaby-dragon-wing-left {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-6deg); }
+}
+
+@keyframes barnaby-dragon-wing-right {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(6deg); }
+}
+
+@keyframes barnaby-dragon-wing-wave {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-16deg); }
+  55% { transform: rotate(10deg); }
+  80% { transform: rotate(-10deg); }
+}
+
+@keyframes barnaby-dragon-tail {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(7deg); }
+}
+
+@keyframes barnaby-dragon-glint {
+  0%, 72%, 100% { opacity: 0.16; transform: translate3d(-10px, 0, 0); }
+  84% { opacity: 0.65; transform: translate3d(12px, 0, 0); }
+}
+
+@keyframes barnaby-dragon-tassel {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(5deg); }
+}
+
+@keyframes barnaby-dragon-speak-jaw {
+  0%, 100% { transform: scaleY(0.32); }
+  25% { transform: scaleY(1); }
+  50% { transform: scaleY(0.58); }
+  75% { transform: scaleY(0.92); }
+}
+
+@keyframes barnaby-dragon-nod {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  45% { transform: translate3d(0, 2.2px, 0) rotate(2deg); }
+}
+
+@keyframes barnaby-dragon-zzz {
+  0% { opacity: 0; transform: translate3d(0, 4px, 0) scale(0.75); }
+  35% { opacity: 0.9; transform: translate3d(3px, -5px, 0) scale(1); }
+  100% { opacity: 0; transform: translate3d(7px, -16px, 0) scale(1.1); }
+}
+
+@keyframes barnaby-dragon-sparkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.85) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.14) rotate(12deg); }
 }
 
 .animate-barnaby-float {
-  animation: barnaby-float 3.4s ease-in-out infinite;
+  animation: barnaby-float 3.6s ease-in-out infinite;
 }
 
 .animate-barnaby-hop {
@@ -491,12 +557,112 @@ html, body {
   animation: barnaby-particle-rise 1.3s ease-out forwards;
 }
 
+.barnaby-rig-breathe {
+  animation: barnaby-dragon-breathe 3.8s ease-in-out infinite;
+  transform-origin: 100px 148px;
+}
+
+.barnaby-rig-breathe-slow {
+  animation: barnaby-dragon-breathe 5.2s ease-in-out infinite;
+  transform-origin: 100px 148px;
+}
+
+.barnaby-rig-blink {
+  animation: barnaby-dragon-blink 4.6s ease-in-out infinite;
+  transform-origin: 100px 88px;
+}
+
+.barnaby-rig-wing-left {
+  animation: barnaby-dragon-wing-left 3.4s ease-in-out infinite;
+  transform-origin: 54px 132px;
+}
+
+.barnaby-rig-wing-right {
+  animation: barnaby-dragon-wing-right 3.4s ease-in-out infinite;
+  transform-origin: 146px 132px;
+}
+
+.barnaby-rig-wing-wave {
+  animation: barnaby-dragon-wing-wave 1.5s ease-in-out infinite;
+  transform-origin: 56px 128px;
+}
+
+.barnaby-rig-wing-celebrate-left {
+  animation: barnaby-dragon-wing-left 0.9s ease-in-out infinite;
+  transform-origin: 54px 132px;
+}
+
+.barnaby-rig-wing-celebrate-right {
+  animation: barnaby-dragon-wing-right 0.9s ease-in-out infinite;
+  transform-origin: 146px 132px;
+}
+
+.barnaby-rig-tail {
+  animation: barnaby-dragon-tail 3.2s ease-in-out infinite;
+  transform-origin: 148px 162px;
+}
+
+.barnaby-rig-tail-fast {
+  animation: barnaby-dragon-tail 1.2s ease-in-out infinite;
+  transform-origin: 148px 162px;
+}
+
+.barnaby-rig-glint {
+  animation: barnaby-dragon-glint 5.6s ease-in-out infinite;
+}
+
+.barnaby-rig-tassel {
+  animation: barnaby-dragon-tassel 3.8s ease-in-out infinite;
+  transform-origin: 146px 40px;
+}
+
+.barnaby-rig-speak-jaw {
+  animation: barnaby-dragon-speak-jaw 0.42s ease-in-out infinite;
+  transform-origin: 100px 111px;
+}
+
+.barnaby-rig-nod {
+  animation: barnaby-dragon-nod 2.1s ease-in-out infinite;
+  transform-origin: 100px 104px;
+}
+
+.barnaby-rig-zzz {
+  animation: barnaby-dragon-zzz 2.6s ease-in-out infinite;
+}
+
+.barnaby-rig-sparkle {
+  animation: barnaby-dragon-sparkle 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* Explicit pause control during active exams or demonstrations */
+.barnaby-anim-paused,
+.barnaby-anim-paused * {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-barnaby-float,
   .animate-barnaby-hop,
   .animate-barnaby-wiggle,
   .animate-barnaby-nap,
-  .animate-barnaby-particle {
+  .animate-barnaby-particle,
+  .barnaby-rig-breathe,
+  .barnaby-rig-breathe-slow,
+  .barnaby-rig-blink,
+  .barnaby-rig-wing-left,
+  .barnaby-rig-wing-right,
+  .barnaby-rig-wing-wave,
+  .barnaby-rig-wing-celebrate-left,
+  .barnaby-rig-wing-celebrate-right,
+  .barnaby-rig-tail,
+  .barnaby-rig-tail-fast,
+  .barnaby-rig-glint,
+  .barnaby-rig-tassel,
+  .barnaby-rig-speak-jaw,
+  .barnaby-rig-nod,
+  .barnaby-rig-zzz,
+  .barnaby-rig-sparkle {
     animation: none !important;
   }
 }

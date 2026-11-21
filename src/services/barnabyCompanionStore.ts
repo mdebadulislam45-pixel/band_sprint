@@ -1,7 +1,18 @@
 import { loadExamSetup } from './examSetupService';
 import { loadOnboardingSurvey } from './onboardingSurveyStore';
+import { loadDiagnosticResult } from './diagnosticResultStore';
 import { getMistakes } from '../utils/vaultStorage';
+import { getActiveUser } from '../utils/userStorage';
+import {
+  aggregateExamHistory,
+  IeltsSkillKey,
+  validateOptionalHalfBand
+} from '../utils/historyAggregation';
 import { auth } from '../lib/firebase';
+import { getStoredSessionToken } from './authService';
+
+export const BARNABY_CORE_PHILOSOPHY =
+  "I'm not here to study instead of you. I'm here to help you become better than yesterday.";
 
 export type BarnabyMood =
   | 'happy'
@@ -56,14 +67,40 @@ export interface BarnabyCompanionState {
   lastInteractionAt: number;
 }
 
+export interface RecurringMistakePattern {
+  category: string;
+  count: number;
+  module: string;
+}
+
+export interface DiagnosticEstimateContext {
+  overall: number | null;
+  weakest: IeltsSkillKey | null;
+  completedAt: number;
+}
+
 export interface StudentContextSnapshot {
+  userId: string | null;
   userName: string;
   targetBand: number;
   examMode: 'Academic' | 'General Training';
   daysUntilExam: number | null;
-  weakestSkill: string;
+  /** Latest verified 4-skill Full Mock overall band, or strictly null if none exists. */
+  latestVerifiedOverallBand: number | null;
+  completedFullMockCount: number;
+  evaluatedAttemptCount: number;
+  practiceAttemptCount: number;
+  /** Per-skill latest verified bands; missing/unassessed skills remain strictly null. */
+  skillBands: Record<IeltsSkillKey, number | null>;
+  /** Practice diagnostic estimate kept strictly separate from verified exam scores. */
+  diagnosticEstimate: DiagnosticEstimateContext | null;
+  /** Weakest skill derived from verified history, diagnostic estimate, or self-report — or null if unknown. */
+  weakestSkill: IeltsSkillKey | null;
+  weakestSkillSource: 'verified_history' | 'diagnostic_estimate' | 'self_reported' | 'none';
   mistakeCount: number;
   topMistake: string;
+  recurringMistakePattern: RecurringMistakePattern | null;
+  currentActivity: string;
   currentPage: string;
 }
 
@@ -319,30 +356,167 @@ function getStorageKey(): string {
       const parsed = JSON.parse(rawUser);
       if (parsed?.id) return `${STORAGE_PREFIX}${String(parsed.id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     }
+    const activeProfile = getActiveUser();
+    if (activeProfile?.id) {
+      return `${STORAGE_PREFIX}${String(activeProfile.id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    }
   } catch {}
   return `${STORAGE_PREFIX}guest`;
+}
+
+function resolveCurrentActivityLabel(currentPage: string): string {
+  const path = (currentPage || '/').toLowerCase();
+  if (path.includes('/practice/reading')) return 'Reading Practice';
+  if (path.includes('/practice/writing')) return 'Writing Studio';
+  if (path.includes('/practice/speaking')) return 'Speaking Studio';
+  if (path.includes('/practice/listening')) return 'Listening Lab';
+  if (path.includes('/practice/mock-tests')) return 'Full Mock Exam';
+  if (path.includes('/practice/question-bank')) return 'Question Bank Drills';
+  if (path.includes('/learn/vault')) return 'Mistake Vault Review';
+  if (path.includes('/learn/vocab')) return 'Vocabulary Lab';
+  if (path.includes('/learn/grammar')) return 'Grammar Lab';
+  if (path.includes('/learn/diagnostic')) return 'Diagnostic Assessment';
+  if (path.includes('/progress')) return 'Progress & Analytics';
+  return 'BandSprint Study Desk';
+}
+
+function isIeltsSkillKey(value: unknown): value is IeltsSkillKey {
+  return value === 'listening' || value === 'reading' || value === 'writing' || value === 'speaking';
+}
+
+function detectRecurringMistakePattern(
+  unresolvedMistakes: ReturnType<typeof getMistakes>
+): RecurringMistakePattern | null {
+  if (unresolvedMistakes.length === 0) return null;
+
+  const freqMap = new Map<string, { count: number; module: string }>();
+  for (const m of unresolvedMistakes) {
+    const rawCat = (m.questionType || m.title || '').trim();
+    if (!rawCat) continue;
+    const prev = freqMap.get(rawCat);
+    if (prev) {
+      prev.count += 1;
+    } else {
+      freqMap.set(rawCat, { count: 1, module: m.module });
+    }
+  }
+
+  let best: RecurringMistakePattern | null = null;
+  for (const [category, info] of freqMap.entries()) {
+    if (!best || info.count > best.count) {
+      best = { category, count: info.count, module: info.module };
+    }
+  }
+  return best;
 }
 
 export function getStudentContextSnapshot(currentPage = '/'): StudentContextSnapshot {
   const setup = loadExamSetup();
   const survey = loadOnboardingSurvey();
-  const mistakes = getMistakes().filter((m) => !m.mastered && m.status !== 'mastered');
+  const activeProfile = getActiveUser();
+
+  // Strictly resolve current student identity so records never bleed across accounts
+  const authUid = auth?.currentUser?.uid || null;
+  let legacyUser: { id?: string; name?: string } | null = null;
+  try {
+    const rawUser = localStorage.getItem('bandsprint_user_v1');
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser);
+      if (parsed && typeof parsed === 'object') {
+        legacyUser = parsed;
+      }
+    }
+  } catch {}
+
+  const userId =
+    authUid ||
+    activeProfile?.id ||
+    (legacyUser?.id ? String(legacyUser.id) : null);
+
+  // Only read activeProfile's history when it belongs to the currently active identity
+  const ownsActiveProfile = Boolean(
+    activeProfile && (!authUid || activeProfile.id === authUid)
+  );
+  const studentProfile = ownsActiveProfile ? activeProfile : null;
 
   let userName = 'Friend';
   try {
     if (auth?.currentUser?.displayName) {
       userName = auth.currentUser.displayName.split(' ')[0];
-    } else {
-      const rawUser = localStorage.getItem('bandsprint_user_v1');
-      if (rawUser) {
-        const parsed = JSON.parse(rawUser);
-        if (parsed?.name) userName = String(parsed.name).split(' ')[0];
-      }
+    } else if (studentProfile?.name) {
+      userName = String(studentProfile.name).split(' ')[0];
+    } else if (!authUid && legacyUser?.name) {
+      userName = String(legacyUser.name).split(' ')[0];
     }
   } catch {}
 
+  // Aggregate ONLY the active student's real exam history via Phase 3B.5 integrity rules
+  const rawHistory = Array.isArray(studentProfile?.progress?.examHistory)
+    ? studentProfile.progress.examHistory
+    : [];
+  const agg = aggregateExamHistory(rawHistory);
+
+  const skillBands: Record<IeltsSkillKey, number | null> = {
+    listening: agg.skills.listening.latest,
+    reading: agg.skills.reading.latest,
+    writing: agg.skills.writing.latest,
+    speaking: agg.skills.speaking.latest
+  };
+
+  // Completed diagnostic estimate is preserved separately from verified exam scores
+  const rawDiag = loadDiagnosticResult();
+  const diagnosticEstimate: DiagnosticEstimateContext | null = rawDiag
+    ? {
+        overall: validateOptionalHalfBand(rawDiag.scores?.overall, 1.0),
+        weakest: isIeltsSkillKey(rawDiag.weakest) ? rawDiag.weakest : null,
+        completedAt: typeof rawDiag.createdAt === 'number' && Number.isFinite(rawDiag.createdAt)
+          ? rawDiag.createdAt
+          : 0
+      }
+    : null;
+
+  // Derive weakest skill transparently without guessing when data is absent
+  let weakestSkill: IeltsSkillKey | null = null;
+  let weakestSkillSource: StudentContextSnapshot['weakestSkillSource'] = 'none';
+
+  const scoredSkills = (Object.entries(skillBands) as Array<[IeltsSkillKey, number | null]>).filter(
+    (entry): entry is [IeltsSkillKey, number] => entry[1] !== null
+  );
+  if (scoredSkills.length >= 2) {
+    scoredSkills.sort((a, b) => a[1] - b[1]);
+    weakestSkill = scoredSkills[0][0];
+    weakestSkillSource = 'verified_history';
+  } else if (diagnosticEstimate?.weakest) {
+    weakestSkill = diagnosticEstimate.weakest;
+    weakestSkillSource = 'diagnostic_estimate';
+  } else if (isIeltsSkillKey(survey?.weakestSkill)) {
+    weakestSkill = survey.weakestSkill;
+    weakestSkillSource = 'self_reported';
+  }
+
+  // Unresolved Mistake Vault items and genuine recurring category detection
+  const mistakes = getMistakes().filter((m) => !m.mastered && m.status !== 'mastered');
+  const recurringMistakePattern = detectRecurringMistakePattern(mistakes);
+
+  const targetBandCandidate =
+    studentProfile?.progress?.targetBand ||
+    setup.targetBand ||
+    survey?.targetBand ||
+    7.0;
+  const targetBand =
+    typeof targetBandCandidate === 'number' && Number.isFinite(targetBandCandidate)
+      ? Math.min(9.0, Math.max(4.0, Math.round(targetBandCandidate * 2) / 2))
+      : 7.0;
+
+  const examMode: 'Academic' | 'General Training' =
+    studentProfile?.progress?.intendedFormat === 'General Training' ||
+    setup.examMode === 'General Training' ||
+    survey?.examTrack === 'General Training'
+      ? 'General Training'
+      : 'Academic';
+
   let daysUntilExam: number | null = null;
-  const dateStr = setup.examDate || survey?.examDate || null;
+  const dateStr = studentProfile?.progress?.examDate || setup.examDate || survey?.examDate || null;
   if (dateStr) {
     const diffMs = new Date(`${dateStr}T00:00:00`).getTime() - Date.now();
     const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -352,44 +526,132 @@ export function getStudentContextSnapshot(currentPage = '/'): StudentContextSnap
   }
 
   return {
+    userId,
     userName,
-    targetBand: setup.targetBand || survey?.targetBand || 7.5,
-    examMode: setup.examMode || survey?.examTrack || 'Academic',
+    targetBand,
+    examMode,
     daysUntilExam,
-    weakestSkill: survey?.weakestSkill || 'speaking',
+    latestVerifiedOverallBand: agg.overall.latest,
+    completedFullMockCount: agg.completedFullMockCount,
+    evaluatedAttemptCount: agg.evaluatedAnySkillCount,
+    practiceAttemptCount: Math.max(0, agg.totalAttempts - agg.completedFullMockCount),
+    skillBands,
+    diagnosticEstimate,
+    weakestSkill,
+    weakestSkillSource,
     mistakeCount: mistakes.length,
     topMistake: mistakes[0]?.title || mistakes[0]?.prompt || '',
+    recurringMistakePattern,
+    currentActivity: resolveCurrentActivityLabel(currentPage),
     currentPage
   };
 }
 
+/**
+ * Generates an honest, evidence-backed coaching recommendation based strictly on the student's
+ * verified history, practice diagnostics, and genuine unresolved Mistake Vault entries.
+ * Never fabricates band scores or claims weaknesses absent from underlying data.
+ */
+export function generateContextAwareCoachTip(ctx: StudentContextSnapshot): {
+  mood: BarnabyMood;
+  text: string;
+  suggestedAction: BarnabyGuideAction;
+} {
+  // 1. Recurring mistake pattern backed by real Mistake Vault entries
+  if (ctx.recurringMistakePattern && ctx.mistakeCount > 0) {
+    const { category, count, module } = ctx.recurringMistakePattern;
+    const isTfng = /true\s*\/\s*false|tfng|not\s*given/i.test(category);
+    const targetedGuidance = isTfng
+      ? 'Pause before answering: FALSE means the passage contradicts the claim, while NOT GIVEN means the passage never states it.'
+      : 'Review why the distractor looked tempting before trying a fresh timed set.';
+
+    return {
+      mood: 'curious',
+      text: `You have ${count} unresolved ${category} item${count > 1 ? 's' : ''} (${module}) in your Mistake Vault. ${targetedGuidance}`,
+      suggestedAction: { label: `Review ${ctx.mistakeCount} Vault Trap${ctx.mistakeCount > 1 ? 's' : ''}`, route: '/learn/vault' }
+    };
+  }
+
+  // 2. Verified exam history with measurable weakest skill
+  if (ctx.weakestSkill && ctx.weakestSkillSource === 'verified_history') {
+    const weakBand = ctx.skillBands[ctx.weakestSkill];
+    const overallNote =
+      ctx.latestVerifiedOverallBand !== null
+        ? `Your latest verified Full Mock is Band ${ctx.latestVerifiedOverallBand.toFixed(1)} toward your Band ${ctx.targetBand.toFixed(1)} goal.`
+        : `You have ${ctx.evaluatedAttemptCount} evaluated practice result${ctx.evaluatedAttemptCount > 1 ? 's' : ''} toward your Band ${ctx.targetBand.toFixed(1)} goal.`;
+    const weakNote =
+      weakBand !== null
+        ? `${ctx.weakestSkill.charAt(0).toUpperCase() + ctx.weakestSkill.slice(1)} is currently your lowest verified skill (Band ${weakBand.toFixed(1)}) — one focused drill there will pay off fastest.`
+        : `Let's sharpen ${ctx.weakestSkill} next.`;
+
+    return {
+      mood: 'happy',
+      text: `${overallNote} ${weakNote}`,
+      suggestedAction: {
+        label: `Train ${ctx.weakestSkill.charAt(0).toUpperCase() + ctx.weakestSkill.slice(1)}`,
+        route: `/practice/${ctx.weakestSkill}`
+      }
+    };
+  }
+
+  // 3. Practice diagnostic estimate (explicitly distinguished from verified Full Mock scores)
+  if (ctx.diagnosticEstimate && ctx.diagnosticEstimate.weakest) {
+    const diagOverallText =
+      ctx.diagnosticEstimate.overall !== null
+        ? `Your practice diagnostic estimate sits around Band ${ctx.diagnosticEstimate.overall.toFixed(1)} (practice check, not a verified Full Mock).`
+        : 'You completed a practice diagnostic check.';
+    const skillLabel =
+      ctx.diagnosticEstimate.weakest.charAt(0).toUpperCase() + ctx.diagnosticEstimate.weakest.slice(1);
+    return {
+      mood: 'curious',
+      text: `${diagOverallText} ${skillLabel} showed the biggest gap — let's build steady daily momentum there.`,
+      suggestedAction: {
+        label: `Practise ${skillLabel}`,
+        route: `/practice/${ctx.diagnosticEstimate.weakest}`
+      }
+    };
+  }
+
+  // 4. Honest starting point when no verified scores exist yet
+  if (ctx.weakestSkill && ctx.weakestSkillSource === 'self_reported') {
+    const skillLabel = ctx.weakestSkill.charAt(0).toUpperCase() + ctx.weakestSkill.slice(1);
+    return {
+      mood: 'happy',
+      text: `You haven't logged a verified Full Mock score yet, and you marked ${skillLabel} as your priority for Band ${ctx.targetBand.toFixed(1)}. Let's run a focused drill to set an honest baseline.`,
+      suggestedAction: {
+        label: `Start ${skillLabel} Drill`,
+        route: `/practice/${ctx.weakestSkill}`
+      }
+    };
+  }
+
+  return {
+    mood: 'happy',
+    text: `No verified IELTS score is recorded yet — and that's a great clean slate! ${BARNABY_CORE_PHILOSOPHY}`,
+    suggestedAction: { label: 'Take a Quick Diagnostic', route: '/learn/diagnostic' }
+  };
+}
+
 function buildPersonalizedWelcome(ctx: StudentContextSnapshot): BarnabyMessage {
+  const coachTip = generateContextAwareCoachTip(ctx);
   const parts: string[] = [
-    `Hi ${ctx.userName}! I'm Barnaby — your free-roaming dragon pet, guide & IELTS tutor.`
+    `Hi ${ctx.userName}! I'm Barnaby — your dragon study companion and IELTS mentor.`,
+    BARNABY_CORE_PHILOSOPHY
   ];
   if (ctx.daysUntilExam !== null) {
-    parts.push(`Only ${ctx.daysUntilExam} days until your Band ${ctx.targetBand.toFixed(1)} goal!`);
+    parts.push(`${ctx.daysUntilExam} days left for your Band ${ctx.targetBand.toFixed(1)} (${ctx.examMode}) target.`);
   } else {
-    parts.push(`We're aiming for Band ${ctx.targetBand.toFixed(1)} (${ctx.examMode}) together.`);
+    parts.push(`We're working steadily toward Band ${ctx.targetBand.toFixed(1)} (${ctx.examMode}).`);
   }
-  if (ctx.mistakeCount > 0) {
-    parts.push(
-      `I spotted ${ctx.mistakeCount} unmastered trap${ctx.mistakeCount > 1 ? 's' : ''} in your Mistake Vault — drag me anywhere, pet me, feed me a word treat, or ask me anything!`
-    );
-  } else {
-    parts.push(`Drag me anywhere on screen, tap Pet or Word Treat, or ask me any IELTS question!`);
-  }
+  parts.push(coachTip.text);
 
   return {
     id: 'barnaby_welcome',
     sender: 'barnaby',
-    badge: 'PERSONAL GUIDE',
-    mood: 'happy',
+    badge: 'PERSONAL MENTOR',
+    mood: coachTip.mood,
     text: parts.join(' '),
-    suggestedAction:
-      ctx.mistakeCount > 0
-        ? { label: `Review ${ctx.mistakeCount} Vault Traps`, route: '/learn/vault' }
-        : { label: 'Try a Blind-Verified Drill', route: '/practice/question-bank' },
+    suggestedAction: coachTip.suggestedAction,
     createdAt: Date.now()
   };
 }
@@ -644,23 +906,18 @@ function smartOfflineReply(query: string, ctx: StudentContextSnapshot): Partial<
       suggestedAction: { label: 'Try Blind-Verified Reading', route: '/practice/question-bank' }
     };
   }
-  if (q.includes('mistake') || q.includes('vault') || q.includes('weak')) {
+  if (q.includes('mistake') || q.includes('vault') || q.includes('weak') || q.includes('next') || q.includes('focus')) {
+    const coach = generateContextAwareCoachTip(ctx);
     return {
-      mood: 'cheering',
-      text:
-        ctx.mistakeCount > 0
-          ? `You have ${ctx.mistakeCount} unmastered trap${ctx.mistakeCount > 1 ? 's' : ''} waiting in your Mistake Vault! Reviewing old mistakes raises your band faster than taking random new tests.`
-          : `Your Mistake Vault is spotless! Let’s sharpen your ${ctx.weakestSkill} skill with a quick timed drill.`,
+      mood: coach.mood,
+      text: coach.text,
       bengaliTip: 'পুরোনো ভুলগুলো ঠিক করলেই ব্যান্ড স্কোর সবচেয়ে দ্রুত ০.৫–১.০ বাড়ে!',
-      suggestedAction:
-        ctx.mistakeCount > 0
-          ? { label: 'Open Mistake Vault', route: '/learn/vault' }
-          : { label: `Train ${ctx.weakestSkill}`, route: `/practice/${ctx.weakestSkill}` }
+      suggestedAction: coach.suggestedAction
     };
   }
   return {
     mood: 'happy',
-    text: `I’ve got your back, ${ctx.userName}! Ask me for a Writing Task 2 plan, a Reading TFNG trap, a Speaking Part 3 upgrade, or tap “Word Treat” / “15s Quiz” above to play & learn!`,
+    text: `I’ve got your back, ${ctx.userName}! ${BARNABY_CORE_PHILOSOPHY} Ask me for a Writing Task 2 plan, a Reading TFNG strategy, a Speaking Part 3 upgrade, or tap “Word Treat” / “15s Quiz” above!`,
     bengaliTip: 'যেকোনো IELTS প্রশ্ন বাংলা বা ইংরেজিতে নির্দ্বিধায় জিজ্ঞেস করো!',
     suggestedAction: { label: 'Explore Question Bank', route: '/practice/question-bank' }
   };
@@ -696,14 +953,19 @@ export async function sendBarnabyChatMessage(
   }));
 
   try {
+    const token = getStoredSessionToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
     const res = await fetch('/api/tutor/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         message: query,
         history,
         persona: 'lexical_barnaby',
-        model: 'gemini-4-hydrogen',
         context: {
           module: currentPage.includes('reading')
             ? 'reading'
@@ -719,8 +981,15 @@ export async function sendBarnabyChatMessage(
           userName: ctx.userName,
           targetBand: ctx.targetBand,
           daysUntilExam: ctx.daysUntilExam,
-          weakestSkill: ctx.weakestSkill,
+          latestVerifiedOverallBand: ctx.latestVerifiedOverallBand,
+          completedFullMockCount: ctx.completedFullMockCount,
+          diagnosticEstimateBand: ctx.diagnosticEstimate?.overall ?? null,
+          weakestSkill: ctx.weakestSkill || '',
+          weakestSkillSource: ctx.weakestSkillSource,
           topMistake: ctx.topMistake,
+          recurringMistakeCategory: ctx.recurringMistakePattern?.category || '',
+          recurringMistakeCount: ctx.recurringMistakePattern?.count || 0,
+          currentActivity: ctx.currentActivity,
           currentPage,
           bondStage: bond.title
         }
@@ -823,10 +1092,17 @@ export function getContextualWhisper(currentPage: string, ctx: StudentContextSna
           : 'Zero traps left in your Vault! *proud dragon flaps*'
     };
   }
+  if (ctx.recurringMistakePattern && ctx.mistakeCount > 0) {
+    return {
+      mood: 'curious',
+      text: `Hey ${ctx.userName}! You have ${ctx.recurringMistakePattern.count} unresolved ${ctx.recurringMistakePattern.category} item${ctx.recurringMistakePattern.count > 1 ? 's' : ''} in your Mistake Vault. Ready to clear them?`,
+      action: { label: 'Open Vault', route: '/learn/vault' }
+    };
+  }
   if (ctx.mistakeCount > 0) {
     return {
       mood: 'curious',
-      text: `Hey ${ctx.userName}! ${ctx.mistakeCount} trap${ctx.mistakeCount > 1 ? 's are' : ' is'} hiding in your Mistake Vault. Quick 15-sec quiz?`,
+      text: `Hey ${ctx.userName}! ${ctx.mistakeCount} trap${ctx.mistakeCount > 1 ? 's are' : ' is'} waiting in your Mistake Vault. Quick 15-sec quiz?`,
       action: { label: 'Open Vault', route: '/learn/vault' }
     };
   }
@@ -838,6 +1114,6 @@ export function getContextualWhisper(currentPage: string, ctx: StudentContextSna
   }
   return {
     mood: 'playful',
-    text: `Psst ${ctx.userName}! I can roam freely now — drag me, pet me, or ask for a Band 8.5 tip!`
+    text: `Psst ${ctx.userName}! ${BARNABY_CORE_PHILOSOPHY}`
   };
 }

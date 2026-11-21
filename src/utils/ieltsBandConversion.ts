@@ -134,19 +134,41 @@ export function calculateFourSkillOverallBand(bands: {
   speakingBand?: number | null;
   examType?: string;
   isFullMock?: boolean;
+  speakingAssessmentStatus?: string;
+  speakingPronunciationObservable?: boolean;
+  isPartialSpeaking?: boolean;
   completedSkills?: {
     listening?: boolean;
     reading?: boolean;
     writing?: boolean;
     speaking?: boolean;
   };
+  totalQuestions?: number;
+  listeningTotalQuestions?: number;
+  readingTotalQuestions?: number;
+  writingTasksCompleted?: number;
 }): number | null {
-  const { listeningBand, readingBand, writingBand, speakingBand, examType, completedSkills } = bands;
+  const {
+    listeningBand,
+    readingBand,
+    writingBand,
+    speakingBand,
+    examType,
+    speakingAssessmentStatus,
+    speakingPronunciationObservable,
+    isPartialSpeaking,
+    completedSkills,
+    totalQuestions,
+    listeningTotalQuestions,
+    readingTotalQuestions,
+    writingTasksCompleted
+  } = bands;
 
-  // Metadata guard: If examType is explicitly partial or single-skill, reject Overall Band
+  // Metadata guard: If examType is explicitly incomplete, partial, or single-skill, reject Overall Band
   if (
     examType &&
-    (examType === 'partial_lrw' ||
+    (examType === 'incomplete_mock' ||
+      examType === 'partial_lrw' ||
       examType === 'listening_only' ||
       examType === 'reading_only' ||
       examType === 'writing_only' ||
@@ -155,26 +177,73 @@ export function calculateFourSkillOverallBand(bands: {
     return null;
   }
 
-  // Metadata guard: If completedSkills is present, all four must be completed
+  // Speaking provenance guard: transcript-only, unavailable, insufficient, or unobservable Pronunciation never completes a Full Mock
+  if (
+    isPartialSpeaking === true ||
+    speakingPronunciationObservable === false ||
+    speakingAssessmentStatus === 'partial_transcript_only' ||
+    speakingAssessmentStatus === 'insufficient_evidence' ||
+    speakingAssessmentStatus === 'unavailable'
+  ) {
+    return null;
+  }
+
+  // Writing two-task guard when task completion count is supplied
+  if (
+    writingTasksCompleted !== undefined &&
+    (typeof writingTasksCompleted !== 'number' ||
+      !Number.isFinite(writingTasksCompleted) ||
+      writingTasksCompleted < 2)
+  ) {
+    return null;
+  }
+
+  // Metadata guard: If completedSkills is present, all four must be explicitly completed
   if (completedSkills) {
     if (
-      !completedSkills.listening ||
-      !completedSkills.reading ||
-      !completedSkills.writing ||
-      !completedSkills.speaking
+      completedSkills.listening !== true ||
+      completedSkills.reading !== true ||
+      completedSkills.writing !== true ||
+      completedSkills.speaking !== true
     ) {
       return null;
     }
   }
 
-  // Under IELTS standards, an Overall Band score requires all four skills
-  // to have valid evaluated band results (>= 1.0 and <= 9.0).
-  // Band 0.0 represents an unattempted skill, and null represents an unassessed skill or unavailable band.
-  // Neither can contribute to a completed four-skill Overall Band.
-  const l = typeof listeningBand === 'number' && listeningBand >= 1.0 && listeningBand <= 9.0 ? listeningBand : null;
-  const r = typeof readingBand === 'number' && readingBand >= 1.0 && readingBand <= 9.0 ? readingBand : null;
-  const w = typeof writingBand === 'number' && writingBand >= 1.0 && writingBand <= 9.0 ? writingBand : null;
-  const s = typeof speakingBand === 'number' && speakingBand >= 1.0 && speakingBand <= 9.0 ? speakingBand : null;
+  const isHalfBand = (val: unknown): val is number =>
+    typeof val === 'number' &&
+    Number.isFinite(val) &&
+    Math.abs(val * 2 - Math.round(val * 2)) < 1e-6;
+
+  // Genuine 0.0 Listening/Reading requires completedSkills confirmation AND must NOT have 0 attempted questions
+  const hasListeningAttemptEvidence =
+    listeningTotalQuestions !== undefined
+      ? typeof listeningTotalQuestions === 'number' && Number.isFinite(listeningTotalQuestions) && listeningTotalQuestions > 0
+      : totalQuestions !== undefined
+      ? typeof totalQuestions === 'number' && Number.isFinite(totalQuestions) && totalQuestions > 0
+      : true;
+  const hasReadingAttemptEvidence =
+    readingTotalQuestions !== undefined
+      ? typeof readingTotalQuestions === 'number' && Number.isFinite(readingTotalQuestions) && readingTotalQuestions > 0
+      : totalQuestions !== undefined
+      ? typeof totalQuestions === 'number' && Number.isFinite(totalQuestions) && totalQuestions > 0
+      : true;
+
+  const allowZeroL = completedSkills?.listening === true && hasListeningAttemptEvidence;
+  const allowZeroR = completedSkills?.reading === true && hasReadingAttemptEvidence;
+
+  const l =
+    isHalfBand(listeningBand) && listeningBand <= 9.0 && listeningBand >= (allowZeroL ? 0.0 : 1.0)
+      ? listeningBand
+      : null;
+  const r =
+    isHalfBand(readingBand) && readingBand <= 9.0 && readingBand >= (allowZeroR ? 0.0 : 1.0)
+      ? readingBand
+      : null;
+  const w =
+    isHalfBand(writingBand) && writingBand >= 1.0 && writingBand <= 9.0 ? writingBand : null;
+  const s =
+    isHalfBand(speakingBand) && speakingBand >= 1.0 && speakingBand <= 9.0 ? speakingBand : null;
 
   // Strictly require all four evaluated skills
   if (l === null || r === null || w === null || s === null) {

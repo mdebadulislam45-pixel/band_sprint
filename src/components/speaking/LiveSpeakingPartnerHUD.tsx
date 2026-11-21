@@ -29,8 +29,8 @@ export interface LiveFluencyMetrics {
   lexicalDiversityPct: number;
   fillerCount: number;
   detectedFillers: string[];
-  pitchVarianceHz: number;
-  expressivenessScore: number;
+  pitchVarianceHz: number | null;
+  expressivenessScore: number | null;
 }
 
 interface LiveSpeakingPartnerHUDProps {
@@ -342,14 +342,21 @@ export const LiveSpeakingPartnerHUD: React.FC<LiveSpeakingPartnerHUDProps> = ({
       lexicalDiversityPct,
       fillerCount,
       detectedFillers: Array.from(new Set(fillerMatches)),
-      pitchVarianceHz: liveAcoustic.pitchVarianceHz || 24,
-      expressivenessScore: liveAcoustic.expressivenessScore || 76
+      pitchVarianceHz:
+        liveAcoustic.isMeasured !== false && typeof liveAcoustic.pitchVarianceHz === 'number'
+          ? liveAcoustic.pitchVarianceHz
+          : null,
+      expressivenessScore:
+        liveAcoustic.isMeasured !== false && typeof liveAcoustic.expressivenessScore === 'number'
+          ? liveAcoustic.expressivenessScore
+          : null
     };
   }, [
     activeTranscript,
     isInspectingLiveDraft,
     lastTurnWpm,
     turnStartTimeMs,
+    liveAcoustic.isMeasured,
     liveAcoustic.pitchVarianceHz,
     liveAcoustic.expressivenessScore
   ]);
@@ -590,26 +597,42 @@ export const LiveSpeakingPartnerHUD: React.FC<LiveSpeakingPartnerHUDProps> = ({
                 <span className="truncate">TONE</span>
                 <span
                   className={`font-bold shrink-0 ${
-                    fluencyMetrics.expressivenessScore >= 70
+                    fluencyMetrics.expressivenessScore === null
+                      ? 'text-slate-400'
+                      : fluencyMetrics.expressivenessScore >= 70
                       ? 'text-emerald-400'
                       : 'text-amber-400'
                   }`}
                 >
-                  {fluencyMetrics.expressivenessScore >= 70 ? 'NATURAL' : 'FLAT'}
+                  {fluencyMetrics.expressivenessScore === null
+                    ? 'UNMEASURED'
+                    : fluencyMetrics.expressivenessScore >= 70
+                    ? 'NATURAL'
+                    : 'FLAT'}
                 </span>
               </div>
               <div className="flex items-baseline justify-between gap-1 flex-wrap">
                 <span className="text-sm sm:text-base font-bold font-mono tabular-nums text-white">
-                  {fluencyMetrics.expressivenessScore}%
+                  {fluencyMetrics.expressivenessScore !== null
+                    ? `${fluencyMetrics.expressivenessScore}%`
+                    : '—'}
                 </span>
                 <span className="text-[10px] font-mono text-slate-400 tabular-nums">
-                  {fluencyMetrics.pitchVarianceHz} Hz
+                  {fluencyMetrics.pitchVarianceHz !== null
+                    ? `${fluencyMetrics.pitchVarianceHz} Hz`
+                    : '— Hz'}
                 </span>
               </div>
               <div className="h-1.5 w-full rounded-full bg-[#1C3230] overflow-hidden">
                 <div
                   className="h-full rounded-full bg-[#1F8A70] transition-all duration-300"
-                  style={{ width: `${Math.min(100, fluencyMetrics.expressivenessScore)}%` }}
+                  style={{
+                    width: `${
+                      fluencyMetrics.expressivenessScore !== null
+                        ? Math.min(100, fluencyMetrics.expressivenessScore)
+                        : 0
+                    }%`
+                  }}
                 />
               </div>
             </div>

@@ -46,7 +46,7 @@ import {
 } from '../config/voiceConfig';
 import { questionEngine } from '../services/QuestionEngine';
 import { audioManager } from '../services/AudioManager';
-import { evaluateSpeakingSession, analyzeSpeakingFluency, evaluateSingleSpeakingTurn, generateDiagnosticTurnFeedback } from '../services/SpeakingEvaluationService';
+import { evaluateSpeakingSession, analyzeSpeakingFluency, evaluateSingleSpeakingTurn } from '../services/SpeakingEvaluationService';
 import {
   SpeakingQuestionItem,
   SpeakingAnswerRecord,
@@ -1063,6 +1063,50 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
     currentAttemptIdRef.current = attemptId;
     soundManager.playBeep(580, 0.08);
 
+    const buildUnavailableTurnFeedback = (ansRecord: SpeakingAnswerRecord): InstantSpeakingFeedback => ({
+      questionId: ansRecord.questionId,
+      part: ansRecord.part,
+      topic: ansRecord.topic,
+      questionText: ansRecord.questionText,
+      candidateTranscript: ansRecord.transcript,
+      durationSec: ansRecord.durationSec,
+      wordsPerMinute: ansRecord.wordsPerMinute,
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      evidenceMode: 'unavailable',
+      pronunciationObservable: false,
+      isPartialAssessment: false,
+      unassessedCriteria: ['fluency', 'lexical', 'grammar', 'pronunciation'],
+      overallBand: null,
+      partialThreeCriterionIndex: null,
+      estimatedBand: null,
+      wordCount: ansRecord.wordCount,
+      feedbackTitle: 'AI Speaking Evaluation Unavailable',
+      feedbackEn: 'The AI examiner service could not be reached. No IELTS band score was generated. Please sign in and retry.',
+      feedbackBn: 'AI এক্সামিনার সার্ভিসে সংযোগ করা যায়নি। কোনো ব্যান্ড স্কোর তৈরি করা হয়নি। অনুগ্রহ করে সাইন ইন করে আবার চেষ্টা করুন।',
+      error: 'AI speaking evaluation service unavailable.',
+      canRetry: true,
+      criteria: { fc: null, lr: null, gra: null, pr: null },
+      estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
+      grammaticalErrors: [],
+      pronunciation: {
+        clarityBand: null,
+        cadenceWpm: ansRecord.wordsPerMinute,
+        trickyWords: [],
+        connectedSpeechTips: [],
+        intonationPattern: 'Unassessed — AI speaking evaluator unavailable.',
+        rhythmVerdict: 'Pronunciation was not assessed because the AI speaking evaluator was unavailable.'
+      },
+      band8Answer: {
+        bandScore: 8.5,
+        modelAnswer: '',
+        highlightedCollocations: [],
+        keyDiscourseMarkers: [],
+        examinerRationale: 'No score was generated because the AI evaluation service was unavailable.'
+      },
+      actionableTips: ['Sign in and retry when connected to the AI speaking evaluator.']
+    });
+
     // When Instant Coaching Modal is disabled (standard exam flow), advance and speak the examiner's
     // next prompt immediately so turn evaluation never blocks or delays the examiner's voice transition.
     if (!autoInstantFeedback) {
@@ -1077,8 +1121,8 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
           setCompletedAnswers((prev) => [...prev.filter((a) => a.questionId !== record.questionId), { ...record }]);
         })
         .catch(() => {
-          const fallback = generateDiagnosticTurnFeedback(record);
-          record.instantFeedback = fallback;
+          const unavailableFeedback = buildUnavailableTurnFeedback(record);
+          record.instantFeedback = unavailableFeedback;
           setCompletedAnswers((prev) => [...prev.filter((a) => a.questionId !== record.questionId), { ...record }]);
         });
       return;
@@ -1099,16 +1143,21 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
       setPendingTurnAdvance(() => advanceExecution);
       setNextTurnLabel(nextLabel);
       setShowTurnFeedbackModal(true);
-      soundManager.playSuccess();
-    } catch (err) {
+      if (feedback.isValidAttempt === false) {
+        soundManager.playBeep(360, 0.12);
+      } else {
+        soundManager.playSuccess();
+      }
+    } catch {
       if (currentAttemptIdRef.current !== attemptId) return;
-      const fallback = generateDiagnosticTurnFeedback(record);
-      record.instantFeedback = fallback;
-      setCurrentTurnFeedback(fallback);
+      const unavailableFeedback = buildUnavailableTurnFeedback(record);
+      record.instantFeedback = unavailableFeedback;
+      setCurrentTurnFeedback(unavailableFeedback);
       setCompletedAnswers(prev => [...prev.filter(a => a.questionId !== record.questionId), record]);
       setPendingTurnAdvance(() => advanceExecution);
       setNextTurnLabel(nextLabel);
       setShowTurnFeedbackModal(true);
+      soundManager.playBeep(360, 0.12);
     } finally {
       if (currentAttemptIdRef.current === attemptId) {
         setIsLoadingTurnFeedback(false);
@@ -1153,8 +1202,8 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
         realWordCount >= 5 && speakingElapsedSec > 0
           ? Math.round((realWordCount / Math.max(speakingElapsedSec, 5)) * 60)
           : 0,
-      pauseCount: Math.floor(speakingElapsedSec / 8),
-      longPauseCount: Math.max(0, Math.floor(speakingElapsedSec / 20)),
+      pauseCount: null,
+      longPauseCount: null,
       fillerCount: (cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
       detectedFillers: cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []
     };
@@ -1272,8 +1321,8 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
       durationSec: duration,
       wordCount: words,
       wordsPerMinute: words >= 5 && duration > 0 ? Math.round((words / Math.max(duration, 10)) * 60) : 0,
-      pauseCount: Math.floor(duration / 7),
-      longPauseCount: Math.max(0, Math.floor(duration / 25)),
+      pauseCount: null,
+      longPauseCount: null,
       fillerCount: (cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
       detectedFillers: cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []
     };
@@ -1323,8 +1372,8 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
         words >= 5 && speakingElapsedSec > 0
           ? Math.round((words / Math.max(speakingElapsedSec, 5)) * 60)
           : 0,
-      pauseCount: Math.floor(speakingElapsedSec / 7),
-      longPauseCount: Math.max(0, Math.floor(speakingElapsedSec / 20)),
+      pauseCount: null,
+      longPauseCount: null,
       fillerCount: (cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []).length,
       detectedFillers: cleanTranscript.match(/\b(um|uh|er|like)\b/gi) || []
     };
@@ -1442,15 +1491,19 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
       // Record attempts into QuestionEngine for spaced review
       answersToEvaluate.forEach((ans) => {
         try {
-          const turnBand = ans.instantFeedback?.overallBand ?? ans.instantFeedback?.estimatedBand ?? report.overallBand;
+          const turnBand =
+            ans.instantFeedback?.overallBand ??
+            ans.instantFeedback?.partialThreeCriterionIndex ??
+            report.overallBand ??
+            report.partialThreeCriterionIndex;
           questionEngine.recordAttempt({
             questionId: ans.questionId,
             module: 'speaking',
             userAnswer: ans.transcript,
-            isCorrect: turnBand >= 6.0 && ans.wordCount >= 10,
-            score: turnBand,
+            isCorrect: typeof turnBand === 'number' && turnBand >= 6.0 && ans.wordCount >= 10,
+            score: typeof turnBand === 'number' ? turnBand : 0,
             timeSpentSec: ans.durationSec,
-            explanation: `Part ${ans.part} response evaluated against Practice Practice descriptors.`
+            explanation: `Part ${ans.part} response recorded for spaced speaking practice.`
           });
         } catch {}
       });
@@ -1886,10 +1939,13 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
 
   // VIEW 3: RESULTS STATE (Practice-Style Diagnostic Report)
   if (stage === 'RESULTS' && evaluationReport) {
-    const { overallBand, criteria, grammarObservations, vocabUpgrades } = evaluationReport;
+    const { overallBand, partialThreeCriterionIndex, criteria, grammarObservations, vocabUpgrades } = evaluationReport;
     const analytics = analyzeSpeakingFluency(completedAnswers);
+    const hasDisplayableSessionScore =
+      (typeof overallBand === 'number' && overallBand > 0) ||
+      (typeof partialThreeCriterionIndex === 'number' && partialThreeCriterionIndex > 0);
 
-    if (evaluationReport.isValidAttempt === false || overallBand <= 0 || analytics.totalWordsSpoken < 5) {
+    if (evaluationReport.isValidAttempt === false || !hasDisplayableSessionScore || analytics.totalWordsSpoken < 5) {
       return (
         <div className="w-full max-w-2xl mx-auto py-8 animate-fade-in">
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-800/80 shadow-xl overflow-hidden">
@@ -2034,59 +2090,78 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
                     cx="50%"
                     cy="50%"
                     outerRadius="74%"
-                    data={[
-                      {
-                        subject: 'Fluency Flow',
-                        candidate: Number(criteria.fluency.band.toFixed(1)),
-                        benchmark: 8.0,
-                        fullMark: 9.0
-                      },
-                      {
-                        subject: 'Logical Coherence',
-                        candidate: Number(
-                          Math.min(
-                            9.0,
-                            Math.max(
-                              5.0,
-                              criteria.fluency.band * 0.65 +
-                                criteria.lexical.band * 0.35 +
-                                (analytics.totalFillers <= 3 ? 0.3 : -0.3)
-                            )
-                          ).toFixed(1)
-                        ),
-                        benchmark: 8.0,
-                        fullMark: 9.0
-                      },
-                      {
-                        subject: 'Hesitation Control',
-                        candidate: Number(
-                          Math.min(
-                            9.0,
-                            Math.max(5.0, criteria.fluency.band - analytics.totalFillers * 0.15 + 0.4)
-                          ).toFixed(1)
-                        ),
-                        benchmark: 8.0,
-                        fullMark: 9.0
-                      },
-                      {
-                        subject: 'Lexical Precision',
-                        candidate: Number(criteria.lexical.band.toFixed(1)),
-                        benchmark: 8.0,
-                        fullMark: 9.0
-                      },
-                      {
-                        subject: 'Grammar Range',
-                        candidate: Number(criteria.grammar.band.toFixed(1)),
-                        benchmark: 8.0,
-                        fullMark: 9.0
-                      },
-                      {
-                        subject: 'Pronunciation',
-                        candidate: Number(criteria.pronunciation.band.toFixed(1)),
-                        benchmark: 8.0,
-                        fullMark: 9.0
+                    data={(() => {
+                      const fcBand = criteria.fluency.band;
+                      const lrBand = criteria.lexical.band;
+                      const graBand = criteria.grammar.band;
+                      const prBand = criteria.pronunciation.band;
+                      const points: Array<{ subject: string; candidate: number; benchmark: number; fullMark: number }> = [];
+
+                      if (typeof fcBand === 'number') {
+                        points.push({
+                          subject: 'Fluency Flow',
+                          candidate: Number(fcBand.toFixed(1)),
+                          benchmark: 8.0,
+                          fullMark: 9.0
+                        });
                       }
-                    ]}
+                      if (typeof fcBand === 'number' && typeof lrBand === 'number') {
+                        points.push({
+                          subject: 'Logical Coherence',
+                          candidate: Number(
+                            Math.min(
+                              9.0,
+                              Math.max(
+                                1.0,
+                                fcBand * 0.65 +
+                                  lrBand * 0.35 +
+                                  (analytics.totalFillers <= 3 ? 0.3 : -0.3)
+                              )
+                            ).toFixed(1)
+                          ),
+                          benchmark: 8.0,
+                          fullMark: 9.0
+                        });
+                      }
+                      if (typeof fcBand === 'number') {
+                        points.push({
+                          subject: 'Hesitation Control',
+                          candidate: Number(
+                            Math.min(
+                              9.0,
+                              Math.max(1.0, fcBand - analytics.totalFillers * 0.15 + 0.4)
+                            ).toFixed(1)
+                          ),
+                          benchmark: 8.0,
+                          fullMark: 9.0
+                        });
+                      }
+                      if (typeof lrBand === 'number') {
+                        points.push({
+                          subject: 'Lexical Precision',
+                          candidate: Number(lrBand.toFixed(1)),
+                          benchmark: 8.0,
+                          fullMark: 9.0
+                        });
+                      }
+                      if (typeof graBand === 'number') {
+                        points.push({
+                          subject: 'Grammar Range',
+                          candidate: Number(graBand.toFixed(1)),
+                          benchmark: 8.0,
+                          fullMark: 9.0
+                        });
+                      }
+                      if (typeof prBand === 'number') {
+                        points.push({
+                          subject: 'Pronunciation',
+                          candidate: Number(prBand.toFixed(1)),
+                          benchmark: 8.0,
+                          fullMark: 9.0
+                        });
+                      }
+                      return points;
+                    })()}
                   >
                     <PolarGrid stroke="#e2e8f0" />
                     <PolarAngleAxis
@@ -2227,8 +2302,17 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
           /* Question-by-Question Diagnostics Breakdown Tab */
           <div className="space-y-4 animate-fade-in">
             {completedAnswers.map((ans, idx) => {
-              const fb = ans.instantFeedback || generateDiagnosticTurnFeedback(ans);
+              const fb = ans.instantFeedback;
               const isPlayingThisModel = playingModelTurnIdx === idx;
+              const turnBadgeText = !fb
+                ? 'Not Evaluated'
+                : fb.isValidAttempt === false || fb.assessmentStatus === 'unavailable' || fb.assessmentStatus === 'insufficient_evidence'
+                  ? 'No Score Generated'
+                  : typeof fb.overallBand === 'number'
+                    ? `Est. Band ${fb.overallBand.toFixed(1)}`
+                    : typeof fb.partialThreeCriterionIndex === 'number'
+                      ? `Partial 3/4 Index ${fb.partialThreeCriterionIndex.toFixed(1)}`
+                      : 'Unassessed';
 
               return (
                 <div key={idx} className="bg-white rounded-3xl border border-slate-300 p-5 sm:p-6 shadow-xs space-y-4">
@@ -2248,7 +2332,7 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
 
                     <div className="flex items-center gap-1.5">
                       <span className="px-2.5 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-900 font-mono text-xs font-bold">
-                        Est. Band {fb.estimatedBands.overall.toFixed(1)}
+                        {turnBadgeText}
                       </span>
                     </div>
                   </div>
@@ -2266,130 +2350,140 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
                     <p className="italic font-sans text-slate-900">"{ans.transcript}"</p>
                   </div>
 
-                  {/* 1. Grammatical Errors for this Turn */}
-                  {fb.grammaticalErrors.length > 0 && (
-                    <div className="space-y-2 pt-1">
-                      <h4 className="text-xs font-extrabold text-rose-800 uppercase tracking-wider flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                        <span>Grammar Errors Detected in This Turn ({fb.grammaticalErrors.length}):</span>
-                      </h4>
-
-                      <div className="space-y-2">
-                        {fb.grammaticalErrors.map((err, errIdx) => {
-                          const errKey = `turn_${idx}_err_${errIdx}`;
-                          const isSaved = savedTurnErrors[errKey];
-                          return (
-                            <div key={errIdx} className="p-3 rounded-xl bg-rose-50/50 border border-rose-200 text-xs space-y-2">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div className="p-2 rounded-lg bg-rose-100/70 text-rose-950 font-mono">
-                                  <span className="text-[10px] font-bold text-rose-700 block uppercase">Observed:</span>
-                                  <span className="line-through font-bold">"{err.observed}"</span>
-                                </div>
-                                <div className="p-2 rounded-lg bg-emerald-100/70 text-emerald-950 font-mono">
-                                  <span className="text-[10px] font-bold text-emerald-700 block uppercase">Corrected:</span>
-                                  <span className="font-bold">"{err.corrected}"</span>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
-                                <p className="text-[11px] text-slate-600">
-                                  <strong>Rule ({err.ruleCategory}):</strong> {err.explanation}
-                                </p>
-                                <button
-                                  onClick={() => handleSaveTurnError(err, errKey)}
-                                  disabled={isSaved}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 self-start sm:self-auto shrink-0 ${
-                                    isSaved
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-white hover:bg-rose-100 text-rose-700 border border-rose-200'
-                                  }`}
-                                >
-                                  {isSaved ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-                                  <span>{isSaved ? 'Saved' : 'Save to Vault'}</span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  {!fb ? (
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                      Turn-level AI evaluation is not available for this turn. No score was fabricated.
                     </div>
-                  )}
+                  ) : (
+                    <>
+                      {/* 1. Grammatical Errors for this Turn */}
+                      {fb.grammaticalErrors.length > 0 && (
+                        <div className="space-y-2 pt-1">
+                          <h4 className="text-xs font-extrabold text-rose-800 uppercase tracking-wider flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Grammar Errors Detected in This Turn ({fb.grammaticalErrors.length}):</span>
+                          </h4>
 
-                  {/* 2. Pronunciation & Syllable Stress */}
-                  {fb.pronunciation.trickyWords.length > 0 && (
-                    <div className="space-y-2 pt-1">
-                      <h4 className="text-xs font-extrabold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
-                        <Headphones className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Pronunciation & Syllable Stress Coach:</span>
-                      </h4>
+                          <div className="space-y-2">
+                            {fb.grammaticalErrors.map((err, errIdx) => {
+                              const errKey = `turn_${idx}_err_${errIdx}`;
+                              const isSaved = savedTurnErrors[errKey];
+                              return (
+                                <div key={errIdx} className="p-3 rounded-xl bg-rose-50/50 border border-rose-200 text-xs space-y-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div className="p-2 rounded-lg bg-rose-100/70 text-rose-950 font-mono">
+                                      <span className="text-[10px] font-bold text-rose-700 block uppercase">Observed:</span>
+                                      <span className="line-through font-bold">"{err.observed}"</span>
+                                    </div>
+                                    <div className="p-2 rounded-lg bg-emerald-100/70 text-emerald-950 font-mono">
+                                      <span className="text-[10px] font-bold text-emerald-700 block uppercase">Corrected:</span>
+                                      <span className="font-bold">"{err.corrected}"</span>
+                                    </div>
+                                  </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {fb.pronunciation.trickyWords.map((tw, twIdx) => (
-                          <div key={twIdx} className="p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-200 text-xs">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-slate-900">{tw.word}</span>
-                              <span className="font-mono text-[11px] text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-200">
-                                {tw.ipa}
-                              </span>
-                            </div>
-                            <div className="text-[11px] font-mono text-emerald-900 font-bold mt-1">
-                              {tw.syllableStress}
-                            </div>
-                            <p className="text-[10px] text-slate-600 mt-1">{tw.tip}</p>
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                                    <p className="text-[11px] text-slate-600">
+                                      <strong>Rule ({err.ruleCategory}):</strong> {err.explanation}
+                                    </p>
+                                    <button
+                                      onClick={() => handleSaveTurnError(err, errKey)}
+                                      disabled={isSaved}
+                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 self-start sm:self-auto shrink-0 ${
+                                        isSaved
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : 'bg-white hover:bg-rose-100 text-rose-700 border border-rose-200'
+                                      }`}
+                                    >
+                                      {isSaved ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
+                                      <span>{isSaved ? 'Saved' : 'Save to Vault'}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
+                      )}
+
+                      {/* 2. Pronunciation & Syllable Stress */}
+                      {fb.pronunciation.trickyWords.length > 0 && (
+                        <div className="space-y-2 pt-1">
+                          <h4 className="text-xs font-extrabold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+                            <Headphones className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Pronunciation & Syllable Stress Coach:</span>
+                          </h4>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {fb.pronunciation.trickyWords.map((tw, twIdx) => (
+                              <div key={twIdx} className="p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-200 text-xs">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-slate-900">{tw.word}</span>
+                                  <span className="font-mono text-[11px] text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-200">
+                                    {tw.ipa}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-mono text-emerald-900 font-bold mt-1">
+                                  {tw.syllableStress}
+                                </div>
+                                <p className="text-[10px] text-slate-600 mt-1">{tw.tip}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 3. Better Answer Band 8+ */}
+                      {fb.band8Answer.modelAnswer && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 to-blue-50/70 border border-indigo-200 text-xs space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-200 pb-2">
+                            <span className="font-bold text-indigo-950 uppercase tracking-wide flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Recommended Band 8.5+ Model Answer</span>
+                            </span>
+
+                            <button
+                              onClick={() => handlePlayModelForTurn(idx, fb.band8Answer.modelAnswer)}
+                              className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                                isPlayingThisModel
+                                  ? 'bg-rose-600 text-white'
+                                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                              }`}
+                            >
+                              {isPlayingThisModel ? (
+                                <>
+                                  <VolumeX className="w-3.5 h-3.5 animate-pulse" />
+                                  <span>Stop Audio</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 className="w-3.5 h-3.5" />
+                                  <span>Listen to Band 8+ Answer</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          <p className="font-serif leading-relaxed text-slate-800 text-xs sm:text-sm select-text">
+                            "{fb.band8Answer.modelAnswer}"
+                          </p>
+
+                          {fb.band8Answer.highlightedCollocations.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {fb.band8Answer.highlightedCollocations.map((hc, hIdx) => (
+                                <span
+                                  key={hIdx}
+                                  className="px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-[11px] font-medium text-indigo-900"
+                                  title={hc.meaning}
+                                >
+                                  <strong>"{hc.phrase}"</strong> ({hc.bandLevel})
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
-
-                  {/* 3. Better Answer Band 8+ */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 to-blue-50/70 border border-indigo-200 text-xs space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-200 pb-2">
-                      <span className="font-bold text-indigo-950 uppercase tracking-wide flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Recommended Band 8.5+ Model Answer</span>
-                      </span>
-
-                      <button
-                        onClick={() => handlePlayModelForTurn(idx, fb.band8Answer.modelAnswer)}
-                        className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                          isPlayingThisModel
-                            ? 'bg-rose-600 text-white'
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                        }`}
-                      >
-                        {isPlayingThisModel ? (
-                          <>
-                            <VolumeX className="w-3.5 h-3.5 animate-pulse" />
-                            <span>Stop Audio</span>
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 className="w-3.5 h-3.5" />
-                            <span>Listen to Band 8+ Answer</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    <p className="font-serif leading-relaxed text-slate-800 text-xs sm:text-sm select-text">
-                      "{fb.band8Answer.modelAnswer}"
-                    </p>
-
-                    {fb.band8Answer.highlightedCollocations.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {fb.band8Answer.highlightedCollocations.map((hc, hIdx) => (
-                          <span
-                            key={hIdx}
-                            className="px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-[11px] font-medium text-indigo-900"
-                            title={hc.meaning}
-                          >
-                            <strong>"{hc.phrase}"</strong> ({hc.bandLevel})
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                 </div>
               );
             })}
@@ -2429,9 +2523,17 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
                 <strong className="text-slate-900 text-sm">{candidateIdentity.origin || 'International'}</strong>
               </div>
               <div>
-                <span className="text-slate-400 uppercase block text-[10px]">CEFR Proficiency Level</span>
+                <span className="text-slate-400 uppercase block text-[10px]">CEFR / Assessment Mode</span>
                 <strong className="text-emerald-700 text-sm">
-                  {overallBand >= 8.0 ? 'C2 (Mastery)' : overallBand >= 7.0 ? 'C1 (Effective Operational)' : 'B2 (Vantage)'}
+                  {typeof overallBand === 'number'
+                    ? overallBand >= 8.0
+                      ? 'C2 (Mastery)'
+                      : overallBand >= 7.0
+                        ? 'C1 (Effective Operational)'
+                        : overallBand >= 5.5
+                          ? 'B2 (Vantage)'
+                          : 'B1 (Threshold)'
+                    : 'Partial Transcript-Only (3/4 Criteria)'}
                 </strong>
               </div>
             </div>
@@ -2440,23 +2542,42 @@ export const VoiceExaminer: React.FC<VoiceExaminerProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center font-mono tabular-nums">
               <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
                 <div className="text-[10px] font-bold uppercase text-slate-500">Fluency & Coherence</div>
-                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.fluency.band.toFixed(1)}</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">
+                  {typeof criteria.fluency.band === 'number' ? criteria.fluency.band.toFixed(1) : 'N/A'}
+                </div>
               </div>
               <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
                 <div className="text-[10px] font-bold uppercase text-slate-500">Lexical Resource</div>
-                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.lexical.band.toFixed(1)}</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">
+                  {typeof criteria.lexical.band === 'number' ? criteria.lexical.band.toFixed(1) : 'N/A'}
+                </div>
               </div>
               <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
                 <div className="text-[10px] font-bold uppercase text-slate-500">Grammatical Range</div>
-                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.grammar.band.toFixed(1)}</div>
+                <div className="text-2xl font-black text-slate-900 mt-1">
+                  {typeof criteria.grammar.band === 'number' ? criteria.grammar.band.toFixed(1) : 'N/A'}
+                </div>
               </div>
               <div className="p-4 rounded-2xl border border-slate-300 bg-slate-50">
                 <div className="text-[10px] font-bold uppercase text-slate-500">Pronunciation</div>
-                <div className="text-2xl font-black text-slate-900 mt-1">{criteria.pronunciation.band.toFixed(1)}</div>
+                <div className="text-xl font-black text-slate-900 mt-1">
+                  {typeof criteria.pronunciation.band === 'number' ? criteria.pronunciation.band.toFixed(1) : 'Unassessed'}
+                </div>
               </div>
               <div className="col-span-2 sm:col-span-1 p-4 rounded-2xl bg-slate-900 text-white">
-                <div className="text-[10px] font-bold uppercase text-amber-300">Overall Speaking</div>
-                <div className="text-3xl font-black text-white mt-0.5">{overallBand.toFixed(1)}</div>
+                <div className="text-[10px] font-bold uppercase text-amber-300">
+                  {typeof overallBand === 'number' ? 'Overall Speaking' : 'Partial 3/4 Index'}
+                </div>
+                <div className="text-3xl font-black text-white mt-0.5">
+                  {typeof overallBand === 'number'
+                    ? overallBand.toFixed(1)
+                    : typeof partialThreeCriterionIndex === 'number'
+                      ? partialThreeCriterionIndex.toFixed(1)
+                      : 'N/A'}
+                </div>
+                {typeof overallBand !== 'number' && (
+                  <div className="text-[9px] text-amber-200 mt-1">Not an official IELTS overall band</div>
+                )}
               </div>
             </div>
 

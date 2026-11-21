@@ -37,6 +37,10 @@ import {
   toggleBarnabyFreeRoam,
   updateBarnabyMoodAndActivity
 } from '../../services/barnabyCompanionStore';
+import {
+  BarnabyDragonAvatar,
+  mapBarnabyMoodToAvatarState
+} from './BarnabyDragonAvatar';
 
 interface FloatingBarnabyProps {
   onNavigate: (path: string) => void;
@@ -205,6 +209,14 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [isDocumentHidden, setIsDocumentHidden] = useState<boolean>(() =>
+    typeof document !== 'undefined' ? document.hidden : false
+  );
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const posRef = useRef(pos);
@@ -292,9 +304,27 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     return () => window.clearTimeout(t);
   }, [whisper]);
 
-  // Autonomous Free-Roam & Idle Pet Activities!
+  // Pause autonomous animations & timers when tab is hidden or reduced-motion is enabled
   useEffect(() => {
-    if (isHiddenForExam || isHiddenOnRoute || isOpen || isDragging) return;
+    if (typeof document === 'undefined') return;
+    const onVisibility = () => setIsDocumentHidden(document.hidden);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+
+  // Autonomous Free-Roam & Idle Pet Activities (paused during exams, open drawer, hidden tab, or reduced motion)
+  useEffect(() => {
+    if (isHiddenForExam || isHiddenOnRoute || isOpen || isDragging || isDocumentHidden || prefersReducedMotion) {
+      return;
+    }
     const interval = window.setInterval(() => {
       const latest = loadBarnabyState(currentPath);
       if (latest.freeRoam) {
@@ -320,7 +350,16 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     }, 24_000);
 
     return () => window.clearInterval(interval);
-  }, [isHiddenForExam, isHiddenOnRoute, isOpen, isDragging, currentPath, spawnParticles]);
+  }, [
+    isHiddenForExam,
+    isHiddenOnRoute,
+    isOpen,
+    isDragging,
+    isDocumentHidden,
+    prefersReducedMotion,
+    currentPath,
+    spawnParticles
+  ]);
 
   // Cleanup speech on unmount
   useEffect(() => {
@@ -481,14 +520,20 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   const bond = getBondStage(state.bondXp);
   const { width: vw } = getViewportBounds();
   const isOnLeftHalf = pos.x < vw / 2;
+  const isAudioSpeaking = playingId !== null;
+  const avatarState = mapBarnabyMoodToAvatarState(state.mood, {
+    isSpeaking: isAudioSpeaking,
+    isThinking: isSending
+  });
+  const isAutonomousPaused = isHiddenForExam || isDocumentHidden || isDragging;
 
   return (
     <>
-      {/* Open Companion Drawer — clean, responsive, never clipped off-screen */}
+      {/* Open Companion Drawer — clean, responsive (360–430px mobile safe), never clipped off-screen */}
       {isOpen && (
         <div
-          className={`fixed bottom-[84px] md:bottom-6 z-50 w-[calc(100vw-1.5rem)] max-w-[400px] h-[560px] max-h-[78vh] rounded-2xl bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] shadow-2xl overflow-hidden flex flex-col animate-fade-in ${
-            isOnLeftHalf ? 'left-3 md:left-6' : 'right-3 md:right-6'
+          className={`fixed bottom-[82px] md:bottom-6 z-50 w-[calc(100vw-1rem)] sm:w-[calc(100vw-1.5rem)] max-w-[396px] h-[540px] sm:h-[560px] max-h-[78vh] rounded-2xl bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] shadow-2xl overflow-hidden flex flex-col animate-fade-in ${
+            isOnLeftHalf ? 'left-2 sm:left-3 md:left-6' : 'right-2 sm:right-3 md:right-6'
           }`}
         >
           {/* Living Pet + Bond Header */}
@@ -500,14 +545,18 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
                 title="Pet Barnaby!"
                 className="relative shrink-0 cursor-pointer group"
               >
-                <img
-                  src="/barnaby-dragon-avatar.webp"
-                  alt="Barnaby"
-                  className={`w-11 h-11 rounded-full object-cover bg-sky-200 ring-2 ${moodMeta.ringClass} ${moodMeta.animClass}`}
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = '/barnaby-dragon-avatar.png';
-                  }}
-                />
+                <div
+                  className={`rounded-full ring-2 ${moodMeta.ringClass} ${isAudioSpeaking ? '' : moodMeta.animClass}`}
+                >
+                  <BarnabyDragonAvatar
+                    state={avatarState}
+                    isSpeaking={isAudioSpeaking}
+                    paused={isAutonomousPaused}
+                    size="md"
+                    framed="circle"
+                    testId="floating-barnaby-header-avatar"
+                  />
+                </div>
                 <span className="absolute -bottom-1 -right-1 text-xs leading-none bg-white dark:bg-[#0B1514] rounded-full w-5 h-5 flex items-center justify-center shadow">
                   {moodMeta.emoji}
                 </span>
@@ -811,16 +860,17 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
         </div>
       )}
 
-      {/* Free-Roaming Draggable Barnaby Pet Avatar */}
+      {/* Free-Roaming Draggable Barnaby Pet Avatar (GPU translate3d positioning) */}
       <div
         style={{
-          left: `${pos.x}px`,
-          top: `${pos.y}px`,
-          transition: isDragging
+          left: 0,
+          top: 0,
+          transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+          transition: isDragging || prefersReducedMotion
             ? 'none'
-            : 'left 1.35s cubic-bezier(0.22, 1, 0.36, 1), top 1.35s cubic-bezier(0.22, 1, 0.36, 1)'
+            : 'transform 1.35s cubic-bezier(0.22, 1, 0.36, 1)'
         }}
-        className="fixed z-40 select-none touch-none"
+        className="fixed z-40 select-none touch-none will-change-transform"
       >
         {/* Floating Reaction Particles (hearts, sparkles, zzz) */}
         <div className="pointer-events-none absolute -top-4 left-1/2 -translate-x-1/2">
@@ -894,15 +944,17 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
             </span>
           ) : (
             <>
-              <img
-                src="/barnaby-dragon-avatar.webp"
-                alt="Barnaby — your free-roaming AI study pet & tutor"
-                draggable={false}
-                className="w-full h-full rounded-full object-cover bg-sky-200 pointer-events-none"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = '/barnaby-dragon-avatar.png';
-                }}
-              />
+              <div className="w-full h-full rounded-full overflow-hidden pointer-events-none">
+                <BarnabyDragonAvatar
+                  state={avatarState}
+                  isSpeaking={isAudioSpeaking}
+                  paused={isAutonomousPaused}
+                  size="studio"
+                  framed="circle"
+                  className="!max-w-none w-full h-full"
+                  testId="floating-barnaby-launcher-avatar"
+                />
+              </div>
               {/* Expressive Mood Badge */}
               <span
                 className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] text-[11px] flex items-center justify-center shadow-sm pointer-events-none"

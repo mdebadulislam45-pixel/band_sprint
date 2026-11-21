@@ -69,7 +69,7 @@ interface ReadingLabPassage {
 const READING_LAB_PASSAGES: ReadingLabPassage[] = [
   {
     id: 'passage_rewilding',
-    badge: 'CAMBRIDGE PASSAGE 1 · ECOLOGY & CONSERVATION',
+    badge: 'BANDSPRINT PASSAGE 1 · ECOLOGY & CONSERVATION',
     title: 'The Rise of Rewilding: Restoring Natural Ecosystems',
     topic: 'Ecosystem Rewilding & Biodiversity',
     subtitle: 'How autonomous trophic cascades and keystone engineers are reshaping European environmental policy.',
@@ -171,7 +171,7 @@ const READING_LAB_PASSAGES: ReadingLabPassage[] = [
   },
   {
     id: 'passage_bilingual_brain',
-    badge: 'CAMBRIDGE PASSAGE 2 · COGNITIVE NEUROLINGUISTICS',
+    badge: 'BANDSPRINT PASSAGE 2 · COGNITIVE NEUROLINGUISTICS',
     title: 'The Bilingual Executive: Neuroplasticity and Cognitive Reserve',
     topic: 'Neurolinguistics & The Bilingual Brain',
     subtitle: 'How lifelong dual-language arbitration rewires prefrontal executive control and delays neurodegeneration.',
@@ -273,7 +273,7 @@ const READING_LAB_PASSAGES: ReadingLabPassage[] = [
   },
   {
     id: 'passage_quantum_crypto',
-    badge: 'CAMBRIDGE PASSAGE 3 · QUANTUM COMPUTING & SECURITY',
+    badge: 'BANDSPRINT PASSAGE 3 · QUANTUM COMPUTING & SECURITY',
     title: 'Post-Silicon Horizons: Quantum Key Distribution and Cryptographic Resilience',
     topic: 'Quantum Cryptography & Post-Silicon Computing',
     subtitle: 'Why subatomic superposition threatens classical RSA encryption and how photonic networks guarantee tamper-proof security.',
@@ -375,7 +375,7 @@ const READING_LAB_PASSAGES: ReadingLabPassage[] = [
   },
   {
     id: 'passage_mycorrhizal',
-    badge: 'CAMBRIDGE PASSAGE 4 · FOREST BOTANY & MYCOLOGY',
+    badge: 'BANDSPRINT PASSAGE 4 · FOREST BOTANY & MYCOLOGY',
     title: 'The Subterranean Wood-Wide Web: Mycorrhizal Symbiosis',
     topic: 'Forest Mycorrhizal Networks',
     subtitle: 'How subterranean fungal lattices redistribute carbon isotopes and biochemical defense signals across boreal forests.',
@@ -468,7 +468,7 @@ const READING_LAB_PASSAGES: ReadingLabPassage[] = [
   },
   {
     id: 'passage_biomimicry',
-    badge: 'CAMBRIDGE PASSAGE 5 · SUSTAINABLE ARCHITECTURE',
+    badge: 'BANDSPRINT PASSAGE 5 · SUSTAINABLE ARCHITECTURE',
     title: 'Biomimetic Engineering: Learning Thermal Physics from Termites',
     topic: 'Biomimetic Architecture & Cooling',
     subtitle: 'How evolutionary adaptations in savannah insects and desert beetles are revolutionizing zero-carbon skyscraper design.',
@@ -561,7 +561,7 @@ const READING_LAB_PASSAGES: ReadingLabPassage[] = [
   },
   {
     id: 'passage_antikythera',
-    badge: 'CAMBRIDGE PASSAGE 6 · ARCHAEOLOGY & HISTORY OF SCIENCE',
+    badge: 'BANDSPRINT PASSAGE 6 · ARCHAEOLOGY & HISTORY OF SCIENCE',
     title: 'The Antikythera Mechanism: Antiquity’s Analog Cosmos',
     topic: 'Hellenistic Astronomical Computing',
     subtitle: 'How micro-focus X-ray tomography decoded a 2,100-year-old bronze geared computer salvaged from an Aegean shipwreck.',

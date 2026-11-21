@@ -1,3 +1,5 @@
+import { analyzeTextQualitySignals } from './scoringIntegrity';
+
 export interface CriterionSubScore {
   code: 'TA' | 'TR' | 'CC' | 'LR' | 'GRA';
   label: string;
@@ -34,6 +36,7 @@ export interface WritingTaskAudit {
 }
 
 export interface SpeakingCriterionAudit {
+  isAssessed?: boolean;
   fcBand: number; // Fluency and Coherence
   lrBand: number; // Lexical Resource
   graBand: number; // Grammatical Range and Accuracy
@@ -264,65 +267,72 @@ export function evaluateSingleWritingTask(
     /\b(I argue|I contend|I believe|this essay argues|in my view|the evidence suggests|weighing both)\b/i.test(essayText) ||
     paragraphs.length >= 3;
 
-  // Compute 4 Criterion Scores if candidate wrote content
+  const textSignals = analyzeTextQualitySignals(essayText);
+
+  // Compute 4 Criterion Scores if candidate wrote meaningful content
   let taBand = 0;
   let ccBand = 0;
   let lrBand = 0;
   let graBand = 0;
 
-  if (wordCount > 0) {
+  if (wordCount > 0 && !textSignals.isGibberish) {
     // 1. TA / TR
-    let baseTA = wordCount >= minWordsRequired ? 6.5 : 5.5;
+    let baseTA = wordCount >= minWordsRequired ? 6.0 : 5.0;
     if (taskNumber === 1 && hasOverviewInTask1) baseTA += 1.0;
     if (taskNumber === 1 && !hasOverviewInTask1) baseTA = Math.min(baseTA, 5.5); // Band 5 cap in TA if no clear overview
     if (taskNumber === 2 && hasClearPositionInTask2 && paragraphs.length >= 4) baseTA += 1.0;
     if (wordCount >= minWordsRequired + 40 && keywordCoverage >= 0.35) baseTA += 0.5;
     if (isUnderLength) baseTA -= underLengthPenalty;
     if (isMemorizedOrOffTopic) baseTA -= 1.0;
-    taBand = roundIELTSBand(Math.max(2.0, Math.min(9.0, baseTA)));
+    if (textSignals.isHighlyRepetitive || textSignals.repeatedSentenceRatio >= 0.35) baseTA -= 2.5;
+    taBand = roundIELTSBand(Math.max(1.0, Math.min(9.0, baseTA)));
 
     // 2. CC
-    let baseCC = paragraphs.length >= 3 && paragraphs.length <= 5 ? 7.0 : 5.5;
+    let baseCC = paragraphs.length >= 3 && paragraphs.length <= 5 ? 6.5 : 5.0;
     if (mechanicalCount >= 3) baseCC -= 1.0;
     else if (mechanicalCount >= 1) baseCC -= 0.5;
     if (sophisticatedCount >= 2 && paragraphs.length >= 3) baseCC += 0.5;
     if (wordCount < 80) baseCC = Math.min(baseCC, 4.5);
-    ccBand = roundIELTSBand(Math.max(2.0, Math.min(9.0, baseCC)));
+    if (textSignals.isHighlyRepetitive || textSignals.repeatedSentenceRatio >= 0.35) baseCC -= 2.5;
+    ccBand = roundIELTSBand(Math.max(1.0, Math.min(9.0, baseCC)));
 
     // 3. LR
-    const uniqueWords = new Set(
-      essayText
-        .toLowerCase()
-        .replace(/[^a-z\s]/g, '')
-        .split(/\s+/)
-        .filter(Boolean)
-    );
-    const lexicalDiversity = wordCount > 0 ? uniqueWords.size / wordCount : 0;
-    let baseLR = 6.0;
+    const lexicalDiversity = textSignals.lexicalDiversityRatio;
+    let baseLR = 5.5;
     if (lexicalDiversity > 0.52 && wordCount >= 120) baseLR += 0.5;
+    else if (lexicalDiversity < 0.3) baseLR -= 1.5;
     if (sophisticatedCount >= 4) baseLR += 1.5;
     else if (sophisticatedCount >= 2) baseLR += 1.0;
     else if (sophisticatedCount >= 1) baseLR += 0.5;
     if (errorCount >= 3) baseLR -= 1.0;
     else if (errorCount >= 1) baseLR -= 0.5;
     if (memorizedCount > 0) baseLR -= 0.5;
-    if (wordCount < 80) baseLR = Math.min(baseLR, 5.0);
-    lrBand = roundIELTSBand(Math.max(2.0, Math.min(9.0, baseLR)));
+    if (wordCount < 80) baseLR = Math.min(baseLR, 4.5);
+    if (textSignals.isHighlyRepetitive) baseLR -= 2.0;
+    lrBand = roundIELTSBand(Math.max(1.0, Math.min(9.0, baseLR)));
 
     // 4. GRA
-    let baseGRA = 6.0;
+    let baseGRA = 5.5;
     if (complexDensity >= 0.65) baseGRA += 1.5;
     else if (complexDensity >= 0.4) baseGRA += 1.0;
     else if (complexDensity >= 0.25) baseGRA += 0.5;
     if (errorCount >= 4) baseGRA -= 1.5;
     else if (errorCount >= 2) baseGRA -= 1.0;
     else if (errorCount === 1) baseGRA -= 0.5;
-    if (wordCount < 80) baseGRA = Math.min(baseGRA, 5.0);
-    graBand = roundIELTSBand(Math.max(2.0, Math.min(9.0, baseGRA)));
+    if (wordCount < 80) baseGRA = Math.min(baseGRA, 4.5);
+    if (textSignals.isHighlyRepetitive || textSignals.repeatedSentenceRatio >= 0.35) baseGRA -= 2.0;
+    graBand = roundIELTSBand(Math.max(1.0, Math.min(9.0, baseGRA)));
+
+    if (textSignals.isHighlyRepetitive || textSignals.repeatedSentenceRatio >= 0.5) {
+      taBand = Math.min(taBand, 3.5);
+      ccBand = Math.min(ccBand, 3.5);
+      lrBand = Math.min(lrBand, 3.5);
+      graBand = Math.min(graBand, 3.5);
+    }
   }
 
-  const rawBand = roundIELTSBand((taBand + ccBand + lrBand + graBand) / 4);
-  const finalBand = wordCount === 0 ? 0 : roundIELTSBand(Math.max(1.0, rawBand));
+  const rawBand = wordCount === 0 || textSignals.isGibberish ? 0 : roundIELTSBand((taBand + ccBand + lrBand + graBand) / 4);
+  const finalBand = wordCount === 0 || textSignals.isGibberish ? 0 : roundIELTSBand(Math.max(1.0, rawBand));
 
   const criteria: CriterionSubScore[] = [
     {
@@ -492,24 +502,19 @@ export function evaluateCDIELTSWritingSuite(
     overallWritingBand = task1Audit.finalBand;
   }
 
-  // Speaking Criterion-Based Audit (derived from candidate's active linguistic profile + speaking benchmark)
-  const baseRef = overallWritingBand > 0 ? overallWritingBand : 6.5;
-  const fcBand = roundIELTSBand(Math.min(9.0, baseRef + 0.5));
-  const lrBand = roundIELTSBand(Math.min(9.0, weightedLR > 0 ? weightedLR : 6.5));
-  const graBand = roundIELTSBand(Math.min(9.0, weightedGRA > 0 ? weightedGRA : 6.5));
-  const pBand = roundIELTSBand(Math.min(9.0, baseRef));
-  const overallSpeakingBand = roundIELTSBand((fcBand + lrBand + graBand + pBand) / 4);
-
+  // Speaking cannot be fabricated from Writing submissions.
+  // Return an honest unassessed audit (0.0 across all criteria) until real spoken input is evaluated.
   const speakingAudit: SpeakingCriterionAudit = {
-    fcBand,
-    lrBand,
-    graBand,
-    pBand,
-    overallSpeakingBand,
-    fcNotes: 'Evaluates speech rate continuity, hesitation frequency (<300ms pauses), self-correction naturalness, and organic discourse markers across Parts 1–3.',
-    lrNotes: 'Assesses idiomatic precision, topic-specific vocabulary, and ability to paraphrase unfamiliar concepts under real-time pressure.',
-    graNotes: 'Tracks subordinate clause variety, tense consistency in Part 2 narrative, and speculative conditionals in Part 3.',
-    pNotes: 'Measures connected speech (linking/elision), nuclear word stress, and sentence-level intonation contours.',
+    isAssessed: false,
+    fcBand: 0,
+    lrBand: 0,
+    graBand: 0,
+    pBand: 0,
+    overallSpeakingBand: 0,
+    fcNotes: 'Unassessed: No spoken audio or transcript was recorded in this Writing evaluation. Complete the Speaking module to assess Fluency and Coherence.',
+    lrNotes: 'Unassessed: Speaking Lexical Resource must be evaluated from real spoken responses, not inferred from Writing scripts.',
+    graNotes: 'Unassessed: Speaking Grammatical Range and Accuracy requires real-time spoken responses across Parts 1–3.',
+    pNotes: 'Unassessed: Pronunciation requires recorded spoken audio to assess stress, rhythm, and intelligibility.',
   };
 
   return {

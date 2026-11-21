@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { soundManager } from '../../utils/audioEffects';
+import { aggregateExamHistory } from '../../utils/historyAggregation';
 
 interface OfficialDiagnosticReportModalProps {
   isOpen: boolean;
@@ -30,33 +31,19 @@ export const OfficialDiagnosticReportModal: React.FC<OfficialDiagnosticReportMod
   if (!isOpen) return null;
 
   const examHistory = user.progress.examHistory || [];
-  const latestExam = examHistory.length > 0 ? examHistory[examHistory.length - 1] : null;
+  const agg = aggregateExamHistory(examHistory);
 
-  // Genuine scores: only set if candidate actually attempted and scored the module
-  const listeningBand = typeof latestExam?.listeningBand === 'number' && latestExam.listeningBand > 0 ? latestExam.listeningBand : null;
-  const readingBand = typeof latestExam?.readingBand === 'number' && latestExam.readingBand > 0 ? latestExam.readingBand : null;
-  const writingBand = typeof latestExam?.writingBand === 'number' && latestExam.writingBand > 0 ? latestExam.writingBand : null;
-  const speakingBand = typeof (latestExam as any)?.speakingBand === 'number' && (latestExam as any).speakingBand > 0 ? (latestExam as any).speakingBand : null;
-
-  const validSubBands = [listeningBand, readingBand, writingBand, speakingBand].filter((b): b is number => b !== null);
-  
-  // Calculate genuine overall band using IELTS rounding
-  let overallBand: number | null = null;
-  if (typeof latestExam?.overallBand === 'number' && latestExam.overallBand > 0) {
-    overallBand = latestExam.overallBand;
-  } else if (validSubBands.length > 0) {
-    const rawAvg = validSubBands.reduce((a, b) => a + b, 0) / validSubBands.length;
-    const decimal = rawAvg - Math.floor(rawAvg);
-    let band = Math.floor(rawAvg);
-    if (decimal >= 0.75) band += 1.0;
-    else if (decimal >= 0.25) band += 0.5;
-    overallBand = band;
-  }
+  // Genuine validated scores: never infer overall band from fewer than 4 valid skills
+  const listeningBand = agg.skills.listening.latest;
+  const readingBand = agg.skills.reading.latest;
+  const writingBand = agg.skills.writing.latest;
+  const speakingBand = agg.skills.speaking.latest;
+  const overallBand = agg.overall.latest;
 
   const targetBand = user.progress.targetBand || 7.5;
 
   const getCefrLevel = (band: number | null) => {
-    if (band === null || band <= 0) return 'Unassessed';
+    if (band === null || band < 0.5) return 'Not assessed';
     if (band >= 8.5) return 'C2 Mastery';
     if (band >= 7.0) return 'C1 Operational Proficiency';
     if (band >= 5.5) return 'B2 Independent User';

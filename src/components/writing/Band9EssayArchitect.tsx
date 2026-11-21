@@ -19,10 +19,112 @@ import {
   Award,
   Volume2,
   VolumeX,
-  Sliders
+  Sliders,
+  Loader2
 } from 'lucide-react';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
+import { getStoredSessionToken } from '../../services/authService';
+import { checkWritingWordThreshold } from '../../services/WritingEvaluationService';
+import {
+  formatNullableBand,
+  validateClientWritingEvaluation
+} from '../../utils/scoringIntegrity';
+
+export type ArchitectAiEvalStatus =
+  | 'not_evaluated'
+  | 'evaluating'
+  | 'evaluated'
+  | 'insufficient_evidence'
+  | 'unavailable';
+
+export interface ArchitectAiEvalScores {
+  overall: number | null;
+  tr: number | null;
+  cc: number | null;
+  lr: number | null;
+  gra: number | null;
+}
+
+export interface ParsedArchitectWritingResult {
+  status: Exclude<ArchitectAiEvalStatus, 'not_evaluated' | 'evaluating'>;
+  scores: ArchitectAiEvalScores;
+  verdict: string | null;
+  message: string | null;
+}
+
+const EMPTY_ARCHITECT_SCORES: ArchitectAiEvalScores = {
+  overall: null,
+  tr: null,
+  cc: null,
+  lr: null,
+  gra: null
+};
+
+export function parseArchitectWritingResponse(params: {
+  httpOk: boolean;
+  httpStatus: number;
+  data: any;
+}): ParsedArchitectWritingResult {
+  const { httpOk, httpStatus, data } = params;
+
+  if (data && typeof data === 'object' && data.assessmentStatus === 'insufficient_evidence') {
+    return {
+      status: 'insufficient_evidence',
+      scores: { ...EMPTY_ARCHITECT_SCORES },
+      verdict: null,
+      message:
+        typeof data.error === 'string' && data.error.trim()
+          ? data.error
+          : typeof data.trComment === 'string' && data.trComment.trim()
+          ? data.trComment
+          : 'Submission is too short or contains insufficient assessable writing evidence. No band was assigned.'
+    };
+  }
+
+  if (!httpOk) {
+    const serverMessage =
+      data && typeof data === 'object' && typeof data.error === 'string' && data.error.trim()
+        ? data.error
+        : httpStatus === 401
+        ? 'Please sign in to run live AI Writing evaluation. No fallback score was assigned.'
+        : `Live AI Writing evaluation is unavailable (HTTP ${httpStatus}). No fallback score was assigned.`;
+    return {
+      status: 'unavailable',
+      scores: { ...EMPTY_ARCHITECT_SCORES },
+      verdict: null,
+      message: serverMessage
+    };
+  }
+
+  const validated = validateClientWritingEvaluation(data);
+  if (!validated.valid) {
+    return {
+      status: validated.assessmentStatus === 'insufficient_evidence' ? 'insufficient_evidence' : 'unavailable',
+      scores: { ...EMPTY_ARCHITECT_SCORES },
+      verdict: null,
+      message:
+        validated.reason ||
+        'AI Writing evaluation returned an incomplete or invalid payload. No fallback score was assigned.'
+    };
+  }
+
+  return {
+    status: 'evaluated',
+    scores: {
+      overall: validated.overallBand,
+      tr: validated.criteria.ta,
+      cc: validated.criteria.cc,
+      lr: validated.criteria.lr,
+      gra: validated.criteria.gra
+    },
+    verdict:
+      typeof data?.examinerVerdict === 'string' && data.examinerVerdict.trim()
+        ? data.examinerVerdict.trim()
+        : null,
+    message: null
+  };
+}
 
 export interface EssayTemplate {
   id: string;
@@ -257,10 +359,21 @@ export const Band9EssayArchitect: React.FC = () => {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
-  // Live Essay Evaluator State
+  // Draft Studio & Live AI Evaluator State
   const [essayTaskType, setEssayTaskType] = useState<'task2' | 'task1'>('task2');
   const [userEssay, setUserEssay] = useState<string>('');
   const [boostedEssay, setBoostedEssay] = useState<string | null>(null);
+  const [aiEvalStatus, setAiEvalStatus] = useState<ArchitectAiEvalStatus>('not_evaluated');
+  const [aiScores, setAiScores] = useState<ArchitectAiEvalScores>({ ...EMPTY_ARCHITECT_SCORES });
+  const [aiEvalMessage, setAiEvalMessage] = useState<string | null>(null);
+  const [aiVerdict, setAiVerdict] = useState<string | null>(null);
+
+  const resetAiEvaluation = () => {
+    setAiEvalStatus('not_evaluated');
+    setAiScores({ ...EMPTY_ARCHITECT_SCORES });
+    setAiEvalMessage(null);
+    setAiVerdict(null);
+  };
 
   // Vocabulary Enhancement Dictionary (Band 5/6 to Band 8/9 C1/C2)
   const VOCAB_UPGRADES: Record<string, string> = {
@@ -347,52 +460,78 @@ export const Band9EssayArchitect: React.FC = () => {
       return advanced;
     });
     setUserEssay(updated);
+    resetAiEvaluation();
     soundManager.playSuccess();
   };
 
-  // Estimate Rubric Scores
-  const calculateScores = () => {
-    if (wordCount === 0) return { tr: 0, cc: 0, lr: 0, gra: 0, overall: 0 };
-    
-    // 1. Task Response / Achievement
-    let tr = 6.0;
-    if (isWordCountMet) tr += 1.0;
-    if (paragraphCount >= 4 && paragraphCount <= 5) tr += 0.5;
-    if (userEssay.toLowerCase().includes('conclusion') || userEssay.toLowerCase().includes('summary')) tr += 0.5;
-    tr = Math.min(9.0, tr);
+  const complexClauseCount = (
+    userEssay.match(/\b(although|which|that|whereas|while|because|if|unless|since|provided)\b/gi) || []
+  ).length;
 
-    // 2. Coherence & Cohesion
-    let cc = 6.0;
-    if (detectedCohesiveMarkers.length >= 4) cc += 1.0;
-    if (detectedCohesiveMarkers.length >= 7) cc += 1.0;
-    if (paragraphCount >= 3) cc += 0.5;
-    cc = Math.min(9.0, cc);
-
-    // 3. Lexical Resource
-    let lr = 6.0;
-    if (wordCount > 100) {
-      const uniqueWords = new Set(userEssay.toLowerCase().match(/[a-z']+/g) || []).size;
-      const diversity = uniqueWords / wordCount;
-      if (diversity > 0.45) lr += 1.0;
-      if (detectedBasicWords.length === 0 && wordCount >= 100) lr += 1.0;
-      else if (detectedBasicWords.length > 5) lr -= 0.5;
+  // Live AI Evaluation via /api/evaluate-writing (no local heuristic fallback band fabrication)
+  const handleRunAiEvaluation = async () => {
+    const trimmed = userEssay.trim();
+    const gate = checkWritingWordThreshold(trimmed, essayTaskType);
+    if (!gate.isValidAttempt) {
+      setAiEvalStatus('insufficient_evidence');
+      setAiScores({ ...EMPTY_ARCHITECT_SCORES });
+      setAiVerdict(null);
+      setAiEvalMessage(gate.feedbackEn);
+      soundManager.playBeep(360, 0.1);
+      return;
     }
-    lr = Math.min(9.0, Math.max(5.0, lr));
 
-    // 4. Grammatical Range & Accuracy
-    let gra = 6.5;
-    const complexSentences = (userEssay.match(/(although|which|that|whereas|while|because|if|unless|since|provided)/gi) || []).length;
-    if (complexSentences >= 4) gra += 1.0;
-    if (complexSentences >= 7) gra += 0.5;
-    gra = Math.min(9.0, gra);
+    setAiEvalStatus('evaluating');
+    setAiScores({ ...EMPTY_ARCHITECT_SCORES });
+    setAiEvalMessage(null);
+    setAiVerdict(null);
 
-    const overall = Math.round(((tr + cc + lr + gra) / 4) * 2) / 2;
-    return { tr, cc, lr, gra, overall };
+    try {
+      const token = getStoredSessionToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch('/api/evaluate-writing', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          testType: essayTaskType === 'task1' ? 'Task 1' : 'Task 2',
+          prompt: `${selectedTemplate.title}: ${selectedTemplate.description}`,
+          response: trimmed
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+      const parsed = parseArchitectWritingResponse({
+        httpOk: response.ok,
+        httpStatus: response.status,
+        data
+      });
+
+      setAiEvalStatus(parsed.status);
+      setAiScores(parsed.scores);
+      setAiVerdict(parsed.verdict);
+      setAiEvalMessage(parsed.message);
+
+      if (parsed.status === 'evaluated') {
+        soundManager.playSuccess();
+      } else {
+        soundManager.playBeep(360, 0.08);
+      }
+    } catch {
+      setAiEvalStatus('unavailable');
+      setAiScores({ ...EMPTY_ARCHITECT_SCORES });
+      setAiVerdict(null);
+      setAiEvalMessage(
+        'Unable to reach the live AI Writing evaluation service. Please retry — no fallback IELTS band was assigned.'
+      );
+      soundManager.playBeep(340, 0.09);
+    }
   };
 
-  const scores = calculateScores();
-
-  // One-Click Academic Boost
+  // One-Click Academic Boost (non-scoring vocabulary workbench)
   const handleBoostEssay = () => {
     if (!userEssay.trim()) return;
     let upgraded = userEssay;
@@ -420,11 +559,11 @@ export const Band9EssayArchitect: React.FC = () => {
             <span>Practice Band 9 Architecture</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-            IELTS Band 9 Writing Architect & Live Scorer
+            IELTS Band 9 Writing Architect &amp; Draft Studio
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Eliminate guesswork in IELTS Writing. Explore proven sentence templates, cohesive paragraph formulas,
-            and use our live examiner rubric evaluator to grade and boost your essays.
+            Explore proven sentence templates, cohesive paragraph formulas, non-scoring draft structure checks,
+            and on-demand live AI examiner evaluation for your essays.
           </p>
         </div>
       </div>
@@ -458,7 +597,7 @@ export const Band9EssayArchitect: React.FC = () => {
           }`}
         >
           <Zap className="w-4 h-4" />
-          <span>⚡ Live Practice Rubric Scorer & Word Enhancer</span>
+          <span>⚡ Draft Studio &amp; Live AI Evaluator</span>
         </button>
       </div>
 
@@ -639,7 +778,10 @@ export const Band9EssayArchitect: React.FC = () => {
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Exam Task:</span>
               <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                 <button
-                  onClick={() => setEssayTaskType('task2')}
+                  onClick={() => {
+                    setEssayTaskType('task2');
+                    resetAiEvaluation();
+                  }}
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                     essayTaskType === 'task2'
                       ? 'bg-blue-600 text-white shadow-2xs'
@@ -649,7 +791,10 @@ export const Band9EssayArchitect: React.FC = () => {
                   Writing Task 2 (250+ Words)
                 </button>
                 <button
-                  onClick={() => setEssayTaskType('task1')}
+                  onClick={() => {
+                    setEssayTaskType('task1');
+                    resetAiEvaluation();
+                  }}
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                     essayTaskType === 'task1'
                       ? 'bg-blue-600 text-white shadow-2xs'
@@ -669,6 +814,8 @@ export const Band9EssayArchitect: React.FC = () => {
                       ? 'In contemporary society, it is frequently contended that tertiary education ought to be subsidized entirely by the state, whereas proponents of tuition fees assert that students must shoulder personal financial responsibility. While acknowledging that unfettered public expenditure poses fiscal challenges, I firmly believe that eliminating tuition barriers is paramount for fostering social mobility and long-term economic dynamism.\n\nThe principal argument in favor of universally free university schooling lies in the democratization of intellectual capital. When admission is determined strictly by cognitive aptitude rather than socioeconomic background, gifted students from impoverished households can access high-tier professions. Consequently, nations like Germany and Norway, which impose negligible or zero university fees, consistently register higher median social mobility metrics and reduced wealth inequality.\n\nFurthermore, from a macro-economic standpoint, a highly educated workforce is a prerequisite for competing in modern knowledge-driven economies. Had developing societies not expanded tertiary subsidies over past decades, their technical innovation capacity would have stagnated markedly. Graduates generate substantial tax revenues over their lifetime, thereby reimbursing state treasuries manifold.\n\nIn conclusion, although fiscal conservatism dictates caution, universal tuition waivers represent an indispensable investment in societal equity and intellectual progress. Governments should therefore prioritize education subsidies, funded perhaps through targeted corporate taxation.'
                       : 'The chart delineates the proportion of renewable electricity generation across Norway and Germany between 2000 and 2024.\n\nOverall, both nations witnessed an unmistakable upward progression in sustainable energy adoption, with Norway maintaining an overwhelming predominance throughout the examined timeframe. While Norway commenced from a commanding position, Germany exhibited the most pronounced rate of transformative growth.\n\nIn 2000, Norway initiated the period with a dominant renewable share of 68%. Despite minor interim fluctuations, Norwegian generation subsequently accelerated, ascending progressively to culminate at an all-time peak of 94% by 2024.\n\nIn stark contrast, Germany embarked from a modest 12% in 2000, remaining under 25% until 2012. However, the subsequent decade witnessed exponential expansion, with German clean power more than doubling to reach 52% at the close of the era.'
                   );
+                  setBoostedEssay(null);
+                  resetAiEvaluation();
                   soundManager.playBeep(640, 0.04);
                 }}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
@@ -680,6 +827,7 @@ export const Band9EssayArchitect: React.FC = () => {
                 onClick={() => {
                   setUserEssay('');
                   setBoostedEssay(null);
+                  resetAiEvaluation();
                   soundManager.playBeep(450, 0.04);
                 }}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
@@ -722,6 +870,7 @@ export const Band9EssayArchitect: React.FC = () => {
                   onChange={(e) => {
                     setUserEssay(e.target.value);
                     if (boostedEssay) setBoostedEssay(null);
+                    if (aiEvalStatus !== 'not_evaluated') resetAiEvaluation();
                   }}
                   placeholder={
                     essayTaskType === 'task2'
@@ -734,17 +883,37 @@ export const Band9EssayArchitect: React.FC = () => {
 
                 {/* Essay Action Buttons */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
+                      type="button"
+                      onClick={handleRunAiEvaluation}
+                      disabled={aiEvalStatus === 'evaluating' || wordCount === 0}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+                    >
+                      {aiEvalStatus === 'evaluating' ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Award className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {aiEvalStatus === 'evaluating'
+                          ? 'Evaluating with Live AI...'
+                          : 'Run Live AI Evaluation'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={handleBoostEssay}
                       disabled={wordCount < 20}
                       className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/20 transition cursor-pointer"
                     >
                       <Zap className="w-3.5 h-3.5" />
-                      <span>⚡ Boost with Band 9 Collocations</span>
+                      <span>⚡ Boost Collocations (Draft Tool)</span>
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => handleReadSample(userEssay)}
                       disabled={wordCount < 10}
                       className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 disabled:opacity-40 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
@@ -766,12 +935,14 @@ export const Band9EssayArchitect: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold text-xs">
                       <Sparkles className="w-4 h-4 text-emerald-600" />
-                      <span>Band 9 Lexical Replacement Active</span>
+                      <span>Band 9 Lexical Replacement Preview (Non-Scoring)</span>
                     </div>
                     <button
+                      type="button"
                       onClick={() => {
                         setUserEssay(boostedEssay);
                         setBoostedEssay(null);
+                        resetAiEvaluation();
                         soundManager.playSuccess();
                       }}
                       className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer"
@@ -786,94 +957,184 @@ export const Band9EssayArchitect: React.FC = () => {
               )}
             </div>
 
-            {/* Right 1 Col: Live Practice Set 4-Criteria Scorecard */}
+            {/* Right 1 Col: Live AI Evaluation Card + Non-Scoring Draft Guidance */}
             <div className="space-y-4">
+              {/* 1. Live AI Diagnostic Band Card (Separated from local draft tools) */}
               <div className="p-6 rounded-3xl bg-white dark:bg-[#101B32] border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
                   <div>
                     <span className="text-[10px] font-mono font-bold uppercase text-blue-600 dark:text-blue-400 tracking-wider">
-                      Examiner Evaluation
+                      Live AI Evaluation
                     </span>
-                    <h3 className="text-base font-black text-slate-900 dark:text-white">Estimated Band</h3>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white">
+                      AI Diagnostic Band
+                    </h3>
                   </div>
 
                   <div className="text-center px-4 py-2 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-md">
                     <div className="text-2xl font-black font-mono leading-none">
-                      {scores.overall > 0 ? scores.overall.toFixed(1) : '—'}
+                      {aiEvalStatus === 'evaluating'
+                        ? '...'
+                        : aiEvalStatus === 'evaluated'
+                        ? formatNullableBand(aiScores.overall)
+                        : '—'}
                     </div>
                     <div className="text-[9px] font-bold uppercase tracking-wider text-blue-200 mt-0.5">
-                      {scores.overall >= 8.0 ? 'Band 8+' : scores.overall >= 7.0 ? 'Band 7' : 'Band 6'}
+                      {aiEvalStatus === 'evaluated'
+                        ? 'AI Diagnostic'
+                        : aiEvalStatus === 'evaluating'
+                        ? 'Scoring'
+                        : aiEvalStatus === 'insufficient_evidence'
+                        ? 'Insufficient'
+                        : aiEvalStatus === 'unavailable'
+                        ? 'Unavailable'
+                        : 'Not Scored'}
                     </div>
                   </div>
                 </div>
 
-                {/* 4 Rubric Gauges */}
+                {/* Explicit Status Banner */}
+                {aiEvalStatus === 'not_evaluated' && (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                    No IELTS band is estimated while typing. Click <strong>Run Live AI Evaluation</strong> to assess your draft against all four criteria.
+                  </div>
+                )}
+
+                {aiEvalStatus === 'insufficient_evidence' && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-900 dark:text-amber-200 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Insufficient Evidence — No Band Assigned</span>
+                    </div>
+                    <p className="leading-relaxed">
+                      {aiEvalMessage ||
+                        'Your draft does not yet contain enough assessable writing evidence for an IELTS band estimate.'}
+                    </p>
+                  </div>
+                )}
+
+                {aiEvalStatus === 'unavailable' && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 text-[11px] text-rose-900 dark:text-rose-200 space-y-2">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>AI Evaluation Unavailable — No Band Assigned</span>
+                    </div>
+                    <p className="leading-relaxed">
+                      {aiEvalMessage ||
+                        'Live AI Writing evaluation could not be completed. No fallback score was generated.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleRunAiEvaluation}
+                      className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] inline-flex items-center gap-1.5 cursor-pointer transition"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Retry AI Evaluation</span>
+                    </button>
+                  </div>
+                )}
+
+                {aiEvalStatus === 'evaluated' && aiVerdict && (
+                  <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 text-[11px] text-emerald-950 dark:text-emerald-200 leading-relaxed">
+                    {aiVerdict}
+                  </div>
+                )}
+
+                {/* 4 Rubric Gauges (Strict AI-Only Null-Safe Display) */}
                 <div className="space-y-3.5 text-xs">
-                  {/* 1. Task Achievement / Response */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="text-slate-700 dark:text-slate-300">Task Response (TR)</span>
-                      <span className="font-mono text-blue-600 dark:text-blue-400">{scores.tr > 0 ? scores.tr.toFixed(1) : '—'}</span>
+                  {[
+                    {
+                      label: essayTaskType === 'task1' ? 'Task Achievement (TA)' : 'Task Response (TR)',
+                      score: aiScores.tr,
+                      color: 'text-blue-600 dark:text-blue-400',
+                      bar: 'bg-blue-600'
+                    },
+                    {
+                      label: 'Coherence & Cohesion (CC)',
+                      score: aiScores.cc,
+                      color: 'text-indigo-600 dark:text-indigo-400',
+                      bar: 'bg-indigo-600'
+                    },
+                    {
+                      label: 'Lexical Resource (LR)',
+                      score: aiScores.lr,
+                      color: 'text-emerald-600 dark:text-emerald-400',
+                      bar: 'bg-emerald-600'
+                    },
+                    {
+                      label: 'Grammar Range & Accuracy (GRA)',
+                      score: aiScores.gra,
+                      color: 'text-purple-600 dark:text-purple-400',
+                      bar: 'bg-purple-600'
+                    }
+                  ].map((item) => (
+                    <div key={item.label} className="space-y-1">
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="text-slate-700 dark:text-slate-300">{item.label}</span>
+                        <span className={`font-mono ${item.color}`}>
+                          {aiEvalStatus === 'evaluated' ? formatNullableBand(item.score) : '—'}
+                        </span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div
+                          className={`h-full ${item.bar} transition-all duration-300 rounded-full`}
+                          style={{
+                            width:
+                              aiEvalStatus === 'evaluated' && typeof item.score === 'number'
+                                ? `${Math.min(100, (item.score / 9.0) * 100)}%`
+                                : '0%'
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div
-                        className="h-full bg-blue-600 transition-all duration-300 rounded-full"
-                        style={{ width: `${(scores.tr / 9.0) * 100}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      {wordCount === 0 ? 'Awaiting essay text' : isWordCountMet ? '✓ Meets official word limit' : `⚠ Under length (${minRequired - wordCount} words needed)`}
+                  ))}
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-relaxed pt-1 border-t border-slate-100 dark:border-slate-800">
+                  AI diagnostic estimate for practice only; not an official IELTS test report.
+                </p>
+              </div>
+
+              {/* 2. Non-Scoring Draft Structure & Vocabulary Guidance */}
+              <div className="p-5 rounded-3xl bg-white dark:bg-[#101B32] border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold uppercase text-slate-500 tracking-wider">
+                      Offline · Non-Scoring Guidance
+                    </span>
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                      Draft Structure &amp; Vocabulary
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                    <div className="text-[10px] text-slate-500">Length Check</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {wordCount === 0
+                        ? 'Awaiting draft'
+                        : isWordCountMet
+                        ? 'Target Met'
+                        : `${minRequired - wordCount}w needed`}
                     </div>
                   </div>
-
-                  {/* 2. Coherence & Cohesion */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="text-slate-700 dark:text-slate-300">Coherence & Cohesion (CC)</span>
-                      <span className="font-mono text-indigo-600 dark:text-indigo-400">{scores.cc > 0 ? scores.cc.toFixed(1) : '—'}</span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-600 transition-all duration-300 rounded-full"
-                        style={{ width: `${(scores.cc / 9.0) * 100}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      {detectedCohesiveMarkers.length} discourse markers detected
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                    <div className="text-[10px] text-slate-500">Paragraphs</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {paragraphCount} detected
                     </div>
                   </div>
-
-                  {/* 3. Lexical Resource */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="text-slate-700 dark:text-slate-300">Lexical Resource (LR)</span>
-                      <span className="font-mono text-emerald-600 dark:text-emerald-400">{scores.lr > 0 ? scores.lr.toFixed(1) : '—'}</span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-600 transition-all duration-300 rounded-full"
-                        style={{ width: `${(scores.lr / 9.0) * 100}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      {detectedBasicWords.length > 0 ? `⚠ ${detectedBasicWords.length} overused basic words found` : '✓ Strong vocabulary range'}
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                    <div className="text-[10px] text-slate-500">Discourse Markers</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {detectedCohesiveMarkers.length} found
                     </div>
                   </div>
-
-                  {/* 4. Grammatical Range */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="text-slate-700 dark:text-slate-300">Grammar Range & Accuracy</span>
-                      <span className="font-mono text-purple-600 dark:text-purple-400">{scores.gra > 0 ? scores.gra.toFixed(1) : '—'}</span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div
-                        className="h-full bg-purple-600 transition-all duration-300 rounded-full"
-                        style={{ width: `${(scores.gra / 9.0) * 100}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      Complex clause integration evaluated
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                    <div className="text-[10px] text-slate-500">Subordinators</div>
+                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                      {complexClauseCount} found
                     </div>
                   </div>
                 </div>

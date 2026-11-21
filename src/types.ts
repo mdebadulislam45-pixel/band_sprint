@@ -94,15 +94,17 @@ export interface CefrTerm {
 }
 
 export interface ExamEvaluation {
-  overallBand: number;
+  isValidAttempt?: boolean;
+  assessmentStatus?: 'evaluated' | 'insufficient_evidence' | 'unavailable';
+  overallBand: number | null;
   proficiencyTitle: string;
-  trScore: number;
+  trScore: number | null;
   trComment: string;
-  ccScore: number;
+  ccScore: number | null;
   ccComment: string;
-  lrScore: number;
+  lrScore: number | null;
   lrComment: string;
-  graScore: number;
+  graScore: number | null;
   graComment: string;
   strengths: string[];
   weaknesses: string[];
@@ -110,6 +112,9 @@ export interface ExamEvaluation {
   grammaticalErrors?: { observed: string; corrected: string; explanation: string; ruleCategory?: string; severity?: string }[];
   betterAnswerBand8?: string;
   verdict: string;
+  error?: string;
+  canRetry?: boolean;
+  disclaimer?: string;
 }
 
 export interface ExamHistoryRecord {
@@ -131,6 +136,10 @@ export interface ExamHistoryRecord {
     writing?: boolean;
     speaking?: boolean;
   };
+  speakingAssessmentStatus?: 'evaluated' | 'partial_transcript_only' | 'insufficient_evidence' | 'unavailable';
+  speakingPronunciationObservable?: boolean;
+  incompleteSkills?: Array<'listening' | 'reading' | 'writing' | 'speaking'>;
+  writingTasksCompleted?: number;
 }
 
 export interface UserProgress {

@@ -19,6 +19,7 @@ import {
   summarizeExamHistoryCounts,
   describeExamHistoryDisplay
 } from '../../utils/userStorage';
+import { aggregateExamHistory } from '../../utils/historyAggregation';
 
 interface MockTestPageProps {
   user: UserProfile;
@@ -34,6 +35,7 @@ export const MockTestPage: React.FC<MockTestPageProps> = ({
 }) => {
   const history: ExamHistoryRecord[] = user.progress.examHistory || [];
   const historySummary = summarizeExamHistoryCounts(history);
+  const historyAgg = aggregateExamHistory(history);
 
   const launchMockPreflight = (module: 'full_mock' | 'listening' | 'reading' | 'writing' | 'speaking') => {
     soundManager.playBeep(560, 0.035);
@@ -231,9 +233,15 @@ export const MockTestPage: React.FC<MockTestPageProps> = ({
             </div>
           </div>
           {history.length > 0 && (
-            <span className="text-xs font-mono font-semibold text-[#566664] dark:text-[#96B0AC] tabular-nums">
-              {historySummary.headerBadgeText}
-            </span>
+            <div className="text-right">
+              <span className="text-xs font-mono font-semibold text-[#566664] dark:text-[#96B0AC] tabular-nums block">
+                {historySummary.headerBadgeText}
+              </span>
+              <span className="text-[10px] font-mono text-[#566664]/80 dark:text-[#96B0AC]/80 tabular-nums">
+                {historyAgg.completedFullMockCount} Full Mock{historyAgg.completedFullMockCount === 1 ? '' : 's'}
+                {historyAgg.overall.best !== null ? ` · Best ${historyAgg.overall.best.toFixed(1)}` : ''}
+              </span>
+            </div>
           )}
         </div>
 
@@ -286,9 +294,19 @@ export const MockTestPage: React.FC<MockTestPageProps> = ({
                         <span className="text-xs font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
                           {desc.title}
                         </span>
+                        {desc.isFullMock && (
+                          <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-[10px] font-mono font-semibold">
+                            4-Skill Complete
+                          </span>
+                        )}
                         {desc.isIncompleteMock && (
                           <span className="px-2 py-0.5 rounded bg-[#FDF6E7] dark:bg-[#2A2010] text-[#9A5B00] dark:text-[#F4A62A] border border-[#F4A62A]/40 text-[10px] font-mono font-semibold">
                             Incomplete
+                          </span>
+                        )}
+                        {desc.badgeScore === 'DIAG' && (
+                          <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-semibold">
+                            Diagnostic Only
                           </span>
                         )}
                       </div>

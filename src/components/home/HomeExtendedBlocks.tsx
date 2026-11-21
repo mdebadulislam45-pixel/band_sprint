@@ -18,6 +18,7 @@ import { getMistakes } from '../../utils/vaultStorage';
 import { speakBritish } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
 import { getStreakState, getWeeklyXp, localDateKey, WEEKLY_XP_GOAL, type StreakState } from '../../services/streakService';
+import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
 
 interface HomeExtendedBlocksProps {
   section?: 'all' | 'skills' | 'sidebar';
@@ -82,16 +83,29 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
     });
   }, [examHistory, streakState]);
 
-  // Unified Skill Band Estimates (latest practice history → fallback to diagnostic baseline)
+  // Unified Skill Band Estimates (validated latest evaluated history → validated diagnostic baseline → Not assessed)
   const skillCards = useMemo(() => {
-    const sorted = [...examHistory].sort((a, b) => b.timestamp - a.timestamp);
-    const findLatest = (key: 'listeningBand' | 'readingBand' | 'writingBand' | 'speakingBand') => {
-      for (const rec of sorted) {
-        const val = rec[key];
-        if (typeof val === 'number' && val > 0) return val;
+    const agg = aggregateExamHistory(examHistory);
+
+    const resolveSkill = (
+      skill: DiagnosticSkill
+    ): { band: number | null; source: string } => {
+      const historyLatest = agg.skills[skill].latest;
+      if (historyLatest !== null) {
+        return { band: historyLatest, source: 'Latest evaluated' };
       }
-      return null;
+      const diagMin = skill === 'listening' || skill === 'reading' ? 0.0 : 1.0;
+      const diagBand = validateOptionalHalfBand(diagnostic?.scores?.[skill], diagMin);
+      if (diagBand !== null) {
+        return { band: diagBand, source: 'Diagnostic baseline' };
+      }
+      return { band: null, source: 'Not assessed' };
     };
+
+    const listening = resolveSkill('listening');
+    const reading = resolveSkill('reading');
+    const writing = resolveSkill('writing');
+    const speaking = resolveSkill('speaking');
 
     const items: Array<{
       id: DiagnosticSkill;
@@ -108,8 +122,8 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
         icon: Headphones,
         path: '/practice/listening',
         desc: '4-section audio & map drills',
-        band: findLatest('listeningBand') ?? diagnostic?.scores?.listening ?? null,
-        source: findLatest('listeningBand') ? 'Latest practice' : diagnostic ? 'Diagnostic' : 'Not tested'
+        band: listening.band,
+        source: listening.source
       },
       {
         id: 'reading',
@@ -117,8 +131,8 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
         icon: BookOpen,
         path: '/practice/reading',
         desc: 'Split-screen passages & TFNG',
-        band: findLatest('readingBand') ?? diagnostic?.scores?.reading ?? null,
-        source: findLatest('readingBand') ? 'Latest practice' : diagnostic ? 'Diagnostic' : 'Not tested'
+        band: reading.band,
+        source: reading.source
       },
       {
         id: 'writing',
@@ -126,8 +140,8 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
         icon: PenTool,
         path: '/practice/writing',
         desc: 'Task 1 & 2 AI rubric feedback',
-        band: findLatest('writingBand') ?? diagnostic?.scores?.writing ?? null,
-        source: findLatest('writingBand') ? 'Latest practice' : diagnostic ? 'Diagnostic' : 'Not tested'
+        band: writing.band,
+        source: writing.source
       },
       {
         id: 'speaking',
@@ -135,8 +149,8 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
         icon: Mic,
         path: '/practice/speaking',
         desc: 'British voice examiner & Parts 1–3',
-        band: findLatest('speakingBand') ?? diagnostic?.scores?.speaking ?? null,
-        source: findLatest('speakingBand') ? 'Latest practice' : diagnostic ? 'Diagnostic' : 'Not tested'
+        band: speaking.band,
+        source: speaking.source
       }
     ];
 

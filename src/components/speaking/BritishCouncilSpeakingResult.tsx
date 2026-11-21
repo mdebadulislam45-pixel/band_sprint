@@ -51,42 +51,73 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
 
   const {
     overallBand,
+    partialThreeCriterionIndex = null,
     criteria,
     grammarObservations = [],
-    vocabUpgrades = [],
-    keyStrengths = [],
-    holdingYouBack = []
+    vocabUpgrades = []
   } = evaluationReport;
 
-  const fcBand = criteria?.fc || criteria?.fluency?.band || 0;
-  const graBand = criteria?.gra || criteria?.grammar?.band || 0;
-  const lrBand = criteria?.lr || criteria?.lexical?.band || 0;
-  const prBand = criteria?.pr || criteria?.pronunciation?.band || 0;
+  const fcBand: number | null =
+    typeof criteria?.fc === 'number'
+      ? criteria.fc
+      : typeof criteria?.fluency?.band === 'number'
+      ? criteria.fluency.band
+      : null;
+  const graBand: number | null =
+    typeof criteria?.gra === 'number'
+      ? criteria.gra
+      : typeof criteria?.grammar?.band === 'number'
+      ? criteria.grammar.band
+      : null;
+  const lrBand: number | null =
+    typeof criteria?.lr === 'number'
+      ? criteria.lr
+      : typeof criteria?.lexical?.band === 'number'
+      ? criteria.lexical.band
+      : null;
+  const prBand: number | null =
+    typeof criteria?.pr === 'number' && criteria.pr > 0
+      ? criteria.pr
+      : typeof criteria?.pronunciation?.band === 'number' && criteria.pronunciation.band > 0
+      ? criteria.pronunciation.band
+      : null;
 
-  const calculation = calculateIELTSOverallBand(fcBand, graBand, lrBand, prBand);
-  const descriptor = getIELTSBandDescriptor(overallBand);
+  const hasCompleteFourCriteria =
+    fcBand !== null && graBand !== null && lrBand !== null && prBand !== null && overallBand !== null;
+  const isPartialTranscriptOnly = !hasCompleteFourCriteria && partialThreeCriterionIndex !== null;
+
+  const calculation = hasCompleteFourCriteria
+    ? calculateIELTSOverallBand(fcBand, graBand, lrBand, prBand)
+    : null;
+  const displayHeadlineBand = overallBand ?? partialThreeCriterionIndex;
+  const descriptor = isPartialTranscriptOnly
+    ? 'Partial Transcript Estimate (3/4 Criteria)'
+    : getIELTSBandDescriptor(overallBand);
 
   // Circular progress math (radius = 54, circumference = 2 * PI * 54 ≈ 339.29)
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (overallBand / 9.0) * circumference;
+  const ringRatio = typeof displayHeadlineBand === 'number' ? Math.max(0, Math.min(9, displayHeadlineBand)) / 9.0 : 0;
+  const strokeDashoffset = circumference - ringRatio * circumference;
 
   // 9-dot score visualization component
-  const renderNineDots = (score: number) => {
+  const renderNineDots = (score: number | null) => {
     const dots = [];
     for (let i = 1; i <= 9; i++) {
       let state: 'full' | 'half' | 'empty' = 'empty';
-      if (score >= i) {
-        state = 'full';
-      } else if (score >= i - 0.5) {
-        state = 'half';
+      if (score !== null) {
+        if (score >= i) {
+          state = 'full';
+        } else if (score >= i - 0.5) {
+          state = 'half';
+        }
       }
 
       dots.push(
         <div
           key={i}
           className="relative w-2.5 h-2.5 rounded-full overflow-hidden transition-all duration-300"
-          title={`Band ${i}`}
+          title={score !== null ? `Band ${i}` : 'Unassessed'}
         >
           {state === 'full' && (
             <div className="w-full h-full bg-blue-600 dark:bg-blue-400 rounded-full shadow-2xs" />
@@ -105,7 +136,14 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
     return <div className="flex items-center gap-1">{dots}</div>;
   };
 
-  const getTrendPill = (score: number) => {
+  const getTrendPill = (score: number | null) => {
+    if (score === null) {
+      return (
+        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
+          <span>Unassessed</span>
+        </span>
+      );
+    }
     if (score >= 7.5) {
       return (
         <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
@@ -139,10 +177,10 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
       metrics: [
         `Speech Rate: ${analytics.averageWpm || 0} WPM`,
         `Fillers Detected: ${analytics.totalFillers || 0}`,
-        `Pauses: ${analytics.totalPauses || 0}`
+        `Words Spoken: ${analytics.totalWordsSpoken || 0}`
       ],
       strengths: criteria?.fluency?.strengths || [
-        'Maintained understandable acoustic speech stream.'
+        'Maintained understandable speech stream.'
       ],
       improvements: criteria?.fluency?.improvements || [
         'Use formal cohesive markers to link secondary supporting points.'
@@ -156,9 +194,9 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
       band: graBand,
       feedback: criteria?.grammar,
       metrics: [
-        'Complex Structures: Active',
-        `Real Grammar Tags: ${grammarObservations.length}`,
-        'Tense Stability: Good'
+        'Complex Structures: Reviewed',
+        `Observed Grammar Tags: ${grammarObservations.length}`,
+        'Accuracy: Evaluated'
       ],
       strengths: criteria?.grammar?.strengths || [
         'Used appropriate subject-verb sentence patterns.'
@@ -193,16 +231,27 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
       weight: '25%',
       band: prBand,
       feedback: criteria?.pronunciation,
-      metrics: [
-        'Intelligibility: Clear',
-        'Word Stress: Natural',
-        'Rhythm & Cadence: Monitored'
-      ],
+      metrics:
+        prBand !== null
+          ? [
+              'Audio Analysis: Measured',
+              'Word Stress: Reviewed',
+              'Rhythm & Cadence: Monitored'
+            ]
+          : [
+              'Status: Unassessed',
+              'Evidence Mode: Transcript-Only',
+              'Requires Acoustic Audio'
+            ],
       strengths: criteria?.pronunciation?.strengths || [
-        'Speech was clear and intelligible across recorded sections.'
+        prBand !== null
+          ? 'Speech was clear and intelligible across recorded sections.'
+          : 'Unassessed: acoustic audio recording is required for Pronunciation scoring.'
       ],
       improvements: criteria?.pronunciation?.improvements || [
-        'Emphasize content words to create natural English sentence stress.'
+        prBand !== null
+          ? 'Emphasize content words to create natural English sentence stress.'
+          : 'Record and submit acoustic audio once audio evaluation is available.'
       ]
     }
   ];
@@ -280,15 +329,32 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm">
             <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
               <div className="space-y-2 text-center md:text-left">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-mono font-bold uppercase tracking-wider">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>IELTS Official Speaking Assessment</span>
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-mono font-bold uppercase tracking-wider ${
+                  isPartialTranscriptOnly
+                    ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                    : 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                }`}>
+                  {isPartialTranscriptOnly ? (
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  ) : (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                  )}
+                  <span>
+                    {isPartialTranscriptOnly
+                      ? 'Partial Transcript-Only Diagnostic (3/4 Criteria)'
+                      : 'Diagnostic Speaking Assessment (Unofficial)'}
+                  </span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                  IELTS Speaking Band Score
+                  {isPartialTranscriptOnly
+                    ? 'Partial Speaking Index (Pronunciation Unassessed)'
+                    : 'Speaking Diagnostic Band Estimate'}
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md">
-                  Candidate: <strong>{candidateName}</strong> · Evaluated strictly against the Practice / Coach 9-Band Descriptors.
+                  Candidate: <strong>{candidateName}</strong> ·{' '}
+                  {isPartialTranscriptOnly
+                    ? 'Acoustic Pronunciation was not assessed from transcript alone. Not a complete IELTS Speaking band.'
+                    : 'Unofficial diagnostic estimate calibrated against public 9-band descriptors.'}
                 </p>
 
                 {/* Explanatory "How is my band worked out?" Trigger */}
@@ -299,7 +365,7 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer group"
                   >
                     <HelpCircle className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
-                    <span>How is my band worked out?</span>
+                    <span>How is this score worked out?</span>
                   </button>
                 </div>
               </div>
@@ -322,7 +388,7 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
                       cx="60"
                       cy="60"
                       r={radius}
-                      className="stroke-blue-600 dark:stroke-blue-500 transition-all duration-1000 ease-out"
+                      className={`${isPartialTranscriptOnly ? 'stroke-amber-500' : 'stroke-blue-600 dark:stroke-blue-500'} transition-all duration-1000 ease-out`}
                       strokeWidth="10"
                       strokeDasharray={circumference}
                       strokeDashoffset={strokeDashoffset}
@@ -334,13 +400,13 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
                   {/* Inner Score Badge Content */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-slate-400">
-                      OVERALL
+                      {overallBand !== null ? 'OVERALL' : 'PARTIAL 3/4'}
                     </span>
                     <span className="text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
-                      {overallBand.toFixed(1)}
+                      {typeof displayHeadlineBand === 'number' ? displayHeadlineBand.toFixed(1) : 'N/A'}
                     </span>
-                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
-                      Band Score
+                    <span className={`text-[10px] font-bold ${isPartialTranscriptOnly ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                      {overallBand !== null ? 'Band Estimate' : '3/4 Index Only'}
                     </span>
                   </div>
                 </div>
@@ -391,11 +457,13 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
 
                         <div className="mt-2 flex items-baseline gap-2">
                           <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums font-mono">
-                            {card.band.toFixed(1)}
+                            {card.band !== null ? card.band.toFixed(1) : 'Unassessed'}
                           </span>
-                          <span className="text-[11px] text-slate-500 font-semibold">
-                            / 9.0
-                          </span>
+                          {card.band !== null && (
+                            <span className="text-[11px] text-slate-500 font-semibold">
+                              / 9.0
+                            </span>
+                          )}
                         </div>
 
                         {/* 9-Dot Score Visualization */}
@@ -441,7 +509,9 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
                           </div>
                           <div>
                             <span className="font-bold text-amber-600 dark:text-amber-400 block text-[10px] uppercase">
-                              To Reach Band {(card.band + 0.5).toFixed(1)}:
+                              {card.band !== null
+                                ? `To Reach Band ${Math.min(9.0, card.band + 0.5).toFixed(1)}:`
+                                : 'Requirement for Assessment:'}
                             </span>
                             <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed">
                               {card.improvements[0]}
@@ -580,14 +650,31 @@ export const BritishCouncilSpeakingResult: React.FC<BritishCouncilSpeakingResult
               {/* Exact Calculation Box */}
               <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 space-y-2">
                 <span className="text-[10px] font-mono font-bold uppercase text-blue-700 dark:text-blue-300">
-                  Your Mathematical Derivation:
+                  {calculation ? 'Your Mathematical Derivation:' : 'Partial 3-Criterion Index Derivation:'}
                 </span>
-                <div className="text-sm font-mono font-black text-slate-900 dark:text-white">
-                  {calculation.formulaString}
-                </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  FC ({fcBand.toFixed(1)}) + GRA ({graBand.toFixed(1)}) + LR ({lrBand.toFixed(1)}) + PR ({prBand.toFixed(1)}) ÷ 4 = {calculation.rawAverage.toFixed(3)}
-                </div>
+                {calculation && fcBand !== null && graBand !== null && lrBand !== null && prBand !== null ? (
+                  <>
+                    <div className="text-sm font-mono font-black text-slate-900 dark:text-white">
+                      {calculation.formulaString}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      FC ({fcBand.toFixed(1)}) + GRA ({graBand.toFixed(1)}) + LR ({lrBand.toFixed(1)}) + PR ({prBand.toFixed(1)}) ÷ 4 = {calculation.rawAverage.toFixed(3)}
+                    </div>
+                  </>
+                ) : fcBand !== null && graBand !== null && lrBand !== null && partialThreeCriterionIndex !== null ? (
+                  <>
+                    <div className="text-sm font-mono font-black text-slate-900 dark:text-white">
+                      ({fcBand.toFixed(1)} + {graBand.toFixed(1)} + {lrBand.toFixed(1)}) ÷ 3 = {((fcBand + graBand + lrBand) / 3).toFixed(3)} → {partialThreeCriterionIndex.toFixed(1)} (Partial Index)
+                    </div>
+                    <div className="text-[11px] text-amber-700 dark:text-amber-300">
+                      Pronunciation was not acoustically assessed (transcript-only input). Because a complete IELTS Speaking band requires all 4 criteria, overallBand remains null.
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Insufficient criteria available to compute an overall band score.
+                  </div>
+                )}
               </div>
 
               {/* Official Rounding Convention */}

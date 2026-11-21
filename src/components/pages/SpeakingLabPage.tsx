@@ -302,19 +302,36 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
     [selectedPresetId]
   );
 
-  // Build 6-axis Recharts RadarChart data for Fluency vs. Coherence breakdown
+  // Build Recharts RadarChart data for Fluency vs. Coherence breakdown (null-safe; never coerces null pronunciation to 0)
   const radarData = useMemo(() => {
     if (liveEvaluation && selectedPresetId === 'live_session') {
-      const f = liveEvaluation.estimatedBands.fluency;
-      const l = liveEvaluation.estimatedBands.lexical;
-      const g = liveEvaluation.estimatedBands.grammar;
-      const p = liveEvaluation.estimatedBands.pronunciation;
-      const wpm = liveEvaluation.wordsPerMinute || 125;
-      const paceOptimal = wpm >= 115 && wpm <= 150 ? Math.min(9.0, f + 0.5) : Math.max(5.0, f - 0.5);
-      const discourseCoherence = Math.min(
-        9.0,
-        Number(((f * 0.6 + l * 0.4) + (liveEvaluation.band8Answer.keyDiscourseMarkers.length > 2 ? 0.3 : -0.2)).toFixed(1))
-      );
+      const f = liveEvaluation.estimatedBands?.fluency ?? null;
+      const l = liveEvaluation.estimatedBands?.lexical ?? null;
+      const g = liveEvaluation.estimatedBands?.grammar ?? null;
+      const p =
+        typeof liveEvaluation.estimatedBands?.pronunciation === 'number' &&
+        liveEvaluation.estimatedBands.pronunciation > 0
+          ? liveEvaluation.estimatedBands.pronunciation
+          : null;
+
+      if (
+        liveEvaluation.isValidAttempt === false ||
+        liveEvaluation.assessmentStatus === 'unavailable' ||
+        typeof f !== 'number' ||
+        typeof l !== 'number' ||
+        typeof g !== 'number'
+      ) {
+        return [];
+      }
+
+      const wpm = liveEvaluation.wordsPerMinute || 0;
+      const paceScore =
+        wpm >= 115 && wpm <= 150
+          ? f
+          : wpm > 0
+          ? Math.max(1.0, Number((f - 0.5).toFixed(1)))
+          : f;
+      const discourseCoherence = Number(Math.max(1.0, Math.min(9.0, f * 0.6 + l * 0.4)).toFixed(1));
 
       return [
         {
@@ -330,8 +347,8 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
           fullMark: 9.0
         },
         {
-          metric: 'Hesitation Control',
-          candidate: Number(paceOptimal.toFixed(1)),
+          metric: 'Pace Control',
+          candidate: Number(paceScore.toFixed(1)),
           benchmark: 8.0,
           fullMark: 9.0
         },
@@ -348,8 +365,8 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
           fullMark: 9.0
         },
         {
-          metric: 'Grammar & Cadence',
-          candidate: Number(((g + p) / 2).toFixed(1)),
+          metric: p !== null ? 'Grammar & Pronunciation' : 'Grammar Accuracy',
+          candidate: p !== null ? Number(((g + p) / 2).toFixed(1)) : Number(g.toFixed(1)),
           benchmark: 8.0,
           fullMark: 9.0
         }
@@ -396,9 +413,12 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
     ];
   }, [activePreset, liveEvaluation, selectedPresetId]);
 
-  const currentFluencyScore = radarData[0]?.candidate ?? 7.0;
-  const currentCoherenceScore = radarData[1]?.candidate ?? 6.5;
-  const fluencyCoherenceGap = Number((currentFluencyScore - currentCoherenceScore).toFixed(1));
+  const currentFluencyScore = radarData[0]?.candidate ?? 0;
+  const currentCoherenceScore = radarData[1]?.candidate ?? 0;
+  const fluencyCoherenceGap =
+    radarData.length >= 2
+      ? Number((currentFluencyScore - currentCoherenceScore).toFixed(1))
+      : 0;
 
   const handleAnalyzeCustomSpeech = async () => {
     const trimmed = customTranscript.trim();
@@ -426,20 +446,28 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
       durationSec,
       wordCount: words,
       wordsPerMinute: wpm,
-      pauseCount: Math.max(1, Math.floor(durationSec / 8)),
-      longPauseCount: fillers.length > 2 ? 2 : 0,
+      pauseCount: null,
+      longPauseCount: null,
       fillerCount: fillers.length,
       detectedFillers: fillers
     };
 
     try {
       const result = await evaluateSingleSpeakingTurn(record);
+      if (result.isValidAttempt === false || result.assessmentStatus === 'unavailable') {
+        onShowToast(result.feedbackEn || result.error || 'AI speaking assessment is currently unavailable. No score was generated.');
+        return;
+      }
       setLiveEvaluation(result);
       setSelectedPresetId('live_session');
       soundManager.playSuccess();
-      onShowToast('Updated Fluency vs. Coherence Spider Chart with your speech analysis!');
+      onShowToast(
+        result.overallBand !== null
+          ? 'Updated Fluency vs. Coherence Spider Chart with your speech analysis!'
+          : 'Updated Spider Chart with partial transcript analysis (3/4 criteria; Pronunciation unassessed).'
+      );
     } catch {
-      onShowToast('Evaluated speech performance with Practice local rubric.');
+      onShowToast('AI speaking evaluation unavailable. Please sign in and retry.');
     } finally {
       setIsEvaluatingCustom(false);
     }
@@ -468,6 +496,10 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
 
     if (isLive && liveEvaluation) {
       const firstErr = liveEvaluation.grammaticalErrors[0];
+      const fluencyLabel =
+        typeof liveEvaluation.estimatedBands?.fluency === 'number'
+          ? liveEvaluation.estimatedBands.fluency.toFixed(1)
+          : 'Unassessed';
       addMistake({
         module: 'speaking',
         title: `Speaking Fluency & Coherence: ${liveEvaluation.topic}`,
@@ -476,7 +508,7 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
         userAnswer: firstErr ? firstErr.observed : liveEvaluation.candidateTranscript.slice(0, 120),
         correctAnswer: firstErr ? firstErr.corrected : liveEvaluation.band8Answer.modelAnswer.slice(0, 180),
         explanation: liveEvaluation.band8Answer.examinerRationale,
-        trapExplanationEn: `Fluency (${liveEvaluation.estimatedBands.fluency.toFixed(1)}) vs Coherence optimization using C1 discourse markers: ${liveEvaluation.band8Answer.keyDiscourseMarkers.join(', ')}.`,
+        trapExplanationEn: `Fluency (${fluencyLabel}) vs Coherence optimization using C1 discourse markers: ${liveEvaluation.band8Answer.keyDiscourseMarkers.join(', ')}.`,
         trapExplanationBn: 'স্পিকিংয়ে শুধুমাত্র দ্রুত কথা বললেই Band 8 পাওয়া যায় না; সঠিক ডিসকোর্স মার্কার ও লজিক্যাল সংযোগ (Coherence) বজায় রাখা জরুরি।',
         sourceContext: `Speaking Lab AI Feedback · Part ${liveEvaluation.part}`
       });
@@ -770,10 +802,18 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
 
               <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
                 <div className="p-3.5 rounded-2xl bg-slate-800/90 border border-slate-700 text-center min-w-[115px]">
-                  <div className="text-[10px] font-mono uppercase text-slate-400">Overall Band</div>
+                  <div className="text-[10px] font-mono uppercase text-slate-400">
+                    {selectedPresetId === 'live_session' && liveEvaluation && liveEvaluation.overallBand === null
+                      ? 'Partial Index (3/4)'
+                      : 'Overall Band'}
+                  </div>
                   <div className="text-2xl font-black font-mono text-amber-400 tabular-nums mt-0.5">
                     {selectedPresetId === 'live_session' && liveEvaluation
-                      ? liveEvaluation.estimatedBands.overall.toFixed(1)
+                      ? typeof liveEvaluation.overallBand === 'number'
+                        ? liveEvaluation.overallBand.toFixed(1)
+                        : typeof liveEvaluation.partialThreeCriterionIndex === 'number'
+                        ? liveEvaluation.partialThreeCriterionIndex.toFixed(1)
+                        : 'N/A'
                       : activePreset.overallBand.toFixed(1)}
                   </div>
                 </div>
@@ -798,7 +838,7 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
                 Select Speech Diagnostic Profile or Latest Recorded Turn:
               </div>
               <div className="flex flex-wrap gap-2">
-                {liveEvaluation && (
+                {liveEvaluation && liveEvaluation.isValidAttempt !== false && (
                   <button
                     onClick={() => {
                       setSelectedPresetId('live_session');
@@ -811,7 +851,13 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
                     }`}
                   >
                     <Zap className="w-3.5 h-3.5" />
-                    <span>Your Latest Evaluated Speech (Band {liveEvaluation.estimatedBands.overall.toFixed(1)})</span>
+                    <span>
+                      {typeof liveEvaluation.overallBand === 'number'
+                        ? `Your Latest Evaluated Speech (Band ${liveEvaluation.overallBand.toFixed(1)})`
+                        : typeof liveEvaluation.partialThreeCriterionIndex === 'number'
+                        ? `Your Latest Evaluated Speech (Partial 3/4 Index ${liveEvaluation.partialThreeCriterionIndex.toFixed(1)})`
+                        : 'Your Latest Evaluated Speech (Unassessed)'}
+                    </span>
                   </button>
                 )}
 

@@ -166,8 +166,12 @@ export const QuestionHistoryPage: React.FC<QuestionHistoryPageProps> = ({
 
         <div className="p-4 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">Overall Accuracy</span>
-          <div className="text-2xl font-black text-emerald-700 font-mono">{accuracy}%</div>
-          <span className="text-[11px] text-slate-400">{totalCorrect} correct answers</span>
+          <div className="text-2xl font-black text-emerald-700 font-mono">
+            {totalAttempted > 0 ? `${accuracy}%` : '—'}
+          </div>
+          <span className="text-[11px] text-slate-400">
+            {totalAttempted > 0 ? `${totalCorrect} correct answers` : 'No questions attempted yet'}
+          </span>
         </div>
 
         <div className="p-4 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-1">
@@ -177,11 +181,17 @@ export const QuestionHistoryPage: React.FC<QuestionHistoryPageProps> = ({
         </div>
 
         <div className="p-4 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">Adaptive Status</span>
-          <div className="text-2xl font-black text-blue-700 font-mono">
-            {accuracy >= 80 ? 'Band 8.0' : accuracy >= 65 ? 'Band 7.0' : 'Band 6.0'}
+          <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">Drill Accuracy Tier</span>
+          <div className="text-xl font-black text-blue-700 font-mono">
+            {totalAttempted === 0
+              ? 'Not assessed'
+              : accuracy >= 80
+              ? 'Strong Accuracy'
+              : accuracy >= 65
+              ? 'Developing'
+              : 'Needs Review'}
           </div>
-          <span className="text-[11px] text-slate-400">Computer-delivered index</span>
+          <span className="text-[11px] text-slate-400">Practice drill accuracy (not an IELTS band)</span>
         </div>
       </div>
 

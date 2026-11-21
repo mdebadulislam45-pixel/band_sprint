@@ -14,11 +14,18 @@ import {
   Info
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
+import { validateOptionalHalfBand } from '../../utils/historyAggregation';
 
 interface AIBandScorecardProps {
-  estimatedBand?: number;
+  estimatedBand?: number | null;
   targetBand?: number;
   overallPercentage?: number;
+  skillBands?: {
+    listening?: number | null;
+    reading?: number | null;
+    writing?: number | null;
+    speaking?: number | null;
+  };
   onNavigate: (module: string) => void;
   onOpenBandModal?: () => void;
 }
@@ -26,62 +33,71 @@ interface AIBandScorecardProps {
 type CriteriaTab = 'writing' | 'speaking';
 
 export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
-  estimatedBand = 0,
+  estimatedBand = null,
   targetBand = 7.5,
   overallPercentage = 0,
+  skillBands,
   onNavigate,
   onOpenBandModal
 }) => {
   const [activeTab, setActiveTab] = useState<CriteriaTab>('writing');
   const [selectedCriterion, setSelectedCriterion] = useState<string | null>(null);
 
-  const hasScore = estimatedBand > 0;
-  const displayBand = hasScore ? estimatedBand : 0;
-  const delta = hasScore ? +(targetBand - estimatedBand).toFixed(1) : 0;
-  const isTargetAchieved = hasScore && delta <= 0;
+  const validOverallBand = validateOptionalHalfBand(estimatedBand, 0.5);
+  const hasScore = validOverallBand !== null;
+  const delta = validOverallBand !== null ? +(targetBand - validOverallBand).toFixed(1) : null;
+  const isTargetAchieved = delta !== null && delta <= 0;
 
-  // Derive skill breakdowns from estimated band when assessed, or unassessed state
+  const lScore = validateOptionalHalfBand(skillBands?.listening, 0.0);
+  const rScore = validateOptionalHalfBand(skillBands?.reading, 0.0);
+  const wScore = validateOptionalHalfBand(skillBands?.writing, 1.0);
+  const sScore = validateOptionalHalfBand(skillBands?.speaking, 1.0);
+
+  // Strictly display real recorded per-skill bands; never coerce null to 0 or invent offsets
   const skillsData = [
     {
       id: 'listening',
       name: 'Listening',
-      score: hasScore ? Math.min(9.0, +(estimatedBand + 0.5).toFixed(1)) : 0,
+      score: lScore,
       target: targetBand,
       icon: Headphones,
       color: 'text-blue-600 dark:text-blue-400',
       barColor: 'bg-blue-600',
-      route: 'listening'
+      route: 'listening',
+      isLagging: lScore !== null && lScore < targetBand
     },
     {
       id: 'reading',
       name: 'Reading',
-      score: hasScore ? estimatedBand : 0,
+      score: rScore,
       target: targetBand,
       icon: BookOpen,
       color: 'text-emerald-600 dark:text-emerald-400',
       barColor: 'bg-emerald-600',
-      route: 'reading'
+      route: 'reading',
+      isLagging: rScore !== null && rScore < targetBand
     },
     {
       id: 'writing',
       name: 'Writing',
-      score: hasScore ? Math.max(5.0, +(estimatedBand - 0.5).toFixed(1)) : 0,
+      score: wScore,
       target: targetBand,
       icon: PenTool,
       color: 'text-purple-600 dark:text-purple-400',
       barColor: 'bg-purple-600',
       route: 'writing',
-      isLagging: hasScore
+      isLagging: wScore !== null && wScore < targetBand
     },
     {
       id: 'speaking',
       name: 'Speaking',
-      score: hasScore ? estimatedBand : 0,
+      score: sScore,
       target: targetBand,
       icon: Mic,
       color: 'text-amber-600 dark:text-amber-400',
       barColor: 'bg-amber-600',
-      route: 'speaking'
+      route: 'speaking',
+      isLagging: sScore !== null && sScore < targetBand
     }
   ];
 
@@ -90,7 +106,6 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       id: 'tr',
       code: 'TR / TA',
       title: 'Task Response / Achievement',
-      score: 7.0,
       descriptor: 'Addresses all parts of the prompt; presents a clear position throughout with developed ideas.',
       band8Tip: 'Extend and substantiate supporting points with concrete real-world evidence and balanced nuances.'
     },
@@ -98,15 +113,13 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       id: 'cc',
       code: 'CC',
       title: 'Coherence & Cohesion',
-      score: 6.5,
-      descriptor: 'Information flows logically; paragraphing is evident but transition linkers can be slightly repetitive.',
+      descriptor: 'Information flows logically; paragraphing is evident with natural referencing and cohesion.',
       band8Tip: 'Use implicit referencing (pronouns, lexical repetition, fronting) instead of mechanical transitions.'
     },
     {
       id: 'lr',
       code: 'LR',
       title: 'Lexical Resource',
-      score: 7.5,
       descriptor: 'Sufficient range of academic vocabulary with awareness of style and collocation; minor slips.',
       band8Tip: 'Employ topic-specific academic collocations naturally without forcing rare or archaic words.'
     },
@@ -114,7 +127,6 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       id: 'gra',
       code: 'GRA',
       title: 'Grammatical Range & Accuracy',
-      score: 6.5,
       descriptor: 'Good mix of simple and complex sentence forms; majority of sentences error-free with punctuation control.',
       band8Tip: 'Introduce conditional inversions, participle clauses, and cleft sentences with sustained precision.'
     }
@@ -125,7 +137,6 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       id: 'fc',
       code: 'FC',
       title: 'Fluency & Coherence',
-      score: 7.0,
       descriptor: 'Speaks at length effortlessly with rare hesitation; uses a range of connectives and discourse markers.',
       band8Tip: 'Develop Part 3 arguments comprehensively using structured discourse frameworks without stalling.'
     },
@@ -133,7 +144,6 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       id: 'lr',
       code: 'LR',
       title: 'Lexical Resource',
-      score: 7.5,
       descriptor: 'Varied vocabulary to discuss abstract academic topics; uses idiomatic expressions appropriately.',
       band8Tip: 'Integrate natural colloquial phrases and precise paraphrasing when answering unpredictable questions.'
     },
@@ -141,7 +151,6 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       id: 'gra',
       code: 'GRA',
       title: 'Grammatical Range & Accuracy',
-      score: 7.0,
       descriptor: 'Produces a range of complex grammatical structures with frequent error-free sentences.',
       band8Tip: 'Maintain grammatical control even during rapid, emotional, or speculative speech in Part 3.'
     },
@@ -149,7 +158,6 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       id: 'pr',
       code: 'PR',
       title: 'Pronunciation & Intonation',
-      score: 7.0,
       descriptor: 'Clear phonological features; uses syllable stress and sentence intonation effectively with minor slips.',
       band8Tip: 'Master weak forms (schwa), elision, and expressive sentence stress for natural contrastive emphasis.'
     }
@@ -177,17 +185,19 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playBeep(560, 0.03);
-            onOpenBandModal();
-          }}
-          className="text-xs font-semibold text-blue-700 dark:text-blue-400 hover:underline flex items-center gap-1 self-start sm:self-auto cursor-pointer whitespace-nowrap"
-        >
-          <span>Adjust Target</span>
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
+        {onOpenBandModal && (
+          <button
+            type="button"
+            onClick={() => {
+              soundManager.playBeep(560, 0.03);
+              onOpenBandModal();
+            }}
+            className="text-xs font-semibold text-blue-700 dark:text-blue-400 hover:underline flex items-center gap-1 self-start sm:self-auto cursor-pointer whitespace-nowrap"
+          >
+            <span>Adjust Target</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Main Scorecard Summary Row */}
@@ -195,23 +205,23 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
         {/* Estimated Overall Band */}
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-slate-900 dark:bg-blue-600 text-white flex flex-col items-center justify-center font-mono font-bold tabular-nums shadow-2xs shrink-0">
-            <span className="text-lg leading-none">{hasScore ? displayBand.toFixed(1) : '—'}</span>
+            <span className="text-lg leading-none">{validOverallBand !== null ? validOverallBand.toFixed(1) : '—'}</span>
             <span className="text-[9px] tracking-wide font-sans font-semibold opacity-80 mt-0.5">
-              {hasScore ? 'Est.' : 'New'}
+              {validOverallBand !== null ? 'Band' : 'N/A'}
             </span>
           </div>
           <div>
             <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              {hasScore ? 'Current Estimated Band' : 'Baseline Uncalibrated'}
+              {validOverallBand !== null ? 'Current Overall Band' : 'Overall Band'}
             </div>
             <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
-              {hasScore
-                ? displayBand >= 7.5
+              {validOverallBand !== null
+                ? validOverallBand >= 7.5
                   ? 'C1 Advanced Proficient'
-                  : displayBand >= 6.5
+                  : validOverallBand >= 6.5
                   ? 'B2 Upper Intermediate'
                   : 'B1 Competent'
-                : 'Band: Not Yet Assessed'}
+                : 'Not assessed'}
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
               Target Band: <span className="font-semibold text-blue-700 dark:text-blue-400">{targetBand.toFixed(1)}</span>
@@ -229,9 +239,9 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
               Target Trajectory
             </div>
             <div className="text-xs font-semibold mt-0.5">
-              {!hasScore ? (
+              {delta === null ? (
                 <span className="text-slate-700 dark:text-slate-300">
-                  Baseline Uncalibrated
+                  Not assessed
                 </span>
               ) : isTargetAchieved ? (
                 <span className="text-emerald-700 dark:text-emerald-400">Target Band Achieved</span>
@@ -267,7 +277,7 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         {skillsData.map((sk) => {
           const Icon = sk.icon;
-          const pct = sk.score > 0 ? Math.min(100, Math.round((sk.score / sk.target) * 100)) : 0;
+          const pct = sk.score !== null ? Math.min(100, Math.round((sk.score / sk.target) * 100)) : 0;
           return (
             <button
               key={sk.id}
@@ -284,7 +294,7 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
                   {sk.name}
                 </span>
                 <span className="text-xs font-mono font-black text-slate-900 dark:text-white tabular-nums">
-                  {sk.score > 0 ? sk.score.toFixed(1) : '—'}
+                  {sk.score !== null ? sk.score.toFixed(1) : '—'}
                 </span>
               </div>
 
@@ -298,8 +308,8 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
 
               <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-400 font-mono">
                 <span>Target {sk.target.toFixed(1)}</span>
-                {!hasScore ? (
-                  <span className="text-blue-500 font-bold">Start →</span>
+                {sk.score === null ? (
+                  <span className="text-blue-500 font-bold">Not assessed →</span>
                 ) : sk.isLagging ? (
                   <span className="text-amber-500 font-bold uppercase tracking-wider">Priority</span>
                 ) : (
@@ -376,8 +386,8 @@ export const AIBandScorecard: React.FC<AIBandScorecardProps> = ({
                       {crit.title}
                     </span>
                   </div>
-                  <span className="text-xs font-mono font-black text-blue-600 dark:text-blue-400 tabular-nums">
-                    {hasScore ? `Band ${displayBand.toFixed(1)}` : 'Unassessed'}
+                  <span className="text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400 tabular-nums">
+                    Rubric Guide
                   </span>
                 </div>
 

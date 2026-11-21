@@ -258,6 +258,22 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
     setSpeakingStep('evaluating');
     soundManager.playBeep(520, 0.05);
 
+    const cleanTranscript = (speakingTranscript || '').trim();
+    const spokenWords = cleanTranscript.split(/\s+/).filter(Boolean).length;
+    if (spokenWords < 5) {
+      setSpeakingStep('result');
+      setSpeakingResult({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        error:
+          spokenWords === 0
+            ? 'No speech was captured by your microphone. Record a spoken response of at least 5 words to receive an evaluation.'
+            : `Only ${spokenWords} word(s) detected. Speak at least 5 words so an honest IELTS evaluation can be generated.`
+      });
+      onShowToast('No valid speech detected — please record at least 5 words.');
+      return;
+    }
+
     const duration = speakingPart === 2 ? 120 - speakingTimer : 60 - speakingTimer;
 
     const token = localStorage.getItem('ielts_session_token_v2');
@@ -268,14 +284,24 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       method: 'POST',
       headers: spkHeaders,
       body: JSON.stringify({
-        transcript: speakingTranscript || "I generally prefer working early in the morning because my cognitive focus is much sharper and distractions are minimal.",
+        transcript: cleanTranscript,
         question: activeSpeakingPromptObj.question,
         part: speakingPart,
-        durationSec: Math.max(duration, 15)
+        durationSec: Math.max(duration, 5)
       })
     })
-      .then((res) => res.json())
-      .then((data) => {
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.isValidAttempt === false || data.assessmentStatus === 'unavailable') {
+          setSpeakingResult({
+            isValidAttempt: false,
+            assessmentStatus: 'unavailable',
+            error: data.error || 'AI Speaking evaluation is temporarily unavailable. No score was fabricated.'
+          });
+          setSpeakingStep('result');
+          onShowToast(data.error || 'AI evaluation unavailable — please retry.');
+          return;
+        }
         setSpeakingResult(data);
         setSpeakingStep('result');
         soundManager.playSuccess();
@@ -283,32 +309,12 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       })
       .catch(() => {
         setSpeakingResult({
-          estimatedBands: {
-            fluency: 7.0,
-            lexical: 7.0,
-            grammar: 6.5,
-            pronunciation: 7.0,
-            overall: 7.0
-          },
-          grammaticalErrors: [
-            {
-              observed: "I prefer working early because it make me focused",
-              corrected: "I prefer working early because it makes me focused",
-              explanation: "Third-person singular subject takes '-s' inflection in present simple.",
-              severity: "minor"
-            }
-          ],
-          actionableTips: [
-            "Integrate speculative clauses: 'Were I to contemplate this further...'",
-            "Avoid repetitive hesitation markers such as 'you know' and 'like'"
-          ],
-          band8Answer: {
-            bandScore: 8.5,
-            modelAnswer: "Without question, I find morning hours significantly more productive. Cognitive stamina peaks before daytime distractions accumulate, which allows me to tackle demanding analytical tasks with uninterrupted focus."
-          }
+          isValidAttempt: false,
+          assessmentStatus: 'unavailable',
+          error: 'Could not reach the AI Speaking evaluator. Please check your connection and try again — no fallback band score was fabricated.'
         });
         setSpeakingStep('result');
-        soundManager.playSuccess();
+        onShowToast('AI evaluation unavailable — please retry.');
       });
   };
 
@@ -363,12 +369,26 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
           testType: writingTaskType === 'task2' ? 'task2' : 'task1'
         })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.isValidAttempt === false || data.assessmentStatus === 'unavailable') {
+        setWritingResult({
+          isValidAttempt: false,
+          assessmentStatus: 'unavailable',
+          error: data.error || 'AI Writing evaluation could not be completed. No fallback score was fabricated.'
+        });
+        onShowToast(data.error || 'Writing evaluation unavailable — please retry.');
+        return;
+      }
       setWritingResult(data);
       soundManager.playSuccess();
       onShowToast('Writing evaluation completed!');
     } catch {
-      onShowToast('Using calibrated diagnostic evaluation.');
+      setWritingResult({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        error: 'Network error reaching the AI Writing evaluator. Please try again.'
+      });
+      onShowToast('Writing evaluation unavailable — please retry.');
     } finally {
       setIsEvaluatingWriting(false);
     }
@@ -1198,72 +1218,123 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
 
           {speakingStep === 'result' && speakingResult && (
             <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#101B32] border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs animate-fade-in">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-mono font-bold uppercase text-slate-500">
-                    Diagnostic Score Breakdown (Unofficial)
-                  </span>
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
-                    Estimated Overall Band {(speakingResult.overallBand ?? speakingResult.estimatedBands?.overall ?? 0).toFixed(1)}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleNextSpeakingPrompt}
-                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Try Another Prompt</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
-                  <div className="text-[10px] text-slate-500 font-mono">Fluency & Coherence</div>
-                  <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {(speakingResult.criteria?.fc ?? speakingResult.estimatedBands?.fluency ?? 0).toFixed(1)}
+              {speakingResult.isValidAttempt === false ||
+              speakingResult.assessmentStatus === 'unavailable' ||
+              speakingResult.assessmentStatus === 'insufficient_evidence' ? (
+                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 space-y-2">
+                  <div className="text-xs font-mono font-bold uppercase text-amber-700 dark:text-amber-300">
+                    {speakingResult.assessmentStatus === 'insufficient_evidence'
+                      ? 'Insufficient Speech Sample — No Score Generated'
+                      : 'Assessment Unavailable — No Score Generated'}
                   </div>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
-                  <div className="text-[10px] text-slate-500 font-mono">Lexical Resource</div>
-                  <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {(speakingResult.criteria?.lr ?? speakingResult.estimatedBands?.lexical ?? 0).toFixed(1)}
-                  </div>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
-                  <div className="text-[10px] text-slate-500 font-mono">Grammar & Accuracy</div>
-                  <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {(speakingResult.criteria?.gra ?? speakingResult.estimatedBands?.grammar ?? 0).toFixed(1)}
-                  </div>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
-                  <div className="text-[10px] text-slate-500 font-mono">Pronunciation Clarity</div>
-                  <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
-                    {(speakingResult.criteria?.pr ?? speakingResult.estimatedBands?.pronunciation ?? 0).toFixed(1)}
-                  </div>
-                </div>
-              </div>
-
-              {speakingResult.band8Answer && (
-                <div className="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-bold text-indigo-900 dark:text-indigo-300 uppercase">
-                      Band 8.5+ Model Response:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => speakBritish(speakingResult.band8Answer.modelAnswer)}
-                      className="text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:underline flex items-center gap-1"
-                    >
-                      <Volume2 className="w-3.5 h-3.5" />
-                      <span>Hear British Model</span>
-                    </button>
-                  </div>
-                  <p className="text-xs sm:text-sm font-serif leading-relaxed text-indigo-950 dark:text-indigo-200">
-                    "{speakingResult.band8Answer.modelAnswer}"
+                  <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
+                    {speakingResult.error || speakingResult.feedbackEn || 'Could not evaluate this spoken turn. Please record a clear response and retry.'}
                   </p>
+                  <button
+                    type="button"
+                    onClick={handleNextSpeakingPrompt}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Try Again
+                  </button>
                 </div>
-              )}
+              ) : (() => {
+                const fc = speakingResult.criteria?.fc ?? speakingResult.estimatedBands?.fluency ?? null;
+                const lr = speakingResult.criteria?.lr ?? speakingResult.estimatedBands?.lexical ?? null;
+                const gra = speakingResult.criteria?.gra ?? speakingResult.estimatedBands?.grammar ?? null;
+                const pr = speakingResult.criteria?.pr ?? speakingResult.estimatedBands?.pronunciation ?? null;
+                const overall = typeof speakingResult.overallBand === 'number'
+                  ? speakingResult.overallBand
+                  : typeof speakingResult.estimatedBands?.overall === 'number' && typeof pr === 'number'
+                  ? speakingResult.estimatedBands.overall
+                  : null;
+                const partialIdx = typeof speakingResult.partialThreeCriterionIndex === 'number'
+                  ? speakingResult.partialThreeCriterionIndex
+                  : null;
+                const isPartial = overall === null || speakingResult.assessmentStatus === 'partial_transcript_only';
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs font-mono font-bold uppercase text-slate-500">
+                          {isPartial
+                            ? 'Partial Transcript-Only Estimate (3 of 4 Criteria · Pronunciation Unassessed)'
+                            : 'Diagnostic Score Breakdown (Unofficial)'}
+                        </span>
+                        <h3 className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
+                          {overall !== null
+                            ? `Estimated Overall Band ${overall.toFixed(1)}`
+                            : partialIdx !== null
+                            ? `Partial Transcript Index (3/4 Criteria): ${partialIdx.toFixed(1)}`
+                            : 'Unassessed — Incomplete Criteria'}
+                        </h3>
+                        {isPartial && (
+                          <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                            Not a complete IELTS Speaking band — acoustic Pronunciation requires audio evaluation.
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleNextSpeakingPrompt}
+                        className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Try Another Prompt</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-mono">Fluency & Coherence</div>
+                        <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                          {typeof fc === 'number' ? fc.toFixed(1) : 'Unassessed'}
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-mono">Lexical Resource</div>
+                        <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                          {typeof lr === 'number' ? lr.toFixed(1) : 'Unassessed'}
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-mono">Grammar & Accuracy</div>
+                        <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                          {typeof gra === 'number' ? gra.toFixed(1) : 'Unassessed'}
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-mono">Pronunciation</div>
+                        <div className="text-sm font-black text-slate-900 dark:text-white mt-0.5">
+                          {typeof pr === 'number' ? pr.toFixed(1) : 'Unassessed'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {speakingResult.band8Answer?.modelAnswer && (
+                      <div className="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/50 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-mono font-bold text-indigo-900 dark:text-indigo-300 uppercase">
+                            Band 8.5+ Model Response:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => speakBritish(speakingResult.band8Answer.modelAnswer)}
+                            className="text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                            <span>Hear British Model</span>
+                          </button>
+                        </div>
+                        <p className="text-xs sm:text-sm font-serif leading-relaxed text-indigo-950 dark:text-indigo-200">
+                          "{speakingResult.band8Answer.modelAnswer}"
+                        </p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -1387,40 +1458,73 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
 
             {writingResult && (
               <div className="mt-4 p-5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200/80 dark:border-purple-800/50 space-y-4 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-mono font-bold text-purple-700 dark:text-purple-300 uppercase">
-                      Unofficial Diagnostic Estimate
+                {writingResult.isValidAttempt === false || writingResult.assessmentStatus === 'unavailable' ? (
+                  <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 space-y-1">
+                    <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 uppercase">
+                      Not Assessed — No Score Generated
                     </span>
-                    <h3 className="text-lg font-black text-purple-900 dark:text-purple-200">
-                      Overall Band {writingResult.overallBand?.toFixed(1) || '7.0'} · {writingResult.proficiencyTitle || 'Good User'}
-                    </h3>
-                  </div>
-                  <span className="text-[10px] font-mono bg-white dark:bg-[#101B32] px-2 py-0.5 rounded border border-purple-200 text-purple-700">
-                    TR: {writingResult.trScore || 7} · CC: {writingResult.ccScore || 7} · LR: {writingResult.lrScore || 7} · GRA: {writingResult.graScore || 7}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                  <div className="p-3.5 rounded-xl bg-white dark:bg-[#101B32] border border-slate-200 space-y-2">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-mono block">
-                      Original Draft:
-                    </span>
-                    <p className="text-xs font-serif text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto">
-                      {writingText}
+                    <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
+                      {writingResult.error || 'Submission could not be evaluated. Ensure you meet the minimum word threshold and retry.'}
                     </p>
                   </div>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-purple-700 dark:text-purple-300 uppercase">
+                          Unofficial Diagnostic Estimate
+                        </span>
+                        <h3 className="text-lg font-black text-purple-900 dark:text-purple-200">
+                          Overall Band{' '}
+                          {typeof (writingResult.overallBand ?? writingResult.estimatedBands?.overall) === 'number'
+                            ? (writingResult.overallBand ?? writingResult.estimatedBands?.overall).toFixed(1)
+                            : '—'}
+                          {writingResult.proficiencyTitle ? ` · ${writingResult.proficiencyTitle}` : ''}
+                        </h3>
+                      </div>
+                      <span className="text-[10px] font-mono bg-white dark:bg-[#101B32] px-2 py-0.5 rounded border border-purple-200 text-purple-700">
+                        TR:{' '}
+                        {typeof (writingResult.trScore ?? writingResult.estimatedBands?.taskAchievement) === 'number'
+                          ? (writingResult.trScore ?? writingResult.estimatedBands?.taskAchievement).toFixed(1)
+                          : '—'}{' '}
+                        · CC:{' '}
+                        {typeof (writingResult.ccScore ?? writingResult.estimatedBands?.coherenceCohesion) === 'number'
+                          ? (writingResult.ccScore ?? writingResult.estimatedBands?.coherenceCohesion).toFixed(1)
+                          : '—'}{' '}
+                        · LR:{' '}
+                        {typeof (writingResult.lrScore ?? writingResult.estimatedBands?.lexicalResource) === 'number'
+                          ? (writingResult.lrScore ?? writingResult.estimatedBands?.lexicalResource).toFixed(1)
+                          : '—'}{' '}
+                        · GRA:{' '}
+                        {typeof (writingResult.graScore ?? writingResult.estimatedBands?.grammaticalRange) === 'number'
+                          ? (writingResult.graScore ?? writingResult.estimatedBands?.grammaticalRange).toFixed(1)
+                          : '—'}
+                      </span>
+                    </div>
 
-                  <div className="p-3.5 rounded-xl bg-white dark:bg-[#101B32] border border-purple-200 space-y-2">
-                    <span className="text-xs font-bold text-purple-700 dark:text-purple-400 font-mono block">
-                      Band 8.5+ Improved Model:
-                    </span>
-                    <p className="text-xs font-serif text-slate-800 dark:text-slate-200 leading-relaxed max-h-56 overflow-y-auto">
-                      {writingResult.betterAnswerBand8 ||
-                        'While universal state funding ensures equitable educational access regardless of socio-economic origin, public treasury constraints frequently undermine instructional infrastructure. Consequently, a progressive hybrid subsidisation framework serves the collective interest most sustainably.'}
-                    </p>
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      <div className="p-3.5 rounded-xl bg-white dark:bg-[#101B32] border border-slate-200 space-y-2">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-mono block">
+                          Original Draft:
+                        </span>
+                        <p className="text-xs font-serif text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto">
+                          {writingText}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-white dark:bg-[#101B32] border border-purple-200 space-y-2">
+                        <span className="text-xs font-bold text-purple-700 dark:text-purple-400 font-mono block">
+                          Band 8.5+ Improved Model:
+                        </span>
+                        <p className="text-xs font-serif text-slate-800 dark:text-slate-200 leading-relaxed max-h-56 overflow-y-auto">
+                          {writingResult.betterAnswerBand8 ||
+                            writingResult.band8Answer?.modelEssay ||
+                            'No model essay returned for this prompt.'}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

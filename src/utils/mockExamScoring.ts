@@ -11,6 +11,167 @@ import {
   evaluateWritingSubmission,
   WritingEvaluationReport
 } from '../services/WritingEvaluationService';
+import { roundOfficialIELTSBand } from './scoringIntegrity';
+
+export type FullMockSkillKey = 'listening' | 'reading' | 'writing' | 'speaking';
+
+export interface SpeakingTurnValidationResult {
+  isCompleteEvaluated: boolean;
+  isTranscriptOnlyDiagnostic: boolean;
+  band: number | null;
+  diagnosticIndex: number | null;
+  reason: string | null;
+}
+
+/**
+ * Validates an individual IELTS criterion or productive skill band (1.0–9.0 in 0.5 increments).
+ * Rejects null, undefined, NaN, Infinity, 0.0, out-of-range values, and non-half-band numbers.
+ */
+export function isValidIeltsCriterionBand(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  if (value < 1.0 || value > 9.0) return false;
+  return Math.abs(value * 2 - Math.round(value * 2)) < 1e-6;
+}
+
+/**
+ * Validates whether a single Speaking turn qualifies as a genuinely completed four-criterion
+ * audio-backed IELTS Speaking turn for Full Mock scoring.
+ *
+ * Strictly requires positive evidence:
+ * - assessmentStatus === 'evaluated'
+ * - evidenceMode === 'audio_and_transcript'
+ * - pronunciationObservable === true
+ * - isPartialAssessment !== true
+ * - no unassessedCriteria entries
+ * - valid finite overallBand in [1.0, 9.0] (0.5 increments) matching the 4-criterion IELTS average
+ * - all four criterion bands (FC, LR, GRA, PR) valid in [1.0, 9.0] (0.5 increments)
+ *
+ * Transcript-only turns (3 valid criteria, pronunciation unassessed) are recognized separately
+ * as reviewable diagnostics (isTranscriptOnlyDiagnostic: true) but NEVER qualify as complete Speaking.
+ */
+export function validateSpeakingTurnForFullMock(
+  record: SpeakingAnswerRecord | null | undefined
+): SpeakingTurnValidationResult {
+  if (!record || !record.instantFeedback) {
+    return {
+      isCompleteEvaluated: false,
+      isTranscriptOnlyDiagnostic: false,
+      band: null,
+      diagnosticIndex: null,
+      reason: 'missing_feedback'
+    };
+  }
+
+  const fb = record.instantFeedback;
+  const effectiveWordCount =
+    typeof record.wordCount === 'number' && Number.isFinite(record.wordCount) && record.wordCount > 0
+      ? record.wordCount
+      : (record.transcript || '').trim().split(/\s+/).filter(Boolean).length;
+
+  if (fb.assessmentStatus === 'unavailable') {
+    return {
+      isCompleteEvaluated: false,
+      isTranscriptOnlyDiagnostic: false,
+      band: null,
+      diagnosticIndex: null,
+      reason: 'unavailable'
+    };
+  }
+
+  if (
+    effectiveWordCount < 5 ||
+    fb.isValidAttempt === false ||
+    fb.assessmentStatus === 'insufficient_evidence'
+  ) {
+    return {
+      isCompleteEvaluated: false,
+      isTranscriptOnlyDiagnostic: false,
+      band: null,
+      diagnosticIndex: null,
+      reason: 'insufficient_evidence'
+    };
+  }
+
+  const fc = fb.criteria?.fc ?? fb.estimatedBands?.fluency;
+  const lr = fb.criteria?.lr ?? fb.estimatedBands?.lexical;
+  const gra = fb.criteria?.gra ?? fb.estimatedBands?.grammar;
+  const pr = fb.criteria?.pr ?? fb.estimatedBands?.pronunciation;
+
+  const hasThreeTranscriptCriteria =
+    isValidIeltsCriterionBand(fc) &&
+    isValidIeltsCriterionBand(lr) &&
+    isValidIeltsCriterionBand(gra);
+  const hasAllFourValidCriteria = hasThreeTranscriptCriteria && isValidIeltsCriterionBand(pr);
+
+  const hasUnassessedCriteria =
+    Array.isArray(fb.unassessedCriteria) && fb.unassessedCriteria.length > 0;
+  const isFlaggedPartial = fb.isPartialAssessment === true;
+
+  // Positive evidence gate for complete 4-criterion audio-backed Speaking turn
+  const hasPositiveAudioProvenance =
+    fb.assessmentStatus === 'evaluated' &&
+    fb.evidenceMode === 'audio_and_transcript' &&
+    fb.pronunciationObservable === true &&
+    !isFlaggedPartial &&
+    !hasUnassessedCriteria;
+
+  if (hasPositiveAudioProvenance && hasAllFourValidCriteria && isValidIeltsCriterionBand(fb.overallBand)) {
+    const expectedOverall = roundOfficialIELTSBand((fc + lr + gra + pr) / 4);
+    if (Math.abs(fb.overallBand - expectedOverall) < 1e-6) {
+      return {
+        isCompleteEvaluated: true,
+        isTranscriptOnlyDiagnostic: false,
+        band: fb.overallBand,
+        diagnosticIndex: fb.overallBand,
+        reason: null
+      };
+    }
+    return {
+      isCompleteEvaluated: false,
+      isTranscriptOnlyDiagnostic: false,
+      band: null,
+      diagnosticIndex: null,
+      reason: 'inconsistent_overall_vs_criteria'
+    };
+  }
+
+  // Transcript-only 3-criterion diagnostic turn: reviewable, NEVER counts toward complete Speaking
+  if (
+    fb.assessmentStatus === 'partial_transcript_only' &&
+    hasThreeTranscriptCriteria &&
+    fb.pronunciationObservable !== true
+  ) {
+    const diagnosticIndex = isValidIeltsCriterionBand(fb.partialThreeCriterionIndex)
+      ? fb.partialThreeCriterionIndex
+      : roundOfficialIELTSBand((fc + lr + gra) / 3);
+    return {
+      isCompleteEvaluated: false,
+      isTranscriptOnlyDiagnostic: true,
+      band: null,
+      diagnosticIndex,
+      reason: 'partial_transcript_only'
+    };
+  }
+
+  // Missing provenance, fabricated flags, null pronunciation, or invalid criteria
+  const reason = !hasAllFourValidCriteria
+    ? 'invalid_or_missing_criteria'
+    : fb.pronunciationObservable !== true
+    ? 'pronunciation_not_observable'
+    : fb.evidenceMode !== 'audio_and_transcript'
+    ? 'missing_audio_evidence_provenance'
+    : fb.assessmentStatus !== 'evaluated'
+    ? 'status_not_evaluated'
+    : 'invalid_overall_band';
+
+  return {
+    isCompleteEvaluated: false,
+    isTranscriptOnlyDiagnostic: false,
+    band: null,
+    diagnosticIndex: null,
+    reason
+  };
+}
 
 export interface QuestionEvaluationResult {
   questionId: number;
@@ -50,6 +211,7 @@ export interface MockExamScoringInput {
 export interface MockExamScoringResult {
   status: 'Complete' | 'Incomplete';
   isCompleteFullMock: boolean;
+  incompleteSkills: FullMockSkillKey[];
   incompleteSections: string[];
 
   // Listening metrics
@@ -99,16 +261,21 @@ export interface MockExamScoringResult {
 
   // Speaking metrics
   speakingEvaluatedCount: number;
+  speakingTranscriptOnlyCount: number;
   speakingRequiredCount: number;
   speakingPart1Evaluated: number;
   speakingPart2Evaluated: number;
   speakingPart3Evaluated: number;
   isSpeakingPartial: boolean;
+  isSpeakingTranscriptOnly: boolean;
   isSpeakingAssessed: boolean;
   isSpeakingComplete: boolean;
-  /** Heuristic diagnostic band when at least one Speaking turn is validly evaluated */
+  speakingAssessmentStatus: 'evaluated' | 'partial_transcript_only' | 'insufficient_evidence' | 'unavailable';
+  speakingPronunciationObservable: boolean;
+  speakingIncompleteReason: string | null;
+  /** Diagnostic band/index when at least one Speaking turn has valid evaluated or transcript-only diagnostics */
   sDiagnosticBand: number | null;
-  /** Full-mock Speaking band (strictly null unless all required Part 1, Part 2, and Part 3 prompts are validly evaluated) */
+  /** Full-mock Speaking band (strictly null unless all required Part 1–3 prompts have complete 4-criterion audio-backed evaluations) */
   sBand: number | null;
 
   // Overall band (strictly null when any required skill or writing/speaking component is incomplete)
@@ -154,7 +321,11 @@ export function getQuestionsForMistakeVault(
 ): VaultMistakeCandidate[] {
   const results: VaultMistakeCandidate[] = [];
 
+  const seenQuestionKeys = new Set<string>();
   for (const q of questions) {
+    const key = `${q.section}:${q.id}`;
+    if (seenQuestionKeys.has(key)) continue;
+    seenQuestionKeys.add(key);
     const evalStatus = evaluateQuestionResponse(q, answers[q.id]);
     if (evalStatus.isIncorrect || (includeUnanswered && evalStatus.isUnanswered)) {
       results.push({
@@ -213,7 +384,11 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
   let readingIncorrect = 0;
   let readingUnanswered = 0;
 
+  const seenQuestionKeys = new Set<string>();
   for (const q of questions) {
+    const key = `${q.section}:${q.id}`;
+    if (seenQuestionKeys.has(key)) continue;
+    seenQuestionKeys.add(key);
     const evalRes = evaluateQuestionResponse(q, answers[q.id]);
 
     if (q.section === 'listening') {
@@ -274,27 +449,29 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
     ? evaluateWritingSubmission(essayText, 'task2')
     : null;
 
-  // 2. Full IELTS Writing completion requires BOTH tasks to be diagnostically valid AND meet 150w / 250w targets
-  const isTask1Complete = isTask1Valid && task1WordCount >= task1TargetWords;
-  const isTask2Complete = isTask2Valid && wordCount >= task2TargetWords;
+  // 2. Full IELTS Writing completion requires BOTH tasks to be diagnostically valid, produce valid bands, AND meet 150w / 250w targets
+  const hasValidT1Score = Boolean(t1Report && isValidIeltsCriterionBand(t1Report.overallBand));
+  const hasValidT2Score = Boolean(t2Report && isValidIeltsCriterionBand(t2Report.overallBand));
+  const isTask1Complete = isTask1Valid && hasValidT1Score && task1WordCount >= task1TargetWords;
+  const isTask2Complete = isTask2Valid && hasValidT2Score && wordCount >= task2TargetWords;
   const isWritingComplete = isTask1Complete && isTask2Complete;
-  const isWritingAssessed = isTask1Valid || isTask2Valid;
+  const isWritingAssessed = hasValidT1Score || hasValidT2Score;
   const isWritingPartial = isWritingAssessed && !isWritingComplete;
 
   let wDiagnosticBand: number | null = null;
-  if (t1Report && t2Report) {
+  if (hasValidT1Score && hasValidT2Score && t1Report && t2Report) {
     const weightedDiag = (t2Report.overallBand * 2 + t1Report.overallBand) / 3;
-    wDiagnosticBand = Math.round(weightedDiag * 2) / 2;
-  } else if (t2Report) {
+    wDiagnosticBand = roundOfficialIELTSBand(weightedDiag);
+  } else if (hasValidT2Score && t2Report) {
     wDiagnosticBand = t2Report.overallBand;
-  } else if (t1Report) {
+  } else if (hasValidT1Score && t1Report) {
     wDiagnosticBand = t1Report.overallBand;
   }
 
   let wBand: number | null = null;
-  if (isWritingComplete && t1Report && t2Report) {
+  if (isWritingComplete && t1Report && t2Report && hasValidT1Score && hasValidT2Score) {
     const weighted = (t2Report.overallBand * 2 + t1Report.overallBand) / 3;
-    wBand = Math.round(weighted * 2) / 2;
+    wBand = roundOfficialIELTSBand(weighted);
   }
 
   // Speaking Evaluation:
@@ -305,7 +482,7 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
   const requiredPart3Turns = activeTopicSet?.part3Questions?.length ?? 2;
   const speakingRequiredCount = requiredPart1Turns + requiredPart2Turns + requiredPart3Turns;
 
-  // Deduplicate speaking answers by questionId (retaining latest turn record) and validate each turn
+  // Deduplicate speaking answers by questionId (retaining latest turn record) and strictly validate positive audio evidence
   const uniqueSpeakingByQuestion = new Map<string, SpeakingAnswerRecord>();
   (speakingAnswers || []).forEach((rec, idx) => {
     if (!rec) return;
@@ -316,45 +493,94 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
   let speakingPart1Evaluated = 0;
   let speakingPart2Evaluated = 0;
   let speakingPart3Evaluated = 0;
+  let speakingTranscriptOnlyCount = 0;
+  let speakingUnavailableCount = 0;
+  let speakingInvalidProvenanceCount = 0;
   const evaluatedSpeakingBands: number[] = [];
+  const diagnosticSpeakingIndices: number[] = [];
 
   for (const a of uniqueSpeakingByQuestion.values()) {
-    const band = a.instantFeedback?.overallBand ?? a.instantFeedback?.estimatedBand;
-    const isValidTurn =
-      Boolean(a.instantFeedback) &&
-      a.instantFeedback?.isValidAttempt !== false &&
-      (a.wordCount || 0) >= 5 &&
-      typeof band === 'number' &&
-      !Number.isNaN(band) &&
-      band > 0;
+    const turnValidation = validateSpeakingTurnForFullMock(a);
 
-    if (isValidTurn && typeof band === 'number') {
-      evaluatedSpeakingBands.push(band);
+    if (turnValidation.isCompleteEvaluated && turnValidation.band !== null) {
+      evaluatedSpeakingBands.push(turnValidation.band);
+      diagnosticSpeakingIndices.push(turnValidation.band);
       if (a.part === 1) speakingPart1Evaluated++;
       else if (a.part === 2) speakingPart2Evaluated++;
       else if (a.part === 3) speakingPart3Evaluated++;
+    } else if (turnValidation.isTranscriptOnlyDiagnostic && turnValidation.diagnosticIndex !== null) {
+      speakingTranscriptOnlyCount++;
+      diagnosticSpeakingIndices.push(turnValidation.diagnosticIndex);
+    } else if (turnValidation.reason === 'unavailable') {
+      speakingUnavailableCount++;
+    } else if (
+      turnValidation.reason &&
+      turnValidation.reason !== 'missing_feedback' &&
+      turnValidation.reason !== 'insufficient_evidence'
+    ) {
+      speakingInvalidProvenanceCount++;
     }
   }
 
   const speakingEvaluatedCount = evaluatedSpeakingBands.length;
-  const isSpeakingAssessed = speakingEvaluatedCount > 0;
+  const isSpeakingAssessed = speakingEvaluatedCount > 0 || speakingTranscriptOnlyCount > 0;
   const isSpeakingComplete =
     speakingPart1Evaluated >= requiredPart1Turns &&
     speakingPart2Evaluated >= requiredPart2Turns &&
     speakingPart3Evaluated >= requiredPart3Turns &&
-    speakingEvaluatedCount >= speakingRequiredCount;
+    speakingEvaluatedCount >= speakingRequiredCount &&
+    speakingTranscriptOnlyCount === 0;
   const isSpeakingPartial = isSpeakingAssessed && !isSpeakingComplete;
+  const isSpeakingTranscriptOnly = !isSpeakingComplete && speakingTranscriptOnlyCount > 0;
+  const speakingPronunciationObservable = isSpeakingComplete;
 
-  const sDiagnosticBand: number | null = isSpeakingAssessed
-    ? Math.round(
-        (evaluatedSpeakingBands.reduce((a, b) => a + b, 0) / evaluatedSpeakingBands.length) * 2
-      ) / 2
-    : null;
-  const sBand: number | null = isSpeakingComplete ? sDiagnosticBand : null;
+  const speakingAssessmentStatus: MockExamScoringResult['speakingAssessmentStatus'] =
+    isSpeakingComplete
+      ? 'evaluated'
+      : speakingTranscriptOnlyCount > 0
+      ? 'partial_transcript_only'
+      : speakingUnavailableCount > 0 || speakingInvalidProvenanceCount > 0
+      ? 'unavailable'
+      : 'insufficient_evidence';
 
-  // Incomplete sections tracking
+  const sDiagnosticBand: number | null =
+    diagnosticSpeakingIndices.length > 0
+      ? roundOfficialIELTSBand(
+          diagnosticSpeakingIndices.reduce((acc, val) => acc + val, 0) /
+            diagnosticSpeakingIndices.length
+        )
+      : null;
+
+  const sBand: number | null =
+    isSpeakingComplete && evaluatedSpeakingBands.length >= speakingRequiredCount
+      ? roundOfficialIELTSBand(
+          evaluatedSpeakingBands.reduce((acc, val) => acc + val, 0) /
+            evaluatedSpeakingBands.length
+        )
+      : null;
+
+  let speakingIncompleteReason: string | null = null;
+  if (!isSpeakingComplete) {
+    if (speakingTranscriptOnlyCount > 0) {
+      speakingIncompleteReason = `Transcript-only Speaking (${speakingTranscriptOnlyCount}/${speakingRequiredCount} turns — Pronunciation unassessed; audio evidence required for Full Mock)`;
+    } else if (speakingInvalidProvenanceCount > 0) {
+      speakingIncompleteReason =
+        'Speaking evidence incomplete (missing Pronunciation observation, audio provenance, or valid 4-criterion scores)';
+    } else if (speakingUnavailableCount > 0 && speakingEvaluatedCount === 0) {
+      speakingIncompleteReason = 'Speaking AI evaluation unavailable (no complete turns scored)';
+    } else if (speakingEvaluatedCount === 0) {
+      speakingIncompleteReason = `No complete audio-backed speaking responses — 0/${speakingRequiredCount} required turns across Parts 1–3`;
+    } else {
+      speakingIncompleteReason = `${speakingEvaluatedCount}/${speakingRequiredCount} required turns completely evaluated — Part 1: ${speakingPart1Evaluated}/${requiredPart1Turns}, Part 2: ${speakingPart2Evaluated}/${requiredPart2Turns}, Part 3: ${speakingPart3Evaluated}/${requiredPart3Turns}`;
+    }
+  }
+
+  // Incomplete skills & human-readable sections tracking
+  const incompleteSkills: FullMockSkillKey[] = [];
   const incompleteSections: string[] = [];
+
   if (!isListeningComplete) {
+    incompleteSkills.push('listening');
     if (listeningTotal === 0) {
       incompleteSections.push('Listening (0 questions configured)');
     } else if (!isListeningAssessed) {
@@ -367,6 +593,7 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
   }
 
   if (!isReadingComplete) {
+    incompleteSkills.push('reading');
     if (readingTotal === 0) {
       incompleteSections.push('Reading (0 questions configured)');
     } else if (!isReadingAssessed) {
@@ -376,6 +603,9 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
     }
   }
 
+  if (!isWritingComplete) {
+    incompleteSkills.push('writing');
+  }
   if (!isTask1Valid) {
     incompleteSections.push(
       `Writing Task 1 (${task1WordCount}/${task1MinWords} min diagnostic words; ${task1TargetWords} words required for full mock)`
@@ -397,45 +627,62 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
   }
 
   if (!isSpeakingComplete) {
-    if (!isSpeakingAssessed) {
-      incompleteSections.push(
-        `Speaking (No evaluated speaking responses — 0/${speakingRequiredCount} required turns across Parts 1–3)`
-      );
-    } else {
-      incompleteSections.push(
-        `Speaking (${speakingEvaluatedCount}/${speakingRequiredCount} required turns evaluated — Part 1: ${speakingPart1Evaluated}/${requiredPart1Turns}, Part 2: ${speakingPart2Evaluated}/${requiredPart2Turns}, Part 3: ${speakingPart3Evaluated}/${requiredPart3Turns})`
-      );
-    }
+    incompleteSkills.push('speaking');
+    incompleteSections.push(
+      `Speaking (${speakingIncompleteReason || `0/${speakingRequiredCount} required turns evaluated`})`
+    );
   }
 
   const isCompleteFullMock =
-    isListeningComplete && isReadingComplete && isWritingComplete && isSpeakingComplete;
+    incompleteSkills.length === 0 &&
+    isListeningComplete &&
+    isReadingComplete &&
+    isWritingComplete &&
+    isSpeakingComplete &&
+    speakingPronunciationObservable &&
+    speakingAssessmentStatus === 'evaluated';
   const status: 'Complete' | 'Incomplete' = isCompleteFullMock ? 'Complete' : 'Incomplete';
 
   let overall: number | null = null;
+  const hasValidListeningFinal =
+    isListeningComplete &&
+    typeof lBand === 'number' &&
+    Number.isFinite(lBand) &&
+    lBand >= 0.0 &&
+    lBand <= 9.0;
+  const hasValidReadingFinal =
+    isReadingComplete &&
+    typeof rBand === 'number' &&
+    Number.isFinite(rBand) &&
+    rBand >= 0.0 &&
+    rBand <= 9.0;
+  const hasValidWritingFinal = isWritingComplete && isValidIeltsCriterionBand(wBand);
+  const hasValidSpeakingFinal =
+    isSpeakingComplete &&
+    speakingPronunciationObservable &&
+    speakingAssessmentStatus === 'evaluated' &&
+    isValidIeltsCriterionBand(sBand);
+
   if (
     isCompleteFullMock &&
+    hasValidListeningFinal &&
+    hasValidReadingFinal &&
+    hasValidWritingFinal &&
+    hasValidSpeakingFinal &&
     lBand !== null &&
     rBand !== null &&
     wBand !== null &&
     sBand !== null
   ) {
-    // Strictly divide by 4 across all four required skills
+    // Strictly divide by 4 across all four verified skills
     const avg = (lBand + rBand + wBand + sBand) / 4;
-    if (avg > 0) {
-      const whole = Math.floor(avg);
-      const frac = avg - whole;
-      overall = whole;
-      if (frac >= 0.75) overall += 1.0;
-      else if (frac >= 0.25) overall += 0.5;
-    } else {
-      overall = 0.0;
-    }
+    overall = avg > 0 ? roundOfficialIELTSBand(avg) : 0.0;
   }
 
   return {
     status,
     isCompleteFullMock,
+    incompleteSkills,
     incompleteSections,
     listeningTotal,
     listeningAttempted,
@@ -471,13 +718,18 @@ export function calculateMockExamScores(input: MockExamScoringInput): MockExamSc
     wDiagnosticBand,
     wBand,
     speakingEvaluatedCount,
+    speakingTranscriptOnlyCount,
     speakingRequiredCount,
     speakingPart1Evaluated,
     speakingPart2Evaluated,
     speakingPart3Evaluated,
     isSpeakingPartial,
+    isSpeakingTranscriptOnly,
     isSpeakingAssessed,
     isSpeakingComplete,
+    speakingAssessmentStatus,
+    speakingPronunciationObservable,
+    speakingIncompleteReason,
     sDiagnosticBand,
     sBand,
     overall

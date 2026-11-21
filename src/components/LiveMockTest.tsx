@@ -55,8 +55,7 @@ import { AudioErrorBoundary } from './common/AudioErrorBoundary';
 import { zeroRepetitionEngine } from '../services/ZeroRepetitionEngine';
 import { InstantSpeakingFeedbackModal } from './speaking/InstantSpeakingFeedbackModal';
 import {
-  evaluateSingleSpeakingTurn,
-  generateDiagnosticTurnFeedback
+  evaluateSingleSpeakingTurn
 } from '../services/SpeakingEvaluationService';
 import {
   SpeakingAnswerRecord,
@@ -550,6 +549,9 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
     // Record attempt: only persist as a completed 'full_mock' when all 4 skills (and both Writing tasks) are complete.
     try {
       const currentScores = calculateScores();
+      const writingTasksCompleted =
+        (currentScores.isTask1Complete ? 1 : 0) + (currentScores.isTask2Complete ? 1 : 0);
+
       if (currentScores.isCompleteFullMock && currentScores.overall !== null) {
         recordExamAttempt({
           examType: 'full_mock',
@@ -567,7 +569,11 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
             reading: true,
             writing: true,
             speaking: true
-          }
+          },
+          speakingAssessmentStatus: currentScores.speakingAssessmentStatus,
+          speakingPronunciationObservable: currentScores.speakingPronunciationObservable,
+          incompleteSkills: [],
+          writingTasksCompleted
         });
       } else {
         const hasAnyAttempt =
@@ -575,7 +581,8 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
           currentScores.readingAttempted > 0 ||
           currentScores.isTask1Valid ||
           currentScores.isTask2Valid ||
-          currentScores.speakingEvaluatedCount > 0;
+          currentScores.speakingEvaluatedCount > 0 ||
+          currentScores.speakingTranscriptOnlyCount > 0;
 
         if (hasAnyAttempt) {
           recordExamAttempt({
@@ -594,7 +601,11 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
               reading: currentScores.isReadingComplete,
               writing: currentScores.isWritingComplete,
               speaking: currentScores.isSpeakingComplete
-            }
+            },
+            speakingAssessmentStatus: currentScores.speakingAssessmentStatus,
+            speakingPronunciationObservable: currentScores.speakingPronunciationObservable,
+            incompleteSkills: currentScores.incompleteSkills,
+            writingTasksCompleted
           });
         }
       }
@@ -756,8 +767,8 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
       durationSec: duration,
       wordCount: words,
       wordsPerMinute: wpm,
-      pauseCount: Math.floor(duration / 8),
-      longPauseCount: Math.max(0, Math.floor(duration / 20)),
+      pauseCount: null,
+      longPauseCount: null,
       fillerCount: (transcriptToEvaluate.match(/\b(um|uh|er|like)\b/gi) || []).length,
       detectedFillers: transcriptToEvaluate.match(/\b(um|uh|er|like)\b/gi) || []
     };
@@ -771,21 +782,85 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
       setSelectedSpeakingFeedback(feedback);
       setSpeakingAnswers(prev => [...prev.filter(a => a.questionId !== qId), record]);
       setShowSpeakingFeedbackModal(true);
-      if (feedback.isValidAttempt === false) {
+      if (feedback.isValidAttempt === false || feedback.assessmentStatus === 'unavailable' || feedback.assessmentStatus === 'insufficient_evidence') {
         soundManager.playBeep(360, 0.12);
+        onShowToast(feedback.feedbackEn || feedback.error || 'AI speaking evaluation unavailable — no score generated.');
       } else {
         soundManager.playSuccess();
-        onShowToast(`Evaluated: Band ${(feedback.overallBand ?? feedback.estimatedBand ?? 0).toFixed(1)} with Instant Feedback!`);
+        if (typeof feedback.overallBand === 'number') {
+          onShowToast(`Evaluated: Band ${feedback.overallBand.toFixed(1)} with Instant Feedback!`);
+        } else if (typeof feedback.partialThreeCriterionIndex === 'number') {
+          onShowToast(`Partial Transcript Feedback (3/4 Criteria): Index ${feedback.partialThreeCriterionIndex.toFixed(1)} (Pronunciation unassessed)`);
+        } else {
+          onShowToast('Speaking turn feedback generated.');
+        }
       }
-    } catch (e) {
-      const fallback = generateDiagnosticTurnFeedback(record);
-      record.instantFeedback = fallback;
-      setSelectedSpeakingFeedback(fallback);
+    } catch {
+      const unavailableFeedback: InstantSpeakingFeedback = {
+        questionId: record.questionId,
+        part: record.part,
+        topic: record.topic,
+        questionText: record.questionText,
+        candidateTranscript: record.transcript,
+        durationSec: record.durationSec,
+        wordsPerMinute: record.wordsPerMinute,
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        evidenceMode: 'unavailable',
+        pronunciationObservable: false,
+        isPartialAssessment: false,
+        unassessedCriteria: ['fluency', 'lexical', 'grammar', 'pronunciation'],
+        overallBand: null,
+        partialThreeCriterionIndex: null,
+        estimatedBand: null,
+        wordCount: record.wordCount,
+        feedbackTitle: 'AI Speaking Evaluation Unavailable',
+        feedbackEn: 'The AI speaking evaluator could not be reached. No band score was generated. Please sign in and retry.',
+        feedbackBn: 'AI স্পিকিং ইভালুয়েটরে সংযোগ করা যায়নি। কোনো ব্যান্ড স্কোর তৈরি করা হয়নি।',
+        error: 'AI speaking evaluation unavailable.',
+        canRetry: true,
+        criteria: { fc: null, lr: null, gra: null, pr: null },
+        estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
+        grammaticalErrors: [],
+        pronunciation: {
+          clarityBand: null,
+          cadenceWpm: record.wordsPerMinute,
+          trickyWords: [],
+          connectedSpeechTips: [],
+          intonationPattern: 'Unassessed — AI speaking evaluator unavailable.',
+          rhythmVerdict: 'Pronunciation was not assessed because the AI speaking evaluator was unavailable.'
+        },
+        band8Answer: {
+          bandScore: 8.5,
+          modelAnswer: '',
+          highlightedCollocations: [],
+          keyDiscourseMarkers: [],
+          examinerRationale: 'No score was generated because the AI evaluation service was unavailable.'
+        },
+        actionableTips: ['Sign in and retry when connected to the AI speaking evaluator.']
+      };
+      record.instantFeedback = unavailableFeedback;
+      setSelectedSpeakingFeedback(unavailableFeedback);
       setSpeakingAnswers(prev => [...prev.filter(a => a.questionId !== qId), record]);
       setShowSpeakingFeedbackModal(true);
+      soundManager.playBeep(360, 0.12);
+      onShowToast('AI speaking evaluation unavailable — no score generated.');
     } finally {
       setIsEvaluatingSpeakingTurn(false);
     }
+  };
+
+  const formatSpeakingTurnBadge = (fb: InstantSpeakingFeedback): string => {
+    if (fb.isValidAttempt === false || fb.assessmentStatus === 'unavailable' || fb.assessmentStatus === 'insufficient_evidence') {
+      return fb.assessmentStatus === 'insufficient_evidence' ? 'Insufficient Speech' : 'Unavailable';
+    }
+    if (typeof fb.overallBand === 'number') {
+      return `✓ Evaluated: Band ${fb.overallBand.toFixed(1)}`;
+    }
+    if (typeof fb.partialThreeCriterionIndex === 'number') {
+      return `Partial 3/4 Index: ${fb.partialThreeCriterionIndex.toFixed(1)}`;
+    }
+    return 'Unassessed';
   };
 
   const handlePlaySpeakingModelAudio = (id: string, text: string) => {
@@ -2029,7 +2104,7 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
                         {answeredRecord && answeredRecord.instantFeedback && (
                           <div className="flex items-center gap-2">
                             <span className="px-2.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-mono font-bold">
-                              ✓ Evaluated: Band {(answeredRecord.instantFeedback.overallBand ?? answeredRecord.instantFeedback.estimatedBand ?? answeredRecord.instantFeedback.estimatedBands?.overall ?? 0).toFixed(1)}
+                              {formatSpeakingTurnBadge(answeredRecord.instantFeedback)}
                             </span>
                             <button
                               onClick={() => {
@@ -2154,7 +2229,7 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
                         return (
                           <div className="flex items-center gap-2">
                             <span className="px-2.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-mono font-bold">
-                              ✓ Evaluated: Band {(ans.instantFeedback.overallBand ?? ans.instantFeedback.estimatedBand ?? ans.instantFeedback.estimatedBands?.overall ?? 0).toFixed(1)}
+                              {formatSpeakingTurnBadge(ans.instantFeedback)}
                             </span>
                             <button
                               onClick={() => {
@@ -2251,7 +2326,7 @@ export const LiveMockTest: React.FC<LiveMockTestProps> = ({ onShowToast, onNavig
                         {answeredRecord && answeredRecord.instantFeedback && (
                           <div className="flex items-center gap-2">
                             <span className="px-2.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-mono font-bold">
-                              ✓ Evaluated: Band {(answeredRecord.instantFeedback.overallBand ?? answeredRecord.instantFeedback.estimatedBand ?? answeredRecord.instantFeedback.estimatedBands?.overall ?? 0).toFixed(1)}
+                              {formatSpeakingTurnBadge(answeredRecord.instantFeedback)}
                             </span>
                             <button
                               onClick={() => {
@@ -2473,6 +2548,8 @@ In conclusion, although an unstructured interlude may induce temporary academic 
           <div className="text-[10px] text-blue-200 uppercase font-semibold">
             {results.isSpeakingComplete
               ? 'Speaking (Assessed)'
+              : results.isSpeakingTranscriptOnly
+              ? 'Speaking (Transcript-Only)'
               : results.isSpeakingPartial
               ? 'Speaking (Partial)'
               : 'Speaking'}
@@ -2480,13 +2557,17 @@ In conclusion, although an unstructured interlude may induce temporary academic 
           <div className="font-mono text-xl font-bold text-white mt-0.5">
             {results.isSpeakingComplete && results.sBand !== null
               ? `Band ${results.sBand.toFixed(1)}`
+              : results.isSpeakingTranscriptOnly && results.sDiagnosticBand !== null
+              ? `Incomplete (3-Crit. ${results.sDiagnosticBand.toFixed(1)}*)`
               : results.isSpeakingPartial && results.sDiagnosticBand !== null
               ? `Incomplete (Diag. ${results.sDiagnosticBand.toFixed(1)}*)`
               : 'Incomplete'}
           </div>
           <div className="text-[10px] text-slate-400 font-mono">
             {results.isSpeakingComplete
-              ? `${results.speakingEvaluatedCount}/${results.speakingRequiredCount} Turns Evaluated (Parts 1–3)`
+              ? `${results.speakingEvaluatedCount}/${results.speakingRequiredCount} Audio-Backed Turns (Parts 1–3)`
+              : results.isSpeakingTranscriptOnly
+              ? `${results.speakingTranscriptOnlyCount}/${results.speakingRequiredCount} Transcript-Only · Pronunciation Unassessed`
               : `${results.speakingEvaluatedCount}/${results.speakingRequiredCount} Required Turns (Parts 1–3)`}
           </div>
         </div>
@@ -3116,9 +3197,11 @@ In conclusion, although an unstructured interlude may induce temporary academic 
               }`}>
                 {results.isSpeakingComplete && results.sBand !== null
                   ? `Speaking Band: ${results.sBand.toFixed(1)}`
+                  : results.isSpeakingTranscriptOnly && results.sDiagnosticBand !== null
+                  ? `Transcript-Only (${results.speakingTranscriptOnlyCount}/${results.speakingRequiredCount} Turns · 3-Crit. ${results.sDiagnosticBand.toFixed(1)}*)`
                   : results.isSpeakingPartial && results.sDiagnosticBand !== null
                   ? `Incomplete (${results.speakingEvaluatedCount}/${results.speakingRequiredCount} Turns · Diag. ${results.sDiagnosticBand.toFixed(1)}*)`
-                  : `Incomplete (0/${results.speakingRequiredCount} Turns Evaluated)`}
+                  : `Incomplete (0/${results.speakingRequiredCount} Complete Turns)`}
               </span>
             </div>
           </div>
@@ -3127,10 +3210,14 @@ In conclusion, although an unstructured interlude may induce temporary academic 
             <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950">
               <div className="space-y-0.5">
                 <p className="font-bold">
-                  Speaking Section Incomplete ({results.speakingEvaluatedCount} of {results.speakingRequiredCount} required prompts evaluated across Parts 1, 2, and 3)
+                  {results.isSpeakingTranscriptOnly
+                    ? `Speaking Incomplete — Transcript-Only Assessment (${results.speakingTranscriptOnlyCount} of ${results.speakingRequiredCount} turns)`
+                    : `Speaking Section Incomplete (${results.speakingEvaluatedCount} of ${results.speakingRequiredCount} required prompts completely evaluated across Parts 1, 2, and 3)`}
                 </p>
                 <p className="text-[11px] text-amber-900">
-                  Part 1: {results.speakingPart1Evaluated}/2 · Part 2 (Cue Card): {results.speakingPart2Evaluated}/1 · Part 3: {results.speakingPart3Evaluated}/2. Partial turn diagnostics are shown below, but a full-mock Speaking band requires all 3 parts.
+                  {results.isSpeakingTranscriptOnly
+                    ? 'Pronunciation cannot be scored from text transcripts alone. Your individual turn diagnostics, grammar feedback, and model answers remain reviewable below, but an official four-skill Overall Band requires complete audio-backed Speaking evaluation.'
+                    : `Part 1: ${results.speakingPart1Evaluated}/2 · Part 2 (Cue Card): ${results.speakingPart2Evaluated}/1 · Part 3: ${results.speakingPart3Evaluated}/2. Partial turn diagnostics are shown below, but a full-mock Speaking band requires complete 4-criterion evaluation across all 3 parts.`}
                 </p>
               </div>
               <button
@@ -3167,9 +3254,7 @@ In conclusion, although an unstructured interlude may induce temporary academic 
 
                       <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
                         <span className="px-2.5 py-1 rounded-full bg-slate-900 text-white text-xs font-mono font-bold">
-                          {fb
-                            ? `Band ${(fb.overallBand ?? fb.estimatedBand ?? fb.estimatedBands?.overall ?? 0).toFixed(1)}`
-                            : 'Awaiting Assessment'}
+                          {fb ? formatSpeakingTurnBadge(fb) : 'Awaiting Assessment'}
                         </span>
                         {fb && (
                           <button

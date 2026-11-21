@@ -22,12 +22,19 @@ import {
   SplitSquareVertical,
   ShieldAlert,
   Contrast,
-  Type
+  Type,
+  Loader2
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { getCurrentUser, recordExamAttempt } from '../../utils/userStorage';
 import { addMistake } from '../../utils/vaultStorage';
 import { checkWritingWordThreshold } from '../../services/WritingEvaluationService';
+import { getStoredSessionToken } from '../../services/authService';
+import {
+  formatNullableBand,
+  validateClientWritingEvaluation,
+  validateCriterionBand
+} from '../../utils/scoringIntegrity';
 import {
   CDIELTSColorScheme,
   CDIELTSZoomLevel,
@@ -64,25 +71,34 @@ export interface SentenceAnnotation {
   rationaleBn?: string;
 }
 
+export type WritingDiagnosticStatus =
+  | 'evaluated'
+  | 'structural_precheck'
+  | 'insufficient_evidence'
+  | 'unavailable';
+
 export interface WritingDiagnosticResult {
   isValidAttempt?: boolean;
+  assessmentStatus?: WritingDiagnosticStatus;
   evaluationSource?: string;
   feedbackTitle?: string;
   feedbackEn?: string;
   feedbackBn?: string;
+  error?: string;
+  canRetry?: boolean;
   taskType: 1 | 2;
   wordCount: number;
   minWords: number;
-  overallBand: number;
+  overallBand: number | null;
   targetBand: number;
   cefrLevel: string;
-  taScore: number;
+  taScore: number | null;
   taSummary: string;
-  ccScore: number;
+  ccScore: number | null;
   ccSummary: string;
-  lrScore: number;
+  lrScore: number | null;
   lrSummary: string;
-  graScore: number;
+  graScore: number | null;
   graSummary: string;
   annotations: SentenceAnnotation[];
   upgradedModelParagraphs: Array<{
@@ -449,15 +465,16 @@ export const CAMBRIDGE_WRITING_SETS: WritingTestSet[] = ACADEMIC_WRITING_SETS;
 const DRAFT_STORAGE_KEY = 'cdielts_writing_draft';
 
 /**
- * Deterministic & Psychometric 4-Criteria IELTS Writing Evaluator
- * Inspects actual candidate sentences for grammatical accuracy, lexical collocations,
- * repetitive cohesive linkers ("Furthermore" / "Moreover"), and task response depth.
+ * Non-scoring offline structural pre-check for candidate drafts.
+ * Detects real sentence-level grammar, lexical, and mechanical linker patterns without
+ * fabricating heuristic IELTS band scores. All IELTS band scores remain strictly null
+ * until a verified live AI evaluation returns a valid four-criterion assessment.
  */
-function evaluateCandidateWriting(
+export function buildWritingStructuralPrecheck(
   rawText: string,
   taskType: 1 | 2,
   targetBand: number,
-  _setConfig: WritingTestSet
+  _setConfig?: WritingTestSet
 ): WritingDiagnosticResult {
   const text = rawText.trim();
   const minWords = taskType === 1 ? 150 : 250;
@@ -466,22 +483,24 @@ function evaluateCandidateWriting(
   if (!gate.isValidAttempt) {
     return {
       isValidAttempt: false,
+      assessmentStatus: 'insufficient_evidence',
+      evaluationSource: 'threshold-gate',
       feedbackTitle: gate.feedbackTitle,
       feedbackEn: gate.feedbackEn,
       feedbackBn: gate.feedbackBn,
       taskType,
       wordCount: gate.wordCount,
       minWords,
-      overallBand: 0.0,
+      overallBand: null,
       targetBand,
-      cefrLevel: 'Unassessed (Below Minimum Word Threshold)',
-      taScore: 0.0,
+      cefrLevel: 'Unassessed (Insufficient Evidence)',
+      taScore: null,
       taSummary: gate.feedbackEn,
-      ccScore: 0.0,
+      ccScore: null,
       ccSummary: gate.feedbackBn,
-      lrScore: 0.0,
+      lrScore: null,
       lrSummary: gate.feedbackEn,
-      graScore: 0.0,
+      graScore: null,
       graSummary: gate.feedbackBn,
       annotations: [],
       upgradedModelParagraphs: []
@@ -495,7 +514,7 @@ function evaluateCandidateWriting(
   const rawSentences =
     text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((s) => s.trim()).filter(Boolean) || [];
 
-  // Count mechanical linkers ("furthermore", "moreover", "firstly", "secondly")
+  // Count mechanical linkers ("furthermore", "moreover")
   const lowerText = text.toLowerCase();
   const furthermoreCount = (lowerText.match(/\bfurthermore\b/g) || []).length;
   const moreoverCount = (lowerText.match(/\bmoreover\b/g) || []).length;
@@ -506,11 +525,11 @@ function evaluateCandidateWriting(
   let lexicalIssueCount = 0;
   let cohesionIssueCount = 0;
 
-  // Known grammatical / lexical / cohesion patterns + general heuristic checks so ANY text produces rich interactive feedback
+  // Inspect actual candidate sentences for real observable patterns (zero synthetic boilerplate injection)
   rawSentences.forEach((sentence, idx) => {
     const sLower = sentence.toLowerCase();
 
-    // 1. Check for repetitive / mechanical linkers ("Furthermore" / "Moreover") -> AMBER (Cohesion)
+    // 1. Repetitive / mechanical linkers ("Furthermore" / "Moreover") -> AMBER (Cohesion)
     if (
       /\b(furthermore|moreover)\b/i.test(sentence) &&
       (mechanicalLinkerTotal >= 2 || sLower.includes('furthermore, on the other hand'))
@@ -520,7 +539,7 @@ function evaluateCandidateWriting(
         id: `sent_${idx}`,
         sentence,
         category: 'cohesion',
-        errorTitle: 'Mechanical & Repetitive Discourse Marker (CC Penalty)',
+        errorTitle: 'Mechanical & Repetitive Discourse Marker (CC Note)',
         identifiedIssue: sLower.includes('furthermore, on the other hand')
           ? 'Contradictory linker stacking ("Furthermore, on the other hand")'
           : 'Over-reliance on sentence-initial "Furthermore / Moreover"',
@@ -529,14 +548,14 @@ function evaluateCandidateWriting(
           .replace(/^Furthermore,\s*/i, 'Compounding this trend, ')
           .replace(/^Moreover,\s*/i, 'Crucially, from an economic standpoint, '),
         rationaleEn:
-          'Under the official Coherence & Cohesion (CC) rubric, starting consecutive sentences with "Furthermore" or "Moreover" is penalised as mechanical linking (Band 6.0 ceiling). Band 8+ writers weave cohesion naturally using demonstrative reference ("This trajectory...", "Compounding this...") or subordinate clauses.',
+          'Starting consecutive sentences with "Furthermore" or "Moreover" can appear mechanical. Vary cohesion naturally using demonstrative reference ("This trajectory...", "Compounding this...") or subordinate clauses.',
         rationaleBn:
-          'Coherence & Cohesion (CC) মানদণ্ড অনুযায়ী বারবার বাক্যের শুরুতে "Furthermore" বা "Moreover" ব্যবহার করলে এক্সামিনার একে যান্ত্রিক বা মুখস্থ লিঙ্কিং (Mechanical Linking) হিসেবে গণ্য করেন, যা স্কোর Band 6.0-এ আটকে দেয়। Band 7.5+ পেতে হলে "Compounding this trend" বা "Crucially"-এর মতো স্বাভাবিক রেফারেন্সিং ব্যবহার করতে হবে।'
+          'বারবার বাক্যের শুরুতে "Furthermore" বা "Moreover" ব্যবহার করলে লেখা যান্ত্রিক মনে হতে পারে। স্বাভাবিক প্রবাহ বজায় রাখতে "Compounding this trend" বা "Crucially"-এর মতো রেফারেন্সিং ব্যবহার করুন।'
       });
       return;
     }
 
-    // 2. Check for Grammatical & Punctuation errors -> RED (Grammar)
+    // 2. Common Grammatical & Agreement slips -> RED (Grammar)
     if (
       /\b(chart and table shows|usage increase|goes up|compare to|fees is|every students|they afraid|citizens pays|children education|informations|peoples|discuss about|lack of|datas)\b/i.test(
         sentence
@@ -544,8 +563,8 @@ function evaluateCandidateWriting(
       /\b(is|are)\s+(becoming|having)\s+a\s+huge\b/i.test(sentence)
     ) {
       grammarIssueCount++;
-      let issueDesc = 'Subject-verb agreement & tense consistency error';
-      let corrected = sentence
+      let issueDesc = 'Subject-verb agreement & tense consistency check';
+      const corrected = sentence
         .replace(/chart and table shows/i, 'bar chart and accompanying table illustrate')
         .replace(/usage increase/i, 'generation expanded substantially')
         .replace(/goes up steadily/i, 'rose steadily')
@@ -560,7 +579,11 @@ function evaluateCandidateWriting(
         issueDesc = 'Quantifier agreement error ("every students" → "every student" / "all students")';
       } else if (sLower.includes('they afraid')) {
         issueDesc = 'Missing auxiliary copula verb ("they afraid" → "they are afraid / deterred")';
-      } else if (sLower.includes('chart and table shows') || sLower.includes('fees is') || sLower.includes('citizens pays')) {
+      } else if (
+        sLower.includes('chart and table shows') ||
+        sLower.includes('fees is') ||
+        sLower.includes('citizens pays')
+      ) {
         issueDesc = 'Plural subject with singular verb inflection (Subject-Verb Disagreement)';
       }
 
@@ -572,16 +595,16 @@ function evaluateCandidateWriting(
         identifiedIssue: issueDesc,
         suggestedCorrection: corrected,
         rationaleEn:
-          'Frequent errors in subject-verb agreement ("fees is", "citizens pays"), determiner-noun concord ("every students"), or missing auxiliary verbs reduce Grammatical Range & Accuracy (GRA) to Band 6.0. Eliminating these slips is essential for Band 7.5+.',
+          'Check subject-verb agreement ("fees is", "citizens pays"), determiner-noun concord ("every students"), and auxiliary verbs to strengthen grammatical accuracy.',
         rationaleBn:
-          'Subject-Verb Agreement-এর ভুল (যেমন "fees is", "citizens pays" বা "every students") এবং অক্সিলিয়ারি ভার্ব বাদ পড়া ("they afraid") Grammatical Range & Accuracy (GRA)-তে সরাসরি নম্বর কমিয়ে দেয়। Band 7.5+ নিশ্চিত করতে প্লুরাল সাবজেক্টের সাথে সঠিক ভার্ব ফর্ম ও নির্ভুল কাল (Tense) বজায় রাখা জরুরি।'
+          'Subject-Verb Agreement-এর ভুল (যেমন "fees is", "citizens pays" বা "every students") এবং অক্সিলিয়ারি ভার্ব বাদ পড়া ("they afraid") সংশোধন করলে ব্যাকরণগত নির্ভুলতা বাড়বে।'
       });
       return;
     }
 
-    // 3. Check for Informal / Repetitive Vocabulary -> BLUE (Lexical Resource)
+    // 3. Informal / Vague Vocabulary -> BLUE (Lexical Resource)
     if (
-      /\b(very big|a lot of|lots of|good for|big bank|huge benefits|bigger than|very popular|jumped to|number)\b/i.test(
+      /\b(very big|a lot of|lots of|good for|big bank|huge benefits|bigger than|very popular|jumped to)\b/i.test(
         sentence
       )
     ) {
@@ -606,9 +629,9 @@ function evaluateCandidateWriting(
         identifiedIssue: 'Conversational phrasing ("a lot of", "very big", "lots of", "very good")',
         suggestedCorrection: corrected,
         rationaleEn:
-          'In Academic Writing, conversational quantifiers ("a lot of", "lots of") and vague adjectives ("very big", "very good") cap Lexical Resource (LR) at Band 6.0. Replace them with precise C1/C2 academic collocations such as "substantial capital", "dramatic surge", or "macroeconomic productivity".',
+          'In Academic Writing, conversational quantifiers ("a lot of", "lots of") and vague adjectives ("very big", "very good") weaken formal register. Replace them with precise academic collocations.',
         rationaleBn:
-          'IELTS Academic Writing-এ কথ্য শব্দ যেমন "a lot of", "lots of", "very big", বা "very good" ব্যবহার করলে Lexical Resource (LR)-এ স্কোর কমে যায়। Band 8+ পেতে এগুলোর পরিবর্তে "substantial capital", "dramatic surge", বা "vital catalyst"-এর মতো একাডেমিক Collocation ব্যবহার করুন।'
+          'IELTS Academic Writing-এ কথ্য শব্দ যেমন "a lot of", "lots of", "very big", বা "very good"-এর পরিবর্তে সুনির্দিষ্ট একাডেমিক Collocation ব্যবহার করুন।'
       });
       return;
     }
@@ -621,86 +644,7 @@ function evaluateCandidateWriting(
     });
   });
 
-  // Ensure if a user wrote custom text that didn't trigger specific regexes, we still provide constructive sentence-level annotations on their first 3 sentences
-  const hasFlagged = annotations.some((a) => a.category !== 'clean');
-  if (!hasFlagged && annotations.length > 0) {
-    if (annotations[0]) {
-      annotations[0] = {
-        id: annotations[0].id,
-        sentence: annotations[0].sentence,
-        category: 'lexical',
-        errorTitle: 'Academic Nominalisation & Lexical Elevation (LR)',
-        identifiedIssue: 'Opportunity to elevate opening thesis register to C1/C2 academic prose',
-        suggestedCorrection:
-          taskType === 1
-            ? 'The provided statistical visuals delineate substantial shifts in renewable energy integration across four nations between 2010 and 2025.'
-            : 'Contemporary policy debates increasingly centre on whether tertiary education should be universally subsidised by the state.',
-        rationaleEn:
-          'To move from Band 6.5/7.0 to Band 8.0+ in Lexical Resource, replace standard opening paraphrases with high-density academic nominalisations and precise reporting verbs ("delineate", "subsidised by the state").',
-        rationaleBn:
-          'Lexical Resource-এ Band 7.0 থেকে Band 8.0+-এ উন্নীত হতে সাধারণ শুরুর বাক্যের পরিবর্তে উন্নত একাডেমিক শব্দ (যেমন "delineate", "universally subsidised") এবং Nominalisation ব্যবহার করা অত্যন্ত কার্যকর।'
-      };
-      lexicalIssueCount++;
-    }
-    if (annotations[1]) {
-      annotations[1] = {
-        id: annotations[1].id,
-        sentence: annotations[1].sentence,
-        category: 'cohesion',
-        errorTitle: 'Cohesive Clause Integration (CC)',
-        identifiedIssue: 'Transition between thesis and supporting evidence can be tightened',
-        suggestedCorrection: `Crucially, this structural transition underscores how ${annotations[1].sentence.charAt(0).toLowerCase() + annotations[1].sentence.slice(1)}`,
-        rationaleEn:
-          'Integrating conceptual linkers ("Crucially, this structural transition underscores...") strengthens paragraph-level progression under Coherence & Cohesion.',
-        rationaleBn:
-          'একটি বাক্য থেকে পরের বাক্যে যাওয়ার সময় ধারাবাহিকতা বজায় রাখতে "Crucially, this structural transition underscores..." জাতীয় উন্নত সংযোজক ফ্রেজ ব্যবহার করলে Coherence & Cohesion-এ বাড়তি নম্বর পাওয়া যায়।'
-      };
-      cohesionIssueCount++;
-    }
-    if (annotations[2]) {
-      annotations[2] = {
-        id: annotations[2].id,
-        sentence: annotations[2].sentence,
-        category: 'grammar',
-        errorTitle: 'Complex Subordinate Clause Expansion (GRA)',
-        identifiedIssue: 'Sentence structure relies primarily on simple/compound clauses',
-        suggestedCorrection: `Whereas conventional frameworks overlook long-term fiscal externalities, ${annotations[2].sentence.charAt(0).toLowerCase() + annotations[2].sentence.slice(1)}`,
-        rationaleEn:
-          'Band 8.0 in Grammatical Range & Accuracy requires a wide variety of complex structures, including concession clauses ("Whereas...", "Notwithstanding...") and non-finite participle clauses.',
-        rationaleBn:
-          'Grammatical Range & Accuracy (GRA)-তে Band 8.0 পেতে কেবল সরল বাক্য না লিখে "Whereas..." বা "Notwithstanding..." দিয়ে শুরু হওয়া Complex Sentence ব্যবহার করা প্রয়োজন।'
-      };
-      grammarIssueCount++;
-    }
-  }
-
-  // Compute 4 Criterion Scores based on word count, complexity, and error density
-  const underWordPenalty = wordCount < minWords ? Math.min(1.5, ((minWords - wordCount) / minWords) * 2.0) : 0;
-
-  const rawTa = Math.max(5.0, Math.min(8.5, 7.0 - underWordPenalty));
-  const rawCc = Math.max(5.0, Math.min(8.5, 7.0 - cohesionIssueCount * 0.25 - (mechanicalLinkerTotal >= 2 ? 0.5 : 0)));
-  const rawLr = Math.max(5.0, Math.min(8.5, 7.0 - lexicalIssueCount * 0.25));
-  const rawGra = Math.max(5.0, Math.min(8.5, 6.5 - grammarIssueCount * 0.25));
-
-  const roundHalf = (val: number) => Math.round(val * 2) / 2;
-  const taScore = roundHalf(rawTa);
-  const ccScore = roundHalf(rawCc);
-  const lrScore = roundHalf(rawLr);
-  const graScore = roundHalf(rawGra);
-
-  const avg = (taScore + ccScore + lrScore + graScore) / 4;
-  const overallBand = roundHalf(avg);
-
-  const cefrLevel =
-    overallBand >= 8.0
-      ? 'C2 - Mastery'
-      : overallBand >= 7.0
-      ? 'C1 - Effective Operational Proficiency'
-      : overallBand >= 6.0
-      ? 'B2 - Vantage Upper-Intermediate'
-      : 'B1 - Threshold Intermediate';
-
-  // Side-by-Side Band 8.5 Model Upgrade Diff
+  // Reference model paragraphs (labeled as practice reference until live AI generates custom essay upgrades)
   const upgradedModelParagraphs =
     taskType === 1
       ? [
@@ -728,17 +672,6 @@ function evaluateCandidateWriting(
               { text: ' Despite generating a mere 9% from renewables in 2010, ', isUpgrade: false },
               { text: 'Britain’s renewable share soared more than fivefold to reach 49% in 2025.', isUpgrade: true }
             ]
-          },
-          {
-            original:
-              rawText.split(/\n\n+/)[2] ||
-              'Furthermore, Germany increased from 17% in 2010 to 56% in 2025. Australia also shows an upward trend from 11% to 39%.',
-            upgradedHtml: [
-              { text: 'Similarly, Germany ', isUpgrade: false },
-              { text: 'more than tripled its clean energy output from 17% to 56%,', isUpgrade: true },
-              { text: ' bolstered by extensive solar and onshore wind expansion. By contrast, Australia ', isUpgrade: false },
-              { text: 'demonstrated a more moderate expansion, climbing from 11% to 39% over the corresponding period.', isUpgrade: true }
-            ]
           }
         ]
       : [
@@ -765,53 +698,209 @@ function evaluateCandidateWriting(
               { text: ' of clinicians, engineers, and researchers, ', isUpgrade: false },
               { text: 'ultimately expanding the long-term national tax base.', isUpgrade: true }
             ]
-          },
-          {
-            original:
-              rawText.split(/\n\n+/)[2] ||
-              'Furthermore, on the other hand, if university is 100% free for everyone, many students will not take their studies seriously. Moreover, rich families can easily afford to pay.',
-            upgradedHtml: [
-              { text: 'Conversely, ', isUpgrade: true },
-              { text: 'unconditional state funding across all income brackets ', isUpgrade: false },
-              { text: 'imposes a disproportionate fiscal burden on public revenue and inadvertently subsidises affluent households', isUpgrade: true },
-              { text: ' capable of financing their own tuition. Rather than implementing a blanket exemption, governments should ', isUpgrade: false },
-              { text: 'channel finite educational budgets into comprehensive grants for low-income scholars.', isUpgrade: true }
-            ]
           }
         ];
 
   return {
+    isValidAttempt: true,
+    assessmentStatus: 'structural_precheck',
+    evaluationSource: 'offline-structural-precheck',
     taskType,
     wordCount,
     minWords,
-    overallBand,
+    overallBand: null,
     targetBand,
-    cefrLevel,
-    taScore,
+    cefrLevel: 'Not Scored (Run Live AI Evaluation)',
+    taScore: null,
     taSummary:
       wordCount < minWords
-        ? `Under-length response (${wordCount}/${minWords} words). Ensure all prompt parts and key data comparisons are fully extended.`
-        : taskType === 1
-        ? 'Clear overview presented with accurate selection of key statistical extremes, though minor comparative synthesis can be deepened.'
-        : 'Addresses both sides of the prompt with a discernible position, though body paragraphs benefit from more specific empirical examples.',
-    ccScore,
+        ? `Offline structural check: under recommended length (${wordCount}/${minWords} words). Run Live AI Evaluation for a verified Task score.`
+        : `Offline structural check: word count meets the ${minWords}-word target (${wordCount} words). Run Live AI Evaluation for a verified Task score.`,
+    ccScore: null,
     ccSummary:
       mechanicalLinkerTotal >= 2
-        ? `Detected ${mechanicalLinkerTotal} uses of "Furthermore / Moreover". Over-using mechanical sentence-initial linkers restricts Coherence & Cohesion to Band 6.0–6.5.`
-        : 'Logical paragraph progression and clear central topics, with scope to use more organic demonstrative referencing.',
-    lrScore,
+        ? `Offline structural check: detected ${mechanicalLinkerTotal} uses of "Furthermore / Moreover". Run Live AI Evaluation for a verified CC score.`
+        : `Offline structural check: ${cohesionIssueCount} cohesion pattern note(s) flagged. Run Live AI Evaluation for a verified CC score.`,
+    lrScore: null,
     lrSummary:
       lexicalIssueCount > 0
-        ? `Flagged ${lexicalIssueCount} instances of informal register ("a lot of", "very big"). Upgrading to C1/C2 academic collocations will unlock Band 7.5+.`
-        : 'Adequate academic vocabulary range; incorporating domain-specific nominalisations will elevate lexical precision.',
-    graScore,
+        ? `Offline structural check: flagged ${lexicalIssueCount} informal register pattern(s). Run Live AI Evaluation for a verified LR score.`
+        : 'Offline structural check: no basic informal register traps detected. Run Live AI Evaluation for a verified LR score.',
+    graScore: null,
     graSummary:
       grammarIssueCount > 0
-        ? `Identified ${grammarIssueCount} grammatical/agreement slips (e.g., subject-verb concord & missing auxiliaries). Fixing these slips raises GRA by +1.0 Band.`
-        : 'Good control of complex clauses; vary sentence openings with participle and concession clauses for Band 8.0.',
+        ? `Offline structural check: identified ${grammarIssueCount} common agreement/grammar slip(s). Run Live AI Evaluation for a verified GRA score.`
+        : 'Offline structural check: no common agreement pattern slips detected. Run Live AI Evaluation for a verified GRA score.',
     annotations,
     upgradedModelParagraphs
   };
+}
+
+/**
+ * Pure validator & mapper for POST /api/writing/deep-evaluate responses.
+ * Preserves offline structural annotations for review while ensuring no invalid,
+ * missing, or unavailable response ever fabricates numeric IELTS band scores.
+ */
+export function mapDeepWritingResponseToDiagnostic(params: {
+  httpOk: boolean;
+  httpStatus: number;
+  data: any;
+  fallbackPrecheck: WritingDiagnosticResult;
+}): WritingDiagnosticResult {
+  const { httpOk, httpStatus, data, fallbackPrecheck } = params;
+
+  if (data && typeof data === 'object' && data.assessmentStatus === 'insufficient_evidence') {
+    const msg =
+      typeof data.feedbackEn === 'string' && data.feedbackEn.trim()
+        ? data.feedbackEn
+        : typeof data.error === 'string' && data.error.trim()
+        ? data.error
+        : fallbackPrecheck.feedbackEn ||
+          'Submission did not contain sufficient assessable writing evidence.';
+    return {
+      ...fallbackPrecheck,
+      isValidAttempt: false,
+      assessmentStatus: 'insufficient_evidence',
+      evaluationSource: 'threshold-gate',
+      feedbackTitle: data.feedbackTitle || 'Submission Too Short for Assessment',
+      feedbackEn: msg,
+      feedbackBn: data.feedbackBn || fallbackPrecheck.feedbackBn,
+      error: msg,
+      canRetry: false,
+      overallBand: null,
+      taScore: null,
+      ccScore: null,
+      lrScore: null,
+      graScore: null,
+      cefrLevel: 'Unassessed (Insufficient Evidence)',
+      annotations: [],
+      upgradedModelParagraphs: []
+    };
+  }
+
+  if (!httpOk) {
+    const errorMsg =
+      data && typeof data === 'object' && typeof data.error === 'string' && data.error.trim()
+        ? data.error
+        : httpStatus === 401
+        ? 'Please sign in to run live AI Writing evaluation. Your essay draft is safely preserved and your offline structural notes remain available below.'
+        : httpStatus === 403
+        ? 'Your daily AI Writing evaluation limit has been reached. Your essay draft is safely preserved.'
+        : `Live AI Writing evaluation is unavailable (HTTP ${httpStatus}). No IELTS band was assigned.`;
+    return {
+      ...fallbackPrecheck,
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      evaluationSource: 'unavailable',
+      error: errorMsg,
+      canRetry: true,
+      overallBand: null,
+      taScore: null,
+      ccScore: null,
+      lrScore: null,
+      graScore: null,
+      cefrLevel: 'Evaluation Unavailable'
+    };
+  }
+
+  const validated = validateClientWritingEvaluation(data);
+  if (!validated.valid) {
+    const isInsufficient = validated.assessmentStatus === 'insufficient_evidence';
+    return {
+      ...fallbackPrecheck,
+      isValidAttempt: false,
+      assessmentStatus: validated.assessmentStatus,
+      evaluationSource: isInsufficient ? 'threshold-gate' : 'unavailable',
+      error:
+        validated.reason ||
+        'Live AI Writing evaluation returned an incomplete or invalid payload. No fallback band was assigned.',
+      canRetry: !isInsufficient,
+      overallBand: null,
+      taScore: null,
+      ccScore: null,
+      lrScore: null,
+      graScore: null,
+      cefrLevel: isInsufficient ? 'Unassessed (Insufficient Evidence)' : 'Evaluation Unavailable'
+    };
+  }
+
+  const resolvedAnnotations =
+    Array.isArray(data?.annotations) && data.annotations.length > 0
+      ? (data.annotations as SentenceAnnotation[])
+      : fallbackPrecheck.annotations;
+  const resolvedParagraphs =
+    Array.isArray(data?.upgradedModelParagraphs) && data.upgradedModelParagraphs.length > 0
+      ? data.upgradedModelParagraphs
+      : fallbackPrecheck.upgradedModelParagraphs;
+
+  return {
+    ...fallbackPrecheck,
+    isValidAttempt: true,
+    assessmentStatus: 'evaluated',
+    evaluationSource:
+      typeof data?.evaluationSource === 'string' && data.evaluationSource.trim()
+        ? data.evaluationSource
+        : 'gemini-deep-examiner',
+    error: undefined,
+    canRetry: false,
+    wordCount:
+      typeof data?.wordCount === 'number' && Number.isFinite(data.wordCount)
+        ? data.wordCount
+        : fallbackPrecheck.wordCount,
+    overallBand: validated.overallBand,
+    taScore: validated.criteria.ta,
+    ccScore: validated.criteria.cc,
+    lrScore: validated.criteria.lr,
+    graScore: validated.criteria.gra,
+    taSummary:
+      typeof data?.taSummary === 'string' && data.taSummary.trim()
+        ? data.taSummary
+        : fallbackPrecheck.taSummary,
+    ccSummary:
+      typeof data?.ccSummary === 'string' && data.ccSummary.trim()
+        ? data.ccSummary
+        : fallbackPrecheck.ccSummary,
+    lrSummary:
+      typeof data?.lrSummary === 'string' && data.lrSummary.trim()
+        ? data.lrSummary
+        : fallbackPrecheck.lrSummary,
+    graSummary:
+      typeof data?.graSummary === 'string' && data.graSummary.trim()
+        ? data.graSummary
+        : fallbackPrecheck.graSummary,
+    cefrLevel:
+      typeof data?.cefrLevel === 'string' && data.cefrLevel.trim()
+        ? data.cefrLevel
+        : validated.overallBand !== null && validated.overallBand >= 8.0
+        ? 'C2 - Mastery'
+        : validated.overallBand !== null && validated.overallBand >= 7.0
+        ? 'C1 - Effective Operational Proficiency'
+        : validated.overallBand !== null && validated.overallBand >= 6.0
+        ? 'B2 - Vantage Upper-Intermediate'
+        : 'B1 - Threshold Intermediate',
+    annotations: resolvedAnnotations,
+    upgradedModelParagraphs: resolvedParagraphs
+  };
+}
+
+/**
+ * Persistence safeguard: only verified, complete four-criterion AI Writing evaluations
+ * may be persisted into exam history. Offline structural pre-checks, insufficient
+ * evidence results, and unavailable responses are never persisted as completed bands.
+ */
+export function shouldPersistWritingDiagnostic(
+  result: WritingDiagnosticResult | null | undefined
+): boolean {
+  if (!result) return false;
+  if (result.assessmentStatus !== 'evaluated') return false;
+  if (result.isValidAttempt === false) return false;
+  return (
+    validateCriterionBand(result.overallBand) !== null &&
+    validateCriterionBand(result.taScore) !== null &&
+    validateCriterionBand(result.ccScore) !== null &&
+    validateCriterionBand(result.lrScore) !== null &&
+    validateCriterionBand(result.graScore) !== null
+  );
 }
 
 export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
@@ -956,9 +1045,9 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
   const minWordThreshold = activeTask === 1 ? 150 : 250;
   const isBelowThreshold = currentWordCount < minWordThreshold;
 
-  // Real-Time Live 4-Criteria Diagnostic Telemetry as candidate types or applies fixes (strictly on real candidate input)
+  // Real-Time Non-Scoring Structural Pre-Check as candidate types (zero live IELTS band fabrication)
   const liveDiagnostic = useMemo(() => {
-    return evaluateCandidateWriting(currentText, activeTask, targetBand, currentSet);
+    return buildWritingStructuralPrecheck(currentText, activeTask, targetBand, currentSet);
   }, [currentText, activeTask, targetBand, currentSet]);
   const liveIssueCount = useMemo(
     () => liveDiagnostic.annotations.filter((a) => a.category !== 'clean').length,
@@ -1096,64 +1185,55 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
   const [isRunningGeminiEval, setIsRunningGeminiEval] = useState(false);
   const [geminiEvalError, setGeminiEvalError] = useState<string | null>(null);
 
-  // Run 4-Criteria Diagnostic Evaluation strictly on chosen candidate task text
-  const executeEvaluation = (taskToScore: 1 | 2 = activeTask) => {
-    saveDraftToStorage();
-    setShowSubmitConfirmModal(false);
-    setGeminiEvalError(null);
-
-    const textToEvaluate = taskToScore === 1 ? task1Text : task2Text;
-    const result = evaluateCandidateWriting(textToEvaluate, taskToScore, targetBand, currentSet);
-    setDiagnosticResult(result);
-    setVaultSynced(false);
-
-    if (result.isValidAttempt === false || result.overallBand <= 0) {
+  const requestDeepWritingEvaluation = async (
+    taskNum: 1 | 2,
+    essayText: string,
+    fallbackPrecheck: WritingDiagnosticResult
+  ) => {
+    const trimmed = essayText.trim();
+    const gate = checkWritingWordThreshold(trimmed, taskNum === 1 ? 'task1' : 'task2');
+    if (!gate.isValidAttempt) {
+      const insufficientResult: WritingDiagnosticResult = {
+        ...fallbackPrecheck,
+        isValidAttempt: false,
+        assessmentStatus: 'insufficient_evidence',
+        evaluationSource: 'threshold-gate',
+        feedbackTitle: gate.feedbackTitle,
+        feedbackEn: gate.feedbackEn,
+        feedbackBn: gate.feedbackBn,
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        cefrLevel: 'Unassessed (Insufficient Evidence)',
+        annotations: [],
+        upgradedModelParagraphs: []
+      };
+      setDiagnosticResult(insufficientResult);
+      setGeminiEvalError(gate.feedbackEn);
       soundManager.playBeep(360, 0.12);
-      return;
-    }
-
-    soundManager.playSuccess();
-
-    // Pre-select the first flagged sentence annotation so the explanation drawer is immediately populated
-    const firstFlagged = result.annotations.find((a) => a.category !== 'clean') || result.annotations[0];
-    if (firstFlagged) {
-      setSelectedAnnotationId(firstFlagged.id);
-    }
-
-    recordExamAttempt({
-      writingBand: result.overallBand,
-      readingBand: 0,
-      listeningBand: 0,
-      speakingBand: 0,
-      overallBand: result.overallBand,
-      wordCount: result.wordCount,
-      correctCount: 0,
-      totalQuestions: 0,
-      submissionType: 'manual'
-    });
-  };
-
-  // Run Live Server-Side Gemini Deep Evaluation on candidate's exact essay
-  const handleRunGeminiDeepEvaluation = async () => {
-    if (!diagnosticResult || isRunningGeminiEval) return;
-    const taskNum = diagnosticResult.taskType;
-    const essayText = (taskNum === 1 ? task1Text : task2Text).trim();
-    if (essayText.split(/\s+/).filter(Boolean).length < 30) {
-      setGeminiEvalError('Please write at least 30 words before running a live Gemini Deep Evaluation.');
       return;
     }
 
     setIsRunningGeminiEval(true);
     setGeminiEvalError(null);
+    saveDraftToStorage();
     soundManager.playBeep(620, 0.04);
 
     try {
       const promptText = taskNum === 1 ? currentSet.task1Prompt : currentSet.task2Prompt;
+      const token = getStoredSessionToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const response = await fetch('/api/writing/deep-evaluate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
-          essayText,
+          essayText: trimmed,
           taskType: taskNum,
           examFormat,
           promptText,
@@ -1161,27 +1241,108 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
         })
       });
 
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || `Gemini evaluation failed (HTTP ${response.status}).`);
-      }
+      const data = await response.json().catch(() => null);
+      const mapped = mapDeepWritingResponseToDiagnostic({
+        httpOk: response.ok,
+        httpStatus: response.status,
+        data,
+        fallbackPrecheck
+      });
 
-      setDiagnosticResult(data as WritingDiagnosticResult);
+      setDiagnosticResult(mapped);
       setVaultSynced(false);
-      const firstFlagged = data.annotations?.find((a: SentenceAnnotation) => a.category !== 'clean') || data.annotations?.[0];
+      const firstFlagged =
+        mapped.annotations.find((a) => a.category !== 'clean') || mapped.annotations[0];
       if (firstFlagged) {
         setSelectedAnnotationId(firstFlagged.id);
       }
-      soundManager.playSuccess();
-      onShowToast(`Live Gemini Examiner scored Band ${Number(data.overallBand).toFixed(1)} with sentence-by-sentence Band 8.5+ upgrades!`);
-    } catch (err: any) {
-      const message = err?.message || 'Unable to reach live Gemini evaluation service. Please try again.';
-      setGeminiEvalError(message);
+
+      if (shouldPersistWritingDiagnostic(mapped)) {
+        recordExamAttempt({
+          examType: 'writing_only',
+          writingBand: mapped.overallBand,
+          readingBand: null,
+          listeningBand: null,
+          speakingBand: null,
+          overallBand: null,
+          completedSkills: { writing: true },
+          wordCount: mapped.wordCount,
+          correctCount: 0,
+          totalQuestions: 0,
+          submissionType: 'manual'
+        });
+        soundManager.playSuccess();
+        onShowToast(
+          `Live AI Examiner evaluated Band ${formatNullableBand(mapped.overallBand)} across all 4 IELTS criteria.`
+        );
+      } else if (mapped.assessmentStatus === 'insufficient_evidence') {
+        setGeminiEvalError(mapped.error || mapped.feedbackEn || null);
+        soundManager.playBeep(360, 0.12);
+      } else {
+        const message =
+          mapped.error ||
+          'Live AI Writing evaluation is unavailable. No IELTS band was assigned.';
+        setGeminiEvalError(message);
+        soundManager.playBeep(340, 0.09);
+        onShowToast(message);
+      }
+    } catch {
+      const unavailableResult: WritingDiagnosticResult = {
+        ...fallbackPrecheck,
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        evaluationSource: 'unavailable',
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        cefrLevel: 'Evaluation Unavailable',
+        error:
+          'Unable to reach the live AI Writing evaluation service. Please retry — no fallback IELTS band was assigned.',
+        canRetry: true
+      };
+      setDiagnosticResult(unavailableResult);
+      setGeminiEvalError(unavailableResult.error || null);
       soundManager.playBeep(340, 0.09);
-      onShowToast(message);
+      onShowToast(unavailableResult.error || 'Live AI evaluation unavailable.');
     } finally {
       setIsRunningGeminiEval(false);
     }
+  };
+
+  // Run Live AI 4-Criteria Evaluation strictly on chosen candidate task text (no fabricated local scores)
+  const executeEvaluation = async (taskToScore: 1 | 2 = activeTask) => {
+    saveDraftToStorage();
+    setShowSubmitConfirmModal(false);
+    setGeminiEvalError(null);
+
+    const textToEvaluate = taskToScore === 1 ? task1Text : task2Text;
+    const precheck = buildWritingStructuralPrecheck(textToEvaluate, taskToScore, targetBand, currentSet);
+    setDiagnosticResult(precheck);
+    setVaultSynced(false);
+
+    if (precheck.assessmentStatus === 'insufficient_evidence') {
+      soundManager.playBeep(360, 0.12);
+      return;
+    }
+
+    const firstFlagged =
+      precheck.annotations.find((a) => a.category !== 'clean') || precheck.annotations[0];
+    if (firstFlagged) {
+      setSelectedAnnotationId(firstFlagged.id);
+    }
+
+    await requestDeepWritingEvaluation(taskToScore, textToEvaluate, precheck);
+  };
+
+  // Re-run Live Server-Side Gemini Deep Evaluation on candidate's exact essay
+  const handleRunGeminiDeepEvaluation = async () => {
+    if (!diagnosticResult || isRunningGeminiEval) return;
+    const taskNum = diagnosticResult.taskType;
+    const essayText = taskNum === 1 ? task1Text : task2Text;
+    const fallbackPrecheck = buildWritingStructuralPrecheck(essayText, taskNum, targetBand, currentSet);
+    await requestDeepWritingEvaluation(taskNum, essayText, fallbackPrecheck);
   };
 
   // Clear Text with Confirmation and Undo Protection (Never silently erase candidate text)
@@ -1258,30 +1419,32 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
     onShowToast(`Synced ${flaggedAnnotations.length} writing errors & bilingual rationales to your Mistake Vault!`);
   };
 
-  // Apply a single sentence-level Band 8.5+ fix directly to the live essay draft and re-score
+  // Apply a single sentence-level fix directly to the draft and refresh non-scoring structural check
   const handleApplySingleFix = (ann: SentenceAnnotation) => {
     if (!ann.suggestedCorrection || ann.category === 'clean') return;
-    const baseText = activeTask === 1 ? task1Text : task2Text;
+    const targetTask = diagnosticResult?.taskType ?? activeTask;
+    const baseText = targetTask === 1 ? task1Text : task2Text;
     const updatedText = baseText.includes(ann.sentence)
       ? baseText.replace(ann.sentence, ann.suggestedCorrection)
       : `${baseText.trim()} ${ann.suggestedCorrection}`;
 
-    if (activeTask === 1) setTask1Text(updatedText);
+    if (targetTask === 1) setTask1Text(updatedText);
     else setTask2Text(updatedText);
 
-    const refreshed = evaluateCandidateWriting(updatedText, activeTask, targetBand, currentSet);
+    const refreshed = buildWritingStructuralPrecheck(updatedText, targetTask, targetBand, currentSet);
     setDiagnosticResult(refreshed);
     const nextFlagged = refreshed.annotations.find((a) => a.category !== 'clean') || refreshed.annotations[0];
     if (nextFlagged) setSelectedAnnotationId(nextFlagged.id);
 
     soundManager.playSuccess();
-    onShowToast(`Applied Band 8.5 fix! Essay score updated to Band ${refreshed.overallBand.toFixed(1)}.`);
+    onShowToast('Applied suggested revision to your draft. Re-run Live AI Evaluation to obtain an updated band estimate.');
   };
 
-  // Apply all Examiner Band 8.5+ sentence fixes in one click
+  // Apply all suggested sentence fixes in one click and refresh non-scoring structural check
   const handleApplyAllFixes = () => {
     if (!diagnosticResult) return;
-    let updatedText = activeTask === 1 ? task1Text : task2Text;
+    const targetTask = diagnosticResult.taskType;
+    let updatedText = targetTask === 1 ? task1Text : task2Text;
     let appliedCount = 0;
 
     diagnosticResult.annotations.forEach((ann) => {
@@ -1296,16 +1459,16 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
       return;
     }
 
-    if (activeTask === 1) setTask1Text(updatedText);
+    if (targetTask === 1) setTask1Text(updatedText);
     else setTask2Text(updatedText);
 
-    const refreshed = evaluateCandidateWriting(updatedText, activeTask, targetBand, currentSet);
+    const refreshed = buildWritingStructuralPrecheck(updatedText, targetTask, targetBand, currentSet);
     setDiagnosticResult(refreshed);
     const nextFlagged = refreshed.annotations.find((a) => a.category !== 'clean') || refreshed.annotations[0];
     if (nextFlagged) setSelectedAnnotationId(nextFlagged.id);
 
     soundManager.playSuccess();
-    onShowToast(`Applied ${appliedCount} Band 8.5+ examiner fixes! Live score jumped to Band ${refreshed.overallBand.toFixed(1)}.`);
+    onShowToast(`Applied ${appliedCount} suggested revision(s) to your draft. Re-run Live AI Evaluation for an updated band estimate.`);
   };
 
   const activeAnnotation = useMemo(() => {
@@ -2042,37 +2205,32 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
             </div>
           </div>
 
-          {/* Real-Time Live 4-Criteria Band Telemetry Bar */}
+          {/* Real-Time Non-Scoring Structural Readiness Bar */}
           <div className="mt-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
             <div className="flex flex-wrap items-center gap-3 text-xs font-mono tabular-nums">
               <span className="font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                Live Est: <strong className="text-blue-600 dark:text-blue-400">Band {liveDiagnostic.overallBand.toFixed(1)}</strong>
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                Live Check: <strong className="text-slate-600 dark:text-slate-300">Non-Scoring</strong>
               </span>
               <span className="text-slate-300 dark:text-slate-700">|</span>
               <span className="text-slate-600 dark:text-slate-400">
-                {activeTask === 1 ? 'TA' : 'TR'}: <strong className="text-slate-900 dark:text-slate-200">{liveDiagnostic.taScore.toFixed(1)}</strong>
+                AI Band: <strong className="text-slate-900 dark:text-slate-200">Not Scored Yet</strong>
               </span>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
               <span className="text-slate-600 dark:text-slate-400">
-                CC: <strong className="text-slate-900 dark:text-slate-200">{liveDiagnostic.ccScore.toFixed(1)}</strong>
-              </span>
-              <span className="text-slate-600 dark:text-slate-400">
-                LR: <strong className="text-slate-900 dark:text-slate-200">{liveDiagnostic.lrScore.toFixed(1)}</strong>
-              </span>
-              <span className="text-slate-600 dark:text-slate-400">
-                GRA: <strong className="text-slate-900 dark:text-slate-200">{liveDiagnostic.graScore.toFixed(1)}</strong>
+                Target: <strong className="text-slate-900 dark:text-slate-200">{currentWordCount}/{minWordThreshold}w</strong>
               </span>
             </div>
 
             <button
               onClick={handleFinishAndEvaluate}
-              className="text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer flex items-center gap-1"
-              title="Open interactive Red-Pen sentence locator"
+              className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+              title="Submit for Live AI 4-Criteria Evaluation & Red-Pen Review"
             >
               <span>
                 {liveIssueCount > 0
-                  ? `${liveIssueCount} Red-Pen Upgrade${liveIssueCount > 1 ? 's' : ''} Available →`
-                  : '0 Red-Pen Errors · Band 8.5 Ready →'}
+                  ? `${liveIssueCount} Draft Pattern Note${liveIssueCount > 1 ? 's' : ''} · Run Live AI →`
+                  : 'Submit for Live AI Evaluation →'}
               </span>
             </button>
           </div>
@@ -2145,7 +2303,7 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
       {/* ================= 3. 4-CRITERIA EXAMINER DIAGNOSTIC SCORECARD MODAL ================= */}
       {diagnosticResult && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fade-in select-text">
-          {diagnosticResult.isValidAttempt === false || diagnosticResult.overallBand <= 0 ? (
+          {diagnosticResult.assessmentStatus === 'insufficient_evidence' ? (
             <div className="w-full max-w-xl bg-white dark:bg-slate-900 border-2 border-rose-500/40 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
               <div className="p-6 bg-gradient-to-r from-rose-950 via-slate-900 to-slate-950 text-white border-b border-rose-500/30 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -2154,7 +2312,7 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                   </div>
                   <div>
                     <span className="text-[10px] font-mono uppercase tracking-widest text-rose-300 font-bold block">
-                      Submission Unassessed · Overall Band 0.0
+                      Submission Unassessed · No Band Assigned
                     </span>
                     <h2 className="text-lg sm:text-xl font-black text-white">
                       {diagnosticResult.feedbackTitle || 'Submission Too Short for Assessment'}
@@ -2204,31 +2362,50 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 text-xs text-[#F4A62A] font-mono font-bold uppercase tracking-wider">
                     <Award className="w-4 h-4" />
-                    <span>BANDSPRINT WRITING DIAGNOSTIC · 4-CRITERIA ESTIMATE</span>
+                    <span>
+                      {diagnosticResult.assessmentStatus === 'evaluated'
+                        ? 'BANDSPRINT WRITING DIAGNOSTIC · LIVE AI 4-CRITERIA ESTIMATE'
+                        : diagnosticResult.assessmentStatus === 'unavailable'
+                        ? 'BANDSPRINT WRITING DIAGNOSTIC · AI EVALUATION UNAVAILABLE'
+                        : 'BANDSPRINT WRITING DIAGNOSTIC · STRUCTURAL PRE-CHECK (NON-SCORING)'}
+                    </span>
                   </div>
                   <h2 className="font-display text-xl sm:text-2xl font-bold">
-                    {currentSet.title} · Task {diagnosticResult.taskType} ({examFormat}) Evaluation
+                    {currentSet.title} · Task {diagnosticResult.taskType} ({examFormat}) Review
                   </h2>
-                  <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2 font-mono">
+                  <div className="text-xs text-slate-300 flex flex-wrap items-center gap-2 font-mono">
                     <span>Candidate: {candidateName}</span>
                     <span aria-hidden="true">·</span>
                     <span>Format: {examFormat}</span>
                     <span aria-hidden="true">·</span>
                     <span>Word Count: {diagnosticResult.wordCount} words (Min {diagnosticResult.minWords})</span>
                     <span aria-hidden="true">·</span>
-                    <span>CEFR: {diagnosticResult.cefrLevel}</span>
+                    <span>Status: {diagnosticResult.cefrLevel}</span>
                   </div>
-                  <div className="text-[11px] text-slate-400 italic">
-                    *Estimated band score aligned with official 9-band IELTS assessment rubrics. Educational practice estimate; not an official test report form (TRF).
+                  <div className="text-[11px] text-slate-300 italic">
+                    *AI diagnostic estimate aligned with IELTS 9-band public descriptors. Educational practice feedback; not an official test report form (TRF).
                   </div>
                 </div>
 
-                {/* Overall Band vs Target Band Comparison Card */}
+                {/* Overall Band vs Target Band Comparison Card (Null-Safe) */}
                 <div className="flex items-center gap-4 bg-slate-800/90 border border-slate-700 rounded-2xl px-4 py-3">
                   <div className="text-center pr-4 border-r border-slate-700">
-                    <div className="text-[10px] font-mono uppercase text-slate-400">Estimated Band</div>
-                    <div className="text-3xl font-black font-mono text-amber-400">
-                      Band {diagnosticResult.overallBand.toFixed(1)}
+                    <div className="text-[10px] font-mono uppercase text-slate-400">
+                      {diagnosticResult.assessmentStatus === 'evaluated'
+                        ? 'AI Diagnostic Band'
+                        : isRunningGeminiEval
+                        ? 'Evaluating'
+                        : 'Band Status'}
+                    </div>
+                    <div className="text-3xl font-black font-mono text-amber-400 flex items-center justify-center gap-2">
+                      {isRunningGeminiEval ? (
+                        <Loader2 className="w-6 h-6 animate-spin text-amber-300" />
+                      ) : diagnosticResult.assessmentStatus === 'evaluated' &&
+                        diagnosticResult.overallBand !== null ? (
+                        `Band ${formatNullableBand(diagnosticResult.overallBand)}`
+                      ) : (
+                        'Band —'
+                      )}
                     </div>
                   </div>
                   <div className="text-center">
@@ -2237,9 +2414,16 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                       Band {diagnosticResult.targetBand.toFixed(1)}
                     </div>
                     <div className="text-[10px] font-mono text-slate-400">
-                      {diagnosticResult.overallBand >= diagnosticResult.targetBand
-                        ? 'Target Achieved'
-                        : `Gap: -${(diagnosticResult.targetBand - diagnosticResult.overallBand).toFixed(1)} Band`}
+                      {diagnosticResult.assessmentStatus === 'evaluated' &&
+                      diagnosticResult.overallBand !== null
+                        ? diagnosticResult.overallBand >= diagnosticResult.targetBand
+                          ? 'Target Achieved'
+                          : `Gap: -${(diagnosticResult.targetBand - diagnosticResult.overallBand).toFixed(1)} Band`
+                        : isRunningGeminiEval
+                        ? 'Running Live AI...'
+                        : diagnosticResult.assessmentStatus === 'unavailable'
+                        ? 'Evaluation Unavailable'
+                        : 'Not Scored Yet'}
                     </div>
                   </div>
                   <button
@@ -2254,7 +2438,56 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
 
               {/* Modal Scrollable Body */}
               <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
-                {/* SECTION A: 4 IELTS Descriptors with Individual Band Scores & Progress Bars */}
+                {/* Explicit Non-Scoring / Unavailable Status Banner */}
+                {diagnosticResult.assessmentStatus !== 'evaluated' && (
+                  <div
+                    className={`p-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
+                      diagnosticResult.assessmentStatus === 'unavailable'
+                        ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200'
+                        : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60 text-blue-900 dark:text-blue-200'
+                    }`}
+                  >
+                    <div className="space-y-1 max-w-2xl">
+                      <div className="text-xs font-bold flex items-center gap-1.5">
+                        {isRunningGeminiEval ? (
+                          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                        )}
+                        <span>
+                          {isRunningGeminiEval
+                            ? 'Live AI Writing Evaluation in Progress...'
+                            : diagnosticResult.assessmentStatus === 'unavailable'
+                            ? 'Live AI Writing Evaluation Unavailable — No Band Assigned'
+                            : 'Offline Structural Pre-Check Active — Not Yet Scored'}
+                        </span>
+                      </div>
+                      <p className="text-xs opacity-90 leading-relaxed">
+                        {isRunningGeminiEval
+                          ? 'Review your draft structural notes below while the live AI examiner completes all four IELTS criteria.'
+                          : diagnosticResult.error ||
+                            'No IELTS band has been assigned to this draft. Your structural pattern notes remain reviewable below, and you can run or retry Live AI Evaluation anytime.'}
+                      </p>
+                    </div>
+
+                    {!isRunningGeminiEval && (
+                      <button
+                        type="button"
+                        onClick={handleRunGeminiDeepEvaluation}
+                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>
+                          {diagnosticResult.assessmentStatus === 'unavailable'
+                            ? 'Retry Live AI Evaluation'
+                            : 'Run Live AI Evaluation'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* SECTION A: 4 IELTS Descriptors with Individual Null-Safe Band Scores & Progress Bars */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   {
@@ -2294,14 +2527,19 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-900 dark:text-white">{crit.title}</span>
                         <span className="text-sm font-black font-mono text-blue-600 dark:text-blue-400">
-                          {crit.score.toFixed(1)} / 9.0
+                          {formatNullableBand(crit.score)} / 9.0
                         </span>
                       </div>
                       {/* Visual Progress Bar (0.0 - 9.0) */}
                       <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                         <div
                           className={`h-full ${crit.barColor} transition-all duration-500`}
-                          style={{ width: `${Math.min(100, (crit.score / 9) * 100)}%` }}
+                          style={{
+                            width:
+                              typeof crit.score === 'number'
+                                ? `${Math.min(100, (crit.score / 9) * 100)}%`
+                                : '0%'
+                          }}
                         />
                       </div>
                     </div>

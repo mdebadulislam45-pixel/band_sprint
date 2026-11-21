@@ -18,6 +18,7 @@ import { AIWeaknessDetector } from './home/AIWeaknessDetector';
 import { HomeExtendedBlocks } from './home/HomeExtendedBlocks';
 import { AnimatedNumber, FadeInSection, StaggerGroup, StaggerItem } from './common/MotionPrimitives';
 import { QuickSmartDrillModal } from './daily/QuickSmartDrillModal';
+import { aggregateExamHistory, validateOptionalHalfBand } from '../utils/historyAggregation';
 
 interface HomeDashboardProps {
   user?: UserProfile | null;
@@ -76,24 +77,20 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
     }
   }, [testDate]);
 
-  // Compute current band estimate from latest examHistory, diagnostic baseline, or onboarding self-estimate
+  // Compute current band estimate strictly from verified 4-skill Full Mocks, valid diagnostic baseline, or valid self-estimate
   const currentBandEstimate = useMemo(() => {
-    const history = user?.progress?.examHistory || [];
-    const sorted = [...history].sort((a, b) => b.timestamp - a.timestamp);
-    const latestWithBand = sorted.find((r) => typeof r.overallBand === 'number' && r.overallBand > 0);
-    if (latestWithBand && typeof latestWithBand.overallBand === 'number') {
-      return { value: latestWithBand.overallBand, source: 'Latest mock est.' };
+    const agg = aggregateExamHistory(user?.progress?.examHistory || []);
+    if (agg.overall.latest !== null) {
+      return { value: agg.overall.latest, source: 'Latest full mock' };
     }
-    if (diagnostic?.scores?.overall) {
-      return { value: diagnostic.scores.overall, source: 'Diagnostic est.' };
+    const diagOverall = validateOptionalHalfBand(diagnostic?.scores?.overall, 1.0);
+    if (diagOverall !== null) {
+      return { value: diagOverall, source: 'Diagnostic baseline' };
     }
     const selfEst =
-      typeof user?.progress?.currentBandEstimate === 'number'
-        ? user.progress.currentBandEstimate
-        : typeof survey?.currentBand === 'number'
-        ? survey.currentBand
-        : null;
-    if (selfEst) {
+      validateOptionalHalfBand(user?.progress?.currentBandEstimate, 1.0) ??
+      validateOptionalHalfBand(survey?.currentBand, 1.0);
+    if (selfEst !== null) {
       return { value: selfEst, source: 'Survey baseline' };
     }
     return null;
@@ -132,9 +129,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
         isResume: true
       };
     }
+    const diagBand = validateOptionalHalfBand(diagnostic.scores?.overall, 1.0);
     return {
       label: 'Open My Study Plan',
-      hint: `Starting band ${diagnostic.scores.overall.toFixed(1)} · Priority focus: ${weakestLabel} · ${dailyPaceMins} min/day.`,
+      hint: `${diagBand !== null ? `Starting band ${diagBand.toFixed(1)}` : 'Diagnostic baseline recorded'} · Priority focus: ${weakestLabel || 'All skills'} · ${dailyPaceMins} min/day.`,
       path: '/learn/study-plan',
       isResume: false
     };
@@ -222,7 +220,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
                   {currentBandEstimate ? <AnimatedNumber value={currentBandEstimate.value} decimals={1} /> : '—'}
                 </div>
                 <div className="text-[10px] text-[#EEF3F1]/65 truncate">
-                  {currentBandEstimate ? currentBandEstimate.source : 'Take diagnostic'}
+                  {currentBandEstimate ? currentBandEstimate.source : 'Not assessed'}
                 </div>
               </button>
             </StaggerItem>

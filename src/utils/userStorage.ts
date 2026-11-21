@@ -279,10 +279,19 @@ export function toggleModuleCompleted(moduleId: string): boolean {
   return !exists;
 }
 
+function isValidHistoryHalfBand(value: unknown, min: number): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  if (value < min || value > 9.0) return false;
+  return Math.abs(value * 2 - Math.round(value * 2)) < 1e-6;
+}
+
 /**
- * Backward-compatible discriminator between full 4-skill mock exams and single-skill (Listening-only) attempts.
- * Legacy Listening-only attempts recorded readingBand: 0 and writingBand: 0 without examType,
- * whereas full mock attempts in LiveMockTest always record positive readingBand and writingBand scores.
+ * Conservative, backward-compatible discriminator between genuinely complete four-skill
+ * full mock exams and incomplete, partial, or single-skill attempts.
+ * - Never mutates or deletes historical records.
+ * - Rejects partial/transcript-only Speaking provenance, missing/null/0 Speaking or Writing,
+ *   and incomplete skill metadata.
+ * - Preserves valid historical four-skill full mock records with all four verified bands.
  */
 export function isFullMockExamRecord(rec: ExamHistoryRecord | null | undefined): boolean {
   if (!rec) return false;
@@ -297,13 +306,45 @@ export function isFullMockExamRecord(rec: ExamHistoryRecord | null | undefined):
     return false;
   }
 
+  // Reject any record carrying explicit incomplete-skill or partial-speaking provenance
+  if (Array.isArray(rec.incompleteSkills) && rec.incompleteSkills.length > 0) {
+    return false;
+  }
+  if (
+    rec.speakingAssessmentStatus === 'partial_transcript_only' ||
+    rec.speakingAssessmentStatus === 'insufficient_evidence' ||
+    rec.speakingAssessmentStatus === 'unavailable'
+  ) {
+    return false;
+  }
+  if (rec.speakingPronunciationObservable === false) {
+    return false;
+  }
+
   if (rec.completedSkills) {
     if (
-      rec.completedSkills.listening === false ||
-      rec.completedSkills.reading === false ||
-      rec.completedSkills.writing === false ||
-      rec.completedSkills.speaking === false
+      rec.completedSkills.listening !== true ||
+      rec.completedSkills.reading !== true ||
+      rec.completedSkills.writing !== true ||
+      rec.completedSkills.speaking !== true
     ) {
+      return false;
+    }
+  }
+
+  const ext = rec as ExamHistoryRecord & Record<string, unknown>;
+  if ('writingTasksCompleted' in ext && ext.writingTasksCompleted !== undefined) {
+    if (
+      typeof ext.writingTasksCompleted !== 'number' ||
+      !Number.isFinite(ext.writingTasksCompleted) ||
+      ext.writingTasksCompleted < 2
+    ) {
+      return false;
+    }
+  } else {
+    // Legacy records without writingTasksCompleted cannot silently bypass the 2-task Writing requirement
+    // when combined wordCount is below the minimum 2-task threshold (Task 1 >= 150w + Task 2 >= 250w = 400w).
+    if (typeof rec.wordCount !== 'number' || !Number.isFinite(rec.wordCount) || rec.wordCount < 400) {
       return false;
     }
   }
@@ -314,44 +355,136 @@ export function isFullMockExamRecord(rec: ExamHistoryRecord | null | undefined):
     rec.completedSkills?.writing === true &&
     rec.completedSkills?.speaking === true;
 
-  if (explicitlyAllFourComplete && rec.examType === 'full_mock' && typeof rec.overallBand === 'number') {
-    return true;
-  }
+  const hasAttemptedObjectiveQuestions =
+    typeof rec.totalQuestions === 'number' &&
+    Number.isFinite(rec.totalQuestions) &&
+    rec.totalQuestions > 0;
 
-  const hasValidOverall = typeof rec.overallBand === 'number' && rec.overallBand > 0;
-  const hasValidListening = typeof rec.listeningBand === 'number' && rec.listeningBand > 0;
-  const hasValidReading = typeof rec.readingBand === 'number' && rec.readingBand > 0;
-  const hasValidWriting = typeof rec.writingBand === 'number' && rec.writingBand > 0;
-  const hasInvalidSpeaking =
-    rec.speakingBand !== undefined &&
-    rec.speakingBand !== null &&
-    rec.speakingBand <= 0;
+  // Genuine 0/40 Listening/Reading is valid ONLY when completedSkills confirms completion AND questions were actually attempted
+  const objectiveMin = explicitlyAllFourComplete && hasAttemptedObjectiveQuestions ? 0.0 : 0.5;
+  const hasValidOverall = isValidHistoryHalfBand(rec.overallBand, 0.5);
+  const hasValidListening = isValidHistoryHalfBand(rec.listeningBand, objectiveMin);
+  const hasValidReading = isValidHistoryHalfBand(rec.readingBand, objectiveMin);
+  const hasValidWriting = isValidHistoryHalfBand(rec.writingBand, 1.0);
+  const hasValidSpeaking = isValidHistoryHalfBand(rec.speakingBand, 1.0);
 
-  if (
-    !hasValidOverall ||
-    !hasValidListening ||
-    !hasValidReading ||
-    !hasValidWriting ||
-    hasInvalidSpeaking
-  ) {
-    return false;
-  }
-
-  return true;
+  return (
+    hasValidOverall &&
+    hasValidListening &&
+    hasValidReading &&
+    hasValidWriting &&
+    hasValidSpeaking
+  );
 }
 
 export interface ExamHistorySummaryCounts {
   total: number;
   completedCount: number;
   incompleteCount: number;
+  completedFullMockCount: number;
+  singleSkillCount: number;
+  unassessedCount: number;
   headerBadgeText: string;
+}
+
+const HISTORY_NON_EVALUATED_STATUSES = new Set<string>([
+  'unavailable',
+  'insufficient_evidence',
+  'partial_transcript_only',
+  'structural_precheck',
+  'precheck_ready',
+  'diagnostic_only',
+  'not_assessed'
+]);
+
+function isRecordDiagnosticOrNonScoring(rec: ExamHistoryRecord): boolean {
+  const ext = rec as ExamHistoryRecord & Record<string, unknown>;
+  if (ext.isDiagnosticOnly === true || ext.isNonScoring === true) return true;
+  if (
+    typeof ext.assessmentStatus === 'string' &&
+    (ext.assessmentStatus === 'structural_precheck' ||
+      ext.assessmentStatus === 'precheck_ready' ||
+      ext.assessmentStatus === 'diagnostic_only')
+  ) {
+    return true;
+  }
+  if (typeof rec.examType === 'string' && (rec.examType as string).toLowerCase().includes('diagnostic')) {
+    return true;
+  }
+  return false;
+}
+
+function isHistorySpeakingBlocked(test: ExamHistoryRecord): boolean {
+  const ext = test as ExamHistoryRecord & Record<string, unknown>;
+  return (
+    test.speakingAssessmentStatus === 'partial_transcript_only' ||
+    test.speakingAssessmentStatus === 'insufficient_evidence' ||
+    test.speakingAssessmentStatus === 'unavailable' ||
+    test.speakingPronunciationObservable === false ||
+    ext.speakingEvidenceMode === 'transcript_only' ||
+    ext.evidenceMode === 'transcript_only' ||
+    ext.isPartialAssessment === true ||
+    ext.pronunciationObservable === false ||
+    (Array.isArray(ext.unassessedCriteria) && ext.unassessedCriteria.length > 0) ||
+    (test.examType === 'speaking_only' &&
+      typeof ext.assessmentStatus === 'string' &&
+      HISTORY_NON_EVALUATED_STATUSES.has(ext.assessmentStatus)) ||
+    (test.examType === 'speaking_only' && ext.isValidAttempt === false)
+  );
+}
+
+function isHistoryWritingBlocked(test: ExamHistoryRecord): boolean {
+  const ext = test as ExamHistoryRecord & Record<string, unknown>;
+  return (
+    (typeof ext.writingAssessmentStatus === 'string' &&
+      HISTORY_NON_EVALUATED_STATUSES.has(ext.writingAssessmentStatus)) ||
+    ext.writingEvaluationSource === 'structural_precheck' ||
+    ext.evaluationSource === 'structural_precheck' ||
+    (test.examType === 'writing_only' &&
+      typeof ext.assessmentStatus === 'string' &&
+      HISTORY_NON_EVALUATED_STATUSES.has(ext.assessmentStatus)) ||
+    (test.examType === 'writing_only' && ext.isValidAttempt === false)
+  );
 }
 
 export function summarizeExamHistoryCounts(
   history: ExamHistoryRecord[] | null | undefined
 ): ExamHistorySummaryCounts {
   const list = Array.isArray(history) ? history : [];
-  const incompleteCount = list.filter((rec) => rec?.examType === 'incomplete_mock').length;
+  let incompleteCount = 0;
+  let completedFullMockCount = 0;
+  let singleSkillCount = 0;
+  let unassessedCount = 0;
+
+  for (const rec of list) {
+    if (!rec) continue;
+    const isFull = isFullMockExamRecord(rec);
+    const isInc =
+      rec.examType === 'incomplete_mock' ||
+      (rec.examType === 'full_mock' && !isFull);
+
+    if (isInc) {
+      incompleteCount++;
+      continue;
+    }
+    if (isFull) {
+      completedFullMockCount++;
+      continue;
+    }
+
+    const desc = describeExamHistoryDisplay(rec, 1);
+    const hasValidSkill =
+      desc.lBand !== null ||
+      desc.rBand !== null ||
+      desc.wBand !== null ||
+      desc.sBand !== null;
+    if (isRecordDiagnosticOrNonScoring(rec) || !hasValidSkill) {
+      unassessedCount++;
+    } else {
+      singleSkillCount++;
+    }
+  }
+
   const completedCount = list.length - incompleteCount;
   const headerBadgeText =
     incompleteCount > 0
@@ -362,6 +495,9 @@ export function summarizeExamHistoryCounts(
     total: list.length,
     completedCount,
     incompleteCount,
+    completedFullMockCount,
+    singleSkillCount,
+    unassessedCount,
     headerBadgeText
   };
 }
@@ -384,36 +520,89 @@ export function describeExamHistoryDisplay(
   test: ExamHistoryRecord,
   attemptNumber: number
 ): ExamHistoryDisplayDescriptor {
-  const isFullMock = isFullMockExamRecord(test);
-  const isIncompleteMock = test.examType === 'incomplete_mock';
+  const diagnosticOnly = isRecordDiagnosticOrNonScoring(test);
+  const isFullMock = !diagnosticOnly && isFullMockExamRecord(test);
+  const isIncompleteMock =
+    !isFullMock &&
+    (test.examType === 'incomplete_mock' || test.examType === 'full_mock');
   const hasExplicitSkills = Boolean(test.completedSkills);
+  const incompleteSet = new Set(Array.isArray(test.incompleteSkills) ? test.incompleteSkills : []);
+
+  const hasListeningQuestions =
+    typeof test.totalQuestions === 'number' &&
+    Number.isFinite(test.totalQuestions) &&
+    test.totalQuestions > 0 &&
+    (test.completedSkills?.listening === true || test.examType === 'listening_only');
+  const hasReadingQuestions =
+    typeof test.totalQuestions === 'number' &&
+    Number.isFinite(test.totalQuestions) &&
+    test.totalQuestions > 0 &&
+    (test.completedSkills?.reading === true || test.examType === 'reading_only');
+
+  const lMin = hasListeningQuestions ? 0.0 : 0.5;
+  const rMin = hasReadingQuestions ? 0.0 : 0.5;
 
   const lBand =
-    typeof test.listeningBand === 'number' &&
-    (hasExplicitSkills ? test.completedSkills?.listening === true : test.listeningBand > 0)
-      ? test.listeningBand
-      : null;
-  const rBand =
-    typeof test.readingBand === 'number' &&
-    (hasExplicitSkills ? test.completedSkills?.reading === true : test.readingBand > 0)
-      ? test.readingBand
-      : null;
-  const wBand =
-    typeof test.writingBand === 'number' &&
-    (hasExplicitSkills ? test.completedSkills?.writing === true : test.writingBand > 0)
-      ? test.writingBand
-      : null;
-  const sBand =
-    typeof test.speakingBand === 'number' &&
-    (hasExplicitSkills ? test.completedSkills?.speaking === true : test.speakingBand > 0)
-      ? test.speakingBand
-      : null;
-  const oBand =
-    isFullMock && typeof test.overallBand === 'number' && test.overallBand >= 0
-      ? test.overallBand
+    !diagnosticOnly &&
+    !incompleteSet.has('listening') &&
+    (!hasExplicitSkills || test.completedSkills?.listening === true) &&
+    isValidHistoryHalfBand(test.listeningBand, lMin)
+      ? Math.round(test.listeningBand * 2) / 2
       : null;
 
-  if (isFullMock) {
+  const rBand =
+    !diagnosticOnly &&
+    !incompleteSet.has('reading') &&
+    (!hasExplicitSkills || test.completedSkills?.reading === true) &&
+    isValidHistoryHalfBand(test.readingBand, rMin)
+      ? Math.round(test.readingBand * 2) / 2
+      : null;
+
+  const wBand =
+    !diagnosticOnly &&
+    !incompleteSet.has('writing') &&
+    !isHistoryWritingBlocked(test) &&
+    (!hasExplicitSkills || test.completedSkills?.writing === true) &&
+    isValidHistoryHalfBand(test.writingBand, 1.0)
+      ? Math.round(test.writingBand * 2) / 2
+      : null;
+
+  const sBand =
+    !diagnosticOnly &&
+    !incompleteSet.has('speaking') &&
+    !isHistorySpeakingBlocked(test) &&
+    (!hasExplicitSkills || test.completedSkills?.speaking === true) &&
+    isValidHistoryHalfBand(test.speakingBand, 1.0)
+      ? Math.round(test.speakingBand * 2) / 2
+      : null;
+
+  const oBand =
+    isFullMock &&
+    lBand !== null &&
+    rBand !== null &&
+    wBand !== null &&
+    sBand !== null &&
+    isValidHistoryHalfBand(test.overallBand, 0.5)
+      ? Math.round(test.overallBand * 2) / 2
+      : null;
+
+  if (diagnosticOnly) {
+    return {
+      title: `Diagnostic Pre-Check #${attemptNumber}`,
+      badgeScore: 'DIAG',
+      isFullMock: false,
+      isIncompleteMock: false,
+      lBand: null,
+      rBand: null,
+      wBand: null,
+      sBand: null,
+      oBand: null,
+      skillSummaryParts: ['Non-scoring diagnostic / structural check'],
+      statusNote: 'Diagnostic only — not an IELTS band'
+    };
+  }
+
+  if (isFullMock && oBand !== null) {
     const parts = [
       `L: ${lBand !== null ? lBand.toFixed(1) : '—'}`,
       `R: ${rBand !== null ? rBand.toFixed(1) : '—'}`,
@@ -423,7 +612,7 @@ export function describeExamHistoryDisplay(
 
     return {
       title: `Full Mock Test #${attemptNumber}`,
-      badgeScore: oBand !== null ? oBand.toFixed(1) : '—',
+      badgeScore: oBand.toFixed(1),
       isFullMock: true,
       isIncompleteMock: false,
       lBand,
@@ -491,7 +680,7 @@ export function describeExamHistoryDisplay(
       skillSummaryParts: [
         `${rBand !== null ? `Reading Band ${rBand.toFixed(1)}` : 'Band not evaluated'} (${test.correctCount ?? 0}/${test.totalQuestions ?? 0})`
       ],
-      statusNote: null
+      statusNote: rBand === null ? 'Not assessed' : null
     };
   }
 
@@ -509,7 +698,7 @@ export function describeExamHistoryDisplay(
       skillSummaryParts: [
         `${wBand !== null ? `Writing Band ${wBand.toFixed(1)}` : 'Band not evaluated'} (${test.wordCount ?? 0} words)`
       ],
-      statusNote: null
+      statusNote: wBand === null ? 'Evaluation unavailable' : null
     };
   }
 
@@ -527,7 +716,12 @@ export function describeExamHistoryDisplay(
       skillSummaryParts: [
         sBand !== null ? `Speaking Band ${sBand.toFixed(1)}` : 'Band not evaluated'
       ],
-      statusNote: null
+      statusNote:
+        sBand === null
+          ? isHistorySpeakingBlocked(test)
+            ? 'Insufficient Speaking evidence'
+            : 'Not assessed'
+          : null
     };
   }
 
@@ -579,8 +773,20 @@ export function describeExamHistoryDisplay(
     sBand,
     oBand: null,
     skillSummaryParts: ['Band not evaluated'],
-    statusNote: null
+    statusNote: 'Not assessed'
   };
+}
+
+function sanitizeOptionalExamBand(
+  value: number | null | undefined,
+  allowZero: boolean = false
+): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value > 9.0 || value < (allowZero ? 0.0 : 1.0)) return null;
+  if (Math.abs(value * 2 - Math.round(value * 2)) > 1e-6) return null;
+  return Math.round(value * 2) / 2;
 }
 
 export function recordExamAttempt(
@@ -597,10 +803,22 @@ export function recordExamAttempt(
     return;
   }
 
+  const allowZeroObjective = typeof record.totalQuestions === 'number' && record.totalQuestions > 0;
+  const sanitizedOverall = sanitizeOptionalExamBand(record.overallBand, false) ?? null;
+  const sanitizedListening = sanitizeOptionalExamBand(record.listeningBand, allowZeroObjective);
+  const sanitizedReading = sanitizeOptionalExamBand(record.readingBand, allowZeroObjective);
+  const sanitizedWriting = sanitizeOptionalExamBand(record.writingBand, false);
+  const sanitizedSpeaking = sanitizeOptionalExamBand(record.speakingBand, false);
+
   const newRecord: ExamHistoryRecord = {
     ...record,
     id: examId,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    overallBand: sanitizedOverall,
+    listeningBand: sanitizedListening,
+    readingBand: sanitizedReading,
+    writingBand: sanitizedWriting,
+    speakingBand: sanitizedSpeaking
   };
 
   user.progress.examHistory.unshift(newRecord);

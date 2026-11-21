@@ -42,9 +42,10 @@ export interface SpeakingQuestionItem {
 export interface AcousticTelemetry {
   volumeRms: number; // 0 to 100 normalized microphone energy
   pitchHz: number; // Estimated fundamental frequency in Hz
-  pitchVarianceHz: number; // Standard deviation / spread of vocal pitch (expressiveness vs monotone)
-  expressivenessScore: number; // 0 to 100 composite intonation score
+  pitchVarianceHz: number | null; // Standard deviation of vocal pitch (null until enough active frames are measured)
+  expressivenessScore: number | null; // 0 to 100 composite intonation score (null when unmeasured)
   energyDropOffs: number; // Count of sudden mid-utterance volume drops
+  isMeasured?: boolean; // True only when live Web Audio frames were actually analyzed
 }
 
 export interface SpeakingAnswerRecord {
@@ -58,9 +59,9 @@ export interface SpeakingAnswerRecord {
   durationSec: number;
   wordCount: number;
   wordsPerMinute: number;
-  pauseCount: number;
-  longPauseCount: number;
-  fillerCount: number;
+  pauseCount: number | null; // null when acoustic pause detection was not measured
+  longPauseCount: number | null; // null when acoustic long-pause detection was not measured
+  fillerCount: number | null; // null when filler detection was not performed; 0 means zero fillers detected
   detectedFillers: string[];
   clarityScore?: number;
   acousticMetrics?: AcousticTelemetry;
@@ -97,7 +98,7 @@ export interface PronunciationWordTip {
 }
 
 export interface PronunciationAnalysis {
-  clarityBand: number;
+  clarityBand: number | null;
   cadenceWpm: number;
   trickyWords: PronunciationWordTip[];
   connectedSpeechTips: string[];
@@ -118,6 +119,12 @@ export interface Band8ModelAnswer {
   audioPromptText?: string;
 }
 
+export type SpeakingAssessmentStatus =
+  | 'evaluated'
+  | 'partial_transcript_only'
+  | 'insufficient_evidence'
+  | 'unavailable';
+
 export interface InstantSpeakingFeedback {
   questionId: string;
   questionText: string;
@@ -125,31 +132,41 @@ export interface InstantSpeakingFeedback {
   topic: string;
   candidateTranscript: string;
   isValidAttempt?: boolean;
+  assessmentStatus?: SpeakingAssessmentStatus;
+  evidenceMode?: 'audio_and_transcript' | 'transcript_only' | 'unavailable';
+  pronunciationObservable?: boolean;
+  isPartialAssessment?: boolean;
+  unassessedCriteria?: string[];
+  error?: string;
+  canRetry?: boolean;
+  authRequired?: boolean;
+  disclaimer?: string;
   wordCount: number;
-  overallBand?: number;
+  overallBand?: number | null;
+  partialThreeCriterionIndex?: number | null;
   criteria?: {
-    fc: number;
-    lr: number;
-    gra: number;
-    pr: number;
+    fc: number | null;
+    lr: number | null;
+    gra: number | null;
+    pr: number | null;
   };
   feedbackTitle?: string;
   feedbackEn?: string;
   feedbackBn?: string;
   durationSec: number;
   wordsPerMinute: number;
-  estimatedBand?: number;
+  estimatedBand?: number | null;
   estimatedBands: {
-    fluency: number;
-    lexical: number;
-    grammar: number;
-    pronunciation: number;
-    overall: number;
+    fluency: number | null;
+    lexical: number | null;
+    grammar: number | null;
+    pronunciation: number | null;
+    overall: number | null;
   };
   grammaticalErrors: DetailedGrammarError[];
   pronunciation: PronunciationAnalysis;
   pronunciationAnalysis?: {
-    clarityBand?: number;
+    clarityBand?: number | null;
     cadenceWpm?: number;
     problemWords?: Array<{ word: string; phoneticIpa: string; stressedSyllable: string; advice: string }>;
     trickyWords?: PronunciationWordTip[];
@@ -176,7 +193,7 @@ export interface InstantSpeakingFeedback {
 }
 
 export interface CriterionFeedback {
-  band: number; // 0.0 to 9.0 in 0.5 increments
+  band: number | null; // 1.0 to 9.0 in 0.5 increments, or null when unassessed/unavailable
   criterionName: 'Fluency & Coherence' | 'Lexical Resource' | 'Grammatical Range & Accuracy' | 'Pronunciation';
   strengths: string[];
   improvements: string[];
@@ -197,20 +214,26 @@ export interface VocabUpgrade {
 
 export interface SpeakingEvaluationReport {
   isValidAttempt?: boolean;
+  assessmentStatus?: SpeakingAssessmentStatus;
+  evidenceMode?: 'audio_and_transcript' | 'transcript_only' | 'unavailable';
+  pronunciationObservable?: boolean;
+  isPartialAssessment?: boolean;
+  unassessedCriteria?: string[];
   wordCount?: number;
-  overallBand: number; // e.g. 7.0 or 0.0 if unattempted
-  fluencyBand: number;
-  lexicalBand: number;
-  grammarBand: number;
-  pronunciationBand: number;
+  overallBand: number | null; // null when unassessed, unavailable, or partial transcript-only
+  partialThreeCriterionIndex?: number | null;
+  fluencyBand: number | null;
+  lexicalBand: number | null;
+  grammarBand: number | null;
+  pronunciationBand: number | null;
   feedbackTitle?: string;
   feedbackEn?: string;
   feedbackBn?: string;
   criteria: {
-    fc?: number;
-    lr?: number;
-    gra?: number;
-    pr?: number;
+    fc?: number | null;
+    lr?: number | null;
+    gra?: number | null;
+    pr?: number | null;
     fluency: CriterionFeedback;
     lexical: CriterionFeedback;
     grammar: CriterionFeedback;
@@ -235,8 +258,9 @@ export interface SpeakingTestAnalytics {
   totalSpeakingTimeSec: number;
   totalWordsSpoken: number;
   averageWpm: number;
-  totalPauses: number;
-  totalLongPauses: number;
+  totalPauses: number | null; // null when no turn recorded measured pause telemetry
+  totalLongPauses: number | null; // null when no turn recorded measured long-pause telemetry
+  pauseTelemetryAvailable?: boolean;
   totalFillers: number;
   mostFrequentFillers: Array<{ word: string; count: number }>;
   uniqueVocabularyCount: number;
@@ -249,11 +273,12 @@ export interface SpeakingSessionRecord {
   date: number;
   mode: SpeakingMode;
   totalDurationSec: number;
-  overallBand: number;
-  fluencyBand: number;
-  lexicalBand: number;
-  grammarBand: number;
-  pronunciationBand: number;
+  overallBand: number | null;
+  partialThreeCriterionIndex?: number | null;
+  fluencyBand: number | null;
+  lexicalBand: number | null;
+  grammarBand: number | null;
+  pronunciationBand: number | null;
   topicsCovered: string[];
   answers: SpeakingAnswerRecord[];
   analytics: SpeakingTestAnalytics;

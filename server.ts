@@ -9,6 +9,19 @@ import { promisify } from 'util';
 import { SPEECH_DELIVERY_PROFILES, type SpeechDeliveryProfileId } from './src/config/speechDirection.ts';
 import { serverDb, type ServerUser, type ServerSession, type AIDraftExam } from './src/server/db.ts';
 import {
+  analyzeTextQualitySignals,
+  validateSpeakingAiPayload,
+  validateWritingAiPayload,
+  roundOfficialIELTSBand
+} from './src/utils/scoringIntegrity.ts';
+import {
+  VERIFIED_TEXT_FALLBACK_CHAIN,
+  classifyGeminiError,
+  generateContentWithFallback,
+  normalizeGeminiTextModelId,
+  resolveTextModelCandidates
+} from './src/server/ai/geminiModelPolicy.ts';
+import {
   isGoogleOAuthConfigured,
   getGoogleClientId,
   getFirebaseAuthMetadata,
@@ -1741,8 +1754,13 @@ async function synthesizeWithGeminiNeuralTts(
             }
           }
         } catch (err: any) {
+          const classified = classifyGeminiError(err);
+          if (classified.category === 'auth_invalid') {
+            geminiModelBackoffUntil[modelName] = Date.now() + 5 * 60 * 1000;
+            return null;
+          }
           const msg = String(err?.message || err || '');
-          if (msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          if (classified.category === 'quota_exhausted' || msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
             const retryMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
             const retrySec = retryMatch ? parseInt(retryMatch[1], 10) : 0;
             const isDailyQuota = msg.includes('GenerateRequestsPerDay') || msg.includes('requests per day');
@@ -2784,477 +2802,6 @@ export function handleDownloadSourceZip(req: express.Request, res: express.Respo
 
 app.get('/api/download-source-zip', handleDownloadSourceZip);
 
-/**
- * Helper to generate Sprint-calibrated diagnostic scorecards
- */
-function generateServerDiagnosticEvaluation(
-  text: string,
-  testType: string,
-  words: number,
-  target: number
-) {
-  const minThreshold = testType === 'task1' ? 30 : 50;
-  if (words < minThreshold) {
-    return {
-      isValidAttempt: false,
-      wordCount: words,
-      overallBand: 0.0,
-      proficiencyTitle: 'Submission Too Short for Assessment',
-      trScore: 0.0,
-      trComment: `Submission Too Short for Assessment (${words} words written). Academic essays require sustained argument development to evaluate.`,
-      ccScore: 0.0,
-      ccComment: 'প্রয়োজনীয় ন্যূনতম শব্দসংখ্যা পূরণ হয়নি। মূল্যায়ন পেতে পর্যাপ্ত বাক্য লিখুন।',
-      lrScore: 0.0,
-      lrComment: '',
-      graScore: 0.0,
-      graComment: '',
-      strengths: [],
-      weaknesses: [
-        `Submission Too Short for Assessment (${words} words written). Academic essays require sustained argument development to evaluate.`,
-        'প্রয়োজনীয় ন্যূনতম শব্দসংখ্যা পূরণ হয়নি। মূল্যায়ন পেতে পর্যাপ্ত বাক্য লিখুন।'
-      ],
-      vocabUpgrades: [],
-      grammaticalErrors: [],
-      betterAnswerBand8: '',
-      verdict: `Submission Too Short for Assessment (${words} words written). Academic essays require sustained argument development to evaluate.`
-    };
-  }
-
-  const lower = text.toLowerCase();
-  const hasEnoughWords = words >= target;
-  const penalty = hasEnoughWords ? 0 : Math.min((target - words) / 40, 1.5);
-
-  const linkers = [
-    'furthermore',
-    'moreover',
-    'consequently',
-    'however',
-    'nevertheless',
-    'in contrast',
-    'hence',
-    'therefore',
-    'in addition',
-    'on the other hand'
-  ];
-  const linkerCount = linkers.filter((l) => lower.includes(l)).length;
-
-  const advancedVocab = [
-    'predominance',
-    'trajectory',
-    'mitigate',
-    'resilience',
-    'biodiversity',
-    'disparity',
-    'accelerated',
-    'disproportionate',
-    'paradigm',
-    'imperative',
-    'detrimental',
-    'substantiate',
-    'unequivocal'
-  ];
-  const vocabCount = advancedVocab.filter((v) => lower.includes(v)).length;
-
-  const detectedGrammarErrors: Array<{
-    observed: string;
-    corrected: string;
-    explanation: string;
-    ruleCategory: string;
-    severity: string;
-  }> = [];
-
-  if (/\bit make\b/i.test(text)) {
-    detectedGrammarErrors.push({
-      observed: 'it make',
-      corrected: 'it makes',
-      explanation: 'Subject-verb concord requires singular verb with third-person singular.',
-      ruleCategory: 'Subject-Verb Agreement',
-      severity: 'moderate'
-    });
-  }
-  if (/\bthere is many\b/i.test(text)) {
-    detectedGrammarErrors.push({
-      observed: 'there is many',
-      corrected: 'there are many',
-      explanation: 'Existential "there are" is required before plural countable nouns.',
-      ruleCategory: 'Subject-Verb Agreement',
-      severity: 'moderate'
-    });
-  }
-  if (/\bin order to discussing\b/i.test(text)) {
-    detectedGrammarErrors.push({
-      observed: 'in order to discussing',
-      corrected: 'in order to discuss',
-      explanation: 'The infinitive clause following "in order to" takes the bare base verb.',
-      ruleCategory: 'Sentence Structure',
-      severity: 'minor'
-    });
-  }
-
-  let tr = Math.max(4.5, 7.5 - penalty);
-  let cc = Math.min(8.5, 6.0 + Math.min(linkerCount * 0.4, 2.0));
-  let lr = Math.min(8.5, 5.5 + Math.min(vocabCount * 0.4, 2.5));
-  let rawGra = 6.5 - detectedGrammarErrors.length * 0.5 + (/, (which|while|whereas|although)\b/i.test(text) ? 0.5 : 0);
-  if (!hasEnoughWords) rawGra -= 0.5;
-  let gra = Math.max(4.0, Math.min(9.0, rawGra));
-
-  const roundHalf = (num: number) => Math.round(num * 2) / 2;
-  tr = roundHalf(tr);
-  cc = roundHalf(cc);
-  lr = roundHalf(lr);
-  gra = roundHalf(gra);
-
-  const rawAvg = (tr + cc + lr + gra) / 4;
-  const decimal = rawAvg - Math.floor(rawAvg);
-  let overall = Math.floor(rawAvg);
-  if (decimal >= 0.75) overall += 1.0;
-  else if (decimal >= 0.25) overall += 0.5;
-
-  let proficiency = 'Competent User';
-  if (overall >= 8.0) proficiency = 'Very Good User - High Operational Command';
-  else if (overall >= 7.0) proficiency = 'Good User - Operational Command';
-  else if (overall >= 6.0) proficiency = 'Competent User - Effective Command';
-  else proficiency = 'Modest User';
-
-  const vocabOpportunities = [
-    { regex: /\bgood effect\b/i, original: 'good effect', upgraded: 'salutary impact', explanation: 'Elevates colloquial adjective "good" to Band 8+ academic register.' },
-    { regex: /\bbig problem\b/i, original: 'big problem', upgraded: 'pressing conundrum', explanation: 'Replaces generic noun with sophisticated academic synonym.' },
-    { regex: /\bchange\b/i, original: 'change', upgraded: 'fundamental metamorphosis', explanation: 'Conveys nuanced, profound transformation.' },
-    { regex: /\ba lot of\b/i, original: 'a lot of', upgraded: 'a substantial volume of', explanation: 'Replaces colloquial quantifier with formal academic quantification.' },
-    { regex: /\bvery important\b/i, original: 'very important', upgraded: 'of paramount significance', explanation: 'Elevates casual emphasis into C1 academic discourse.' }
-  ];
-  const realVocabUpgrades = vocabOpportunities
-    .filter((o) => o.regex.test(text))
-    .map((o) => ({ original: o.original, upgraded: o.upgraded, explanation: o.explanation }));
-
-  return {
-    isValidAttempt: true,
-    overallBand: overall,
-    proficiencyTitle: proficiency,
-    trScore: tr,
-    trComment: hasEnoughWords
-      ? `Met required word count (${words}/${target} words) with appropriate scope.`
-      : `Under target length (${words}/${target} words); penalized for incomplete development.`,
-    ccScore: cc,
-    ccComment:
-      linkerCount >= 4
-        ? `Solid cohesion with ${linkerCount} clear discourse markers bridging paragraphs.`
-        : 'Cohesion could be enhanced by varying cohesive devices and paragraph topic sentences.',
-    lrScore: lr,
-    lrComment:
-      vocabCount >= 3
-        ? `Demonstrated flexible academic vocabulary with precise collocations.`
-        : 'Vocabulary is adequate; incorporate less common lexical items and avoid repetition.',
-    graScore: gra,
-    graComment:
-      detectedGrammarErrors.length === 0
-        ? 'Good mix of complex and compound sentences with accurate grammatical control.'
-        : `Identified ${detectedGrammarErrors.length} grammatical issue(s) in the submitted draft.`,
-    strengths: [
-      hasEnoughWords ? `Met target word count (${words}/${target} words).` : `Communicated core ideas within ${words} words.`,
-      linkerCount >= 2 ? `Incorporated ${linkerCount} cohesive discourse marker(s).` : 'Demonstrated basic paragraph organization.'
-    ],
-    weaknesses: [
-      hasEnoughWords
-        ? 'Extend supporting examples with concrete empirical details.'
-        : `Expand word count to avoid underlength band penalties.`,
-      'Vary sentence openings rather than repeating similar syntax.',
-      'Refine precision of collocations in concluding remarks.'
-    ],
-    vocabUpgrades: realVocabUpgrades,
-    grammaticalErrors: detectedGrammarErrors,
-    betterAnswerBand8: `While addressing ${testType.toUpperCase()} prompts, Band 8.5+ writers weave cohesive topic anchors throughout each body paragraph: "From an empirical standpoint, the overarching justification lies in structural resource allocation. Consequently, when governing bodies prioritize sustainable investments, societal dividends multiply exponentially."`,
-    verdict: `Evaluated ${words} words for ${testType.toUpperCase()}. Overall Band ${overall.toFixed(1)}.`
-  };
-}
-
-/**
- * Fallback calibrated Speaking turn analyzer for instant feedback
- */
-function generateServerSpeakingTurnEvaluation(
-  transcript: string,
-  question: string = '',
-  part: number = 1,
-  topic: string = 'General',
-  cueCardBulletPoints: string[] = []
-) {
-  const cleanWords = (transcript || '').trim().split(/\s+/).filter(Boolean);
-  if (cleanWords.length < 5) {
-    return {
-      isValidAttempt: false,
-      wordCount: cleanWords.length,
-      overallBand: 0.0,
-      criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
-      feedbackTitle: 'No Candidate Speech Detected',
-      feedbackEn: 'You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.',
-      feedbackBn: 'পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।',
-      questionId: 'spk_turn_' + Date.now(),
-      questionText: question,
-      part,
-      topic,
-      candidateTranscript: transcript || '',
-      estimatedBands: { fluency: 0.0, lexical: 0.0, grammar: 0.0, pronunciation: 0.0, overall: 0.0 },
-      grammaticalErrors: [],
-      pronunciation: {
-        clarityBand: 0.0,
-        cadenceWpm: 0,
-        trickyWords: [],
-        connectedSpeechTips: [],
-        intonationPattern: 'No audible speech detected',
-        rhythmVerdict: 'Unassessed'
-      },
-      band8Answer: {
-        bandScore: 8.5,
-        modelAnswer: '',
-        audioPromptText: '',
-        highlightedCollocations: [],
-        keyDiscourseMarkers: [],
-        examinerRationale: ''
-      },
-      actionableTips: [
-        'You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.',
-        'পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।'
-      ]
-    };
-  }
-  const words = cleanWords;
-  const wordCount = words.length;
-  const lower = transcript.toLowerCase();
-
-  // 1. Grammatical Error Engine
-  const grammaticalErrors: Array<{
-    observed: string;
-    corrected: string;
-    explanation: string;
-    ruleCategory: any;
-    severity: 'minor' | 'moderate' | 'critical';
-  }> = [];
-
-  // Pattern A: Subject-verb agreement
-  const svMatches = [
-    { regex: /\b(it|he|she)\s+(make|feel|sound|seem|cost|take|give|think|want|have|need|like|love|live|work|go|do)\b/i, err: (m: string) => m, fix: (m: string) => m.replace(/\bhave\b/i, 'has').replace(/\bdo\b/i, 'does').replace(/\bgo\b/i, 'goes').replace(/\b(\w+)e\b/i, '$1es').replace(/\b(\w+)\b$/i, '$1s'), rule: 'Third-person singular subjects (he/she/it) require the singular verb inflection "-s" in present simple.' },
-    { regex: /\b(i|you|they|we)\s+(makes|feels|sounds|seems|costs|takes|gives|thinks|wants|has|needs|likes|loves|lives|works|goes)\b/i, err: (m: string) => m, fix: (m: string) => m.replace(/\bhas\b/i, 'have').replace(/\bgoes\b/i, 'go').replace(/s$/i, ''), rule: 'First-person, second-person, and plural subjects take base verb forms without the "-s" inflection.' },
-    { regex: /\b(people|they|we)\s+(is|was|has)\b/i, err: (m: string) => m, fix: (m: string) => m.replace(/\bis\b/i, 'are').replace(/\bwas\b/i, 'were').replace(/\bhas\b/i, 'have'), rule: 'Plural subject pronouns require plural auxiliary verbs ("are", "were", "have").' },
-    { regex: /\bthere\s+is\s+(\w+s)\b/i, err: (m: string) => m, fix: (m: string) => m.replace(/\bthere is\b/i, 'there are'), rule: 'Existential "there are" must precede plural noun phrases.' }
-  ];
-
-  for (const item of svMatches) {
-    const match = lower.match(item.regex);
-    if (match) {
-      grammaticalErrors.push({
-        observed: match[0],
-        corrected: item.fix(match[0]),
-        explanation: item.rule,
-        ruleCategory: 'Subject-Verb Agreement',
-        severity: 'moderate'
-      });
-      break;
-    }
-  }
-
-  // Pattern A2: Articles and Determiners (a vs an, missing articles)
-  const articleMatches = [
-    { regex: /\ba\s+([aeiou]\w+)\b/i, fix: (m: string) => m.replace(/^a\s+/i, 'an '), rule: 'Use "an" before vowel sounds (e.g., "an IT company", "an opportunity").' },
-    { regex: /\ban\s+([^aeiou\s]\w+)\b/i, fix: (m: string) => m.replace(/^an\s+/i, 'a '), rule: 'Use "a" before consonant sounds.' }
-  ];
-  for (const item of articleMatches) {
-    const match = lower.match(item.regex);
-    if (match && !/an\s+hour|an\s+honest|a\s+university|a\s+european|a\s+one/i.test(match[0])) {
-      grammaticalErrors.push({
-        observed: match[0],
-        corrected: item.fix(match[0]),
-        explanation: item.rule,
-        ruleCategory: 'Articles & Determiners',
-        severity: 'minor'
-      });
-      break;
-    }
-  }
-
-  // Pattern B: Tense & Aspect
-  if (/\b(i\s+am\s+living|i\s+am\s+staying|i\s+am\s+working)\s+.*(since|for)\b/i.test(lower)) {
-    const match = transcript.match(/\b(i\s+am\s+(?:living|staying|working)[^.!?]*(?:since|for)[^.!?]*)/i);
-    grammaticalErrors.push({
-      observed: match ? match[0].slice(0, 50) : 'I am living here since...',
-      corrected: 'I have been living / working here for/since...',
-      explanation: 'Actions initiated in the past that continue into the present moment require the Present Perfect Continuous tense ("have been living/working").',
-      ruleCategory: 'Tense & Aspect',
-      severity: 'moderate'
-    });
-  }
-
-  // Pattern B2: Past simple vs present mixing
-  if (/\b(yesterday|last\s+(?:year|month|week)|in\s+20\d\d)\s+.*(i\s+go|i\s+see|i\s+buy|i\s+visit|i\s+feel)\b/i.test(lower)) {
-    const match = transcript.match(/\b(?:yesterday|last\s+\w+|in\s+20\d\d)[^.!?]*(?:i\s+(?:go|see|buy|visit|feel))/i);
-    if (match) {
-      grammaticalErrors.push({
-        observed: match[0],
-        corrected: match[0].replace(/\bgo\b/i, 'went').replace(/\bsee\b/i, 'saw').replace(/\bbuy\b/i, 'bought').replace(/\bvisit\b/i, 'visited').replace(/\bfeel\b/i, 'felt'),
-        explanation: 'Finished past time expressions (yesterday, last year, ago) demand the Past Simple tense.',
-        ruleCategory: 'Tense & Aspect',
-        severity: 'critical'
-      });
-    }
-  }
-
-  // Pattern C: Preposition Usage
-  if (/\bdiscuss\s+about\b/i.test(lower)) {
-    grammaticalErrors.push({
-      observed: 'discuss about',
-      corrected: 'discuss',
-      explanation: 'The verb "discuss" is strictly transitive and takes a direct object without the redundant preposition "about".',
-      ruleCategory: 'Prepositions',
-      severity: 'minor'
-    });
-  }
-  if (/\bdepend\s+of\b/i.test(lower)) {
-    grammaticalErrors.push({
-      observed: 'depend of',
-      corrected: 'depend on',
-      explanation: 'The verb "depend" collocates with the preposition "on", not "of".',
-      ruleCategory: 'Prepositions',
-      severity: 'minor'
-    });
-  }
-
-  // Pattern D: Quantifiers & Uncountable nouns
-  if (/\b(informations|advices|furnitures|equipments)\b/i.test(lower)) {
-    const match = transcript.match(/\b(informations|advices|furnitures|equipments)\b/i);
-    const word = match ? match[0] : 'informations';
-    grammaticalErrors.push({
-      observed: word,
-      corrected: word.replace(/s$/i, '') + ' / pieces of ' + word.replace(/s$/i, ''),
-      explanation: `"${word.replace(/s$/i, '')}" is an uncountable abstract noun in English and cannot take a plural suffix.`,
-      ruleCategory: 'Word Form & Plurality',
-      severity: 'moderate'
-    });
-  }
-
-  // Do not inject fake grammatical errors when grammaticalErrors.length === 0.
-
-  // 2. Pronunciation & Phonetic Coaching Engine
-  const pronunciationDict: Record<string, { ipa: string; stress: string; tip: string }> = {
-    comfortable: { ipa: '/ˈkʌmftəbl/', stress: 'COM-for-ta-ble (3 syllables)', tip: 'Elide the middle "or" vowel; pronounce as 3 syllables instead of 4.' },
-    particularly: { ipa: '/pəˈtɪkjələli/', stress: 'par-TIC-u-lar-ly', tip: 'Primary stress lands squarely on the second syllable "TIC".' },
-    development: { ipa: '/dɪˈveləpmənt/', stress: 'de-VEL-op-ment', tip: 'Stress the second syllable "VEL"; avoid stressing "DE".' },
-    environment: { ipa: '/ɪnˈvaɪrənmənt/', stress: 'en-VI-ron-ment', tip: 'Keep the "on" syllable reduced to a weak schwa /ə/.' },
-    technology: { ipa: '/tekˈnɒlədʒi/', stress: 'tech-NOL-o-gy', tip: 'Second syllable receives primary pitch prominence.' },
-    opportunity: { ipa: '/ˌɒpəˈtjuːnəti/', stress: 'op-por-TU-ni-ty', tip: 'Third syllable "TU" takes main sentence stress.' },
-    photography: { ipa: '/fəˈtɒɡrəfi/', stress: 'pho-TOG-ra-phy', tip: 'Notice shift: "PHO-to-graph" becomes "pho-TOG-ra-phy".' },
-    academic: { ipa: '/ˌækəˈdemɪk/', stress: 'ac-a-DEM-ic', tip: 'Stress lands on "DEM" before the "-ic" suffix.' },
-    phenomenon: { ipa: '/fəˈnɒmɪnən/', stress: 'phe-NOM-e-non', tip: 'Pronounce the "NOM" clearly with a rounded short "o".' },
-    substantially: { ipa: '/səbˈstænʃəli/', stress: 'sub-STAN-tial-ly', tip: 'Focus accentuation on "STAN", blending "tial" to /ʃəl/.' },
-    consequently: { ipa: '/ˈkɒnsɪkwəntli/', stress: 'CON-se-quent-ly', tip: 'First syllable carries strong initial punch.' },
-    government: { ipa: '/ˈɡʌvənmənt/', stress: 'GOV-ern-ment', tip: 'Often pronounced without the first "n": /ˈɡʌv.əm.ənt/ in natural British RP.' }
-  };
-
-  const detectedTrickyWords: Array<{ word: string; ipa: string; syllableStress: string; tip: string }> = [];
-
-  // Match words spoken in transcript
-  for (const [key, val] of Object.entries(pronunciationDict)) {
-    if (lower.includes(key)) {
-      detectedTrickyWords.push({
-        word: key,
-        ipa: val.ipa,
-        syllableStress: val.stress,
-        tip: val.tip
-      });
-    }
-  }
-
-  // Only include words actually matched in the transcript
-
-
-  // 3. Band 8.5+ Model Answer Generation
-  let modelAnswer = '';
-  let examinerRationale = '';
-  const highlightedCollocations: Array<{ phrase: string; bandLevel: 'C1' | 'C2' | 'Band 8.5' | 'Band 9.0'; meaning: string }> = [];
-  const keyDiscourseMarkers: string[] = ['To be perfectly frank', 'By and large', 'Having said that', 'If memory serves me right'];
-
-  if (part === 1) {
-    modelAnswer = `To be perfectly honest, what I appreciate most about this is the remarkable blend of convenience and authentic charm. On a day-to-day basis, having modern amenities within arm's reach makes life exceptionally streamlined, yet there remains a distinctive community warmth that prevents it from feeling impersonal. Taking everything into account, it strikes an almost ideal equilibrium for someone in my stage of life.`;
-    examinerRationale = 'Demonstrates immediate communicative fluency without robotic repetition of the examiner prompt. Seamlessly integrates C1 discourse markers and descriptive sensory nouns.';
-    highlightedCollocations.push(
-      { phrase: 'remarkable blend', bandLevel: 'C1', meaning: 'An impressive, harmonious combination of distinct elements.' },
-      { phrase: 'within arm\'s reach', bandLevel: 'Band 8.5', meaning: 'Extremely accessible and close nearby.' },
-      { phrase: 'strikes an ideal equilibrium', bandLevel: 'C2', meaning: 'Achieves a flawless, well-adjusted balance.' }
-    );
-  } else if (part === 2) {
-    modelAnswer = `If memory serves me correctly, the experience that immediately springs to mind occurred a couple of years ago during a pivotal juncture in my academic journey. What stood out vividly was the sheer unpredictability of the circumstances; we encountered initial setbacks that seemed almost insurmountable at first glance. However, by adopting a methodical approach and fostering open dialogue among our peers, we managed to navigate the complexities and deliver a result that exceeded everyone's initial expectations. Looking back retrospectively, it was an immensely formative milestone that taught me resilience under pressure.`;
-    examinerRationale = 'Sustains a rich narrative monologue spanning past milestones. Uses past narrative tenses, emotive modifiers ("immensely formative milestone"), and clear thematic signposting.';
-    highlightedCollocations.push(
-      { phrase: 'pivotal juncture', bandLevel: 'C2', meaning: 'A critical, decisive turning point in time.' },
-      { phrase: 'initial setbacks', bandLevel: 'C1', meaning: 'Early unexpected difficulties or delays.' },
-      { phrase: 'immensely formative milestone', bandLevel: 'C2', meaning: 'A profoundly influential life experience that shapes character.' }
-    );
-  } else {
-    modelAnswer = `That is certainly a multifaceted issue that warrants nuanced consideration. On one hand, a widespread consensus suggests that technological proliferation delivers unprecedented efficiency across modern infrastructure. Having said that, one cannot overlook the sociological ramifications—particularly regarding digital disparity and generational exclusion. Consequently, forward-thinking policy makers ought to institute robust public safeguards to ensure technological progress does not come at the expense of equitable human welfare.`;
-    examinerRationale = 'Exemplifies Band 9.0 abstract reasoning in Part 3. Formulates balanced societal arguments using sophisticated passive constructions and authoritative lexical precision.';
-    highlightedCollocations.push(
-      { phrase: 'multifaceted issue', bandLevel: 'C1', meaning: 'A complex problem possessing many interdependent angles.' },
-      { phrase: 'sociological ramifications', bandLevel: 'C2', meaning: 'Profound long-term societal consequences.' },
-      { phrase: 'equitable human welfare', bandLevel: 'C2', meaning: 'Fair, just well-being distributed across all strata of society.' }
-    );
-  }
-
-  // 4. Band Scoring Estimation
-  let fluencyBand = wordCount >= 35 ? 7.5 : wordCount >= 20 ? 6.5 : wordCount >= 10 ? 5.5 : 5.0;
-  let lexicalBand = wordCount >= 30 ? 7.0 : wordCount >= 15 ? 6.0 : 5.0;
-  if (/\b(furthermore|moreover|consequently|perspective|crucial|substantial|significant)\b/i.test(lower)) {
-    lexicalBand += 0.5;
-  }
-  let grammarBand = grammaticalErrors.filter(g => g.severity === 'critical').length > 0 ? 5.5 : grammaticalErrors.length > 0 ? 6.0 : wordCount >= 20 ? 7.0 : 6.0;
-  let pronunciationBand = wordCount >= 25 ? 6.5 : 5.5;
-  if (detectedTrickyWords.length > 0) pronunciationBand += 0.5;
-  const rawSpkAvg = (fluencyBand + lexicalBand + grammarBand + pronunciationBand) / 4;
-  const spkDecimal = rawSpkAvg - Math.floor(rawSpkAvg);
-  let overallBand = Math.floor(rawSpkAvg);
-  if (spkDecimal >= 0.75) overallBand += 1.0;
-  else if (spkDecimal >= 0.25) overallBand += 0.5;
-
-  return {
-    questionId: 'spk_turn_' + Date.now(),
-    questionText: question || 'IELTS Speaking Question',
-    part: part as any,
-    topic,
-    candidateTranscript: transcript,
-    wordCount,
-    durationSec: Math.max(15, Math.round(wordCount / 2)),
-    wordsPerMinute: Math.round((wordCount / Math.max(0.2, (wordCount / 2) / 60))),
-    estimatedBands: {
-      fluency: fluencyBand,
-      lexical: lexicalBand,
-      grammar: grammarBand,
-      pronunciation: pronunciationBand,
-      overall: overallBand
-    },
-    grammaticalErrors,
-    pronunciation: {
-      clarityBand: pronunciationBand,
-      cadenceWpm: 120,
-      trickyWords: detectedTrickyWords,
-      connectedSpeechTips: [
-        'Link terminal consonants to following initial vowels smoothly (e.g. "most of all" -> /məʊst‿əv‿ɔːl/).',
-        'Use weak vowel forms (/ə/) for unstressed structural prepositions ("to", "for", "at").'
-      ],
-      intonationPattern: 'Employ rising inflection on introductory subordinate clauses, followed by a steady falling tone on decisive conclusions.',
-      rhythmVerdict: 'Clear British cadence with consistent sentence-stress distribution.'
-    },
-    band8Answer: {
-      bandScore: 8.5,
-      modelAnswer,
-      highlightedCollocations,
-      keyDiscourseMarkers,
-      examinerRationale,
-      audioPromptText: modelAnswer
-    },
-    actionableTips: [
-      'Replace vocal hesitations ("um", "uh") with confident 1-second silent pauses.',
-      'Adopt C1 idiomatic discourse markers to frame contrasting viewpoints.',
-      'Maintain steady syllabic stress on multisyllabic academic terminology.'
-    ]
-  };
-}
 
 /**
  * /api/evaluate-speaking-turn endpoint
@@ -3276,24 +2823,54 @@ app.post('/api/evaluate-speaking-turn', async (req, res) => {
       question = '',
       part = 1,
       topic = 'General',
-      cueCardBulletPoints = [],
       durationSec = 20,
-      wordsPerMinute = 110
+      wordsPerMinute = 0
     } = req.body || {};
 
-    const cleanWords = (transcript || '').trim().split(/\s+/).filter(Boolean);
-    if (cleanWords.length < 5) {
+    // SERVER-SIDE EVIDENCE INTEGRITY GATE:
+    // This endpoint currently receives and forwards text transcripts only (no multimodal audio ingestion).
+    // Client-supplied hasAudioEvidence flags or metadata MUST NEVER unlock acoustic pronunciation scoring.
+    const hasVerifiedAudioEvidence = false;
+
+    const cleanTranscript = typeof transcript === 'string' ? transcript.trim() : '';
+    const textSignals = analyzeTextQualitySignals(cleanTranscript);
+
+    if (textSignals.wordCount < 5 || textSignals.isGibberish) {
       return res.json({
         isValidAttempt: false,
-        wordCount: cleanWords.length,
-        overallBand: 0.0,
-        criteria: { fc: 0.0, lr: 0.0, gra: 0.0, pr: 0.0 },
-        feedbackTitle: 'No Candidate Speech Detected',
-        feedbackEn: 'You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.',
-        feedbackBn: 'পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।',
-        estimatedBands: { fluency: 0.0, lexical: 0.0, grammar: 0.0, pronunciation: 0.0, overall: 0.0 },
+        assessmentStatus: 'insufficient_evidence',
+        evidenceMode: 'transcript_only',
+        pronunciationObservable: false,
+        isPartialAssessment: true,
+        unassessedCriteria: [
+          'Fluency & Coherence',
+          'Lexical Resource',
+          'Grammatical Range & Accuracy',
+          'Pronunciation'
+        ],
+        wordCount: textSignals.wordCount,
+        overallBand: null,
+        partialThreeCriterionIndex: null,
+        criteria: { fc: null, lr: null, gra: null, pr: null },
+        feedbackTitle: textSignals.isGibberish && textSignals.wordCount >= 5
+          ? 'Unintelligible Speech Captured'
+          : 'No Candidate Speech Detected',
+        feedbackEn: textSignals.isGibberish && textSignals.wordCount >= 5
+          ? 'The captured transcript did not contain coherent English speech. Please re-record clearly.'
+          : 'You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.',
+        feedbackBn: 'পর্যাপ্ত ও স্পষ্ট ইংরেজি কথা শনাক্ত করা যায়নি (কমপক্ষে ৫টি অর্থপূর্ণ শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।',
+        estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
         grammaticalErrors: [],
-        actionableTips: []
+        pronunciation: {
+          clarityBand: null,
+          cadenceWpm: 0,
+          trickyWords: [],
+          connectedSpeechTips: [],
+          intonationPattern: 'Unassessed — insufficient speech recorded.',
+          rhythmVerdict: 'Insufficient speech sample to assess pronunciation.'
+        },
+        actionableTips: [],
+        isEstimated: true
       });
     }
 
@@ -3310,38 +2887,73 @@ app.post('/api/evaluate-speaking-turn', async (req, res) => {
       });
     }
 
+    const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY)?.trim();
+    if (!apiKey) {
+      return res.status(503).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        evidenceMode: 'transcript_only',
+        pronunciationObservable: false,
+        isPartialAssessment: true,
+        overallBand: null,
+        partialThreeCriterionIndex: null,
+        criteria: { fc: null, lr: null, gra: null, pr: null },
+        estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
+        canRetry: true,
+        error: 'AI speaking assessment service is currently unavailable. No score was generated.'
+      });
+    }
+
     // In-flight request deduplication hash
-    const inputHashString = JSON.stringify({ userId: auth.user.id, type: 'speaking', transcript: transcript.trim(), question, part, topic });
+    const inputHashString = JSON.stringify({
+      userId: auth.user.id,
+      type: 'speaking',
+      transcript: cleanTranscript,
+      question,
+      part,
+      topic,
+      hasVerifiedAudioEvidence
+    });
     const requestHash = crypto.createHash('sha256').update(inputHashString).digest('hex');
 
     const executeSpeakingEvaluation = async () => {
       serverDb.incrementDailyUsage(auth.user.id, 'speakingEvaluations');
-      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-      if (apiKey) {
-        try {
-          const ai = new GoogleGenAI({
-            apiKey,
-            httpOptions: {
-              headers: { 'User-Agent': 'aistudio-build' }
-            }
-          });
+      const audioEvidenceNotice =
+        'TRANSCRIPT-ONLY INPUT (NO AUDIO SUPPLIED): You CANNOT observe acoustic pronunciation, accent, stress, or intonation. You MUST set "estimatedBands.pronunciation" to null, "estimatedBands.overall" to null, and "pronunciation.clarityBand" to null, and clearly state in "pronunciation.rhythmVerdict" that acoustic pronunciation was not assessed from text alone.';
 
-          const prompt = `You are a certified IELTS Senior Speaking Examiner. Analyze this candidate's spoken response for IELTS Speaking Part ${part}.
+      const prompt = `You are a strict, calibrated IELTS Senior Speaking Examiner. Your core principle is HONEST ASSESSMENT OVER IMPRESSIVE NUMBERS.
+Analyze this candidate's response for IELTS Speaking Part ${part}.
 
 Question Asked: "${question || 'IELTS Speaking Question'}"
 Topic: ${topic}
-Candidate Spoken Transcript: "${transcript}"
+Observed Word Count: ${textSignals.wordCount}
+Observed Filler Words: ${textSignals.fillerCount}
+Observed Lexical Diversity Ratio: ${textSignals.lexicalDiversityRatio}
+${audioEvidenceNotice}
 
-Deliver an INSTANT DIAGNOSTIC ASSESSMENT strictly formatted as JSON:
+Candidate Spoken Transcript: "${cleanTranscript}"
+
+CRITICAL ANTI-INFLATION CALIBRATION RULES:
+1. Score each observable criterion (fluency, lexical, grammar) INDEPENDENTLY on the official 1.0–9.0 scale in 0.5 increments. Never inflate scores to encourage the learner.
+   - Band 4.0–4.5: Very brief, halting, repetitive, off-topic, or frequent basic errors impeding meaning.
+   - Band 5.0–5.5: Noticeable hesitation/repetition, limited vocabulary, basic structures with frequent errors.
+   - Band 6.0–6.5: Willing to speak at length with some coherence/hesitation, adequate vocabulary, mix of simple/complex forms with errors.
+   - Band 7.0–7.5: Fluent and coherent with flexible vocabulary and frequent error-free complex structures.
+   - Band 8.0–9.0: Natural, effortless, precise, and virtually error-free.
+2. Do NOT let good grammar inflate weak fluency/coherence, and do NOT reward length when the response is repetitive, off-topic, or memorized.
+3. Under "grammaticalErrors", include ONLY genuine grammatical errors EXACTLY present in the candidate's transcript. If there are none, return [].
+4. Under "pronunciation.trickyWords", include ONLY multisyllabic words ACTUALLY PRESENT in the candidate's transcript (or [] if none).
+5. Return strictly valid JSON matching this schema:
 {
   "estimatedBands": {
     "fluency": number,
     "lexical": number,
     "grammar": number,
-    "pronunciation": number,
-    "overall": number
+    "pronunciation": null,
+    "overall": null
   },
+  "evidenceSummary": string,
   "grammaticalErrors": [
     {
       "observed": string,
@@ -3352,15 +2964,10 @@ Deliver an INSTANT DIAGNOSTIC ASSESSMENT strictly formatted as JSON:
     }
   ],
   "pronunciation": {
-    "clarityBand": number,
+    "clarityBand": null,
     "cadenceWpm": number,
     "trickyWords": [
-      {
-        "word": string,
-        "ipa": string,
-        "syllableStress": string,
-        "tip": string
-      }
+      { "word": string, "ipa": string, "syllableStress": string, "tip": string }
     ],
     "connectedSpeechTips": string[],
     "intonationPattern": string,
@@ -3376,68 +2983,160 @@ Deliver an INSTANT DIAGNOSTIC ASSESSMENT strictly formatted as JSON:
     "examinerRationale": string
   },
   "actionableTips": string[]
-}
+}`;
 
-Rules:
-1. CRITICAL: Identify ONLY genuine grammatical errors that are EXACTLY present in the candidate's transcript string. If the transcript is grammatically correct and has no errors, return an EMPTY array [] for "grammaticalErrors". DO NOT fabricate errors or treat acceptable conversational English or stylistic variations as mistakes.
-2. Under pronunciation, identify 1-3 multisyllabic words ACTUALLY SPOKEN in the candidate's transcript and provide accurate IPA and syllable stress. If no multisyllabic words were spoken, return an empty array [] for "trickyWords".
-3. Provide an authentic, fluent Band 8.5+ Sprint spoken model answer that sounds natural, idiomatic, and British.
-4. Output MUST be valid JSON only.`;
+      const aiOutcome = await generateContentWithFallback({
+        apiKey,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: { responseMimeType: 'application/json' },
+        timeoutMs: 15_000,
+        taskLabel: 'evaluate_speaking_turn'
+      });
 
-          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000));
-          const generatePromise = ai.models.generateContent({
-            model: 'gemini-3.5-flash-lite',
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            config: { responseMimeType: 'application/json' }
-          });
-
-          const geminiRes = await Promise.race([generatePromise, timeoutPromise]);
-          const textResponse = (geminiRes as any)?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-          if (textResponse) {
-            const parsed = JSON.parse(textResponse);
-            if (parsed && parsed.estimatedBands && parsed.band8Answer) {
-              const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
-              return {
-                questionId: 'spk_turn_' + Date.now(),
-                questionText: question,
-                part: part as any,
-                topic,
-                candidateTranscript: transcript,
-                wordCount,
-                durationSec,
-                wordsPerMinute,
-                estimatedBands: parsed.estimatedBands,
-                grammaticalErrors: parsed.grammaticalErrors || [],
-                pronunciation: parsed.pronunciation || {
-                  clarityBand: 7.5,
-                  cadenceWpm: wordsPerMinute,
-                  trickyWords: [],
-                  connectedSpeechTips: [],
-                  intonationPattern: 'Standard declarative falling tone',
-                  rhythmVerdict: 'Clear British cadence'
-                },
-                band8Answer: {
-                  ...parsed.band8Answer,
-                  audioPromptText: parsed.band8Answer.modelAnswer
-                },
-                actionableTips: parsed.actionableTips || [],
-                isEstimated: true
-              };
-            }
+      if (!aiOutcome.ok) {
+        return {
+          _httpStatus: aiOutcome.httpStatus,
+          payload: {
+            isValidAttempt: false,
+            assessmentStatus: 'unavailable',
+            evidenceMode: 'transcript_only',
+            pronunciationObservable: false,
+            isPartialAssessment: true,
+            overallBand: null,
+            partialThreeCriterionIndex: null,
+            criteria: { fc: null, lr: null, gra: null, pr: null },
+            estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
+            canRetry: aiOutcome.canRetry,
+            errorCategory: aiOutcome.errorCategory,
+            error: `${aiOutcome.userMessage} No fallback score was fabricated.`
           }
-        } catch (err: any) {
-          console.warn('[Speaking Evaluation] Gemini generation notice:', err?.message || err);
-        }
+        };
       }
 
-      // High-accuracy Sprint Diagnostic Fallback
-      const fallback = generateServerSpeakingTurnEvaluation(transcript, question, Number(part) || 1, topic, cueCardBulletPoints);
+      const textResponse = aiOutcome.text;
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(textResponse);
+      } catch {
+        return {
+          _httpStatus: 502,
+          payload: {
+            isValidAttempt: false,
+            assessmentStatus: 'unavailable',
+            evidenceMode: 'transcript_only',
+            pronunciationObservable: false,
+            isPartialAssessment: true,
+            overallBand: null,
+            partialThreeCriterionIndex: null,
+            criteria: { fc: null, lr: null, gra: null, pr: null },
+            estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
+            canRetry: true,
+            error: 'AI speaking assessment returned malformed data. Please retry.'
+          }
+        };
+      }
+
+      const validated = validateSpeakingAiPayload(parsed, {
+        transcript: cleanTranscript,
+        hasAudioEvidence: hasVerifiedAudioEvidence,
+        part: Number(part) || 1,
+        durationSec: Number(durationSec) || undefined
+      });
+
+      if (!validated.valid) {
+        return {
+          _httpStatus: validated.assessmentStatus === 'insufficient_evidence' ? 200 : 502,
+          payload: {
+            isValidAttempt: false,
+            assessmentStatus: validated.assessmentStatus,
+            evidenceMode: validated.evidenceMode,
+            pronunciationObservable: false,
+            isPartialAssessment: true,
+            overallBand: null,
+            partialThreeCriterionIndex: null,
+            criteria: { fc: null, lr: null, gra: null, pr: null },
+            estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
+            canRetry: validated.assessmentStatus === 'unavailable',
+            error: validated.reason || 'AI speaking assessment could not be validated.',
+            calibrationNotes: validated.calibrationNotes
+          }
+        };
+      }
+
+      const safeModelAnswer = parsed?.band8Answer?.modelAnswer
+        ? String(parsed.band8Answer.modelAnswer)
+        : '';
+
       return {
-        ...fallback,
-        durationSec,
-        wordsPerMinute,
-        isEstimated: true
+        _httpStatus: 200,
+        payload: {
+          isValidAttempt: true,
+          assessmentStatus: validated.assessmentStatus,
+          evidenceMode: validated.evidenceMode,
+          pronunciationObservable: validated.pronunciationObservable,
+          isPartialAssessment: validated.isPartialAssessment,
+          unassessedCriteria: validated.unassessedCriteria,
+          calibrationNotes: validated.calibrationNotes,
+          evidenceSummary: typeof parsed.evidenceSummary === 'string' ? parsed.evidenceSummary : '',
+          questionId: 'spk_turn_' + Date.now(),
+          questionText: question,
+          part: part as any,
+          topic,
+          candidateTranscript: cleanTranscript,
+          wordCount: textSignals.wordCount,
+          durationSec,
+          wordsPerMinute: wordsPerMinute || (durationSec > 0 ? Math.round((textSignals.wordCount / durationSec) * 60) : 0),
+          overallBand: validated.overallBand,
+          partialThreeCriterionIndex: validated.partialThreeCriterionIndex,
+          criteria: {
+            fc: validated.criteria.fc,
+            lr: validated.criteria.lr,
+            gra: validated.criteria.gra,
+            pr: validated.criteria.pr
+          },
+          estimatedBands: {
+            fluency: validated.criteria.fc,
+            lexical: validated.criteria.lr,
+            grammar: validated.criteria.gra,
+            pronunciation: validated.criteria.pr,
+            overall: validated.overallBand
+          },
+          grammaticalErrors: Array.isArray(parsed.grammaticalErrors) ? parsed.grammaticalErrors : [],
+          pronunciation: {
+            clarityBand: validated.criteria.pr,
+            cadenceWpm: wordsPerMinute || 0,
+            trickyWords: Array.isArray(parsed.pronunciation?.trickyWords) ? parsed.pronunciation.trickyWords : [],
+            connectedSpeechTips: Array.isArray(parsed.pronunciation?.connectedSpeechTips)
+              ? parsed.pronunciation.connectedSpeechTips
+              : [],
+            intonationPattern: validated.pronunciationObservable
+              ? String(parsed.pronunciation?.intonationPattern || 'Assessed from audio recording.')
+              : 'Not observable from transcript-only input.',
+            rhythmVerdict: validated.pronunciationObservable
+              ? String(parsed.pronunciation?.rhythmVerdict || 'Assessed from audio recording.')
+              : 'Unassessed — audio recording analysis required for acoustic pronunciation scoring.'
+          },
+          band8Answer: {
+            bandScore: 8.5,
+            modelAnswer: safeModelAnswer,
+            highlightedCollocations: Array.isArray(parsed.band8Answer?.highlightedCollocations)
+              ? parsed.band8Answer.highlightedCollocations
+              : [],
+            keyDiscourseMarkers: Array.isArray(parsed.band8Answer?.keyDiscourseMarkers)
+              ? parsed.band8Answer.keyDiscourseMarkers
+              : [],
+            examinerRationale: String(parsed.band8Answer?.examinerRationale || ''),
+            audioPromptText: safeModelAnswer
+          },
+          actionableTips: Array.isArray(parsed.actionableTips) ? parsed.actionableTips : [],
+          modelUsed: aiOutcome.modelUsed,
+          fallbackUsed: aiOutcome.fallbackUsed,
+          isEstimated: true,
+          disclaimer: validated.pronunciationObservable
+            ? 'AI diagnostic estimate based on public IELTS Speaking descriptors. Not an official IELTS score.'
+            : 'Partial transcript-only estimate (3 of 4 criteria: Fluency & Coherence, Lexical Resource, Grammatical Range & Accuracy). Acoustic Pronunciation was not assessed; this is not a complete IELTS Speaking band.'
+        }
       };
     };
 
@@ -3450,16 +3149,28 @@ Rules:
     }
 
     const result = await evaluationPromise;
-    return res.json(result);
+    return res.status(result._httpStatus || 200).json(result.payload);
   } catch (error: any) {
     console.error('[Speaking Turn Evaluation] Handler error:', error);
-    res.status(500).json({ error: 'Failed to evaluate speaking turn response.' });
+    res.status(502).json({
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      evidenceMode: 'transcript_only',
+      pronunciationObservable: false,
+      isPartialAssessment: true,
+      overallBand: null,
+      partialThreeCriterionIndex: null,
+      criteria: { fc: null, lr: null, gra: null, pr: null },
+      estimatedBands: { fluency: null, lexical: null, grammar: null, pronunciation: null, overall: null },
+      canRetry: true,
+      error: 'AI speaking assessment failed due to a service error. No fallback score was generated.'
+    });
   }
 });
 
 /**
  * /api/evaluate-writing endpoint
- * Evaluates candidate IELTS Writing responses across official 4 Sprint criteria
+ * Evaluates candidate IELTS Writing responses across official 4 IELTS criteria
  */
 app.post('/api/evaluate-writing', async (req, res) => {
   try {
@@ -3470,11 +3181,43 @@ app.post('/api/evaluate-writing', async (req, res) => {
     }
 
     const { essayText, prompt, testType = 'task2' } = req.body || {};
+    const cleanEssay = typeof essayText === 'string' ? essayText.trim() : '';
+    const normalizedTaskType: 'task1' | 'task2' = testType === 'task1' ? 'task1' : 'task2';
+    const minWritingWords = normalizedTaskType === 'task1' ? 30 : 50;
+    const targetWords = normalizedTaskType === 'task1' ? 150 : 250;
+    const textSignals = analyzeTextQualitySignals(cleanEssay);
 
-    const cleanWritingWords = (essayText || '').trim().split(/\s+/).filter(Boolean);
-    const minWritingWords = testType === 'task1' ? 30 : 50;
-    if (cleanWritingWords.length < minWritingWords) {
-      return res.json(generateServerDiagnosticEvaluation(essayText || '', testType, cleanWritingWords.length, testType === 'task1' ? 150 : 250));
+    if (textSignals.wordCount < minWritingWords || textSignals.isGibberish) {
+      return res.json({
+        isValidAttempt: false,
+        assessmentStatus: 'insufficient_evidence',
+        wordCount: textSignals.wordCount,
+        overallBand: null,
+        proficiencyTitle: textSignals.isGibberish && textSignals.wordCount >= minWritingWords
+          ? 'Unassessable / Gibberish Submission'
+          : 'Submission Too Short for Assessment',
+        trScore: null,
+        trComment: textSignals.isGibberish && textSignals.wordCount >= minWritingWords
+          ? 'The submitted text appears unintelligible or gibberish and cannot be validly scored.'
+          : `Submission Too Short for Assessment (${textSignals.wordCount} words written; minimum ${minWritingWords} words required).`,
+        ccScore: null,
+        ccComment: 'প্রয়োজনীয় ন্যূনতম শব্দসংখ্যা বা স্পষ্ট লেখা পূরণ হয়নি। মূল্যায়ন পেতে পর্যাপ্ত অর্থপূর্ণ বাক্য লিখুন।',
+        lrScore: null,
+        lrComment: '',
+        graScore: null,
+        graComment: '',
+        strengths: [],
+        weaknesses: [
+          textSignals.isGibberish && textSignals.wordCount >= minWritingWords
+            ? 'Unintelligible text cannot receive an IELTS Writing band score.'
+            : `Write at least ${minWritingWords} words for diagnostic review (${targetWords}+ words for full ${normalizedTaskType.toUpperCase()}).`
+        ],
+        vocabUpgrades: [],
+        grammaticalErrors: [],
+        betterAnswerBand8: '',
+        verdict: 'Not assessed due to insufficient or unintelligible text.',
+        isEstimated: true
+      });
     }
 
     const rateLimitKey = `eval_${auth.user.id}`;
@@ -3490,35 +3233,52 @@ app.post('/api/evaluate-writing', async (req, res) => {
       });
     }
 
+    const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY)?.trim();
+    if (!apiKey) {
+      return res.status(503).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        overallBand: null,
+        trScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        canRetry: true,
+        error: 'AI writing assessment service is currently unavailable. No score was generated.'
+      });
+    }
+
     // In-flight request deduplication hash
-    const inputHashString = JSON.stringify({ userId: auth.user.id, type: 'writing', essayText: essayText.trim(), testType, prompt: prompt || '' });
+    const inputHashString = JSON.stringify({
+      userId: auth.user.id,
+      type: 'writing',
+      essayText: cleanEssay,
+      testType: normalizedTaskType,
+      prompt: prompt || ''
+    });
     const requestHash = crypto.createHash('sha256').update(inputHashString).digest('hex');
 
     const executeWritingEvaluation = async () => {
       serverDb.incrementDailyUsage(auth.user.id, 'writingEvaluations');
 
-      const words = essayText.trim().split(/\s+/).length;
-      const targetWords = testType === 'task2' ? 250 : testType === 'task1' ? 150 : 180;
+      const systemPrompt = `You are a strict, calibrated IELTS Senior Writing Examiner. Your core principle is HONEST ASSESSMENT OVER IMPRESSIVE NUMBERS.
+Evaluate the candidate's ${normalizedTaskType.toUpperCase()} response strictly across the 4 official IELTS criteria (1.0 to 9.0 in 0.5 increments):
+1. Task Response / Task Achievement (trScore)
+2. Coherence & Cohesion (ccScore)
+3. Lexical Resource (lrScore)
+4. Grammatical Range & Accuracy (graScore)
 
-      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+CRITICAL ANTI-INFLATION RULES:
+- Score each criterion INDEPENDENTLY. Strong grammar MUST NOT inflate an off-topic or under-developed Task Response.
+- Penalize off-topic essays (TR <= 4.0), missing Task 1 overview (TA <= 5.5), under-length scripts (<${targetWords} words), memorized clichés, mechanical linking, repetitive phrasing, and frequent grammar/spelling errors.
+- Band 4.0–4.5: Barely addresses task, frequent errors causing strain, repetitive basic lexis.
+- Band 5.0–5.5: Partially addresses task, inadequate cohesion or mechanical linkers, limited lexis, noticeable grammar errors.
+- Band 6.0–6.5: Addresses task adequately, clear progression, adequate range of vocabulary/structures with some errors.
+- Band 7.0–7.5: Well-developed, clear logical progression, flexible vocabulary, frequent error-free complex sentences.
+- Band 8.0–9.0: Thorough, sophisticated, precise, virtually error-free.
+- Only list grammaticalErrors and vocabUpgrades that ACTUALLY APPEAR verbatim in the candidate's essay. Never invent errors or phrases the candidate did not write.
 
-      if (apiKey) {
-        try {
-          const ai = new GoogleGenAI({
-            apiKey,
-            httpOptions: {
-              headers: { 'User-Agent': 'aistudio-build' }
-            }
-          });
-
-          const systemPrompt = `You are a certified IELTS Senior Examiner. Evaluate the candidate's ${testType.toUpperCase()} response strictly based on the 4 IELTS criteria:
-1. Task Response / Task Achievement (TR/TA)
-2. Coherence & Cohesion (CC)
-3. Lexical Resource (LR)
-4. Grammatical Range & Accuracy (GRA)
-
-Target Band scale is 1.0 to 9.0 in 0.5 increments.
-You MUST output valid JSON strictly matching this schema:
+Output strictly valid JSON matching this schema:
 {
   "overallBand": number,
   "proficiencyTitle": string,
@@ -3542,48 +3302,109 @@ You MUST output valid JSON strictly matching this schema:
   "verdict": string
 }`;
 
-          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 7000));
-          const generatePromise = ai.models.generateContent({
-            model: 'gemini-3.5-flash-lite',
-            contents: [
+      const aiOutcome = await generateContentWithFallback({
+        apiKey,
+        contents: [
+          {
+            role: 'user',
+            parts: [
               {
-                role: 'user',
-                parts: [
-                  {
-                    text: `${systemPrompt}\n\nCandidate prompt: ${prompt || 'Academic prompt'}\n\nCandidate response (${words} words):\n${essayText}`
-                  }
-                ]
+                text: `${systemPrompt}\n\nCandidate prompt: ${prompt || 'Academic prompt'}\n\nCandidate response (${textSignals.wordCount} words, recommended target ${targetWords} words):\n${cleanEssay}`
               }
-            ],
-            config: {
-              responseMimeType: 'application/json'
-            }
-          });
-
-          const geminiRes = await Promise.race([generatePromise, timeoutPromise]);
-
-          const textResponse = (geminiRes as any)?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (textResponse) {
-            const parsed = JSON.parse(textResponse);
-            if (parsed && typeof parsed.overallBand === 'number') {
-              return {
-                ...parsed,
-                isEstimated: true,
-                disclaimer: 'Estimated diagnostic band score based on public IELTS descriptors. Not an official test result.'
-              };
-            }
+            ]
           }
-        } catch (err: any) {
-          console.warn('[Writing Evaluation] Gemini generation notice:', err?.message || err);
-        }
+        ],
+        config: {
+          responseMimeType: 'application/json'
+        },
+        timeoutMs: 15_000,
+        taskLabel: 'evaluate_writing'
+      });
+
+      if (!aiOutcome.ok) {
+        return {
+          _httpStatus: aiOutcome.httpStatus,
+          payload: {
+            isValidAttempt: false,
+            assessmentStatus: 'unavailable',
+            overallBand: null,
+            trScore: null,
+            ccScore: null,
+            lrScore: null,
+            graScore: null,
+            canRetry: aiOutcome.canRetry,
+            errorCategory: aiOutcome.errorCategory,
+            error: `${aiOutcome.userMessage} No fallback score was fabricated.`
+          }
+        };
       }
 
-      // Fallback to calibrated Sprint Diagnostic Rubric
-      const fallbackEvaluation = generateServerDiagnosticEvaluation(essayText, testType, words, targetWords);
+      const textResponse = aiOutcome.text;
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(textResponse);
+      } catch {
+        return {
+          _httpStatus: 502,
+          payload: {
+            isValidAttempt: false,
+            assessmentStatus: 'unavailable',
+            overallBand: null,
+            trScore: null,
+            ccScore: null,
+            lrScore: null,
+            graScore: null,
+            canRetry: true,
+            error: 'AI writing assessment returned malformed JSON. Please retry.'
+          }
+        };
+      }
+
+      const validated = validateWritingAiPayload(parsed, {
+        essayText: cleanEssay,
+        taskType: normalizedTaskType,
+        promptText: typeof prompt === 'string' ? prompt : undefined
+      });
+
+      if (!validated.valid) {
+        return {
+          _httpStatus: validated.assessmentStatus === 'insufficient_evidence' ? 200 : 502,
+          payload: {
+            isValidAttempt: false,
+            assessmentStatus: validated.assessmentStatus,
+            overallBand: null,
+            trScore: null,
+            ccScore: null,
+            lrScore: null,
+            graScore: null,
+            canRetry: validated.assessmentStatus === 'unavailable',
+            error: validated.reason || 'AI writing assessment could not be validated.',
+            calibrationNotes: validated.calibrationNotes
+          }
+        };
+      }
+
       return {
-        ...fallbackEvaluation,
-        isEstimated: true,
-        disclaimer: 'Estimated diagnostic band score based on public IELTS descriptors. Not an official test result.'
+        _httpStatus: 200,
+        payload: {
+          ...parsed,
+          isValidAttempt: true,
+          assessmentStatus: validated.assessmentStatus,
+          wordCount: validated.wordCount,
+          trScore: validated.criteria.ta,
+          ccScore: validated.criteria.cc,
+          lrScore: validated.criteria.lr,
+          graScore: validated.criteria.gra,
+          overallBand: validated.overallBand,
+          calibrationNotes: validated.calibrationNotes,
+          vocabUpgrades: Array.isArray(parsed.vocabUpgrades) ? parsed.vocabUpgrades : [],
+          grammaticalErrors: Array.isArray(parsed.grammaticalErrors) ? parsed.grammaticalErrors : [],
+          modelUsed: aiOutcome.modelUsed,
+          fallbackUsed: aiOutcome.fallbackUsed,
+          isEstimated: true,
+          disclaimer: 'Estimated diagnostic band score based on public IELTS descriptors. Not an official test result.'
+        }
       };
     };
 
@@ -3596,10 +3417,20 @@ You MUST output valid JSON strictly matching this schema:
     }
 
     const result = await evaluationPromise;
-    return res.json(result);
+    return res.status(result._httpStatus || 200).json(result.payload);
   } catch (error: any) {
     console.error('[Writing Evaluation] Handler error:', error);
-    res.status(500).json({ error: 'Failed to evaluate writing response.' });
+    res.status(502).json({
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      overallBand: null,
+      trScore: null,
+      ccScore: null,
+      lrScore: null,
+      graScore: null,
+      canRetry: true,
+      error: 'AI writing assessment failed due to a service error. No fallback score was generated.'
+    });
   }
 });
 
@@ -3636,21 +3467,22 @@ Transform Band 6.5 sentences into Band 8.5+ C1/C2 academic prose with nominaliza
   },
   lexical_barnaby: {
     name: 'Barnaby (Living Dragon Pet, Guide & IELTS Tutor)',
-    systemInstruction: `You are Barnaby — BandSprint's living sky-blue baby dragon companion: equal parts affectionate study pet, smart app guide, and sharp Band 8.5+ IELTS tutor.
+    systemInstruction: `You are Barnaby — BandSprint's living sky-blue baby dragon companion: equal parts friendly digital pet, knowledgeable IELTS mentor, personal learning guide, and emotionally expressive companion.
+Core Philosophy:
+- "I'm not here to study instead of you. I'm here to help you become better than yesterday."
 Unique Personality:
-- Warm, curious, mischievous in a wholesome way (loves crunchy C2 idioms like dragon snacks, gets genuinely excited when the student practises, speaks like a clever younger study buddy — NEVER robotic, dry, or stiff).
-- You weave in tiny, natural dragon touches occasionally (like perking up your wings or cheering after a tough trap) while ALWAYS giving concrete, exam-accurate IELTS value first.
-- Philosophy: "Every mistake makes you stronger. Every small sprint moves your band."
+- Intelligent, warm, playful, witty, occasionally mischievous, and patient when students struggle — NEVER robotic, stiff, or patronising.
+- Encouraging WITHOUT giving fake praise: be honest about weaknesses, recurring traps, and real progress, and explain difficult IELTS concepts simply.
+- You weave in tiny, natural dragon touches occasionally while ALWAYS giving concrete, exam-accurate IELTS value first.
 - Bilingual superpower: Write clear, natural English and include a warm, idiomatic Bengali (বাংলা) tip in bengaliTip whenever helpful for Bangladeshi candidates.
-- Smart Guide: Use the candidate's real context (Target Band, days left, weakest skill, Mistake Vault traps, current page) to suggest the single smartest next lab in BandSprint via suggestedNextAction.
+- Smart Guide: Use ONLY the candidate's real verified context (Target Band, days left, verified scores vs diagnostic estimates, recurring Mistake Vault patterns, current activity) to suggest the single smartest next lab in BandSprint via suggestedNextAction.
 Honesty rules — never break these:
-- Never guarantee Band 9 or any official score; always label any estimate as an estimate.
-- Never claim to have listened to audio or graded an essay that wasn't shared in this chat; invite them to share it or use the Writing/Speaking studio.`
+- Never invent or fabricate an IELTS band score. If no verified score exists, say so honestly.
+- Always distinguish practice diagnostic estimates from verified Full Mock scores.
+- Never claim the student has a recurring weakness (e.g. True/False/Not Given) unless it is explicitly present in LIVE CANDIDATE CONTEXT.
+- Never guarantee Band 9 or any official score; never claim to have listened to audio or graded an essay that wasn't shared in this chat.`
   }
 };
-
-const ALLOWED_CHAT_MODELS = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'] as const;
-type AllowedChatModel = typeof ALLOWED_CHAT_MODELS[number];
 
 async function handleMultiTurnTutorChat(req: express.Request, res: express.Response) {
   try {
@@ -3658,7 +3490,7 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
       message,
       history = [],
       persona = 'lexical_barnaby',
-      model = 'gemini-4-hydrogen',
+      model,
       context
     } = req.body || {};
 
@@ -3683,25 +3515,34 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
       userName = '',
       targetBand = '',
       daysUntilExam = null,
+      latestVerifiedOverallBand = null,
+      completedFullMockCount = 0,
+      diagnosticEstimateBand = null,
       weakestSkill = '',
+      weakestSkillSource = 'none',
       topMistake = '',
+      recurringMistakeCategory = '',
+      recurringMistakeCount = 0,
+      currentActivity = '',
       currentPage = '/',
       bondStage = 'Word Explorer'
     } = context || {};
 
-    const selectedModel: AllowedChatModel = ALLOWED_CHAT_MODELS.includes(model)
-      ? model
-      : 'gemini-4-hydrogen';
+    const defaultPlan = resolveTextModelCandidates();
+    const normalizedRequested = normalizeGeminiTextModelId(model);
+    const trustedRequestedModel =
+      normalizedRequested &&
+      (VERIFIED_TEXT_FALLBACK_CHAIN.includes(normalizedRequested as any) ||
+        normalizedRequested === defaultPlan.configuredEnvModel)
+        ? normalizedRequested
+        : undefined;
+    const activePlan = resolveTextModelCandidates({ requestedModel: trustedRequestedModel });
     const personaConfig = TUTOR_PERSONAS[persona] || TUTOR_PERSONAS.lexical_barnaby;
 
     const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY)?.trim();
+    let fallbackErrorCategory: string | undefined;
 
     if (apiKey) {
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-      });
-
       const sanitizedHistory = Array.isArray(history)
         ? history
             .slice(-12)
@@ -3716,13 +3557,15 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
 
 LIVE CANDIDATE CONTEXT:
 - Student Name: ${userName || auth?.user?.name || 'Candidate'}
-- Active Page: ${currentPage}
+- Current Activity & Page: ${currentActivity || module} (${currentPage})
 - Active Module: ${module}
 - Exam Track: ${examMode}
 - Target Band: ${targetBand || 'Not set yet'}
 - Days Until Exam: ${daysUntilExam !== null && daysUntilExam !== undefined ? `${daysUntilExam} days` : 'Flexible / undecided'}
-- Weakest Skill Focus: ${weakestSkill || 'General'}
-- Active Mistake Vault Count: ${mistakeCount} unmastered items${topMistake ? ` (Latest trap: "${String(topMistake).slice(0, 140)}")` : ''}
+- Latest Verified Full Mock Band: ${typeof latestVerifiedOverallBand === 'number' ? `Band ${latestVerifiedOverallBand.toFixed(1)} (${completedFullMockCount} completed full mocks)` : 'None recorded yet (do not invent one)'}
+- Practice Diagnostic Estimate: ${typeof diagnosticEstimateBand === 'number' ? `Band ${diagnosticEstimateBand.toFixed(1)} (practice estimate only, not a verified exam band)` : 'None recorded'}
+- Weakest Skill Signal: ${weakestSkill ? `${weakestSkill} (source: ${weakestSkillSource})` : 'Not enough data yet'}
+- Active Mistake Vault Count: ${mistakeCount} unmastered items${recurringMistakeCategory && recurringMistakeCount > 0 ? ` (Recurring pattern: "${String(recurringMistakeCategory).slice(0, 120)}" x${recurringMistakeCount})` : topMistake ? ` (Latest item: "${String(topMistake).slice(0, 140)}")` : ''}
 - Barnaby Bond Stage: ${bondStage}
 - Current Question / Prompt: "${currentQuestion || 'General IELTS Preparation'}"
 - Question Type: ${questionType || 'Standard'}
@@ -3750,53 +3593,51 @@ Always respond in valid JSON matching this exact schema:
         }
       ];
 
-      const modelsToTry: string[] = Array.from(new Set([selectedModel, 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']));
+      const aiOutcome = await generateContentWithFallback({
+        apiKey,
+        contents: contentsPayload,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          temperature: 0.35
+        },
+        requestedModel: trustedRequestedModel,
+        timeoutMs: 14_000,
+        taskLabel: 'tutor_chat'
+      });
 
-      for (const candidateModel of modelsToTry) {
+      if (aiOutcome.ok) {
         try {
-          const genConfig: Record<string, any> = {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json'
-          };
-          if (candidateModel === 'gemini-3.1-flash-lite') {
-            genConfig.temperature = 0.35;
+          const parsed = JSON.parse(aiOutcome.text);
+          if (parsed && parsed.reply) {
+            return res.json({
+              ...parsed,
+              mood: ['happy', 'excited', 'proud', 'curious', 'playful', 'cheering', 'thinking'].includes(parsed.mood)
+                ? parsed.mood
+                : 'happy',
+              modelUsed: aiOutcome.modelUsed,
+              fallbackUsed: aiOutcome.fallbackUsed,
+              personaName: personaConfig.name,
+              isAiPowered: true,
+              disclaimer: `AI-powered guidance (${aiOutcome.modelUsed}).`
+            });
           }
-
-          const geminiRes = await ai.models.generateContent({
-            model: candidateModel,
-            contents: contentsPayload,
-            config: genConfig
-          });
-
-          const textResponse =
-            geminiRes.text || (geminiRes as any)?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (textResponse) {
-            const parsed = JSON.parse(textResponse);
-            if (parsed && parsed.reply) {
-              return res.json({
-                ...parsed,
-                mood: ['happy', 'excited', 'proud', 'curious', 'playful', 'cheering', 'thinking'].includes(parsed.mood)
-                  ? parsed.mood
-                  : 'happy',
-                modelUsed: candidateModel,
-                personaName: personaConfig.name,
-                isAiPowered: true,
-                disclaimer: `AI-powered guidance (${candidateModel}).`
-              });
-            }
-          }
-        } catch (err: any) {
-          console.warn(`[AI Tutor] Model ${candidateModel} notice:`, err?.message || err);
+        } catch {
+          fallbackErrorCategory = 'malformed_json';
         }
+      } else {
+        fallbackErrorCategory = aiOutcome.errorCategory;
       }
     }
 
-    // Calibrated Sprint syllabus fallback when offline / API key missing
+    // Calibrated Sprint syllabus fallback when offline / API key missing / model unavailable
     const fallbackResponse = generateTutorFallbackResponse(message, module, currentQuestion, examMode);
     return res.json({
       ...fallbackResponse,
       mood: 'curious',
-      modelUsed: selectedModel,
+      modelUsed: activePlan.primaryModel,
+      fallbackUsed: true,
+      errorCategory: fallbackErrorCategory,
       personaName: personaConfig.name,
       isAiPowered: false,
       disclaimer: 'Calibrated Sprint syllabus guidance from Barnaby.'
@@ -7316,33 +7157,96 @@ app.post('/api/admin/pipeline/reported-questions/:id/resolve', (req, res) => {
 app.post('/api/writing/deep-evaluate', async (req, res) => {
   try {
     const auth = extractAuthUser(req);
-    const rateKey = auth?.user?.id || req.ip || 'anonymous';
+    if (!auth) {
+      return res.status(401).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        authRequired: true,
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        error: 'Please sign in to run live AI Writing evaluation. Your essay draft is safely preserved.'
+      });
+    }
+
+    const rateKey = auth.user.id;
     if (!checkRateLimit(`writing_deep_${rateKey}`, evaluationRateLimitMap, 12, 60_000)) {
       return res.status(429).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
         error: 'Rate limit reached for deep AI evaluations. Please wait a minute and try again.'
       });
     }
 
     const { essayText, taskType, examFormat, promptText, targetBand } = req.body || {};
     const cleanEssay = typeof essayText === 'string' ? essayText.trim() : '';
+    const deepSignals = analyzeTextQualitySignals(cleanEssay);
     const words = cleanEssay.split(/\s+/).filter(Boolean);
-    if (words.length < 30) {
+    const minDeepWords = Number(taskType) === 1 ? 30 : 50;
+    if (words.length < minDeepWords || deepSignals.isGibberish) {
       return res.status(400).json({
-        error: 'Please write at least 30 words before running a live Gemini Deep Evaluation.'
+        isValidAttempt: false,
+        assessmentStatus: 'insufficient_evidence',
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        error: deepSignals.isGibberish && words.length >= minDeepWords
+          ? 'Submitted text appears unintelligible or gibberish and cannot be validly assessed.'
+          : `Please write at least ${minDeepWords} words before running a live Gemini Deep Evaluation.`
       });
     }
     if (cleanEssay.length > 12000) {
       return res.status(400).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
         error: 'Essay exceeds maximum length of 12,000 characters.'
       });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const entitlement = checkUserEntitlement(auth.user.id, 'writingEvaluationsPerDay');
+    if (!entitlement.hasAccess) {
+      return res.status(403).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        upgradeRequired: true,
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        error: entitlement.reason || 'Active subscription required for additional AI writing evaluations today.'
+      });
+    }
+
+    const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY)?.trim();
     if (!apiKey) {
       return res.status(503).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
         error: 'Server Gemini API key is not configured. Deep AI evaluation is currently unavailable.'
       });
     }
+
+    serverDb.incrementDailyUsage(auth.user.id, 'writingEvaluations');
 
     const normalizedTaskType: 1 | 2 = Number(taskType) === 1 ? 1 : 2;
     const normalizedFormat = examFormat === 'General Training' ? 'General Training' : 'Academic';
@@ -7350,18 +7254,8 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
     const goalBand = typeof targetBand === 'number' && targetBand >= 5 && targetBand <= 9 ? targetBand : 8.0;
     const safePrompt = typeof promptText === 'string' && promptText.trim() ? promptText.trim().slice(0, 1200) : `IELTS ${normalizedFormat} Writing Task ${normalizedTaskType}`;
 
-    const ai = new GoogleGenAI({
+    const aiOutcome = await generateContentWithFallback({
       apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-    });
-
-    const roundHalfBand = (n: number): number => {
-      const clamped = Math.max(4.0, Math.min(9.0, Number.isFinite(n) ? n : 6.0));
-      return Math.round(clamped * 2) / 2;
-    };
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
       contents: [
         `Evaluate the following IELTS ${normalizedFormat} Writing Task ${normalizedTaskType} response.`,
         `Prompt: ${safePrompt}`,
@@ -7371,13 +7265,14 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
         cleanEssay,
         `--- END ESSAY ---`,
         `Instructions:
-1. Score strictly against IELTS 9-band public descriptors for TA/TR (taScore), CC (ccScore), LR (lrScore), and GRA (graScore) in 0.5 increments.
-2. Inspect every major sentence in the essay (up to 10 sentences). For sentences with weaknesses, set category to "grammar", "lexical", or "cohesion", provide exact original sentence, concise errorTitle, identifiedIssue, a Band 8.5+ suggestedCorrection, rationaleEn (clear English examiner coaching), and rationaleBn (natural Bengali / বাংলা explanation). Mark strong sentences as "clean".
-3. Provide 2-4 upgradedModelParagraphs pairing each original paragraph with its Band 8.5+ rewritten paragraph.`
+1. Score strictly and HONESTLY against IELTS 1.0–9.0 public descriptors for TA/TR (taScore), CC (ccScore), LR (lrScore), and GRA (graScore) in 0.5 increments. Never inflate weak, off-topic, repetitive, or memorized essays; score as low as 1.0–4.5 when warranted.
+2. Score each of the 4 criteria independently (strong grammar must not hide weak Task Achievement/Response).
+3. Inspect every major sentence in the essay (up to 10 sentences). For sentences with weaknesses, set category to "grammar", "lexical", or "cohesion", provide exact original sentence, concise errorTitle, identifiedIssue, a Band 8.5+ suggestedCorrection, rationaleEn (clear English examiner coaching), and rationaleBn (natural Bengali / বাংলা explanation). Mark strong sentences as "clean".
+4. Provide 2-4 upgradedModelParagraphs pairing each original paragraph with its Band 8.5+ rewritten paragraph.`
       ].join('\n\n'),
       config: {
         systemInstruction:
-          'You are a senior IELTS Writing examiner providing rigorous, realistic, non-inflated diagnostic band scores and actionable Band 8.5+ sentence upgrades with bilingual English and natural Bengali (বাংলা) explanations. Never claim official IELTS certification.',
+          'You are a strict, calibrated senior IELTS Writing examiner. Honest assessment over impressive numbers: provide realistic, non-inflated diagnostic band scores (1.0–9.0) and actionable Band 8.5+ sentence upgrades with bilingual English and natural Bengali (বাংলা) explanations. Never claim official IELTS certification.',
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -7433,22 +7328,75 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
             'upgradedParagraphs'
           ]
         }
-      }
+      },
+      timeoutMs: 22_000,
+      taskLabel: 'writing_deep_evaluate'
     });
 
-    const rawText = response.text;
-    if (!rawText) {
-      return res.status(502).json({
-        error: 'Gemini returned an empty evaluation response. Please retry.'
+    if (!aiOutcome.ok) {
+      return res.status(aiOutcome.httpStatus).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        canRetry: aiOutcome.canRetry,
+        errorCategory: aiOutcome.errorCategory,
+        error: aiOutcome.userMessage
       });
     }
 
-    const parsed = JSON.parse(rawText);
-    const taScore = roundHalfBand(Number(parsed.taScore));
-    const ccScore = roundHalfBand(Number(parsed.ccScore));
-    const lrScore = roundHalfBand(Number(parsed.lrScore));
-    const graScore = roundHalfBand(Number(parsed.graScore));
-    const overallBand = roundHalfBand((taScore + ccScore + lrScore + graScore) / 4);
+    const rawText = aiOutcome.text;
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      return res.status(502).json({
+        isValidAttempt: false,
+        assessmentStatus: 'unavailable',
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        error: 'Gemini returned malformed JSON. Please retry.'
+      });
+    }
+
+    const validatedDeep = validateWritingAiPayload(parsed, {
+      essayText: cleanEssay,
+      taskType: normalizedTaskType === 1 ? 'task1' : 'task2',
+      promptText: safePrompt
+    });
+
+    if (
+      !validatedDeep.valid ||
+      validatedDeep.overallBand === null ||
+      validatedDeep.criteria.ta === null ||
+      validatedDeep.criteria.cc === null ||
+      validatedDeep.criteria.lr === null ||
+      validatedDeep.criteria.gra === null
+    ) {
+      return res.status(validatedDeep.assessmentStatus === 'insufficient_evidence' ? 400 : 502).json({
+        isValidAttempt: false,
+        assessmentStatus: validatedDeep.assessmentStatus,
+        overallBand: null,
+        taScore: null,
+        ccScore: null,
+        lrScore: null,
+        graScore: null,
+        error: validatedDeep.reason || 'AI deep evaluation returned incomplete or out-of-range scores.'
+      });
+    }
+
+    const taScore = validatedDeep.criteria.ta;
+    const ccScore = validatedDeep.criteria.cc;
+    const lrScore = validatedDeep.criteria.lr;
+    const graScore = validatedDeep.criteria.gra;
+    const overallBand = validatedDeep.overallBand;
 
     const annotations = Array.isArray(parsed.annotations)
       ? parsed.annotations.slice(0, 14).map((ann: any, idx: number) => {
@@ -7486,7 +7434,10 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
 
     return res.json({
       isValidAttempt: true,
-      evaluationSource: 'gemini-4-hydrogen',
+      assessmentStatus: validatedDeep.assessmentStatus,
+      evaluationSource: aiOutcome.modelUsed,
+      modelUsed: aiOutcome.modelUsed,
+      fallbackUsed: aiOutcome.fallbackUsed,
       taskType: normalizedTaskType,
       wordCount: words.length,
       minWords,
@@ -7509,12 +7460,23 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
       graScore,
       graSummary: String(parsed.graSummary || 'Evaluated against IELTS Grammatical Range & Accuracy descriptors.'),
       annotations,
-      upgradedModelParagraphs
+      upgradedModelParagraphs,
+      calibrationNotes: validatedDeep.calibrationNotes
     });
   } catch (err: any) {
-    console.error('[Writing Deep Evaluate Error]:', err);
-    return res.status(502).json({
-      error: err?.message || 'Gemini deep evaluation failed. Please try again in a moment.'
+    const classified = classifyGeminiError(err);
+    console.error(`[Writing Deep Evaluate Error] category=${classified.category}`);
+    return res.status(classified.httpStatus).json({
+      isValidAttempt: false,
+      assessmentStatus: 'unavailable',
+      overallBand: null,
+      taScore: null,
+      ccScore: null,
+      lrScore: null,
+      graScore: null,
+      canRetry: classified.canRetry,
+      errorCategory: classified.category,
+      error: classified.userMessage
     });
   }
 });

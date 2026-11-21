@@ -9,6 +9,7 @@
  */
 
 import { getStoredSessionToken } from './authService';
+import { validateClientWritingEvaluation } from '../utils/scoringIntegrity';
 
 export interface GrammaticalErrorItem {
   observed: string;
@@ -35,7 +36,7 @@ export interface PronunciationFaultItem {
 }
 
 export interface PronunciationAnalysis {
-  clarityBand: number;
+  clarityBand: number | null;
   cadenceWpm: number;
   trickyWords: PronunciationFaultItem[];
   connectedSpeechTips: string[];
@@ -46,7 +47,7 @@ export interface PronunciationAnalysis {
 export interface BandScoreJustification {
   criterion: 'fluency' | 'lexical' | 'grammar' | 'pronunciation' | 'task_achievement' | 'coherence';
   criterionLabel: string;
-  estimatedBand: number;
+  estimatedBand: number | null;
   justification: string;
   keyStrengths: string[];
   keyWeaknesses: string[];
@@ -71,12 +72,19 @@ export interface SpeakingGrammarFeedbackResult {
   wordCount: number;
   durationSec: number;
   wordsPerMinute: number;
+  overallBand?: number | null;
+  partialThreeCriterionIndex?: number | null;
+  evidenceMode?: 'audio_and_transcript' | 'transcript_only';
+  pronunciationObservable?: boolean;
+  isPartialAssessment?: boolean;
+  unassessedCriteria?: string[];
+  disclaimer?: string;
   estimatedBands: {
-    fluency: number;
-    lexical: number;
-    grammar: number;
-    pronunciation: number;
-    overall: number;
+    fluency: number | null;
+    lexical: number | null;
+    grammar: number | null;
+    pronunciation: number | null;
+    overall: number | null;
   };
   bandJustifications: BandScoreJustification[];
   grammaticalErrors: GrammaticalErrorItem[];
@@ -95,6 +103,9 @@ export interface SpeakingGrammarFeedbackResult {
   };
   actionableTips: string[];
   isEstimated: boolean;
+  isValidAttempt?: boolean;
+  assessmentStatus?: 'evaluated' | 'complete' | 'partial_transcript_only' | 'insufficient_evidence' | 'unavailable';
+  error?: string;
 }
 
 export interface WritingGrammarFeedbackParams {
@@ -111,11 +122,11 @@ export interface WritingGrammarFeedbackResult {
   wordCount: number;
   targetWordCount: number;
   estimatedBands: {
-    taskAchievement: number;
-    coherenceCohesion: number;
-    lexicalResource: number;
-    grammaticalRange: number;
-    overall: number;
+    taskAchievement: number | null;
+    coherenceCohesion: number | null;
+    lexicalResource: number | null;
+    grammaticalRange: number | null;
+    overall: number | null;
   };
   bandJustifications: BandScoreJustification[];
   grammaticalErrors: GrammaticalErrorItem[];
@@ -128,11 +139,19 @@ export interface WritingGrammarFeedbackResult {
     bandScore: number;
     modelEssay: string;
     structuralBreakdown: string[];
-    keyVocabulary: Array<{ phrase: string; bandLevel: string; meaning: string }>;
+    keyVocabulary?: Array<{ phrase: string; bandLevel: string; meaning: string }>;
+    highImpactVocabulary?: Array<{
+      word: string;
+      bandLevel: string;
+      meaning: string;
+    }>;
     examinerRationale: string;
   };
   actionableTips: string[];
   isEstimated: boolean;
+  isValidAttempt?: boolean;
+  assessmentStatus?: 'evaluated' | 'complete' | 'insufficient_evidence' | 'unavailable';
+  error?: string;
 }
 
 class GrammarFeedbackEngineService {
@@ -204,7 +223,15 @@ class GrammarFeedbackEngineService {
       const data = await response.json();
       return this.formatSpeakingResult(data, question, part, topic, transcript, durationSec, wordsPerMinute);
     } catch (error: any) {
-      return this.generateOfflineSpeakingFallback(transcript, question, part, topic, durationSec, wordsPerMinute);
+      return this.buildUnavailableSpeakingResult(
+        transcript,
+        question,
+        part,
+        topic,
+        durationSec,
+        wordsPerMinute,
+        error?.message || 'AI speaking assessment is temporarily unavailable. No band score was generated.'
+      );
     }
   }
 
@@ -260,8 +287,116 @@ class GrammarFeedbackEngineService {
       const data = await response.json();
       return this.formatWritingResult(data, prompt, testType, essayText);
     } catch (error: any) {
-      return this.generateOfflineWritingFallback(essayText, prompt, testType);
+      return this.buildUnavailableWritingResult(
+        essayText,
+        prompt,
+        testType,
+        error?.message || 'AI writing assessment is temporarily unavailable. No band score was generated.'
+      );
     }
+  }
+
+  private buildUnavailableSpeakingResult(
+    transcript: string,
+    questionText: string,
+    part: 1 | 2 | 3,
+    topic: string,
+    durationSec: number,
+    wordsPerMinute: number,
+    reason: string,
+    status: 'unavailable' | 'insufficient_evidence' = 'unavailable'
+  ): SpeakingGrammarFeedbackResult {
+    const wordCount = (transcript || '').trim().split(/\s+/).filter(Boolean).length;
+    return {
+      isValidAttempt: false,
+      assessmentStatus: status,
+      evidenceMode: 'transcript_only',
+      pronunciationObservable: false,
+      isPartialAssessment: true,
+      unassessedCriteria: [
+        'Fluency & Coherence',
+        'Lexical Resource',
+        'Grammatical Range & Accuracy',
+        'Pronunciation'
+      ],
+      overallBand: null,
+      partialThreeCriterionIndex: null,
+      error: reason,
+      questionId: 'spk_unavail_' + Date.now(),
+      questionText,
+      part,
+      topic,
+      candidateTranscript: transcript,
+      wordCount,
+      durationSec,
+      wordsPerMinute,
+      estimatedBands: {
+        fluency: null,
+        lexical: null,
+        grammar: null,
+        pronunciation: null,
+        overall: null
+      },
+      bandJustifications: [],
+      grammaticalErrors: [],
+      pronunciation: {
+        clarityBand: null,
+        cadenceWpm: wordsPerMinute,
+        trickyWords: [],
+        connectedSpeechTips: [],
+        intonationPattern: 'Unassessed — AI evaluation service unavailable.',
+        rhythmVerdict: 'Assessment unavailable'
+      },
+      band8Answer: {
+        bandScore: 8.5,
+        modelAnswer: '',
+        highlightedCollocations: [],
+        keyDiscourseMarkers: [],
+        examinerRationale: ''
+      },
+      actionableTips: [reason],
+      isEstimated: true
+    };
+  }
+
+  private buildUnavailableWritingResult(
+    essayText: string,
+    promptText: string,
+    testType: 'task1' | 'task2',
+    reason: string,
+    status: 'unavailable' | 'insufficient_evidence' = 'unavailable'
+  ): WritingGrammarFeedbackResult {
+    const wordCount = (essayText || '').trim().split(/\s+/).filter(Boolean).length;
+    const targetWordCount = testType === 'task2' ? 250 : 150;
+    return {
+      isValidAttempt: false,
+      assessmentStatus: status,
+      error: reason,
+      essayId: 'wrt_unavail_' + Date.now(),
+      testType,
+      promptText,
+      candidateEssay: essayText,
+      wordCount,
+      targetWordCount,
+      estimatedBands: {
+        taskAchievement: null,
+        coherenceCohesion: null,
+        lexicalResource: null,
+        grammaticalRange: null,
+        overall: null
+      },
+      bandJustifications: [],
+      grammaticalErrors: [],
+      lexicalFaults: [],
+      band8Answer: {
+        bandScore: 8.5,
+        modelEssay: '',
+        structuralBreakdown: [],
+        examinerRationale: ''
+      },
+      actionableTips: [reason],
+      isEstimated: true
+    };
   }
 
   private formatSpeakingResult(
@@ -273,12 +408,53 @@ class GrammarFeedbackEngineService {
     durationSec: number,
     wordsPerMinute: number
   ): SpeakingGrammarFeedbackResult {
-    const estimatedBands = data.estimatedBands || {
-      fluency: 7.0,
-      lexical: 7.0,
-      grammar: 6.5,
-      pronunciation: 7.0,
-      overall: 7.0
+    if (!data || data.isValidAttempt === false || !data.estimatedBands) {
+      const status = data?.assessmentStatus === 'insufficient_evidence' ? 'insufficient_evidence' : 'unavailable';
+      return this.buildUnavailableSpeakingResult(
+        transcript,
+        questionText,
+        part,
+        topic,
+        durationSec,
+        wordsPerMinute,
+        data?.error || data?.feedbackEn || 'Speaking assessment could not be completed. No band score was assigned.',
+        status
+      );
+    }
+
+    const fc = typeof data.estimatedBands.fluency === 'number' ? data.estimatedBands.fluency : null;
+    const lr = typeof data.estimatedBands.lexical === 'number' ? data.estimatedBands.lexical : null;
+    const gra = typeof data.estimatedBands.grammar === 'number' ? data.estimatedBands.grammar : null;
+    const pr = typeof data.estimatedBands.pronunciation === 'number' ? data.estimatedBands.pronunciation : null;
+
+    if (fc === null || lr === null || gra === null) {
+      return this.buildUnavailableSpeakingResult(
+        transcript,
+        questionText,
+        part,
+        topic,
+        durationSec,
+        wordsPerMinute,
+        'Assessment service returned incomplete speaking criteria. No fallback score was fabricated.'
+      );
+    }
+
+    const pronunciationObservable = Boolean(data.pronunciationObservable) && pr !== null;
+    const overallBand = pronunciationObservable && typeof data.overallBand === 'number'
+      ? data.overallBand
+      : (pronunciationObservable && typeof data.estimatedBands.overall === 'number' ? data.estimatedBands.overall : null);
+    const partialThreeCriterionIndex = !pronunciationObservable
+      ? (typeof data.partialThreeCriterionIndex === 'number'
+        ? data.partialThreeCriterionIndex
+        : Math.round(((fc + lr + gra) / 3) * 2) / 2)
+      : null;
+
+    const estimatedBands = {
+      fluency: fc,
+      lexical: lr,
+      grammar: gra,
+      pronunciation: pr,
+      overall: overallBand
     };
 
     const bandJustifications: BandScoreJustification[] = [
@@ -286,37 +462,56 @@ class GrammarFeedbackEngineService {
         criterion: 'fluency',
         criterionLabel: 'Fluency & Coherence',
         estimatedBand: estimatedBands.fluency,
-        justification: `Candidate speaks at ${wordsPerMinute} WPM with mostly continuous flow. Self-correction occurs occasionally.`,
-        keyStrengths: ['Sustained speech flow', 'Effective use of simple discourse markers'],
-        keyWeaknesses: ['Occasional hesitation when retrieving complex academic terms']
+        justification: `Evaluated from transcript coherence and flow (${wordsPerMinute} WPM recorded).`,
+        keyStrengths: ['Observable discourse progression in transcript'],
+        keyWeaknesses: ['Review pacing and cohesive variety across extended responses']
       },
       {
         criterion: 'lexical',
         criterionLabel: 'Lexical Resource',
         estimatedBand: estimatedBands.lexical,
-        justification: 'Uses topic-appropriate vocabulary with some flexible word choices and idiomatic collocations.',
-        keyStrengths: ['Good topic-specific vocabulary range'],
-        keyWeaknesses: ['Slight overreliance on generic adverbs']
+        justification: 'Evaluated on topic-appropriate vocabulary range, precision, and collocations.',
+        keyStrengths: ['Observable lexical selection in transcript'],
+        keyWeaknesses: ['Upgrade recurring general vocabulary with precise C1 collocations']
       },
       {
         criterion: 'grammar',
         criterionLabel: 'Grammatical Range & Accuracy',
         estimatedBand: estimatedBands.grammar,
-        justification: 'Produces a mix of simple and complex structures. Frequent error-free sentences with minor inflections.',
-        keyStrengths: ['Complex clause attempts', 'Generally accurate tense usage'],
-        keyWeaknesses: ['Minor subject-verb agreement or article omissions']
+        justification: 'Evaluated on sentence variety, clause complexity, and grammatical accuracy.',
+        keyStrengths: ['Observable syntactic range in transcript'],
+        keyWeaknesses: ['Address recurring tense, agreement, or article errors highlighted below']
       },
       {
         criterion: 'pronunciation',
         criterionLabel: 'Pronunciation',
         estimatedBand: estimatedBands.pronunciation,
-        justification: 'Generally clear speech with intelligible stress patterns and stress placement on key words.',
-        keyStrengths: ['Intelligible speech clarity', 'Natural sentence stress'],
-        keyWeaknesses: ['Lapses in vowel length or consonant clusters']
+        justification: pronunciationObservable
+          ? 'Assessed from audio intelligibility, stress, and intonation patterns.'
+          : 'Unassessed — acoustic audio recording is required to evaluate pronunciation, stress, and intonation.',
+        keyStrengths: pronunciationObservable ? ['Assessed from audio recording'] : [],
+        keyWeaknesses: pronunciationObservable
+          ? ['Refine syllable stress and connected speech']
+          : ['Acoustic audio analysis not available for transcript-only input']
       }
     ];
 
     return {
+      isValidAttempt: true,
+      assessmentStatus: data.assessmentStatus || (pronunciationObservable ? 'evaluated' : 'partial_transcript_only'),
+      evidenceMode: data.evidenceMode || (pronunciationObservable ? 'audio_and_transcript' : 'transcript_only'),
+      pronunciationObservable,
+      isPartialAssessment: typeof data.isPartialAssessment === 'boolean' ? data.isPartialAssessment : !pronunciationObservable,
+      unassessedCriteria: Array.isArray(data.unassessedCriteria)
+        ? data.unassessedCriteria
+        : (pronunciationObservable ? [] : ['Pronunciation']),
+      overallBand,
+      partialThreeCriterionIndex,
+      disclaimer:
+        data.disclaimer ||
+        (pronunciationObservable
+          ? 'AI diagnostic estimate based on public IELTS Speaking descriptors. Not an official IELTS score.'
+          : 'Partial transcript-only estimate (3 of 4 criteria). Acoustic Pronunciation was not assessed; not a complete IELTS Speaking band.'),
       questionId: data.questionId || 'spk_fdbk_' + Date.now(),
       questionText: data.questionText || questionText,
       part: (data.part || part) as any,
@@ -328,25 +523,31 @@ class GrammarFeedbackEngineService {
       estimatedBands,
       bandJustifications: data.bandJustifications || bandJustifications,
       grammaticalErrors: data.grammaticalErrors || [],
-      pronunciation: data.pronunciation || {
-        clarityBand: estimatedBands.pronunciation,
-        cadenceWpm: wordsPerMinute,
-        trickyWords: [],
-        connectedSpeechTips: ['Practice linking final consonants to initial vowels (e.g. "pick_it_up").'],
-        intonationPattern: 'Standard declarative falling tone at sentence boundaries.',
-        rhythmVerdict: 'Natural rhythmic rhythm with clear stress placement.'
-      },
+      pronunciation: data.pronunciation
+        ? {
+            ...data.pronunciation,
+            clarityBand: pr
+          }
+        : {
+            clarityBand: pr,
+            cadenceWpm: wordsPerMinute,
+            trickyWords: [],
+            connectedSpeechTips: [],
+            intonationPattern: pronunciationObservable
+              ? 'Assessed from audio recording.'
+              : 'Not observable from transcript-only input.',
+            rhythmVerdict: pronunciationObservable
+              ? 'Assessed from audio recording.'
+              : 'Unassessed — audio recording analysis required for acoustic pronunciation scoring.'
+          },
       band8Answer: data.band8Answer || {
         bandScore: 8.5,
-        modelAnswer: 'Well, speaking from personal experience, I am firmly convinced that...',
+        modelAnswer: '',
         highlightedCollocations: [],
-        keyDiscourseMarkers: ['Speaking from personal experience', 'Firmly convinced', 'In all honesty'],
-        examinerRationale: 'Exemplary Band 8.5 response with natural British idiom and sophisticated C1 collocations.'
+        keyDiscourseMarkers: [],
+        examinerRationale: ''
       },
-      actionableTips: data.actionableTips || [
-        'Focus on subject-verb agreement in present tense sentences.',
-        'Incorporate multi-word discourse markers (e.g., "From my perspective") to improve fluency transitions.'
-      ],
+      actionableTips: data.actionableTips || [],
       isEstimated: true
     };
   }
@@ -357,12 +558,26 @@ class GrammarFeedbackEngineService {
     testType: 'task1' | 'task2',
     essayText: string
   ): WritingGrammarFeedbackResult {
-    const estimatedBands = data.estimatedBands || {
-      taskAchievement: 7.0,
-      coherenceCohesion: 7.0,
-      lexicalResource: 7.0,
-      grammaticalRange: 6.5,
-      overall: 7.0
+    const validated = validateClientWritingEvaluation(data);
+    if (!validated.valid || validated.overallBand === null) {
+      return this.buildUnavailableWritingResult(
+        essayText,
+        promptText,
+        testType,
+        validated.reason ||
+          data?.error ||
+          data?.verdict ||
+          'Writing assessment could not be completed. No band score was assigned.',
+        validated.assessmentStatus === 'insufficient_evidence' ? 'insufficient_evidence' : 'unavailable'
+      );
+    }
+
+    const estimatedBands = {
+      taskAchievement: validated.criteria.ta,
+      coherenceCohesion: validated.criteria.cc,
+      lexicalResource: validated.criteria.lr,
+      grammaticalRange: validated.criteria.gra,
+      overall: validated.overallBand
     };
 
     const wordCount = essayText.trim().split(/\s+/).filter(Boolean).length;
@@ -373,37 +588,41 @@ class GrammarFeedbackEngineService {
         criterion: 'task_achievement',
         criterionLabel: testType === 'task2' ? 'Task Response' : 'Task Achievement',
         estimatedBand: estimatedBands.taskAchievement,
-        justification: `Fully addresses the prompt requirements with a clear position throughout. Word count (${wordCount}) meets required length (${targetWordCount}).`,
-        keyStrengths: ['Clear central position', 'Relevant supporting examples'],
-        keyWeaknesses: ['Some supporting points could be further developed']
+        justification:
+          data.trComment ||
+          `Word count (${wordCount}/${targetWordCount}) evaluated against IELTS Task ${testType === 'task2' ? 'Response' : 'Achievement'} descriptors.`,
+        keyStrengths: Array.isArray(data.strengths) ? data.strengths.slice(0, 2) : [],
+        keyWeaknesses: Array.isArray(data.weaknesses) ? data.weaknesses.slice(0, 2) : []
       },
       {
         criterion: 'coherence',
         criterionLabel: 'Coherence & Cohesion',
         estimatedBand: estimatedBands.coherenceCohesion,
-        justification: 'Logically organizes information and ideas with clear paragraphing and varied cohesive devices.',
-        keyStrengths: ['Clear paragraph separation', 'Effective topic sentences'],
-        keyWeaknesses: ['Slight over-use of formal transition markers like "Furthermore"']
+        justification: data.ccComment || 'Evaluated on paragraph progression and cohesive referencing.',
+        keyStrengths: [],
+        keyWeaknesses: []
       },
       {
         criterion: 'lexical',
         criterionLabel: 'Lexical Resource',
-        estimatedBand: estimatedBands.lexical,
-        justification: 'Uses a sufficient range of vocabulary for the task with flexibility and precision.',
-        keyStrengths: ['Academic vocabulary choices', 'Good collocations'],
-        keyWeaknesses: ['Occasional word choice inaccuracy']
+        estimatedBand: estimatedBands.lexicalResource,
+        justification: data.lrComment || 'Evaluated on vocabulary range, collocation accuracy, and register.',
+        keyStrengths: [],
+        keyWeaknesses: []
       },
       {
         criterion: 'grammar',
         criterionLabel: 'Grammatical Range & Accuracy',
         estimatedBand: estimatedBands.grammaticalRange,
-        justification: 'Uses a mix of simple and complex sentence forms. Produces frequent error-free sentences.',
-        keyStrengths: ['Complex sentence structures', 'Good punctuation accuracy'],
-        keyWeaknesses: ['Minor prepositional or article slips']
+        justification: data.graComment || 'Evaluated on sentence variety and grammatical accuracy.',
+        keyStrengths: [],
+        keyWeaknesses: []
       }
     ];
 
     return {
+      isValidAttempt: true,
+      assessmentStatus: 'evaluated',
       essayId: data.essayId || 'wrt_fdbk_' + Date.now(),
       testType,
       promptText,
@@ -416,214 +635,16 @@ class GrammarFeedbackEngineService {
       lexicalFaults: data.lexicalFaults || [],
       band8Answer: data.band8Answer || {
         bandScore: 9.0,
-        modelEssay: 'In contemporary society, the debate surrounding this issue has generated significant discourse...',
-        structuralBreakdown: ['Paragraph 1: Introduction & Thesis', 'Paragraph 2: First Argument', 'Paragraph 3: Counter-Argument', 'Paragraph 4: Conclusion'],
-        keyVocabulary: [
-          { phrase: 'paramount importance', bandLevel: 'C2', meaning: 'Crucial significance' },
-          { phrase: 'substantiate this claim', bandLevel: 'C1', meaning: 'Provide evidence for this assertion' }
-        ],
-        examinerRationale: 'Band 9.0 model essay demonstrating flawless cohesion, sophisticated lexical range, and rigorous task response.'
+        modelEssay: '',
+        structuralBreakdown: [],
+        keyVocabulary: [],
+        examinerRationale: ''
       },
-      actionableTips: data.actionableTips || [
-        'Vary transition signals rather than relying solely on "Firstly" and "Furthermore".',
-        'Review complex conditional structures to expand grammatical range.'
-      ],
+      actionableTips: data.actionableTips || [],
       isEstimated: true
     };
   }
 
-  private generateOfflineSpeakingFallback(
-    transcript: string,
-    questionText: string,
-    part: 1 | 2 | 3,
-    topic: string,
-    durationSec: number,
-    wordsPerMinute: number
-  ): SpeakingGrammarFeedbackResult {
-    const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
-    const lower = transcript.toLowerCase();
-
-    const grammaticalErrors: GrammaticalErrorItem[] = [];
-
-    if (/\b(it|he|she)\s+(make|feel|sound|seem|cost|take|give|think|want|have|need|like|live|work|go|do)\b/i.test(lower)) {
-      grammaticalErrors.push({
-        observed: 'Subject-verb mismatch',
-        corrected: 'Include third-person singular "-s" (e.g., "he makes", "it gives")',
-        explanation: 'Third-person singular subjects in simple present tense require verb inflection ending in -s.',
-        ruleCategory: 'Subject-Verb Agreement',
-        severity: 'moderate'
-      });
-    }
-
-    if (/\ba\s+[aeiou]\w+/i.test(lower)) {
-      grammaticalErrors.push({
-        observed: 'Indefinite article error',
-        corrected: 'Use "an" before vowel sounds (e.g. "an opportunity")',
-        explanation: 'The indefinite article "an" precedes words commencing with a vowel sound.',
-        ruleCategory: 'Articles & Determiners',
-        severity: 'minor'
-      });
-    }
-
-    const estimatedBands = {
-      fluency: wordCount > 30 ? 7.5 : 6.5,
-      lexical: 7.0,
-      grammar: grammaticalErrors.length === 0 ? 7.5 : 6.5,
-      pronunciation: 7.0,
-      overall: grammaticalErrors.length === 0 ? 7.5 : 6.5
-    };
-
-    return {
-      questionId: 'spk_offline_' + Date.now(),
-      questionText,
-      part,
-      topic,
-      candidateTranscript: transcript,
-      wordCount,
-      durationSec,
-      wordsPerMinute,
-      estimatedBands,
-      bandJustifications: [
-        {
-          criterion: 'fluency',
-          criterionLabel: 'Fluency & Coherence',
-          estimatedBand: estimatedBands.fluency,
-          justification: `Spoken rate of ${wordsPerMinute} WPM shows consistent flow with acceptable hesitation.`,
-          keyStrengths: ['Good pacing', 'Natural speech momentum'],
-          keyWeaknesses: ['Brief mid-sentence pauses']
-        },
-        {
-          criterion: 'lexical',
-          criterionLabel: 'Lexical Resource',
-          estimatedBand: 7.0,
-          justification: 'Demonstrates good control of general and topic vocabulary.',
-          keyStrengths: ['Relevant topic terms'],
-          keyWeaknesses: ['Could use more high-level C1 collocations']
-        },
-        {
-          criterion: 'grammar',
-          criterionLabel: 'Grammatical Range & Accuracy',
-          estimatedBand: estimatedBands.grammar,
-          justification: grammaticalErrors.length === 0 ? 'High accuracy with well-formed complex structures.' : 'Good overall control with minor inflection errors.',
-          keyStrengths: ['Clear sentence boundaries'],
-          keyWeaknesses: grammaticalErrors.map((e) => e.explanation)
-        },
-        {
-          criterion: 'pronunciation',
-          criterionLabel: 'Pronunciation',
-          estimatedBand: 7.0,
-          justification: 'Clear enunciation and intelligible stress patterns.',
-          keyStrengths: ['Distinct word boundaries'],
-          keyWeaknesses: ['Attention to syllable stress on longer words']
-        }
-      ],
-      grammaticalErrors,
-      pronunciation: {
-        clarityBand: 7.0,
-        cadenceWpm: wordsPerMinute,
-        trickyWords: [
-          { word: 'development', ipa: '/dɪˈvel.əp.mənt/', syllableStress: 'de-VEL-op-ment', tip: 'Stress the second syllable "VEL".' },
-          { word: 'opportunity', ipa: '/ˌɒp.əˈtʃuː.nə.ti/', syllableStress: 'op-por-TU-ni-ty', tip: 'Primary stress falls on "TU".' }
-        ],
-        connectedSpeechTips: ['Link words smoothly in continuous phrases.'],
-        intonationPattern: 'Falling tone at sentence conclusions.',
-        rhythmVerdict: 'Intelligible rhythmic stress.'
-      },
-      band8Answer: {
-        bandScore: 8.5,
-        modelAnswer: `Without a shadow of a doubt, regarding ${topic.toLowerCase()}, I firmly believe that taking a proactive approach yields the most sustainable outcomes.`,
-        highlightedCollocations: [
-          { phrase: 'without a shadow of a doubt', bandLevel: 'C2', meaning: 'With complete certainty' },
-          { phrase: 'proactive approach', bandLevel: 'C1', meaning: 'Taking initiative before problems arise' }
-        ],
-        keyDiscourseMarkers: ['Without a shadow of a doubt', 'Regarding', 'I firmly believe'],
-        examinerRationale: 'Sample Band 8.5 response with natural idiomatic expressions and C1 vocabulary.'
-      },
-      actionableTips: [
-        'Incorporate idiomatic discourse markers to open your response smoothly.',
-        'Pay close attention to third-person singular verb forms in rapid speech.'
-      ],
-      isEstimated: true
-    };
-  }
-
-  private generateOfflineWritingFallback(
-    essayText: string,
-    promptText: string,
-    testType: 'task1' | 'task2'
-  ): WritingGrammarFeedbackResult {
-    const wordCount = essayText.trim().split(/\s+/).filter(Boolean).length;
-    const targetWordCount = testType === 'task2' ? 250 : 150;
-
-    const estimatedBands = {
-      taskAchievement: wordCount >= targetWordCount ? 7.5 : 6.0,
-      coherenceCohesion: 7.0,
-      lexicalResource: 7.0,
-      grammaticalRange: 7.0,
-      overall: wordCount >= targetWordCount ? 7.0 : 6.5
-    };
-
-    return {
-      essayId: 'wrt_offline_' + Date.now(),
-      testType,
-      promptText,
-      candidateEssay: essayText,
-      wordCount,
-      targetWordCount,
-      estimatedBands,
-      bandJustifications: [
-        {
-          criterion: 'task_achievement',
-          criterionLabel: testType === 'task2' ? 'Task Response' : 'Task Achievement',
-          estimatedBand: estimatedBands.taskAchievement,
-          justification: `Word count (${wordCount}) ${wordCount >= targetWordCount ? 'meets requirements' : 'is below recommended minimum ' + targetWordCount}.`,
-          keyStrengths: ['Addresses main prompt components'],
-          keyWeaknesses: wordCount < targetWordCount ? ['Extend paragraphs with further evidence'] : []
-        },
-        {
-          criterion: 'coherence',
-          criterionLabel: 'Coherence & Cohesion',
-          estimatedBand: 7.0,
-          justification: 'Logical paragraph structure with appropriate linking words.',
-          keyStrengths: ['Clear paragraph separation'],
-          keyWeaknesses: ['Vary transition signals']
-        },
-        {
-          criterion: 'lexical',
-          criterionLabel: 'Lexical Resource',
-          estimatedBand: 7.0,
-          justification: 'Uses good academic vocabulary appropriate for IELTS Writing.',
-          keyStrengths: ['Varied academic word choices'],
-          keyWeaknesses: ['Incorporate more complex collocations']
-        },
-        {
-          criterion: 'grammar',
-          criterionLabel: 'Grammatical Range & Accuracy',
-          estimatedBand: 7.0,
-          justification: 'Good control of complex sentence structures.',
-          keyStrengths: ['Varied sentence lengths'],
-          keyWeaknesses: ['Check punctuation in compound sentences']
-        }
-      ],
-      grammaticalErrors: [],
-      lexicalFaults: [],
-      band8Answer: {
-        bandScore: 9.0,
-        modelEssay: 'In recent years, this topic has triggered widespread discussion across academic and professional circles...',
-        structuralBreakdown: ['Introduction', 'Body Paragraph 1', 'Body Paragraph 2', 'Conclusion'],
-        keyVocabulary: [
-          { phrase: 'widespread discussion', bandLevel: 'C1', meaning: 'Extensive debate' },
-          { phrase: 'paramount significance', bandLevel: 'C2', meaning: 'Top priority' }
-        ],
-        examinerRationale: 'Band 9.0 model essay structure demonstrating balanced arguments and advanced vocabulary.'
-      },
-      actionableTips: [
-        'Ensure every body paragraph has a clear topic sentence.',
-        'Use complex sentences with subordinate clauses to increase grammatical range.'
-      ],
-      isEstimated: true
-    };
-  }
 }
 
 export const grammarFeedbackEngine = new GrammarFeedbackEngineService();

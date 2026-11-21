@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, ExamHistoryRecord } from '../../types';
 import { soundManager } from '../../utils/audioEffects';
+import { describeExamHistoryDisplay } from '../../utils/userStorage';
 
 interface PracticeHeatmapProps {
   user?: UserProfile | null;
@@ -42,7 +43,7 @@ const STORAGE_KEY = 'ielts_practice_heatmap_v2';
 export const PracticeHeatmap: React.FC<PracticeHeatmapProps> = ({
   user,
   examHistory = [],
-  streakDays = 5,
+  streakDays = 0,
   onNavigate,
   onShowToast
 }) => {
@@ -92,61 +93,36 @@ export const PracticeHeatmap: React.FC<PracticeHeatmapProps> = ({
       const weekdayName = targetDate.toLocaleDateString('en-US', { weekday: 'short' });
       const isToday = i === 0;
 
-      // Realistic activity simulation seeded with user's streak & completed history
+      // Strictly use recorded exam attempts and explicitly logged daily study sessions (no fabricated activity)
       const examsThisDay = examByDate[dateStr] || [];
       const customThisDay = customLogs[dateStr];
 
       let minutes = 0;
       let drillsCount = 0;
-      let mockTestsCount = examsThisDay.length;
+      const mockTestsCount = examsThisDay.length;
       const activities: string[] = [];
 
-      // Add real exam attempts
+      // Add real exam attempts using shared display descriptor
       if (mockTestsCount > 0) {
-        examsThisDay.forEach((e) => {
-          minutes += 45;
-          activities.push(
-            e.examType === 'full_mock'
-              ? `Full Mock Exam (Band ${e.overallBand ?? 7.0})`
-              : `Listening Section Test (${e.correctCount}/${e.totalQuestions})`
-          );
+        examsThisDay.forEach((e, idx) => {
+          const desc = describeExamHistoryDisplay(e, idx + 1);
+          minutes += desc.isFullMock ? 45 : 20;
+          const label =
+            desc.badgeScore !== '—' && desc.badgeScore !== 'INC' && desc.badgeScore !== 'DIAG' && desc.badgeScore !== '3-S'
+              ? `${desc.title} (Band ${desc.badgeScore})`
+              : desc.statusNote
+              ? `${desc.title} (${desc.statusNote})`
+              : desc.title;
+          activities.push(label);
         });
       }
 
-      // Add custom or logged daily study minutes
-      if (customThisDay) {
+      // Add explicitly logged custom daily study sessions
+      if (customThisDay && typeof customThisDay.minutes === 'number' && customThisDay.minutes > 0) {
         minutes += customThisDay.minutes;
-        activities.push(...customThisDay.activities);
-      }
-
-      // If within current streak (e.g. past N days), guarantee active habit data
-      const effectiveStreak = streakDays || 5;
-      if (i < effectiveStreak) {
-        // Seeded realistic past habit within current streak if not already populated
-        if (minutes === 0) {
-          const pseudoMins = [35, 45, 25, 50, 40, 30][i % 6];
-          minutes = pseudoMins;
-          drillsCount = Math.max(1, Math.floor(pseudoMins / 15));
-          if (i === 0) {
-            // Check localStorage for today's studied minutes
-            const storedTodayMins = typeof window !== 'undefined' ? parseInt(localStorage.getItem('ielts_daily_studied_mins') || '30', 10) : 30;
-            minutes = Math.max(minutes, storedTodayMins);
-            activities.push('Today\'s Active Study Session');
-            activities.push('Vocabulary Flashcard Review');
-          } else {
-            activities.push('Practice Listening Section Drill');
-            activities.push('C1 Academic Lexicon Practice');
-          }
-        }
-      } else {
-        // Prior days outside streak: spaced practice pattern (every 2-3 days)
-        // Pseudo-random deterministic distribution based on day number
-        const hash = (dayNum * 13 + (targetDate.getMonth() + 1) * 7) % 10;
-        if (hash > 4 && minutes === 0) {
-          minutes = [20, 30, 40, 25][hash % 4];
-          drillsCount = 2;
-          activities.push('Task 2 Skeleton Planning');
-          activities.push('Fluency Shadowing Drill');
+        if (Array.isArray(customThisDay.activities)) {
+          activities.push(...customThisDay.activities);
+          drillsCount += customThisDay.activities.length;
         }
       }
 
@@ -229,9 +205,9 @@ export const PracticeHeatmap: React.FC<PracticeHeatmapProps> = ({
     const updated = {
       ...customLogs,
       [todayStr]: {
-        minutes: (customLogs[todayStr]?.minutes || 30) + 15,
+        minutes: (customLogs[todayStr]?.minutes || 0) + 15,
         activities: [
-          ...(customLogs[todayStr]?.activities || ['Core Study Sprint']),
+          ...(customLogs[todayStr]?.activities || []),
           'Quick 15-min Retention Sprint'
         ]
       }
@@ -240,7 +216,7 @@ export const PracticeHeatmap: React.FC<PracticeHeatmapProps> = ({
     setCustomLogs(updated);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      const currentStored = parseInt(localStorage.getItem('ielts_daily_studied_mins') || '30', 10);
+      const currentStored = parseInt(localStorage.getItem('ielts_daily_studied_mins') || '0', 10);
       localStorage.setItem('ielts_daily_studied_mins', String(currentStored + 15));
     } catch {}
 
@@ -401,8 +377,14 @@ export const PracticeHeatmap: React.FC<PracticeHeatmapProps> = ({
             <span>Peak Session</span>
           </div>
           <div className="text-sm sm:text-base font-black text-purple-600 dark:text-purple-400 mt-0.5 font-mono truncate">
-            {stats.maxMinutesDay?.minutes || 45}m{' '}
-            <span className="text-xs font-normal text-slate-400">({stats.maxMinutesDay?.dayLabel || 'Oct'})</span>
+            {stats.maxMinutesDay && stats.maxMinutesDay.minutes > 0 ? (
+              <>
+                {stats.maxMinutesDay.minutes}m{' '}
+                <span className="text-xs font-normal text-slate-400">({stats.maxMinutesDay.dayLabel})</span>
+              </>
+            ) : (
+              '—'
+            )}
           </div>
         </div>
       </div>

@@ -7,6 +7,10 @@ import {
   resolveBarnabyExpression,
   getExpressionBadgeLabel
 } from '../../config/avatarReferenceRegistry';
+import {
+  BarnabyDragonAvatar,
+  mapExaminerStateToAvatarState
+} from '../common/BarnabyDragonAvatar';
 
 export type ChubbyAvatarCharacter = 'clara' | 'arthur' | 'barnaby';
 
@@ -145,9 +149,9 @@ export interface CuteChubbyExaminerAvatarProps {
  *    - 5 Reference Expressions: Neutral, Speaking, Listening, Thinking, Encouraging.
  *
  * 3. Barnaby (AI Learning Companion):
- *    - Cute, chubby anime boy mascot with fluffy dark-brown wavy hair, large expressive brown eyes,
- *      rosy cheeks, backpack straps, and a royal-blue "BandSprint" hoodie.
- *    - 6 Reference Expressions: Happy, Excited, Thinking, Encouraging, Listening, Cheerful.
+ *    - Unified 2.5D animated sky-blue baby dragon (BarnabyDragonAvatar) with golden horns,
+ *      oversized navy glasses, navy BandSprint hoodie, graduation cap, wings, and spiked tail.
+ *    - Mouth articulation strictly bound to actual audible TTS playback.
  *    - Visually and functionally distinct from both IELTS examiners.
  */
 export const CuteChubbyExaminerAvatar: React.FC<CuteChubbyExaminerAvatarProps> = ({
@@ -269,9 +273,9 @@ export const CuteChubbyExaminerAvatar: React.FC<CuteChubbyExaminerAvatarProps> =
   const [eyeDriftX, setEyeDriftX] = useState(0);
   const [eyeDriftY, setEyeDriftY] = useState(0);
 
-  // 1. Natural Randomized Blink Loop (3.0s - 5.6s, disabled in reducedMotion)
+  // 1. Natural Randomized Blink Loop (3.0s - 5.6s, disabled for Barnaby which uses pure CSS blink & in reducedMotion)
   useEffect(() => {
-    if (reducedMotion || resolvedState === 'paused') {
+    if (activeChar === 'barnaby' || reducedMotion || resolvedState === 'paused') {
       setBlink(false);
       return;
     }
@@ -360,9 +364,9 @@ export const CuteChubbyExaminerAvatar: React.FC<CuteChubbyExaminerAvatarProps> =
     }
   }, [reducedMotion, resolvedState, candidateVolumeRms, activeChar]);
 
-  // Subtle idle breathing wave
+  // Subtle idle breathing wave (examiners only; Barnaby uses GPU-composited CSS breathing)
   useEffect(() => {
-    if (reducedMotion || resolvedState === 'paused') {
+    if (activeChar === 'barnaby' || reducedMotion || resolvedState === 'paused') {
       setBreathOffset(0);
       return;
     }
@@ -371,7 +375,7 @@ export const CuteChubbyExaminerAvatar: React.FC<CuteChubbyExaminerAvatarProps> =
       setBreathOffset(Math.sin(t) * 1.1);
     }, 80);
     return () => clearInterval(interval);
-  }, [reducedMotion, resolvedState]);
+  }, [activeChar, reducedMotion, resolvedState]);
 
   // 3. Real-Time Speech Viseme Synchronization (Strictly active ONLY during audible speech)
   useEffect(() => {
@@ -611,6 +615,30 @@ export const CuteChubbyExaminerAvatar: React.FC<CuteChubbyExaminerAvatarProps> =
       )}
 
       {/* ================= MAIN CHARACTER PORTRAIT STAGE (TIGHT CHEST-UP FRAMING) ================= */}
+      {activeChar === 'barnaby' ? (
+        <div
+          className="relative z-10 flex items-center justify-center w-full h-full pt-8 pb-11 px-3"
+          data-testid="speaking-studio-barnaby-stage"
+        >
+          <BarnabyDragonAvatar
+            state={mapExaminerStateToAvatarState(resolvedState, {
+              isSpeaking: isActuallyAudible,
+              expression: activeBarnabyExpression
+            })}
+            isSpeaking={isActuallyAudible}
+            mouthOpenness={mouthOpenness}
+            paused={resolvedState === 'paused'}
+            size="studio"
+            framed="none"
+            className={
+              compact
+                ? 'max-w-[200px] sm:max-w-[235px] drop-shadow-[0_12px_22px_rgba(0,0,0,0.45)]'
+                : 'max-w-[225px] sm:max-w-[265px] drop-shadow-[0_12px_22px_rgba(0,0,0,0.45)]'
+            }
+            testId="speaking-studio-barnaby-dragon"
+          />
+        </div>
+      ) : (
       <div
         className="relative z-10 flex items-end justify-center w-full h-full pt-7 pb-9 px-2 transition-transform duration-200 ease-out"
         style={{
@@ -623,11 +651,7 @@ export const CuteChubbyExaminerAvatar: React.FC<CuteChubbyExaminerAvatarProps> =
             compact ? 'max-w-[248px] sm:max-w-[285px]' : 'max-w-[270px] sm:max-w-[330px]'
           } object-contain filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.55)]`}
           role="img"
-          aria-label={
-            activeChar === 'barnaby'
-              ? `Barnaby — Cute Chubby Anime Study Companion (${activeBarnabyExpression})`
-              : `${displayName} — IELTS Speaking Examiner (${activeExaminerExpression})`
-          }
+          aria-label={`${displayName} — IELTS Speaking Examiner (${activeExaminerExpression})`}
         >
           <defs>
             {/* Dr. Clara Sterling — Warm Porcelain-Peach Anime Skin */}
@@ -1537,341 +1561,9 @@ export const CuteChubbyExaminerAvatar: React.FC<CuteChubbyExaminerAvatarProps> =
             </g>
           )}
 
-          {/* =====================================================================
-              CHARACTER 3: BARNABY — CUTE CHUBBY ANIME BOY IN BLUE "BandSprint" HOODIE
-              Fluffy dark-brown hair, warm brown eyes, blue hoodie, backpack straps
-             ===================================================================== */}
-          {activeChar === 'barnaby' && (
-            <g id="barnaby-reference-anime-rig">
-              {/* Hoodie Hood Collar Behind Neck */}
-              <ellipse cx="102" cy="218" rx="24" ry="14" fill="#1E3A8A" />
-              <ellipse cx="198" cy="218" rx="24" ry="14" fill="#1E3A8A" />
-
-              {/* Royal-Blue "BandSprint" Hoodie Torso */}
-              <path
-                d="M 62 292 C 64 234 94 212 150 212 C 206 212 236 234 238 292 Z"
-                fill="url(#refBarnabyHoodie)"
-                stroke="#172554"
-                strokeWidth="2.2"
-              />
-
-              {/* Dark Charcoal Backpack Straps Over Shoulders */}
-              <path
-                d="M 92 216 C 86 240 86 266 89 292 L 105 292 C 102 266 102 240 107 214 Z"
-                fill="#27272A"
-              />
-              <path
-                d="M 208 216 C 214 240 214 266 211 292 L 195 292 C 198 266 198 240 193 214 Z"
-                fill="#27272A"
-              />
-
-              {/* Hoodie Neck Seam & Drawstrings */}
-              <path
-                d="M 134 222 L 132 248 M 166 222 L 168 248"
-                stroke="#172554"
-                strokeWidth="3.2"
-                strokeLinecap="round"
-              />
-
-              {/* Crisp White "BandSprint" Chest Branding */}
-              <text
-                x="150"
-                y="258"
-                textAnchor="middle"
-                fill="#FFFFFF"
-                fontSize="17"
-                fontWeight="900"
-                fontFamily="sans-serif"
-                letterSpacing="0.5"
-              >
-                IELTS
-              </text>
-              <text
-                x="152"
-                y="275"
-                textAnchor="middle"
-                fill="#DBEAFE"
-                fontSize="15"
-                fontWeight="800"
-                fontFamily="sans-serif"
-              >
-                ≡Sprint
-              </text>
-
-              {/* Cute Neck */}
-              <rect x="134" y="196" width="32" height="24" rx="10" fill="url(#refClaraSkin)" />
-
-              {/* Round Chubby Boy Ears */}
-              <circle cx="80" cy="154" r="14" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.8" />
-              <path d="M 77 150 Q 82 154 79 159" stroke="#B87A5D" strokeWidth="1.6" strokeLinecap="round" />
-              <circle cx="220" cy="154" r="14" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.8" />
-              <path d="M 223 150 Q 218 154 221 159" stroke="#B87A5D" strokeWidth="1.6" strokeLinecap="round" />
-
-              {/* Ultra-Cute Chubby Anime Boy Head & Plump Cheeks */}
-              <path
-                d="M 84 134 C 84 82 216 82 216 134 C 222 172 208 206 150 206 C 92 206 78 172 84 134 Z"
-                fill="url(#refClaraSkin)"
-                stroke="#C88A6D"
-                strokeWidth="2"
-              />
-
-              {/* Rosy Chubby Cheek Blush */}
-              <ellipse cx="104" cy="166" rx="17" ry="10.5" fill="url(#refCheekGlow)" />
-              <ellipse cx="196" cy="166" rx="17" ry="10.5" fill="url(#refCheekGlow)" />
-
-              {/* Friendly Expressive Dark-Brown Eyebrows */}
-              <path
-                d={
-                  isThinkingPose
-                    ? 'M 102 122 Q 118 116 134 124'
-                    : activeBarnabyExpression === 'excited' || isEncouragingEyes
-                    ? 'M 100 116 Q 118 106 134 116'
-                    : 'M 102 119 Q 118 111 134 118'
-                }
-                fill="none"
-                stroke="#2E160B"
-                strokeWidth="4.2"
-                strokeLinecap="round"
-              />
-              <path
-                d={
-                  isThinkingPose
-                    ? 'M 166 116 Q 182 106 198 116'
-                    : activeBarnabyExpression === 'excited' || isEncouragingEyes
-                    ? 'M 166 116 Q 182 106 200 116'
-                    : 'M 166 118 Q 182 111 198 119'
-                }
-                fill="none"
-                stroke="#2E160B"
-                strokeWidth="4.2"
-                strokeLinecap="round"
-              />
-
-              {/* Large Expressive Warm Brown Anime Eyes */}
-              {blink || isEncouragingEyes ? (
-                <g>
-                  <path
-                    d={
-                      isEncouragingEyes
-                        ? 'M 103 148 Q 120 132 137 148'
-                        : 'M 103 149 Q 120 158 137 149'
-                    }
-                    fill="none"
-                    stroke="#2A140A"
-                    strokeWidth="4.2"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={
-                      isEncouragingEyes
-                        ? 'M 163 148 Q 180 132 197 148'
-                        : 'M 163 149 Q 180 158 197 149'
-                    }
-                    fill="none"
-                    stroke="#2A140A"
-                    strokeWidth="4.2"
-                    strokeLinecap="round"
-                  />
-                </g>
-              ) : (
-                <g>
-                  <ellipse cx="120" cy="147" rx="18.5" ry="20.5" fill="#FFFFFF" />
-                  <ellipse cx="180" cy="147" rx="18.5" ry="20.5" fill="#FFFFFF" />
-
-                  <ellipse
-                    cx={120 + eyeDriftX}
-                    cy={148 + eyeDriftY}
-                    rx="14"
-                    ry="16"
-                    fill="url(#refClaraAmberIris)"
-                  />
-                  <ellipse
-                    cx={180 + eyeDriftX}
-                    cy={148 + eyeDriftY}
-                    rx="14"
-                    ry="16"
-                    fill="url(#refClaraAmberIris)"
-                  />
-
-                  <circle cx={120 + eyeDriftX} cy={148 + eyeDriftY} r="7.4" fill="#180A04" />
-                  <circle cx={180 + eyeDriftX} cy={148 + eyeDriftY} r="7.4" fill="#180A04" />
-
-                  {/* Warm Lower Iris Glow */}
-                  <path
-                    d={`M ${111 + eyeDriftX} ${156 + eyeDriftY} Q ${120 + eyeDriftX} ${162 + eyeDriftY} ${129 + eyeDriftX} ${156 + eyeDriftY}`}
-                    fill="none"
-                    stroke="#FDE68A"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    opacity="0.88"
-                  />
-                  <path
-                    d={`M ${171 + eyeDriftX} ${156 + eyeDriftY} Q ${180 + eyeDriftX} ${162 + eyeDriftY} ${189 + eyeDriftX} ${156 + eyeDriftY}`}
-                    fill="none"
-                    stroke="#FDE68A"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    opacity="0.88"
-                  />
-
-                  {/* Big Glossy Catchlights */}
-                  <circle cx={114 + eyeDriftX} cy={139.5 + eyeDriftY} r="5.4" fill="#FFFFFF" />
-                  <circle cx={125.5 + eyeDriftX} cy={154 + eyeDriftY} r="2.6" fill="#FFFFFF" opacity="0.92" />
-                  <circle cx={174 + eyeDriftX} cy={139.5 + eyeDriftY} r="5.4" fill="#FFFFFF" />
-                  <circle cx={185.5 + eyeDriftX} cy={154 + eyeDriftY} r="2.6" fill="#FFFFFF" opacity="0.92" />
-
-                  {/* Crisp Upper Eyelash Line */}
-                  <path
-                    d="M 100 141 Q 120 123 140 141 M 160 141 Q 180 123 200 141"
-                    fill="none"
-                    stroke="#231007"
-                    strokeWidth="4.4"
-                    strokeLinecap="round"
-                  />
-                </g>
-              )}
-
-              {/* Cute Little Anime Nose */}
-              <path
-                d="M 148 156 Q 150 160 153 157.5"
-                fill="none"
-                stroke="#BC7B5C"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-              />
-
-              {/* Barnaby Audio-Synced Mouth Visemes & Expressions */}
-              {resolvedState === 'speaking' ? (
-                mouthViseme === 'neutral' || mouthViseme === 'closedM' ? (
-                  <path
-                    data-mouth-state="speaking-closed"
-                    d="M 139 172 Q 150 178 161 172"
-                    fill="none"
-                    stroke="#6B2130"
-                    strokeWidth="2.8"
-                    strokeLinecap="round"
-                  />
-                ) : (
-                  <g data-mouth-state="speaking-open">
-                    <path
-                      d={
-                        mouthViseme === 'openA'
-                          ? 'M 134 169 Q 150 166 166 169 Q 150 192 134 169 Z'
-                          : 'M 136 170 Q 150 168 164 170 Q 150 187 136 170 Z'
-                      }
-                      fill="#9F1239"
-                      stroke="#6B2130"
-                      strokeWidth="1.8"
-                    />
-                    <path d="M 139 170 Q 150 172.5 161 170 Z" fill="#FFFFFF" />
-                    <ellipse cx="150" cy="180" rx="7" ry="4.2" fill="#FB7185" />
-                  </g>
-                )
-              ) : isThinkingPose ? (
-                <path
-                  data-mouth-state="thinking-closed"
-                  d="M 143 175 Q 150 172 157 175"
-                  fill="none"
-                  stroke="#6B2130"
-                  strokeWidth="2.8"
-                  strokeLinecap="round"
-                />
-              ) : resolvedState === 'listening' ? (
-                <path
-                  data-mouth-state="listening-closed"
-                  d="M 138 172 Q 150 180 162 172"
-                  fill="none"
-                  stroke="#6B2130"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-              ) : activeBarnabyExpression === 'cheerful' ||
-                activeBarnabyExpression === 'encouraging' ||
-                activeBarnabyExpression === 'excited' ? (
-                /* Open-Mouth Cheerful / Encouraging / Excited Expression with Cute Upper Teeth */
-                <g data-mouth-state="expression-open">
-                  <path
-                    d="M 136 169.5 Q 150 168 164 169.5 Q 150 187 136 169.5 Z"
-                    fill="#9F1239"
-                    stroke="#6B2130"
-                    strokeWidth="1.8"
-                  />
-                  <path d="M 139.5 170 Q 150 172.2 160.5 170 Z" fill="#FFFFFF" />
-                  <ellipse cx="150" cy="179.5" rx="6.8" ry="3.8" fill="#FB7185" />
-                </g>
-              ) : (
-                /* Idle / Paused / Non-Speaking Neutral Viseme: Closed, Friendly Smile */
-                <path
-                  id="barnaby-idle-closed-smile"
-                  data-mouth-state="idle-closed-smile"
-                  d="M 138 171.5 Q 150 180.5 162 171.5"
-                  fill="none"
-                  stroke="#6B2130"
-                  strokeWidth="2.9"
-                  strokeLinecap="round"
-                />
-              )}
-
-              {/* Fluffy, Curly Dark-Brown Anime Boy Hair (Reference Match) */}
-              <path
-                d="M 78 138 C 70 84 112 58 150 60 C 188 58 230 84 222 138 C 212 108 192 96 172 106 C 160 88 134 88 122 108 C 102 96 86 110 78 138 Z"
-                fill="url(#refArthurBrownHair)"
-                stroke="#1E0E06"
-                strokeWidth="1.8"
-              />
-              {/* Fluffy Top Curl Tuft & Wavy Bangs */}
-              <path
-                d="M 128 63 C 138 47 162 47 170 63 C 156 59 142 59 128 63 Z"
-                fill="url(#refArthurBrownHair)"
-              />
-              <path
-                d="M 104 86 C 110 106 124 118 140 120 C 134 100 122 86 104 86 Z"
-                fill="url(#refArthurBrownHair)"
-              />
-              <path
-                d="M 144 80 C 152 102 166 114 182 116 C 176 96 162 80 144 80 Z"
-                fill="url(#refArthurBrownHair)"
-              />
-              {/* Warm Chestnut Hair Highlights */}
-              <path
-                d="M 106 92 Q 128 78 146 88 M 158 86 Q 180 78 198 94"
-                fill="none"
-                stroke="#855439"
-                strokeWidth="2.8"
-                strokeLinecap="round"
-                opacity="0.65"
-              />
-
-              {/* Barnaby Friendly Waving Hand & Study Notebook (Matching Reference Sheet) */}
-              {isThinkingPose ? (
-                <g id="barnaby-thinking-pose">
-                  <circle cx="164" cy="198" r="12" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.8" />
-                  <text x="208" y="88" fill="#F59E0B" fontSize="26" fontWeight="900" fontFamily="sans-serif">
-                    ?
-                  </text>
-                </g>
-              ) : (
-                <g id="barnaby-wave-and-notebook">
-                  {/* Friendly Waving Right Hand */}
-                  <g transform="translate(46, 174) rotate(-14)">
-                    <ellipse cx="18" cy="24" rx="13" ry="15" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.8" />
-                    <rect x="7" y="4" width="5.5" height="14" rx="2.7" transform="rotate(-18 7 4)" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.4" />
-                    <rect x="14" y="1" width="5.5" height="16" rx="2.7" transform="rotate(-4 14 1)" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.4" />
-                    <rect x="21" y="3" width="5.5" height="15" rx="2.7" transform="rotate(10 21 3)" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.4" />
-                    <rect x="27" y="9" width="5.5" height="12" rx="2.7" transform="rotate(26 27 9)" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.4" />
-                  </g>
-                  {/* Dark Study Notebook Held Under Left Arm */}
-                  <g transform="translate(188, 226) rotate(8)">
-                    <rect x="0" y="0" width="36" height="48" rx="4" fill="#F8FAFC" stroke="#475569" strokeWidth="1.5" />
-                    <rect x="3" y="2" width="34" height="48" rx="4" fill="#1E293B" stroke="#0F172A" strokeWidth="1.8" />
-                    <circle cx="6" cy="24" r="11" fill="url(#refClaraSkin)" stroke="#C88A6D" strokeWidth="1.8" />
-                  </g>
-                </g>
-              )}
-            </g>
-          )}
         </svg>
       </div>
+      )}
 
       {/* ================= TOP HUD BAR (NON-OVERLAPPING FLEX LAYOUT) ================= */}
       <div className="absolute top-2.5 inset-x-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">

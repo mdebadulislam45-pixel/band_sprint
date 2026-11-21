@@ -302,6 +302,7 @@ export const CueScratchpad: React.FC<CueScratchpadProps> = ({ onShowToast }) => 
     const durationSec = Math.max(15, speakingElapsedSec || Math.round(wordCount / 2));
     const wordsPerMinute = Math.round((wordCount / (durationSec / 60)) || 110);
 
+    const detectedFillers = transcriptToEvaluate.match(/\b(um|uh|er|ah|like|you know|basically)\b/gi) || [];
     const now = Date.now();
     const record: SpeakingAnswerRecord = {
       questionId: 'cue_card_' + topicIndex,
@@ -314,21 +315,33 @@ export const CueScratchpad: React.FC<CueScratchpadProps> = ({ onShowToast }) => 
       durationSec,
       wordCount,
       wordsPerMinute,
-      pauseCount: 1,
-      longPauseCount: 0,
-      fillerCount: 2,
-      detectedFillers: ['um', 'like']
+      pauseCount: null,
+      longPauseCount: null,
+      fillerCount: detectedFillers.length,
+      detectedFillers
     };
 
     try {
       const evaluation = await evaluateSingleSpeakingTurn(record, currentTopic.prompts);
       setFeedback(evaluation);
       setShowFeedbackModal(true);
-      soundManager.playSuccess();
-      onShowToast('Diagnostic Band Feedback Generated!');
+      if (evaluation.isValidAttempt === false || evaluation.assessmentStatus === 'unavailable' || evaluation.assessmentStatus === 'insufficient_evidence') {
+        soundManager.playBeep(360, 0.12);
+        onShowToast(evaluation.feedbackEn || evaluation.error || 'AI speaking evaluation unavailable — no score generated.');
+      } else {
+        soundManager.playSuccess();
+        if (typeof evaluation.overallBand === 'number') {
+          onShowToast(`Speaking Feedback Generated: Band ${evaluation.overallBand.toFixed(1)}`);
+        } else if (typeof evaluation.partialThreeCriterionIndex === 'number') {
+          onShowToast(`Partial Transcript Feedback (3/4 Criteria): Index ${evaluation.partialThreeCriterionIndex.toFixed(1)} (Pronunciation unassessed)`);
+        } else {
+          onShowToast('Speaking Feedback Generated!');
+        }
+      }
     } catch (err) {
       console.error('Error generating cue card feedback:', err);
-      onShowToast('Evaluation generated with local Practice diagnostic rubric.');
+      soundManager.playBeep(360, 0.12);
+      onShowToast('AI speaking evaluation unavailable. Please sign in and retry.');
     } finally {
       setIsEvaluating(false);
     }

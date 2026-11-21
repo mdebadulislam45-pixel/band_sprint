@@ -34,7 +34,8 @@ import {
   switchActiveUser,
   saveUser,
   exportAllUserData,
-  importUserData
+  importUserData,
+  describeExamHistoryDisplay
 } from '../utils/userStorage';
 import { soundManager } from '../utils/audioEffects';
 import { handleGoogleSignInAction } from '../utils/googleAuth';
@@ -620,33 +621,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {(activeUser.progress.examHistory || []).length > 0 ? (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {(activeUser.progress.examHistory || []).map((rec) => (
-                    <div
-                      key={rec.id}
-                      className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between shadow-2xs"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
-                            {new Date(rec.timestamp).toLocaleDateString()}
-                          </span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${rec.submissionType === 'timer' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'}`}>
-                            {rec.submissionType === 'timer' ? '⏱️ Timer Ended' : '🏁 Finished'}
-                          </span>
+                  {(activeUser.progress.examHistory || []).map((rec, idx, arr) => {
+                    const desc = describeExamHistoryDisplay(rec, arr.length - idx);
+                    return (
+                      <div
+                        key={rec.id || idx}
+                        className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between shadow-2xs gap-3"
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                              {desc.title}
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-500">
+                              {new Date(rec.timestamp).toLocaleDateString()}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              desc.isIncompleteMock
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                : desc.isFullMock
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                            }`}>
+                              {desc.isIncompleteMock
+                                ? 'Incomplete'
+                                : desc.isFullMock
+                                ? '4-Skill Complete'
+                                : desc.statusNote || 'Single Skill'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                            {desc.skillSummaryParts.join(' | ')}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                          L: {typeof rec.listeningBand === 'number' ? rec.listeningBand.toFixed(1) : '—'} | R: {typeof rec.readingBand === 'number' ? rec.readingBand.toFixed(1) : '—'} | W: {typeof rec.writingBand === 'number' ? rec.writingBand.toFixed(1) : '—'}{typeof rec.speakingBand === 'number' ? ` | S: ${rec.speakingBand.toFixed(1)}` : ''} {typeof rec.wordCount === 'number' ? `(${rec.wordCount}w)` : ''}
-                        </div>
-                      </div>
 
-                      <div className="text-right">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Overall</span>
-                        <span className="font-mono text-lg font-black text-amber-500">
-                          {typeof rec.overallBand === 'number' ? `Band ${rec.overallBand.toFixed(1)}` : 'Completed'}
-                        </span>
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                            {desc.isFullMock ? 'Overall' : 'Status'}
+                          </span>
+                          <span className="font-mono text-lg font-black text-amber-500">
+                            {desc.oBand !== null
+                              ? `Band ${desc.oBand.toFixed(1)}`
+                              : desc.badgeScore !== '—' &&
+                                desc.badgeScore !== 'INC' &&
+                                desc.badgeScore !== 'DIAG' &&
+                                desc.badgeScore !== '3-S'
+                              ? `Band ${desc.badgeScore}`
+                              : desc.badgeScore}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center text-xs text-slate-500 dark:text-slate-400 space-y-2">

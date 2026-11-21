@@ -21,6 +21,9 @@ import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { getPreferredVoiceGender, setPreferredVoiceGender } from '../../config/voiceConfig';
 import { firebaseSyncService } from '../../services/firebaseSyncService';
+import { getStoredSessionToken } from '../../services/authService';
+import { SpeakingAssessmentStatus } from '../../types/speakingTypes';
+import { roundOfficialIELTSBand } from '../../utils/scoringIntegrity';
 import {
   CDIELTSColorScheme,
   CDIELTSZoomLevel,
@@ -38,14 +41,256 @@ interface CDIELTSSpeakingSuiteProps {
 
 type SpeakingStage = 'intro' | 'part1' | 'part2_prep' | 'part2_speak' | 'part3' | 'result';
 
-interface SpeakingEvaluation {
-  overallBand: number;
-  fluencyBand: number;
-  lexicalBand: number;
-  grammarBand: number;
-  pronunciationBand: number;
+export interface CDIELTSSpeakingEvaluation {
+  assessmentStatus: SpeakingAssessmentStatus;
+  evidenceMode: 'audio_and_transcript' | 'transcript_only' | 'unavailable';
+  pronunciationObservable: boolean;
+  isPartialAssessment: boolean;
+  unassessedCriteria: string[];
+  overallBand: number | null;
+  partialThreeCriterionIndex: number | null;
+  fluencyBand: number | null;
+  lexicalBand: number | null;
+  grammarBand: number | null;
+  pronunciationBand: number | null;
   examinerFeedback: string;
+  disclaimer?: string;
+  error?: string;
+  canRetry?: boolean;
+  authRequired?: boolean;
   wordCount: number;
+}
+
+function parseOptionalBand(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < 1.0 || value > 9.0) return null;
+  if (Math.abs(value * 2 - Math.round(value * 2)) > 1e-6) return null;
+  return Math.round(value * 2) / 2;
+}
+
+export function buildCDIELTSAuthHeaders(token?: string | null): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const cleanToken = typeof token === 'string' ? token.trim() : '';
+  if (cleanToken) {
+    headers['Authorization'] = `Bearer ${cleanToken}`;
+  }
+  return headers;
+}
+
+export function buildCDIELTSInsufficientEvaluation(wordCount: number): CDIELTSSpeakingEvaluation {
+  return {
+    assessmentStatus: 'insufficient_evidence',
+    evidenceMode: 'transcript_only',
+    pronunciationObservable: false,
+    isPartialAssessment: true,
+    unassessedCriteria: [
+      'Fluency & Coherence',
+      'Lexical Resource',
+      'Grammatical Range & Accuracy',
+      'Pronunciation'
+    ],
+    overallBand: null,
+    partialThreeCriterionIndex: null,
+    fluencyBand: null,
+    lexicalBand: null,
+    grammarBand: null,
+    pronunciationBand: null,
+    examinerFeedback:
+      'No sufficient spoken response was recorded during this session (minimum 5 spoken words required). No synthetic band score was generated.',
+    canRetry: false,
+    authRequired: false,
+    wordCount
+  };
+}
+
+export function buildCDIELTSUnavailableEvaluation(params: {
+  wordCount: number;
+  message: string;
+  authRequired?: boolean;
+  canRetry?: boolean;
+}): CDIELTSSpeakingEvaluation {
+  return {
+    assessmentStatus: 'unavailable',
+    evidenceMode: 'unavailable',
+    pronunciationObservable: false,
+    isPartialAssessment: true,
+    unassessedCriteria: [
+      'Fluency & Coherence',
+      'Lexical Resource',
+      'Grammatical Range & Accuracy',
+      'Pronunciation'
+    ],
+    overallBand: null,
+    partialThreeCriterionIndex: null,
+    fluencyBand: null,
+    lexicalBand: null,
+    grammarBand: null,
+    pronunciationBand: null,
+    examinerFeedback: params.message,
+    error: params.message,
+    authRequired: Boolean(params.authRequired),
+    canRetry: Boolean(params.canRetry),
+    wordCount: params.wordCount
+  };
+}
+
+/**
+ * Maps a `/api/evaluate-speaking-turn` Phase 3B.1 response into a null-safe CDIELTSSpeakingEvaluation.
+ * Never fabricates fallback bands or copies overall scores into unassessed Pronunciation.
+ */
+export function mapSpeakingTurnApiResponseToCDIELTS(
+  data: Record<string, any> | null | undefined,
+  wordCount: number
+): CDIELTSSpeakingEvaluation {
+  if (!data || typeof data !== 'object') {
+    return buildCDIELTSUnavailableEvaluation({
+      wordCount,
+      message: 'AI speaking evaluation returned an empty response. No band score was generated.',
+      canRetry: true
+    });
+  }
+
+  if (data.assessmentStatus === 'insufficient_evidence') {
+    return {
+      ...buildCDIELTSInsufficientEvaluation(
+        typeof data.wordCount === 'number' && Number.isFinite(data.wordCount) ? data.wordCount : wordCount
+      ),
+      examinerFeedback:
+        data.feedbackEn ||
+        data.error ||
+        'Insufficient speech sample recorded. Speak at least 5 words to receive an evaluation.'
+    };
+  }
+
+  if (data.assessmentStatus === 'unavailable' || data.isValidAttempt === false) {
+    return buildCDIELTSUnavailableEvaluation({
+      wordCount,
+      message:
+        data.feedbackEn ||
+        data.error ||
+        'AI speaking evaluation is currently unavailable. No fallback score was generated.',
+      authRequired: Boolean(data.authRequired),
+      canRetry: data.canRetry !== false && !data.authRequired
+    });
+  }
+
+  const fc = parseOptionalBand(data.criteria?.fc ?? data.estimatedBands?.fluency);
+  const lr = parseOptionalBand(data.criteria?.lr ?? data.estimatedBands?.lexical);
+  const gra = parseOptionalBand(data.criteria?.gra ?? data.estimatedBands?.grammar);
+  const pr = parseOptionalBand(data.criteria?.pr ?? data.estimatedBands?.pronunciation);
+
+  if (fc === null || lr === null || gra === null) {
+    return buildCDIELTSUnavailableEvaluation({
+      wordCount,
+      message:
+        'AI speaking response was missing required criterion scores. No fallback score was fabricated.',
+      canRetry: true
+    });
+  }
+
+  const pronunciationObservable =
+    data.pronunciationObservable === true &&
+    data.evidenceMode === 'audio_and_transcript' &&
+    pr !== null;
+
+  const feedbackParts: string[] = [];
+  if (typeof data.feedbackEn === 'string' && data.feedbackEn.trim()) {
+    feedbackParts.push(data.feedbackEn.trim());
+  } else if (typeof data.examinerFeedback === 'string' && data.examinerFeedback.trim()) {
+    feedbackParts.push(data.examinerFeedback.trim());
+  }
+  if (Array.isArray(data.actionableTips) && data.actionableTips.length > 0) {
+    const cleanTips = data.actionableTips
+      .filter((t: unknown): t is string => typeof t === 'string' && t.trim().length > 0)
+      .slice(0, 3);
+    if (cleanTips.length > 0) {
+      feedbackParts.push(cleanTips.join(' '));
+    }
+  }
+  const examinerFeedback =
+    feedbackParts.join(' ') ||
+    (pronunciationObservable
+      ? 'Evaluated across Fluency & Coherence, Lexical Resource, Grammatical Range & Accuracy, and Pronunciation.'
+      : 'Evaluated on transcript evidence across Fluency & Coherence, Lexical Resource, and Grammatical Range & Accuracy. Pronunciation requires audio evidence and remains unassessed.');
+
+  const unassessedCriteria: string[] = Array.isArray(data.unassessedCriteria)
+    ? data.unassessedCriteria.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0)
+    : pronunciationObservable
+    ? []
+    : ['Pronunciation'];
+
+  const resolvedWordCount =
+    typeof data.wordCount === 'number' && Number.isFinite(data.wordCount) ? data.wordCount : wordCount;
+
+  if (pronunciationObservable && pr !== null) {
+    const rawOverall = parseOptionalBand(data.overallBand ?? data.estimatedBands?.overall);
+    const computedOverall = rawOverall ?? roundOfficialIELTSBand((fc + lr + gra + pr) / 4);
+    return {
+      assessmentStatus: 'evaluated',
+      evidenceMode: 'audio_and_transcript',
+      pronunciationObservable: true,
+      isPartialAssessment: false,
+      unassessedCriteria: [],
+      overallBand: computedOverall,
+      partialThreeCriterionIndex: null,
+      fluencyBand: fc,
+      lexicalBand: lr,
+      grammarBand: gra,
+      pronunciationBand: pr,
+      examinerFeedback,
+      disclaimer: typeof data.disclaimer === 'string' ? data.disclaimer : undefined,
+      canRetry: false,
+      authRequired: false,
+      wordCount: resolvedWordCount
+    };
+  }
+
+  // Transcript-only partial assessment: preserve overallBand: null and partialThreeCriterionIndex separately
+  const parsedPartial = parseOptionalBand(data.partialThreeCriterionIndex);
+  const partialThreeCriterionIndex = parsedPartial ?? roundOfficialIELTSBand((fc + lr + gra) / 3);
+
+  return {
+    assessmentStatus: 'partial_transcript_only',
+    evidenceMode: 'transcript_only',
+    pronunciationObservable: false,
+    isPartialAssessment: true,
+    unassessedCriteria: unassessedCriteria.length > 0 ? unassessedCriteria : ['Pronunciation'],
+    overallBand: null,
+    partialThreeCriterionIndex,
+    fluencyBand: fc,
+    lexicalBand: lr,
+    grammarBand: gra,
+    pronunciationBand: null,
+    examinerFeedback,
+    disclaimer:
+      typeof data.disclaimer === 'string' && data.disclaimer.trim()
+        ? data.disclaimer
+        : 'Transcript-only assessment: Pronunciation cannot be evaluated without audio. Overall Speaking Band is omitted; 3-criterion transcript index is shown separately.',
+    canRetry: false,
+    authRequired: false,
+    wordCount: resolvedWordCount
+  };
+}
+
+/**
+ * Only complete 4-criterion Speaking assessments with observable Pronunciation and a valid
+ * numeric overallBand may be persisted to Firestore /users/{uid}/submissions.
+ */
+export function shouldPersistCDIELTSSpeakingToFirestore(
+  evaluation: CDIELTSSpeakingEvaluation | null
+): boolean {
+  if (!evaluation) return false;
+  return (
+    evaluation.assessmentStatus === 'evaluated' &&
+    evaluation.evidenceMode === 'audio_and_transcript' &&
+    evaluation.pronunciationObservable === true &&
+    evaluation.isPartialAssessment === false &&
+    typeof evaluation.overallBand === 'number' &&
+    Number.isFinite(evaluation.overallBand) &&
+    evaluation.overallBand >= 1.0 &&
+    evaluation.overallBand <= 9.0 &&
+    typeof evaluation.pronunciationBand === 'number'
+  );
 }
 
 export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
@@ -70,7 +315,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   const [candidateNotes, setCandidateNotes] = useState<string>('');
   const [spokenTranscript, setSpokenTranscript] = useState<string>('');
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
-  const [evaluation, setEvaluation] = useState<SpeakingEvaluation | null>(null);
+  const [evaluation, setEvaluation] = useState<CDIELTSSpeakingEvaluation | null>(null);
   const [showTRFModal, setShowTRFModal] = useState<boolean>(false);
 
   // Part 1 index
@@ -269,50 +514,79 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
     setStage('result');
 
     const combinedText = (spokenTranscript || candidateNotes || '').trim();
-    const words = combinedText ? combinedText.split(/\s+/).length : 0;
+    const words = combinedText ? combinedText.split(/\s+/).filter(Boolean).length : 0;
 
     if (words < 5) {
-      setEvaluation({
-        overallBand: 0,
-        fluencyBand: 0,
-        lexicalBand: 0,
-        grammarBand: 0,
-        pronunciationBand: 0,
-        examinerFeedback:
-          'No spoken response or transcript was recorded during this session. Please use the microphone or enter your spoken response in the transcript box to receive a verified Practice Rubric-aligned band score.',
-        wordCount: words
-      });
+      setEvaluation(buildCDIELTSInsufficientEvaluation(words));
       return;
     }
 
     setIsEvaluating(true);
     try {
+      const token = getStoredSessionToken();
+      const headers = buildCDIELTSAuthHeaders(token);
+      const durationSec = Math.max(10, 120 - speakSecondsLeft);
+      const wordsPerMinute = Math.round((words / durationSec) * 60);
+
       const res = await fetch('/api/evaluate-speaking-turn', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           part: 2,
           question: part2CueCard.title,
-          transcript: combinedText
+          cueCardBulletPoints: part2CueCard.cues,
+          transcript: combinedText,
+          durationSec,
+          wordsPerMinute
         })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const overall = Number(data.estimatedBand || data.overallBand || 6.5);
-        const resultObj: SpeakingEvaluation = {
-          overallBand: overall,
-          fluencyBand: Number(data.fluencyBand || overall),
-          lexicalBand: Number(data.lexicalBand || overall),
-          grammarBand: Number(data.grammarBand || overall),
-          pronunciationBand: Number(data.pronunciationBand || overall),
-          examinerFeedback:
-            data.examinerFeedback ||
-            data.feedback ||
-            'Solid structural coherence. Continue expanding your range of C1 collocations and subordinate clauses.',
-          wordCount: words
-        };
-        setEvaluation(resultObj);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          const authEval = buildCDIELTSUnavailableEvaluation({
+            wordCount: words,
+            message:
+              errData?.error ||
+              'Sign in required to run AI Speaking evaluation. No fallback score was generated.',
+            authRequired: true,
+            canRetry: false
+          });
+          setEvaluation(authEval);
+          onShowToast('Please sign in to evaluate your speaking response.');
+          return;
+        }
+        if (res.status === 403) {
+          const quotaEval = buildCDIELTSUnavailableEvaluation({
+            wordCount: words,
+            message:
+              errData?.error ||
+              'Active subscription or daily allowance required for AI Speaking evaluation. No fallback score was generated.',
+            authRequired: false,
+            canRetry: false
+          });
+          setEvaluation(quotaEval);
+          onShowToast('AI Speaking evaluation allowance reached.');
+          return;
+        }
+        const unavailableEval = buildCDIELTSUnavailableEvaluation({
+          wordCount: words,
+          message:
+            errData?.error ||
+            `AI Speaking evaluation is temporarily unavailable (HTTP ${res.status}). No fallback score was generated.`,
+          authRequired: false,
+          canRetry: true
+        });
+        setEvaluation(unavailableEval);
+        onShowToast('AI Speaking evaluation unavailable — no score fabricated.');
+        return;
+      }
+
+      const data = await res.json();
+      const resultObj = mapSpeakingTurnApiResponseToCDIELTS(data, words);
+      setEvaluation(resultObj);
+
+      if (shouldPersistCDIELTSSpeakingToFirestore(resultObj)) {
         firebaseSyncService
           .recordTestSubmission(
             'speaking',
@@ -320,37 +594,30 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
             resultObj.overallBand,
             1,
             1,
-            Math.max(30, 120 - speakSecondsLeft)
+            Math.max(30, 120 - speakSecondsLeft),
+            {
+              assessmentStatus: resultObj.assessmentStatus,
+              isPartialAssessment: resultObj.isPartialAssessment,
+              pronunciationObservable: resultObj.pronunciationObservable
+            }
           )
           .catch(() => {});
-      } else {
-        throw new Error('Fallback evaluation');
+        soundManager.playSuccess();
+      } else if (resultObj.assessmentStatus === 'partial_transcript_only') {
+        soundManager.playSuccess();
       }
     } catch {
-      const baseBand = words >= 140 ? 7.5 : words >= 80 ? 6.5 : words >= 35 ? 6.0 : 5.5;
-      const resultObj: SpeakingEvaluation = {
-        overallBand: baseBand,
-        fluencyBand: baseBand,
-        lexicalBand: baseBand,
-        grammarBand: Math.max(5.0, baseBand - 0.5),
-        pronunciationBand: baseBand,
-        examinerFeedback: `Evaluated ${words} spoken/transcribed words. Good topical relevance on "${part2CueCard.title}". To raise your band score further, extend your Part 2 long turn with more specific cause-and-effect examples and C1-level discourse markers.`,
-        wordCount: words
-      };
-      setEvaluation(resultObj);
-      firebaseSyncService
-        .recordTestSubmission(
-          'speaking',
-          'cd-ielts-speaking',
-          resultObj.overallBand,
-          1,
-          1,
-          Math.max(30, 120 - speakSecondsLeft)
-        )
-        .catch(() => {});
+      const networkUnavailable = buildCDIELTSUnavailableEvaluation({
+        wordCount: words,
+        message:
+          'Unable to reach the AI Speaking evaluation service. Please check your connection and retry. No fallback band score was generated.',
+        authRequired: false,
+        canRetry: true
+      });
+      setEvaluation(networkUnavailable);
+      onShowToast('AI Speaking evaluation unavailable — please retry.');
     } finally {
       setIsEvaluating(false);
-      soundManager.playSuccess();
     }
   };
 
@@ -1013,30 +1280,61 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   Analyzing fluency, lexical resource, grammatical range, and pronunciation against Practice descriptors.
                 </p>
               </div>
-            ) : evaluation && evaluation.overallBand > 0 ? (
+                ) : evaluation &&
+                  (evaluation.assessmentStatus === 'evaluated' ||
+                    evaluation.assessmentStatus === 'partial_transcript_only') ? (
               <>
                 <div className="text-center space-y-2">
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+                  <div
+                    className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${
+                      evaluation.assessmentStatus === 'evaluated'
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'bg-amber-500/20 text-amber-300'
+                    }`}
+                  >
                     <Award className="w-8 h-8" />
                   </div>
-                  <h2 className="text-2xl font-bold tracking-tight text-white">Speaking Assessment Complete</h2>
+                  <h2 className="text-2xl font-bold tracking-tight text-white">
+                    {evaluation.assessmentStatus === 'evaluated'
+                      ? 'Speaking Assessment Complete'
+                      : 'Partial Speaking Assessment (Transcript-Only)'}
+                  </h2>
                   <p className="text-xs text-slate-400">
                     AI IELTS Examiner (Practice Rubric-Aligned) · {evaluation.wordCount} Words Analyzed
                   </p>
                 </div>
 
+                {evaluation.assessmentStatus === 'partial_transcript_only' && (
+                  <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 space-y-1.5">
+                    <div className="font-bold uppercase font-mono text-amber-300 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>Incomplete Speaking Evidence — Pronunciation Unassessed</span>
+                    </div>
+                    <p className="leading-relaxed">
+                      {evaluation.disclaimer ||
+                        'Pronunciation cannot be scored from text transcripts alone. No complete 4-criterion Overall Speaking Band was awarded or persisted as a complete exam score.'}
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   {[
-                    { title: 'Fluency & Coherence', band: evaluation.fluencyBand.toFixed(1) },
-                    { title: 'Lexical Resource', band: evaluation.lexicalBand.toFixed(1) },
-                    { title: 'Grammar Accuracy', band: evaluation.grammarBand.toFixed(1) },
-                    { title: 'Pronunciation', band: evaluation.pronunciationBand.toFixed(1) }
+                    { title: 'Fluency & Coherence', band: evaluation.fluencyBand },
+                    { title: 'Lexical Resource', band: evaluation.lexicalBand },
+                    { title: 'Grammar Accuracy', band: evaluation.grammarBand },
+                    { title: 'Pronunciation', band: evaluation.pronunciationBand }
                   ].map((c) => (
                     <div key={c.title} className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
                       <div className="text-[10px] uppercase font-mono text-slate-400">{c.title}</div>
-                      <div className="text-2xl font-black font-mono text-emerald-400 my-1">
-                        Band {c.band}
-                      </div>
+                      {typeof c.band === 'number' ? (
+                        <div className="text-2xl font-black font-mono text-emerald-400 my-1">
+                          Band {c.band.toFixed(1)}
+                        </div>
+                      ) : (
+                        <div className="text-sm font-bold font-mono text-amber-300 my-2">
+                          Unassessed
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1044,20 +1342,57 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                 <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs space-y-2">
                   <div className="font-bold text-blue-400 flex items-center gap-1.5 uppercase font-mono">
                     <Sparkles className="w-4 h-4" />
-                    <span>Overall Speaking Band: {evaluation.overallBand.toFixed(1)}</span>
+                    {evaluation.assessmentStatus === 'evaluated' && typeof evaluation.overallBand === 'number' ? (
+                      <span>Overall Speaking Band: {evaluation.overallBand.toFixed(1)}</span>
+                    ) : typeof evaluation.partialThreeCriterionIndex === 'number' ? (
+                      <span>
+                        3-Criterion Transcript Index: {evaluation.partialThreeCriterionIndex.toFixed(1)} (Overall Band Unassessed)
+                      </span>
+                    ) : (
+                      <span>Overall Speaking Band: Unassessed</span>
+                    )}
                   </div>
                   <p className="text-slate-300 leading-relaxed">{evaluation.examinerFeedback}</p>
                 </div>
               </>
+            ) : evaluation && evaluation.assessmentStatus === 'unavailable' ? (
+              <div className="text-center space-y-4 py-6">
+                <div className="w-14 h-14 rounded-2xl bg-rose-500/20 text-rose-400 mx-auto flex items-center justify-center">
+                  <AlertCircle className="w-7 h-7" />
+                </div>
+                <h2 className="text-xl font-bold text-white">
+                  {evaluation.authRequired ? 'Sign In Required for AI Evaluation' : 'AI Speaking Evaluation Unavailable'}
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+                  {evaluation.examinerFeedback}
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  {evaluation.canRetry && (
+                    <button
+                      onClick={handleCompleteInterview}
+                      className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Retry AI Evaluation</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setStage('part2_speak')}
+                    className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Return to Part 2 Transcript</span>
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="text-center space-y-4 py-6">
                 <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center">
                   <AlertCircle className="w-7 h-7" />
                 </div>
-                <h2 className="text-xl font-bold text-white">No Spoken Response Recorded</h2>
+                <h2 className="text-xl font-bold text-white">Insufficient Spoken Response Recorded</h2>
                 <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
                   {evaluation?.examinerFeedback ||
-                    'We do not assign a synthetic band score when no speech or transcript was recorded. Return to Part 2 to record your voice or enter your spoken transcript.'}
+                    'We do not assign a synthetic band score when fewer than 5 spoken words are recorded. Return to Part 2 to record your voice or enter your spoken transcript.'}
                 </p>
                 <button
                   onClick={() => setStage('part2_speak')}
@@ -1070,13 +1405,13 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
             )}
 
             <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
-              {evaluation && evaluation.overallBand > 0 && (
+              {shouldPersistCDIELTSSpeakingToFirestore(evaluation) && (
                 <button
                   onClick={() => setShowTRFModal(true)}
                   className="px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition inline-flex items-center gap-2 cursor-pointer"
                 >
                   <Award className="w-4 h-4 text-slate-950" />
-                  <span>Official Speaking TRF Certificate</span>
+                  <span>Speaking Practice Summary</span>
                 </button>
               )}
               <button
@@ -1090,19 +1425,27 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
         )}
       </div>
 
-      {/* Practice Speaking TRF Modal */}
-      {evaluation && (
+      {/* Practice Speaking Summary Modal — ONLY for complete 4-criterion Speaking evaluations */}
+      {evaluation && shouldPersistCDIELTSSpeakingToFirestore(evaluation) && (
         <SprintTRFModal
           isOpen={showTRFModal}
           onClose={() => setShowTRFModal(false)}
           data={{
             candidateName,
-            testTitle: 'IELTS Academic Speaking Interview Simulation',
-            listeningBand: 7.0,
-            readingBand: 7.0,
-            writingBand: 7.0,
+            testTitle: 'IELTS Academic Speaking Practice Simulation',
+            examType: 'speaking_only',
+            isFullMock: false,
+            completedSkills: {
+              listening: false,
+              reading: false,
+              writing: false,
+              speaking: true
+            },
+            listeningBand: null,
+            readingBand: null,
+            writingBand: null,
             speakingBand: evaluation.overallBand,
-            overallBand: evaluation.overallBand,
+            overallBand: null,
             testType: 'Academic'
           }}
         />

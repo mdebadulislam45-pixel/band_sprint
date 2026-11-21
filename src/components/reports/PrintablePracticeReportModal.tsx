@@ -25,7 +25,8 @@ import {
   getVaultRetentionStats,
   getHighestFrequencyErrorCategory
 } from '../../utils/vaultStorage';
-import { getCurrentUser } from '../../utils/userStorage';
+import { getCurrentUser, describeExamHistoryDisplay } from '../../utils/userStorage';
+import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
 
 export interface LatestMockSummaryOverride {
   testTitle: string;
@@ -47,9 +48,10 @@ interface PrintablePracticeReportModalProps {
 
 const TOTAL_SPELLING_WORDS = 683;
 
-function formatBandDisplay(score: number | null | undefined): string {
-  if (typeof score !== 'number' || !Number.isFinite(score) || score <= 0) return '—';
-  return score.toFixed(1);
+function formatBandDisplay(score: number | null | undefined, allowZero: boolean = false): string {
+  const valid = validateOptionalHalfBand(score, allowZero ? 0.0 : 0.5);
+  if (valid === null) return '—';
+  return valid.toFixed(1);
 }
 
 export const PrintablePracticeReportModal: React.FC<PrintablePracticeReportModalProps> = ({
@@ -85,52 +87,48 @@ export const PrintablePracticeReportModal: React.FC<PrintablePracticeReportModal
   const daysLeft = daysUntilExam(examSetup.examDate);
 
   const history = activeUser?.progress?.examHistory || [];
-  const latestHistory = history[0];
+  const agg = aggregateExamHistory(history);
 
-  // Resolve 4-skill estimated bands (prioritise explicit mock override -> latest mock -> diagnostic)
+  // Resolve 4-skill validated bands (explicit override -> latest valid evaluated history -> valid diagnostic)
   const listeningBand =
-    latestMockOverride?.listeningBand ??
-    (latestHistory?.listeningBand && latestHistory.listeningBand > 0 ? latestHistory.listeningBand : null) ??
-    diagnostic?.scores.listening ??
-    null;
+    validateOptionalHalfBand(latestMockOverride?.listeningBand, 0.0) ??
+    agg.skills.listening.latest ??
+    validateOptionalHalfBand(diagnostic?.scores?.listening, 0.0);
 
   const readingBand =
-    latestMockOverride?.readingBand ??
-    (latestHistory?.readingBand && latestHistory.readingBand > 0 ? latestHistory.readingBand : null) ??
-    diagnostic?.scores.reading ??
-    null;
+    validateOptionalHalfBand(latestMockOverride?.readingBand, 0.0) ??
+    agg.skills.reading.latest ??
+    validateOptionalHalfBand(diagnostic?.scores?.reading, 0.0);
 
   const writingBand =
-    latestMockOverride?.writingBand ??
-    (latestHistory?.writingBand && latestHistory.writingBand > 0 ? latestHistory.writingBand : null) ??
-    diagnostic?.scores.writing ??
-    null;
+    validateOptionalHalfBand(latestMockOverride?.writingBand, 1.0) ??
+    agg.skills.writing.latest ??
+    validateOptionalHalfBand(diagnostic?.scores?.writing, 1.0);
 
   const speakingBand =
-    latestMockOverride?.speakingBand ??
-    diagnostic?.scores.speaking ??
-    null;
+    validateOptionalHalfBand(latestMockOverride?.speakingBand, 1.0) ??
+    agg.skills.speaking.latest ??
+    validateOptionalHalfBand(diagnostic?.scores?.speaking, 1.0);
 
   const overallBand =
-    latestMockOverride?.overallBand ??
-    (latestHistory?.overallBand && latestHistory.overallBand > 0 ? latestHistory.overallBand : null) ??
-    diagnostic?.scores.overall ??
-    null;
+    validateOptionalHalfBand(latestMockOverride?.overallBand, 0.5) ??
+    agg.overall.latest ??
+    validateOptionalHalfBand(diagnostic?.scores?.overall, 1.0);
 
   const bandGap =
-    overallBand && overallBand > 0 ? Math.max(0, Number((targetBand - overallBand).toFixed(1))) : null;
+    overallBand !== null ? Math.max(0, Number((targetBand - overallBand).toFixed(1))) : null;
 
   const skillRows = [
-    { key: 'listening', label: 'Listening', band: listeningBand, note: `Target ${correctAnswersNeeded(targetBand)} / 40 raw` },
-    { key: 'reading', label: `Reading (${examMode})`, band: readingBand, note: `Target ${correctAnswersNeeded(targetBand)} / 40 raw` },
-    { key: 'writing', label: 'Writing (Tasks 1 & 2)', band: writingBand, note: 'TA/TR · CC · LR · GRA' },
-    { key: 'speaking', label: 'Speaking (Parts 1–3)', band: speakingBand, note: 'FC · LR · GRA · PR' }
+    { key: 'listening', label: 'Listening', band: listeningBand, allowZero: true, note: `Target ${correctAnswersNeeded(targetBand)} / 40 raw` },
+    { key: 'reading', label: `Reading (${examMode})`, band: readingBand, allowZero: true, note: `Target ${correctAnswersNeeded(targetBand)} / 40 raw` },
+    { key: 'writing', label: 'Writing (Tasks 1 & 2)', band: writingBand, allowZero: false, note: 'TA/TR · CC · LR · GRA' },
+    { key: 'speaking', label: 'Speaking (Parts 1–3)', band: speakingBand, allowZero: false, note: 'FC · LR · GRA · PR' }
   ];
 
-  const scoredSkills = skillRows.filter((s) => typeof s.band === 'number' && s.band > 0);
+  const scoredSkills = skillRows.filter((s): s is typeof s & { band: number } => s.band !== null);
   const weakestSkill =
     scoredSkills.length > 0
-      ? scoredSkills.reduce((min, cur) => ((cur.band as number) < (min.band as number) ? cur : min))
+      ? scoredSkills.reduce((min, cur) => (cur.band < min.band ? cur : min))
       : null;
 
   // Dynamic 7-day priority checklist
@@ -249,7 +247,7 @@ export const PrintablePracticeReportModal: React.FC<PrintablePracticeReportModal
                 Estimated Overall
               </div>
               <div className="font-mono text-3xl font-bold text-[#0F4C45] tabular-nums leading-tight">
-                {overallBand ? `Band ${overallBand.toFixed(1)}` : 'Pending'}
+                {overallBand !== null ? `Band ${overallBand.toFixed(1)}` : 'Not assessed'}
               </div>
               <div className="text-[11px] font-mono text-[#566664] tabular-nums">
                 Target: <strong className="text-[#0E1F1E]">{targetBand.toFixed(1)}</strong>
@@ -326,7 +324,7 @@ export const PrintablePracticeReportModal: React.FC<PrintablePracticeReportModal
                       )}
                     </div>
                     <div className="font-mono text-2xl font-bold text-[#0F4C45] tabular-nums">
-                      {formatBandDisplay(score)}
+                      {formatBandDisplay(score, skill.allowZero)}
                       <span className="text-xs font-normal text-[#566664]"> / 9.0</span>
                     </div>
                     <div className="w-full h-1.5 rounded-full bg-[#EEF3F1] overflow-hidden">
@@ -413,16 +411,12 @@ export const PrintablePracticeReportModal: React.FC<PrintablePracticeReportModal
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#D3DDDA]/60">
-                    {history.slice(0, 6).map((rec) => {
-                      const typeLabel = (rec.examType || 'practice_mock')
-                        .replace(/_/g, ' ')
-                        .replace(/\b\w/g, (c) => c.toUpperCase());
-                      const detailLabel =
-                        rec.totalQuestions > 0
-                          ? `${rec.correctCount}/${rec.totalQuestions} correct`
-                          : rec.wordCount > 0
-                          ? `${rec.wordCount} words written`
-                          : 'Timed practice';
+                    {agg.evaluatedRecords.slice(0, 6).map((ev, idx) => {
+                      const rec = ev.record;
+                      const desc = describeExamHistoryDisplay(rec, agg.evaluatedRecords.length - idx);
+                      const detailLabel = desc.statusNote
+                        ? `${desc.skillSummaryParts.join(' · ')} (${desc.statusNote})`
+                        : desc.skillSummaryParts.join(' · ');
                       return (
                         <tr key={rec.id} className="bg-white">
                           <td className="py-2 px-3 font-mono text-[#566664] whitespace-nowrap">
@@ -433,15 +427,13 @@ export const PrintablePracticeReportModal: React.FC<PrintablePracticeReportModal
                             })}
                           </td>
                           <td className="py-2 px-3 font-semibold text-[#0E1F1E]">
-                            {typeLabel}
+                            {desc.title}
                           </td>
                           <td className="py-2 px-3 font-mono text-[11px] text-[#566664]">
                             {detailLabel}
                           </td>
                           <td className="py-2 px-3 font-mono font-bold text-[#0F4C45] text-right tabular-nums">
-                            {typeof rec.overallBand === 'number' && rec.overallBand > 0
-                              ? rec.overallBand.toFixed(1)
-                              : '—'}
+                            {desc.badgeScore}
                           </td>
                         </tr>
                       );

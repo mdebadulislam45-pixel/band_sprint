@@ -17,6 +17,7 @@ import type { SentenceAnnotation, WritingDiagnosticResult, WritingExamFormat } f
 import { addMistake } from '../../utils/vaultStorage';
 import { soundManager } from '../../utils/audioEffects';
 import { EASE_EDITORIAL } from '../common/MotionPrimitives';
+import { formatNullableBand } from '../../utils/scoringIntegrity';
 
 export type DiffCriterionFilter = 'all' | 'grammar' | 'lexical' | 'cohesion';
 
@@ -111,10 +112,25 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
   const [savedIds, setSavedIds] = useState<Record<string, boolean>>({});
   const [appliedIds, setAppliedIds] = useState<Record<string, boolean>>({});
 
+  const safeAnnotations = Array.isArray(diagnosticResult.annotations) ? diagnosticResult.annotations : [];
+  const safeParagraphs = Array.isArray(diagnosticResult.upgradedModelParagraphs)
+    ? diagnosticResult.upgradedModelParagraphs
+    : [];
+
   const flaggedAnnotations = useMemo(
-    () => diagnosticResult.annotations.filter((a) => a.category !== 'clean'),
-    [diagnosticResult.annotations]
+    () => safeAnnotations.filter((a) => a.category !== 'clean'),
+    [safeAnnotations]
   );
+
+  const hasVerifiedBand =
+    diagnosticResult.assessmentStatus === 'evaluated' &&
+    typeof diagnosticResult.overallBand === 'number' &&
+    Number.isFinite(diagnosticResult.overallBand);
+  const formattedBandLabel = hasVerifiedBand
+    ? `AI Diagnostic Band ${formatNullableBand(diagnosticResult.overallBand)}`
+    : diagnosticResult.assessmentStatus === 'unavailable'
+    ? 'AI Score Unavailable'
+    : 'Not Scored (Structural Pre-Check)';
 
   const counts = useMemo(() => {
     return {
@@ -203,7 +219,12 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
     { id: 'cohesion', label: 'Cohesion (CC)', count: counts.cohesion }
   ];
 
-  const isGeminiEvaluated = diagnosticResult.evaluationSource === 'gemini-4-hydrogen';
+  const isGeminiEvaluated =
+    typeof diagnosticResult.evaluationSource === 'string' &&
+    diagnosticResult.evaluationSource.startsWith('gemini-') &&
+    diagnosticResult.assessmentStatus === 'evaluated' &&
+    typeof diagnosticResult.overallBand === 'number' &&
+    Number.isFinite(diagnosticResult.overallBand);
 
   return (
     <div className="space-y-5">
@@ -214,7 +235,7 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-[#0F4C45] dark:text-[#4DB6A4]">
                 <Sparkles className="w-3.5 h-3.5 text-[#F4A62A]" />
-                <span>{isGeminiEvaluated ? 'Live Gemini Examiner Evaluation Active' : 'Deep AI Examiner Upgrade'}</span>
+                <span>{isGeminiEvaluated ? 'Live Gemini Examiner Evaluation Active' : 'Deep AI Examiner Evaluation'}</span>
               </span>
               {isGeminiEvaluated && (
                 <span className="px-2 py-0.5 rounded-md bg-[#EEF3F1] dark:bg-[#0F4C45]/40 text-[#0F4C45] dark:text-emerald-300 border border-[#9EBEB8] dark:border-[#1F8A70]/50 font-mono text-[10px] font-bold">
@@ -225,7 +246,7 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
             <p className="text-xs text-[#566664] dark:text-slate-300 leading-relaxed">
               {isGeminiEvaluated
                 ? 'Your 4-criteria scores, sentence diffs, and English + বাংলা rationales below were freshly evaluated on your exact essay.'
-                : 'Run live server-side Gemini scoring on your custom essay for authentic sentence-by-sentence Band 8.5+ rewrites and bilingual examiner notes.'}
+                : 'Sentence highlights below are offline structural guidance only (no IELTS band assigned). Run live server-side Gemini scoring for a 4-criterion diagnostic evaluation.'}
             </p>
           </div>
           <button
@@ -324,7 +345,7 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
               }`}
             >
               <SplitSquareVertical className="w-3 h-3" />
-              <span>Paragraph Model ({diagnosticResult.upgradedModelParagraphs.length})</span>
+              <span>Paragraph Model ({safeParagraphs.length})</span>
             </button>
           </div>
 
@@ -375,7 +396,7 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
                     Original Candidate Draft
                   </div>
                   <div className="text-xs font-bold text-[#0E1F1E] dark:text-white font-mono tabular-nums">
-                    Estimated Band {diagnosticResult.overallBand.toFixed(1)} · {diagnosticResult.wordCount} words
+                    {formattedBandLabel} · {diagnosticResult.wordCount} words
                   </div>
                 </div>
                 <span className="text-[11px] font-mono font-semibold text-[#566664] dark:text-slate-400">
@@ -384,7 +405,7 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
               </div>
 
               <div className="p-4 sm:p-5 text-sm sm:text-[15px] leading-relaxed font-serif text-[#0E1F1E] dark:text-slate-200 space-x-1">
-                {diagnosticResult.annotations.map((ann) => {
+                {safeAnnotations.map((ann) => {
                   const matchesFilter =
                     ann.category !== 'clean' &&
                     (criterionFilter === 'all' || ann.category === criterionFilter);
@@ -439,7 +460,7 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
               </div>
 
               <div className="p-4 sm:p-5 text-sm sm:text-[15px] leading-relaxed font-serif text-[#0E1F1E] dark:text-slate-100 space-x-1">
-                {diagnosticResult.annotations.map((ann) => {
+                {safeAnnotations.map((ann) => {
                   const matchesFilter =
                     ann.category !== 'clean' &&
                     (criterionFilter === 'all' || ann.category === criterionFilter) &&
@@ -624,14 +645,14 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
           </div>
 
           <div className="space-y-4">
-            {diagnosticResult.upgradedModelParagraphs.map((pair, idx) => (
+            {safeParagraphs.map((pair, idx) => (
               <div
                 key={idx}
                 className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/25"
               >
                 <div className="space-y-2 md:pr-4 md:border-r border-[#D3DDDA] dark:border-[#1F8A70]/25">
                   <div className="text-[11px] font-mono font-bold uppercase text-[#566664] dark:text-slate-400">
-                    Original Draft · Paragraph {idx + 1} (Est. Band {diagnosticResult.overallBand.toFixed(1)})
+                    Original Draft · Paragraph {idx + 1} ({formattedBandLabel})
                   </div>
                   <p className="text-xs sm:text-sm leading-relaxed text-[#384543] dark:text-slate-300 font-serif">
                     {pair.original}

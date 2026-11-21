@@ -27,6 +27,10 @@ import {
   sendBarnabyChatMessage,
   startBarnabyMiniQuiz
 } from '../../services/barnabyCompanionStore';
+import {
+  BarnabyDragonAvatar,
+  mapBarnabyMoodToAvatarState
+} from '../common/BarnabyDragonAvatar';
 
 interface AITutorWidgetProps {
   userName: string;
@@ -157,14 +161,20 @@ export const AITutorWidget: React.FC<AITutorWidgetProps> = ({
             title="Tap to pet Barnaby!"
             className="relative shrink-0 cursor-pointer"
           >
-            <img
-              src="/barnaby-dragon-avatar.webp"
-              alt="Barnaby AI Study Companion"
-              className={`w-11 h-11 rounded-2xl object-cover bg-[#EEF3F1] ring-2 ${moodMeta.ringClass} ${moodMeta.animClass}`}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src = '/barnaby-dragon-avatar.png';
-              }}
-            />
+            <div
+              className={`rounded-2xl ring-2 ${moodMeta.ringClass} ${isPlayingAudio ? '' : moodMeta.animClass}`}
+            >
+              <BarnabyDragonAvatar
+                state={mapBarnabyMoodToAvatarState(state.mood, {
+                  isSpeaking: isPlayingAudio,
+                  isThinking: isLoading
+                })}
+                isSpeaking={isPlayingAudio}
+                size="md"
+                framed="rounded"
+                testId="ai-tutor-barnaby-avatar"
+              />
+            </div>
             <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] text-[11px] flex items-center justify-center shadow-xs">
               {moodMeta.emoji}
             </span>

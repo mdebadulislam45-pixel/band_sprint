@@ -257,7 +257,8 @@ export interface ConversationTurn {
   wpm?: number;
   grammarErrors?: DetectedGrammarMistake[];
   band8Upgrade?: string;
-  estimatedBand?: number;
+  estimatedBand?: number | null;
+  partialIndex?: number | null;
 }
 
 interface LiveAvatarSpeakingPartnerProps {
@@ -752,9 +753,10 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
   const [liveAcoustic, setLiveAcoustic] = useState<AcousticTelemetry>({
     volumeRms: 0,
     pitchHz: 0,
-    pitchVarianceHz: 24,
-    expressivenessScore: 76,
-    energyDropOffs: 0
+    pitchVarianceHz: null,
+    expressivenessScore: null,
+    energyDropOffs: 0,
+    isMeasured: false
   });
 
   // Conversation History & Live Grammar Error Log
@@ -1420,7 +1422,7 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
         feedbackTitle: gate.feedbackTitle,
         feedbackEn: gate.feedbackEn,
         feedbackBn: gate.feedbackBn,
-        estimatedBand: 0.0
+        estimatedBand: null
       };
 
       const retryPrompt = `I could only hear ${gate.wordCount} word${gate.wordCount === 1 ? '' : 's'}. In the IELTS Speaking test, you need to provide a sustained spoken response of at least five words so I can assess your fluency, vocabulary, and grammar. Please press Speak Now and try answering again.`;
@@ -1458,6 +1460,9 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
           FREE_TALK_SCENARIOS[freeTalkScenarioIndex].opener
         : activeTopic.questions[questionIndex] || activeTopic.questions[0];
 
+    const detectedFillers = rawText.match(/\b(um|uh|er|ah|like|you know|basically)\b/gi) || [];
+    const measuredAcoustic = speechRecognitionService.getLastAcousticTelemetry();
+
     const record: SpeakingAnswerRecord = {
       questionId: `part1_drill_${activeTopic.id}_${questionIndex}`,
       part: partnerMode === 'ai_live_partner' ? 3 : 1,
@@ -1469,20 +1474,27 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
       durationSec: elapsedSec,
       wordCount: words,
       wordsPerMinute: wpm,
-      pauseCount: 1,
-      longPauseCount: 0,
-      fillerCount: 0,
-      detectedFillers: [],
-      acousticMetrics: speechRecognitionService.getLastAcousticTelemetry()
+      pauseCount: null,
+      longPauseCount: null,
+      fillerCount: detectedFillers.length,
+      detectedFillers,
+      ...(measuredAcoustic ? { acousticMetrics: measuredAcoustic } : {})
     };
 
     let mergedErrors: DetectedGrammarMistake[] = [...instantLocalErrors];
     let band8Model = '';
-    let estBand = 0.0;
+    let estBand: number | null = null;
+    let partialIdx: number | null = null;
 
     try {
       const evalResult = await evaluateSingleSpeakingTurn(record);
-      estBand = evalResult.estimatedBands.overall;
+      if (evalResult.isValidAttempt !== false && evalResult.assessmentStatus !== 'unavailable' && evalResult.assessmentStatus !== 'insufficient_evidence') {
+        estBand = typeof evalResult.overallBand === 'number' ? evalResult.overallBand : null;
+        partialIdx =
+          typeof evalResult.partialThreeCriterionIndex === 'number'
+            ? evalResult.partialThreeCriterionIndex
+            : null;
+      }
       band8Model = evalResult.band8Answer.modelAnswer;
 
       if (Array.isArray(evalResult.grammaticalErrors)) {
@@ -1508,7 +1520,8 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
         });
       }
     } catch {
-      estBand = words >= 25 ? 6.5 : 5.5;
+      estBand = null;
+      partialIdx = null;
     }
 
     const candidateTurn: ConversationTurn = {
@@ -1522,7 +1535,8 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
       wpm,
       grammarErrors: mergedErrors,
       band8Upgrade: band8Model,
-      estimatedBand: estBand
+      estimatedBand: estBand,
+      partialIndex: partialIdx
     };
 
     if (mergedErrors.length > 0) {
@@ -2168,11 +2182,19 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
                         <span className="tabular-nums text-slate-600 dark:text-slate-300">{turn.wpm} WPM</span>
                       </>
                     )}
-                    {turn.estimatedBand && turn.estimatedBand > 0 && turn.isValidAttempt !== false && (
+                    {turn.isValidAttempt !== false && typeof turn.estimatedBand === 'number' && turn.estimatedBand > 0 && (
                       <>
                         <span>·</span>
                         <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                           Est. Band {turn.estimatedBand.toFixed(1)}
+                        </span>
+                      </>
+                    )}
+                    {turn.isValidAttempt !== false && typeof turn.estimatedBand !== 'number' && typeof turn.partialIndex === 'number' && turn.partialIndex > 0 && (
+                      <>
+                        <span>·</span>
+                        <span className="font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                          Partial 3/4 Index {turn.partialIndex.toFixed(1)}
                         </span>
                       </>
                     )}
@@ -2405,7 +2427,15 @@ export const LiveAvatarSpeakingPartner: React.FC<LiveAvatarSpeakingPartnerProps>
                 </span>
                 <span>·</span>
                 <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300 tabular-nums">
-                  Intonation: <strong>{liveAcoustic.pitchVarianceHz || 24} Hz</strong> ({liveAcoustic.expressivenessScore}%)
+                  Intonation:{' '}
+                  <strong>
+                    {typeof liveAcoustic.pitchVarianceHz === 'number'
+                      ? `${liveAcoustic.pitchVarianceHz} Hz`
+                      : 'Not measured'}
+                  </strong>
+                  {typeof liveAcoustic.expressivenessScore === 'number'
+                    ? ` (${liveAcoustic.expressivenessScore}%)`
+                    : ''}
                 </span>
                 {cameraMetrics.isCameraActive && (
                   <>

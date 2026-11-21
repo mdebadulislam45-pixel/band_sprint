@@ -129,9 +129,9 @@ export const BARNABY_VISUAL_REFERENCE: BarnabyCompanionSpec = {
   id: 'barnaby',
   fullName: 'Barnaby',
   roleLabel: 'Your AI Learning Companion',
-  tagline: 'Every mistake makes you stronger. Every practice brings you closer to your dream score.',
+  tagline: "I'm not here to study instead of you. I'm here to help you become better than yesterday.",
   appearance:
-    'Cute sky-blue baby dragon with a cream belly and muzzle, small golden horns, large expressive brown eyes, oversized dark-blue round glasses, a navy-blue BandSprint hoodie, a navy graduation cap with a golden tassel, small blue wings with golden interior details, and a blue tail with golden spikes. Friendly and intelligent expression. Artwork: docs/barnaby-dragon.png (the floating corner bubble uses it; the animated in-studio avatar still uses the code drawing). (See docs/barnaby-character-bible.md.)',
+    'Animated 2.5D sky-blue baby dragon with a warm cream belly and muzzle, three small ribbed golden horns, large expressive chestnut-brown eyes, oversized navy-blue round glasses, a navy-blue BandSprint hoodie, a navy graduation cap with a golden tassel, articulated blue wings with golden filigree membranes, and a curled blue tail with golden spikes.',
   traits: [
     { label: 'Friendly', icon: 'friendly' },
     { label: 'Intelligent', icon: 'motivating' },
@@ -146,19 +146,19 @@ export const BARNABY_VISUAL_REFERENCE: BarnabyCompanionSpec = {
   voiceSummary: "Barnaby's voice · Warm masculine young-adult · Medium, slightly bright pitch · Clear international English · Natural speed · Expressive but controlled · Friendly and reassuring",
   expressions: ['happy', 'excited', 'thinking', 'encouraging', 'listening', 'cheerful'],
   palette: {
-    hairPrimary: '#432818',
-    hairSecondary: '#2A170D',
-    hairHighlight: '#6F452C',
-    skinLight: '#FFF7F0',
-    skinMid: '#FDE2CE',
+    hairPrimary: '#3B9AD9',
+    hairSecondary: '#2679B5',
+    hairHighlight: '#9ED9FB',
+    skinLight: '#FFFDF7',
+    skinMid: '#FBF3E0',
     cheekBlush: '#FB7185',
-    irisTop: '#2E1508',
-    irisMid: '#6B381B',
-    irisGlow: '#FBBF24',
-    hoodiePrimary: '#2563EB',
-    hoodieSecondary: '#1D4ED8',
-    hoodieShadow: '#1E3A8A',
-    strapColor: '#27272A'
+    irisTop: '#2B1004',
+    irisMid: '#5C280B',
+    irisGlow: '#F5B731',
+    hoodiePrimary: '#27437A',
+    hoodieSecondary: '#1A2F59',
+    hoodieShadow: '#0F1E3D',
+    strapColor: '#F5B731'
   }
 };
 

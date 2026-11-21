@@ -14,6 +14,7 @@ import { soundManager } from '../../utils/audioEffects';
 import { UserProfile } from '../../types';
 import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
 import { PrintablePracticeReportModal } from '../reports/PrintablePracticeReportModal';
+import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
 import {
   AnimatedNumber,
   StaggerGroup,
@@ -71,8 +72,37 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
 
   const examMode = user?.progress?.intendedFormat || 'Academic';
   const targetBand = user?.progress?.targetBand || 7.5;
-  const streakDays = user?.progress?.streakDays || 1;
-  const estimatedBand = diagnostic ? diagnostic.scores.overall : 0;
+  const streakDays = user?.progress?.streakDays || 0;
+  const examHistory = user?.progress?.examHistory || [];
+  const agg = aggregateExamHistory(examHistory);
+
+  const diagnosticOverall = validateOptionalHalfBand(diagnostic?.scores?.overall, 1.0);
+  const overallBand = agg.overall.latest ?? diagnosticOverall;
+  const overallSourceLabel =
+    agg.overall.latest !== null
+      ? 'Full Mock Band'
+      : diagnosticOverall !== null
+      ? 'Diagnostic Est.'
+      : 'Overall Band';
+
+  const skillBands = {
+    listening: agg.skills.listening.latest ?? validateOptionalHalfBand(diagnostic?.scores?.listening, 0.0),
+    reading: agg.skills.reading.latest ?? validateOptionalHalfBand(diagnostic?.scores?.reading, 0.0),
+    writing: agg.skills.writing.latest ?? validateOptionalHalfBand(diagnostic?.scores?.writing, 1.0),
+    speaking: agg.skills.speaking.latest ?? validateOptionalHalfBand(diagnostic?.scores?.speaking, 1.0)
+  };
+
+  const assessedSkillCount = [
+    skillBands.listening,
+    skillBands.reading,
+    skillBands.writing,
+    skillBands.speaking
+  ].filter((v) => v !== null).length;
+
+  const overallPercentage =
+    overallBand !== null
+      ? Math.min(100, Math.round((overallBand / targetBand) * 100))
+      : Math.round((assessedSkillCount / 4) * 100);
 
   const destinations: ProgressItem[] = [
     {
@@ -176,10 +206,10 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
 
           <div>
             <div className="text-[10px] font-mono uppercase tracking-wider text-[#EEF3F1]/65">
-              Diagnostic Est.
+              {overallSourceLabel}
             </div>
             <div className="font-mono font-bold text-base text-white tabular-nums">
-              {estimatedBand > 0 ? <AnimatedNumber value={estimatedBand} decimals={1} /> : 'Not taken'}
+              {overallBand !== null ? <AnimatedNumber value={overallBand} decimals={1} /> : 'Not assessed'}
             </div>
           </div>
 
@@ -298,12 +328,24 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
               onNavigate={onNavigate}
               onShowToast={onShowToast}
               targetBand={targetBand}
-              estimatedBand={estimatedBand}
+              estimatedBand={overallBand ?? 0}
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ProgressDonutCard onNavigate={onNavigate} />
+              <ProgressDonutCard
+                overallPercentage={overallPercentage}
+                estimatedBand={overallBand}
+                targetBand={targetBand}
+                completedCount={agg.completedFullMockCount}
+                examHistory={examHistory}
+                onViewAnalytics={() => onNavigate('/progress/analytics')}
+                onNavigate={onNavigate}
+              />
               <AIBandScorecard
+                estimatedBand={overallBand}
+                targetBand={targetBand}
+                overallPercentage={overallPercentage}
+                skillBands={skillBands}
                 onNavigate={onNavigate}
                 onOpenBandModal={onOpenBandModal}
               />
@@ -326,7 +368,13 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
         {activeTab === 'skills' && (
           <div className="space-y-5 animate-fade-in">
             <SkillMasteryMatrix onNavigate={onNavigate} examMode={examMode} />
-            <PracticeHeatmap onNavigate={onNavigate} />
+            <PracticeHeatmap
+              user={user}
+              examHistory={examHistory}
+              streakDays={streakDays}
+              onNavigate={onNavigate}
+              onShowToast={onShowToast}
+            />
             <ExamPacingStrategyCard
               onNavigate={onNavigate}
               onShowToast={onShowToast}

@@ -7,7 +7,7 @@ import confetti from 'canvas-confetti';
 import { UserProfile, ExamHistoryRecord } from '../types';
 import { questionEngine } from './QuestionEngine';
 import { soundManager } from '../utils/audioEffects';
-import { isFullMockExamRecord } from '../utils/userStorage';
+import { aggregateExamHistory } from '../utils/historyAggregation';
 
 export type AchievementCategory =
   | 'vocabulary'
@@ -172,7 +172,7 @@ export function evaluateAchievements(
 ): AchievementBadge[] {
   const unlockedMap = getUnlockedMap();
   const history: ExamHistoryRecord[] = user?.progress?.examHistory || [];
-  const fullMockHistory = history.filter((h) => isFullMockExamRecord(h));
+  const historyAgg = aggregateExamHistory(history);
   const completedModules = user?.progress?.completedModules || ['beginner'];
   const qAttempts = questionEngine.getHistory();
   const listeningStats = questionEngine.getModuleStats('listening');
@@ -197,20 +197,19 @@ export function evaluateAchievements(
   // If newly started with default items, ensure real activity is accurately represented
   const effectiveVocabCount = Math.max(vocabMasteredCount, Math.min(totalSavedVocab, completedModules.length * 25));
 
-  // Listening highest score
-  const highestListeningBand = Math.max(
-    listeningStats.estimatedBand || 0,
-    ...history.map((h) => h.listeningBand || 0)
-  );
+  // Listening highest score (strictly from validated evaluated history — never QuestionEngine 0-attempt defaults)
+  const highestListeningBand = historyAgg.skills.listening.best ?? 0;
   const hasPerfectListening =
     highestListeningBand >= 9.0 ||
-    history.some((h) => (h.listeningBand || 0) >= 9.0 || (h.totalQuestions > 0 && h.correctCount === h.totalQuestions));
+    historyAgg.evaluatedRecords.some(
+      (ev) =>
+        ev.listeningBand !== null &&
+        (ev.listeningBand >= 9.0 ||
+          (ev.record.totalQuestions > 0 && ev.record.correctCount === ev.record.totalQuestions))
+    );
 
-  // Speaking highest score
-  const highestSpeakingBand = Math.max(
-    speakingStats.estimatedBand || 0,
-    ...history.map((h) => (h as any).speakingBand || 0)
-  );
+  // Speaking highest score (strictly from validated evaluated Speaking — blocks transcript-only / partial)
+  const highestSpeakingBand = historyAgg.skills.speaking.best ?? 0;
 
   // Overall accuracy
   const totalAttempted = qAttempts.length + history.reduce((acc, h) => acc + (h.totalQuestions || 0), 0);
@@ -431,7 +430,7 @@ export function evaluateAchievements(
       tier: 'bronze',
       iconName: 'Award',
       milestoneGoal: 1,
-      currentValue: fullMockHistory.length,
+      currentValue: historyAgg.completedFullMockCount,
       unit: 'exams',
       xpReward: 300,
       howToEarn: 'Complete a full mock exam in the Mock Test center.'
@@ -445,9 +444,7 @@ export function evaluateAchievements(
       tier: 'platinum',
       iconName: 'Trophy',
       milestoneGoal: 8.0,
-      currentValue: fullMockHistory.length
-        ? Math.max(...fullMockHistory.map((h) => h.overallBand || 0))
-        : 0,
+      currentValue: historyAgg.overall.best ?? 0,
       unit: 'Band',
       xpReward: 1000,
       howToEarn: 'Achieve an overall composite score of Band 8.0 or above in a full Mock Exam.'

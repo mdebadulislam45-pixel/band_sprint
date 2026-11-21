@@ -58,15 +58,27 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
   const [savedCollocations, setSavedCollocations] = useState<Record<string, boolean>>({});
 
   const radarData = useMemo(() => {
-    if (!feedback) return [];
+    if (!feedback || !feedback.estimatedBands) return [];
     const bands = feedback.estimatedBands;
-    const wpm = feedback.wordsPerMinute || 120;
-    const rawFluency = bands.fluency;
-    const markerBonus = feedback.band8Answer.keyDiscourseMarkers.length >= 3 ? 0.4 : -0.3;
-    const coherenceScore = Math.min(9.0, Math.max(4.5, Number((bands.fluency * 0.65 + bands.lexical * 0.35 + markerBonus).toFixed(1))));
-    const pacingScore = wpm >= 110 && wpm <= 155 ? Math.min(9.0, rawFluency + 0.5) : Math.max(5.0, rawFluency - 0.5);
+    const rawFluency = typeof bands.fluency === 'number' ? bands.fluency : null;
+    const rawLexical = typeof bands.lexical === 'number' ? bands.lexical : null;
+    const rawGrammar = typeof bands.grammar === 'number' ? bands.grammar : null;
+    const rawPronunciation =
+      typeof bands.pronunciation === 'number' && bands.pronunciation > 0 ? bands.pronunciation : null;
 
-    return [
+    if (rawFluency === null || rawLexical === null || rawGrammar === null) {
+      return [];
+    }
+
+    const wpm = feedback.wordsPerMinute || 0;
+    const pacingScore =
+      wpm >= 110 && wpm <= 165
+        ? rawFluency
+        : wpm > 0
+        ? Math.max(1.0, Number((rawFluency - 0.5).toFixed(1)))
+        : rawFluency;
+
+    const axes = [
       {
         subject: 'Fluency & Flow',
         candidate: Number(rawFluency.toFixed(1)),
@@ -74,36 +86,41 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
         fullMark: 9.0
       },
       {
-        subject: 'Coherence & Linkers',
-        candidate: coherenceScore,
+        subject: 'Coherence',
+        candidate: Number(rawFluency.toFixed(1)),
         benchmark: 8.0,
         fullMark: 9.0
       },
       {
-        subject: 'Pace & Pause Control',
+        subject: 'Pace & Delivery',
         candidate: Number(pacingScore.toFixed(1)),
         benchmark: 8.0,
         fullMark: 9.0
       },
       {
         subject: 'Lexical Precision',
-        candidate: Number(bands.lexical.toFixed(1)),
+        candidate: Number(rawLexical.toFixed(1)),
         benchmark: 8.0,
         fullMark: 9.0
       },
       {
         subject: 'Grammar Range',
-        candidate: Number(bands.grammar.toFixed(1)),
-        benchmark: 8.0,
-        fullMark: 9.0
-      },
-      {
-        subject: 'Pronunciation',
-        candidate: Number(bands.pronunciation.toFixed(1)),
+        candidate: Number(rawGrammar.toFixed(1)),
         benchmark: 8.0,
         fullMark: 9.0
       }
     ];
+
+    if (rawPronunciation !== null) {
+      axes.push({
+        subject: 'Pronunciation',
+        candidate: Number(rawPronunciation.toFixed(1)),
+        benchmark: 8.0,
+        fullMark: 9.0
+      });
+    }
+
+    return axes;
   }, [feedback]);
 
   if (!isOpen || !feedback) return null;
@@ -184,34 +201,104 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
     onClose();
   };
 
-  const bands = feedback.estimatedBands;
-  const coherenceAxis = radarData[1]?.candidate ?? bands.fluency;
-  const fcDelta = Number((bands.fluency - coherenceAxis).toFixed(1));
+  const bands = feedback.estimatedBands || {
+    fluency: null,
+    lexical: null,
+    grammar: null,
+    pronunciation: null,
+    overall: null
+  };
+  const fmtBand = (val: number | null | undefined): string =>
+    typeof val === 'number' && Number.isFinite(val) ? val.toFixed(1) : 'Unassessed';
+
+  const fluencyScore = typeof bands.fluency === 'number' ? bands.fluency : null;
+  const lexicalScore = typeof bands.lexical === 'number' ? bands.lexical : null;
+  const grammarScore = typeof bands.grammar === 'number' ? bands.grammar : null;
+  const pronunciationScore =
+    typeof bands.pronunciation === 'number' && bands.pronunciation > 0
+      ? bands.pronunciation
+      : null;
+  const overallScore =
+    typeof feedback.overallBand === 'number'
+      ? feedback.overallBand
+      : typeof bands.overall === 'number' && bands.overall > 0 && pronunciationScore !== null
+      ? bands.overall
+      : null;
+  const partialIndex =
+    typeof feedback.partialThreeCriterionIndex === 'number'
+      ? feedback.partialThreeCriterionIndex
+      : null;
+  const isPartialTranscriptOnly =
+    overallScore === null &&
+    (feedback.assessmentStatus === 'partial_transcript_only' || partialIndex !== null);
+
+  const coherenceAxis = radarData[1]?.candidate ?? fluencyScore;
+  const fcDelta =
+    fluencyScore !== null && coherenceAxis !== null
+      ? Number((fluencyScore - coherenceAxis).toFixed(1))
+      : 0;
+
+  const isUnavailable =
+    feedback.assessmentStatus === 'unavailable' ||
+    (feedback.isValidAttempt === false && feedback.wordCount >= 5 && feedback.assessmentStatus !== 'insufficient_evidence');
 
   const isValidAttempt =
     feedback.isValidAttempt !== false &&
+    feedback.assessmentStatus !== 'unavailable' &&
+    feedback.assessmentStatus !== 'insufficient_evidence' &&
     feedback.wordCount >= 5 &&
-    (bands?.overall ?? 0) > 0;
+    fluencyScore !== null &&
+    lexicalScore !== null &&
+    grammarScore !== null;
 
   if (!isValidAttempt) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-fade-in">
         <div
-          className="bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-800/80 shadow-2xl w-full max-w-xl overflow-hidden flex flex-col"
+          className={`bg-white dark:bg-slate-900 rounded-3xl border shadow-2xl w-full max-w-xl overflow-hidden flex flex-col ${
+            isUnavailable
+              ? 'border-amber-200 dark:border-amber-800/80'
+              : 'border-rose-200 dark:border-rose-800/80'
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Warning Header */}
-          <div className="bg-gradient-to-r from-rose-950 via-rose-900 to-slate-900 text-white px-6 py-5 flex items-center justify-between gap-4">
+          <div
+            className={`text-white px-6 py-5 flex items-center justify-between gap-4 ${
+              isUnavailable
+                ? 'bg-gradient-to-r from-amber-950 via-amber-900 to-slate-900'
+                : 'bg-gradient-to-r from-rose-950 via-rose-900 to-slate-900'
+            }`}
+          >
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-6 h-6 text-rose-300" />
+              <div
+                className={`w-11 h-11 rounded-2xl border flex items-center justify-center shrink-0 ${
+                  isUnavailable
+                    ? 'bg-amber-500/20 border-amber-400/40'
+                    : 'bg-rose-500/20 border-rose-400/40'
+                }`}
+              >
+                <AlertTriangle
+                  className={`w-6 h-6 ${isUnavailable ? 'text-amber-300' : 'text-rose-300'}`}
+                />
               </div>
               <div>
-                <span className="text-[11px] font-mono uppercase tracking-wider text-rose-300 font-bold block">
-                  Unattempted / Audio Inaudible
+                <span
+                  className={`text-[11px] font-mono uppercase tracking-wider font-bold block ${
+                    isUnavailable ? 'text-amber-300' : 'text-rose-300'
+                  }`}
+                >
+                  {isUnavailable
+                    ? feedback.authRequired
+                      ? 'Authentication Required · No Score Generated'
+                      : 'Assessment Unavailable · No Score Generated'
+                    : 'Unattempted / Insufficient Speech'}
                 </span>
                 <h2 className="text-lg font-extrabold tracking-tight text-white">
-                  {feedback.feedbackTitle || 'No Candidate Speech Detected'}
+                  {feedback.feedbackTitle ||
+                    (isUnavailable
+                      ? 'AI Speaking Evaluation Unavailable'
+                      : 'No Candidate Speech Detected')}
                 </h2>
               </div>
             </div>
@@ -226,20 +313,57 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
 
           {/* Warning Body */}
           <div className="p-6 space-y-5">
-            <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 space-y-2.5">
-              <div className="flex items-center justify-between text-xs font-mono font-bold text-rose-800 dark:text-rose-300">
-                <span>STRICT INPUT GATE · MINIMUM 5 WORDS REQUIRED</span>
-                <span className="px-2 py-0.5 rounded bg-rose-200/80 dark:bg-rose-900 text-rose-950 dark:text-rose-100">
+            <div
+              className={`p-4 rounded-2xl border space-y-2.5 ${
+                isUnavailable
+                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/70'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/70'
+              }`}
+            >
+              <div
+                className={`flex items-center justify-between text-xs font-mono font-bold ${
+                  isUnavailable
+                    ? 'text-amber-800 dark:text-amber-300'
+                    : 'text-rose-800 dark:text-rose-300'
+                }`}
+              >
+                <span>
+                  {isUnavailable
+                    ? 'HONEST ASSESSMENT GATE · ZERO FALLBACK SCORES'
+                    : 'STRICT INPUT GATE · MINIMUM 5 WORDS REQUIRED'}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded ${
+                    isUnavailable
+                      ? 'bg-amber-200/80 dark:bg-amber-900 text-amber-950 dark:text-amber-100'
+                      : 'bg-rose-200/80 dark:bg-rose-900 text-rose-950 dark:text-rose-100'
+                  }`}
+                >
                   {feedback.wordCount} word{feedback.wordCount === 1 ? '' : 's'} detected
                 </span>
               </div>
-              <p className="text-sm font-semibold text-rose-950 dark:text-rose-100 leading-relaxed">
+              <p
+                className={`text-sm font-semibold leading-relaxed ${
+                  isUnavailable
+                    ? 'text-amber-950 dark:text-amber-100'
+                    : 'text-rose-950 dark:text-rose-100'
+                }`}
+              >
                 {feedback.feedbackEn ||
+                  feedback.error ||
                   'You spoke fewer than 5 words. The examiner cannot assess your English without audible, sustained speech.'}
               </p>
-              <p className="text-xs font-medium text-rose-800 dark:text-rose-300 leading-relaxed pt-1 border-t border-rose-200/60 dark:border-rose-800/60">
+              <p
+                className={`text-xs font-medium leading-relaxed pt-1 border-t ${
+                  isUnavailable
+                    ? 'text-amber-800 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60'
+                    : 'text-rose-800 dark:text-rose-300 border-rose-200/60 dark:border-rose-800/60'
+                }`}
+              >
                 {feedback.feedbackBn ||
-                  'পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।'}
+                  (isUnavailable
+                    ? 'AI স্পিকিং মূল্যায়ন এই মুহূর্তে উপলব্ধ নয়। কোনো ভুয়া ব্যান্ড স্কোর তৈরি করা হয়নি।'
+                    : 'পর্যাপ্ত শব্দ শনাক্ত করা যায়নি (কমপক্ষে ৫টি শব্দ প্রয়োজন)। অনুগ্রহ করে মাইক্রোফোন অন করে স্পষ্টভাবে কথা বলুন।')}
               </p>
             </div>
 
@@ -280,10 +404,12 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                   onClose();
                 }
               }}
-              className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-black shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95"
+              className={`px-6 py-2.5 rounded-xl text-white text-xs sm:text-sm font-black shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95 ${
+                isUnavailable ? 'bg-amber-600 hover:bg-amber-700' : 'bg-rose-600 hover:bg-rose-700'
+              }`}
             >
               <RotateCcw className="w-4 h-4" />
-              <span>Try Again / Re-record</span>
+              <span>{isUnavailable ? 'Retry / Re-record' : 'Try Again / Re-record'}</span>
             </button>
           </div>
         </div>
@@ -301,7 +427,9 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black uppercase tracking-wide">
                   <Zap className="w-3 h-3 fill-slate-950" />
-                  INSTANT AI FEEDBACK · BAND 8+ COACH
+                  {isPartialTranscriptOnly
+                    ? 'PARTIAL TRANSCRIPT DIAGNOSTIC (3/4 CRITERIA)'
+                    : 'INSTANT AI FEEDBACK · BAND 8+ COACH'}
                 </span>
                 <span className="text-xs text-indigo-200 font-mono">
                   Part {feedback.part} · {feedback.topic}
@@ -324,36 +452,48 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
           {/* Quick Score Ribbon */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-4 mt-2 border-t border-white/10 text-center">
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
-              <div className="text-[10px] text-indigo-200 uppercase font-bold">Overall Band</div>
+              <div className="text-[10px] text-indigo-200 uppercase font-bold">
+                {overallScore !== null ? 'Overall Band' : 'Partial Index (3/4)'}
+              </div>
               <div className="text-base sm:text-lg font-black text-amber-300 font-mono tabular-nums">
-                {bands.overall.toFixed(1)}
+                {overallScore !== null
+                  ? overallScore.toFixed(1)
+                  : partialIndex !== null
+                  ? partialIndex.toFixed(1)
+                  : 'Unassessed'}
               </div>
             </div>
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Fluency & Coherence</div>
               <div className="text-sm sm:text-base font-bold text-white font-mono tabular-nums">
-                {bands.fluency.toFixed(1)}
+                {fmtBand(fluencyScore)}
               </div>
             </div>
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Lexical Resource</div>
               <div className="text-sm sm:text-base font-bold text-white font-mono tabular-nums">
-                {bands.lexical.toFixed(1)}
+                {fmtBand(lexicalScore)}
               </div>
             </div>
             <div className="p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Grammar Accuracy</div>
               <div className="text-sm sm:text-base font-bold text-white font-mono tabular-nums">
-                {bands.grammar.toFixed(1)}
+                {fmtBand(grammarScore)}
               </div>
             </div>
             <div className="col-span-2 sm:col-span-1 p-2 rounded-xl bg-white/10 border border-white/10">
               <div className="text-[10px] text-indigo-200 uppercase font-bold">Pronunciation</div>
               <div className="text-sm sm:text-base font-bold text-emerald-300 font-mono tabular-nums">
-                {bands.pronunciation.toFixed(1)}
+                {pronunciationScore !== null ? pronunciationScore.toFixed(1) : 'Unassessed'}
               </div>
             </div>
           </div>
+
+          {isPartialTranscriptOnly && (
+            <div className="mt-3 px-3 py-2 rounded-xl bg-amber-400/15 border border-amber-300/30 text-[11px] text-amber-100 leading-snug">
+              <strong>Partial Transcript-Only Estimate:</strong> Reflects Fluency &amp; Coherence, Lexical Resource, and Grammar only. Acoustic Pronunciation was not measured — this is not a complete IELTS Speaking band.
+            </div>
+          )}
         </div>
 
         {/* Tab Switcher */}
@@ -512,13 +652,13 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                       <div className="p-2 rounded-xl bg-white/10">
                         <div className="text-[10px] text-slate-300">Fluency Flow</div>
                         <div className="text-base font-black text-amber-300 tabular-nums">
-                          {bands.fluency.toFixed(1)}
+                          {fmtBand(fluencyScore)}
                         </div>
                       </div>
                       <div className="p-2 rounded-xl bg-white/10">
                         <div className="text-[10px] text-slate-300">Coherence</div>
                         <div className="text-base font-black text-emerald-300 tabular-nums">
-                          {coherenceAxis.toFixed(1)}
+                          {fmtBand(coherenceAxis)}
                         </div>
                       </div>
                     </div>
@@ -780,11 +920,14 @@ export const InstantSpeakingFeedbackModal: React.FC<InstantSpeakingFeedbackModal
                     Pronunciation Clarity & Cadence
                   </span>
                   <span className="px-2 py-0.5 rounded-md bg-emerald-200 text-emerald-950 font-mono text-xs font-bold">
-                    Band {feedback.pronunciation.clarityBand.toFixed(1)}
+                    {typeof feedback.pronunciation?.clarityBand === 'number'
+                      ? `Band ${feedback.pronunciation.clarityBand.toFixed(1)}`
+                      : 'Unassessed (Audio Required)'}
                   </span>
                 </div>
                 <p className="text-xs text-emerald-800 leading-relaxed">
-                  {feedback.pronunciation.rhythmVerdict}
+                  {feedback.pronunciation?.rhythmVerdict ||
+                    'Acoustic pronunciation was not assessed from transcript-only input.'}
                 </p>
               </div>
 

@@ -37,13 +37,8 @@ export class SpeechRecognitionService {
   private volumeSamples: number[] = [];
   private energyDropOffCount: number = 0;
   private wasSpeakingLoudly: boolean = false;
-  private lastAcousticTelemetry: AcousticTelemetry = {
-    volumeRms: 0,
-    pitchHz: 0,
-    pitchVarianceHz: 0,
-    expressivenessScore: 68,
-    energyDropOffs: 0
-  };
+  private hasMeasuredAcousticSample: boolean = false;
+  private lastAcousticTelemetry: AcousticTelemetry | null = null;
 
   constructor() {
     this.checkSupport();
@@ -89,6 +84,8 @@ export class SpeechRecognitionService {
     this.volumeSamples = [];
     this.energyDropOffCount = 0;
     this.wasSpeakingLoudly = false;
+    this.hasMeasuredAcousticSample = false;
+    this.lastAcousticTelemetry = null;
 
     if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       return;
@@ -173,7 +170,7 @@ export class SpeechRecognitionService {
         }
 
         // 3. Calculate Pitch Variance (Standard Deviation of active speech frames)
-        let pitchVarianceHz = 0;
+        let pitchVarianceHz: number | null = null;
         if (this.pitchSamples.length >= 4) {
           const mean =
             this.pitchSamples.reduce((acc, v) => acc + v, 0) / this.pitchSamples.length;
@@ -183,21 +180,23 @@ export class SpeechRecognitionService {
           pitchVarianceHz = Math.round(Math.sqrt(variance));
         }
 
-        // Optimal Sprint intonation variance is ~22-55 Hz std dev
-        const expressivenessScore =
-          this.pitchSamples.length < 3
-            ? 68
+        // Optimal Sprint intonation variance is ~22-55 Hz std dev; remain null until enough voiced frames exist
+        const expressivenessScore: number | null =
+          pitchVarianceHz === null
+            ? null
             : Math.min(
                 98,
                 Math.max(42, Math.round(50 + Math.min(48, pitchVarianceHz * 1.15)))
               );
 
+        this.hasMeasuredAcousticSample = true;
         this.lastAcousticTelemetry = {
           volumeRms,
           pitchHz: dominantPitchHz,
           pitchVarianceHz,
           expressivenessScore,
-          energyDropOffs: this.energyDropOffCount
+          energyDropOffs: this.energyDropOffCount,
+          isMeasured: true
         };
 
         this.callbacks.onAcousticMetrics?.(this.lastAcousticTelemetry);
@@ -227,7 +226,10 @@ export class SpeechRecognitionService {
     this.analyserNode = null;
   }
 
-  public getLastAcousticTelemetry(): AcousticTelemetry {
+  public getLastAcousticTelemetry(): AcousticTelemetry | undefined {
+    if (!this.hasMeasuredAcousticSample || !this.lastAcousticTelemetry) {
+      return undefined;
+    }
     return { ...this.lastAcousticTelemetry };
   }
 
@@ -242,6 +244,8 @@ export class SpeechRecognitionService {
     this.isManuallyStopped = false;
     this.currentTranscript = '';
     this.interimTranscript = '';
+    this.hasMeasuredAcousticSample = false;
+    this.lastAcousticTelemetry = null;
     this.speechStartTime = Date.now();
 
     try {
