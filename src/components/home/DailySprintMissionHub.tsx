@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, ArrowRight, Clock, Zap } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
+import { dispatchBarnabyEvent } from '../../services/barnabyRoamEngine';
 import { DailySprintChallengeModal } from '../daily/DailySprintChallengeModal';
 import {
   recordMissionComplete,
@@ -97,8 +98,14 @@ export const DailySprintMissionHub: React.FC<DailySprintMissionHubProps> = ({
         onShowToast(
           `All 3 daily tasks completed! +${XP_PER_MISSION * 3 + XP_ALL_MISSIONS_BONUS} XP earned.`
         );
+        dispatchBarnabyEvent('achievement', {
+          message: 'All 3 daily study tasks complete! Brilliant consistency — better than yesterday!'
+        });
       } else {
         onShowToast(`Task completed! +${XP_PER_MISSION} XP recorded.`);
+        dispatchBarnabyEvent('task_completed', {
+          message: 'Nice work completing a study task! Keep that steady rhythm going.'
+        });
       }
       window.dispatchEvent(new CustomEvent('bandsprint_streak_updated'));
     }

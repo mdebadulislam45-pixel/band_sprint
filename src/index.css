@@ -537,6 +537,61 @@ html, body {
   50% { opacity: 1; transform: scale(1.14) rotate(12deg); }
 }
 
+/* Autonomous Roaming Locomotion Keyframes (GPU-composited transform/opacity only) */
+@keyframes barnaby-fly-wing-left {
+  0%, 100% { transform: rotate(10deg) translate3d(0, 0, 0); }
+  45% { transform: rotate(-28deg) translate3d(-2px, -4px, 0); }
+}
+
+@keyframes barnaby-fly-wing-right {
+  0%, 100% { transform: rotate(-10deg) translate3d(0, 0, 0); }
+  45% { transform: rotate(28deg) translate3d(2px, -4px, 0); }
+}
+
+@keyframes barnaby-hover-bob {
+  0%, 100% { transform: translate3d(0, -6px, 0) rotate(-1.5deg); }
+  50% { transform: translate3d(0, -14px, 0) rotate(1.5deg); }
+}
+
+@keyframes barnaby-flight-swoop {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  42% { transform: translate3d(0, -22px, 0) scale(1.03); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes barnaby-land-settle {
+  0% { transform: translate3d(0, -7px, 0) scale(0.96, 1.05); }
+  48% { transform: translate3d(0, 2px, 0) scale(1.06, 0.93); }
+  78% { transform: translate3d(0, -1.5px, 0) scale(0.99, 1.02); }
+  100% { transform: translate3d(0, 0, 0) scale(1, 1); }
+}
+
+@keyframes barnaby-walk-body {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-2deg); }
+  50% { transform: translate3d(0, -3px, 0) rotate(2deg); }
+}
+
+@keyframes barnaby-walk-leg-left {
+  0%, 100% { transform: rotate(-8deg) translate3d(0, 0, 0); }
+  50% { transform: rotate(10deg) translate3d(0, -4px, 0); }
+}
+
+@keyframes barnaby-walk-leg-right {
+  0%, 100% { transform: rotate(10deg) translate3d(0, -4px, 0); }
+  50% { transform: rotate(-8deg) translate3d(0, 0, 0); }
+}
+
+@keyframes barnaby-look-around {
+  0%, 100% { transform: rotate(0deg) translate3d(0, 0, 0); }
+  28% { transform: rotate(-7deg) translate3d(-2px, -0.5px, 0); }
+  72% { transform: rotate(7deg) translate3d(2px, -0.5px, 0); }
+}
+
+@keyframes barnaby-drag-dangle {
+  0%, 100% { transform: rotate(-4deg) translate3d(0, 0, 0); }
+  50% { transform: rotate(4deg) translate3d(0, -2px, 0); }
+}
+
 .animate-barnaby-float {
   animation: barnaby-float 3.6s ease-in-out infinite;
 }
@@ -555,6 +610,26 @@ html, body {
 
 .animate-barnaby-particle {
   animation: barnaby-particle-rise 1.3s ease-out forwards;
+}
+
+.animate-barnaby-hover {
+  animation: barnaby-hover-bob 2.2s ease-in-out infinite;
+}
+
+.animate-barnaby-flight-swoop {
+  animation: barnaby-flight-swoop 1.15s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+
+.animate-barnaby-land {
+  animation: barnaby-land-settle 0.46s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+.animate-barnaby-walk-body {
+  animation: barnaby-walk-body 0.44s ease-in-out infinite;
+}
+
+.animate-barnaby-drag {
+  animation: barnaby-drag-dangle 0.55s ease-in-out infinite;
 }
 
 .barnaby-rig-breathe {
@@ -582,6 +657,26 @@ html, body {
   transform-origin: 146px 132px;
 }
 
+.barnaby-rig-fly-wing-left {
+  animation: barnaby-fly-wing-left 0.36s ease-in-out infinite;
+  transform-origin: 56px 130px;
+}
+
+.barnaby-rig-fly-wing-right {
+  animation: barnaby-fly-wing-right 0.36s ease-in-out infinite;
+  transform-origin: 144px 130px;
+}
+
+.barnaby-rig-hover-wing-left {
+  animation: barnaby-fly-wing-left 0.54s ease-in-out infinite;
+  transform-origin: 56px 130px;
+}
+
+.barnaby-rig-hover-wing-right {
+  animation: barnaby-fly-wing-right 0.54s ease-in-out infinite;
+  transform-origin: 144px 130px;
+}
+
 .barnaby-rig-wing-wave {
   animation: barnaby-dragon-wing-wave 1.5s ease-in-out infinite;
   transform-origin: 56px 128px;
@@ -595,6 +690,21 @@ html, body {
 .barnaby-rig-wing-celebrate-right {
   animation: barnaby-dragon-wing-right 0.9s ease-in-out infinite;
   transform-origin: 146px 132px;
+}
+
+.barnaby-rig-walk-leg-left {
+  animation: barnaby-walk-leg-left 0.44s ease-in-out infinite;
+  transform-origin: 74px 192px;
+}
+
+.barnaby-rig-walk-leg-right {
+  animation: barnaby-walk-leg-right 0.44s ease-in-out infinite;
+  transform-origin: 126px 192px;
+}
+
+.barnaby-rig-look-head {
+  animation: barnaby-look-around 2.6s ease-in-out infinite;
+  transform-origin: 100px 104px;
 }
 
 .barnaby-rig-tail {
@@ -647,14 +757,26 @@ html, body {
   .animate-barnaby-wiggle,
   .animate-barnaby-nap,
   .animate-barnaby-particle,
+  .animate-barnaby-hover,
+  .animate-barnaby-flight-swoop,
+  .animate-barnaby-land,
+  .animate-barnaby-walk-body,
+  .animate-barnaby-drag,
   .barnaby-rig-breathe,
   .barnaby-rig-breathe-slow,
   .barnaby-rig-blink,
   .barnaby-rig-wing-left,
   .barnaby-rig-wing-right,
+  .barnaby-rig-fly-wing-left,
+  .barnaby-rig-fly-wing-right,
+  .barnaby-rig-hover-wing-left,
+  .barnaby-rig-hover-wing-right,
   .barnaby-rig-wing-wave,
   .barnaby-rig-wing-celebrate-left,
   .barnaby-rig-wing-celebrate-right,
+  .barnaby-rig-walk-leg-left,
+  .barnaby-rig-walk-leg-right,
+  .barnaby-rig-look-head,
   .barnaby-rig-tail,
   .barnaby-rig-tail-fast,
   .barnaby-rig-glint,

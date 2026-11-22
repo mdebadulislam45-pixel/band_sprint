@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import type { BarnabyMood } from '../../services/barnabyCompanionStore';
+import type { BarnabyFacing, BarnabyLocomotionState } from '../../services/barnabyRoamEngine';
 
 /**
  * Canonical 10 expressive companion states for Barnaby (BandSprint's sky-blue baby dragon).
@@ -146,6 +147,10 @@ export interface BarnabyDragonAvatarProps {
   className?: string;
   /** Optional test ID override. */
   testId?: string;
+  /** Physical locomotion posture for independent floating companion behavior. */
+  locomotion?: BarnabyLocomotionState;
+  /** Horizontal facing direction during autonomous roaming / turning. */
+  facing?: BarnabyFacing;
 }
 
 /**
@@ -286,7 +291,9 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
   framed = 'none',
   showCap = true,
   className = '',
-  testId = 'barnaby-dragon-avatar'
+  testId = 'barnaby-dragon-avatar',
+  locomotion = 'perched',
+  facing = 'right'
 }) => {
   const uid = useId().replace(/:/g, '');
   const isFullBody = variant === 'full';
@@ -296,7 +303,7 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
   const meta = BARNABY_STATE_META[resolvedState] || BARNABY_STATE_META.idle;
   const isActivelySpeakingMouth = Boolean(isSpeaking && !paused);
 
-  const isSleeping = resolvedState === 'sleeping';
+  const isSleeping = resolvedState === 'sleeping' || locomotion === 'sleeping';
   const isCelebrating = resolvedState === 'celebrating';
   const isGreeting = resolvedState === 'greeting';
   const isThinking = resolvedState === 'thinking';
@@ -305,16 +312,27 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
   const isCorrecting = resolvedState === 'correcting';
   const isListening = resolvedState === 'listening';
 
+  const isFlying = locomotion === 'flying';
+  const isHovering = locomotion === 'hovering';
+  const isWalking = locomotion === 'walking';
+  const isLooking = locomotion === 'looking';
+  const isDragging = locomotion === 'dragging';
+  const isAirborne = isFlying || isHovering || isDragging;
+
   // Clamp optional audio analyzer mouth amplitude for live TTS sync
   const clampedMouthOpen = Math.max(0, Math.min(1, Number.isFinite(mouthOpenness) ? mouthOpenness : 0));
   const useAmplitudeMouth = isActivelySpeakingMouth && clampedMouthOpen > 0.08;
 
   const headTransform = paused
     ? undefined
-    : `rotate(${meta.headTiltDeg}deg)`;
+    : `rotate(${isFlying ? 4 : meta.headTiltDeg}deg)`;
 
   const leftWingAnimClass = paused
     ? ''
+    : isFlying || isDragging
+    ? 'barnaby-rig-fly-wing-left'
+    : isHovering
+    ? 'barnaby-rig-hover-wing-left'
     : isGreeting || isTeaching
     ? 'barnaby-rig-wing-wave'
     : isCelebrating
@@ -325,6 +343,10 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
 
   const rightWingAnimClass = paused
     ? ''
+    : isFlying || isDragging
+    ? 'barnaby-rig-fly-wing-right'
+    : isHovering
+    ? 'barnaby-rig-hover-wing-right'
     : isCelebrating
     ? 'barnaby-rig-wing-celebrate-right'
     : isSleeping
@@ -333,7 +355,7 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
 
   const tailAnimClass = paused
     ? ''
-    : isCelebrating || isGreeting
+    : isCelebrating || isGreeting || isFlying
     ? 'barnaby-rig-tail-fast'
     : isSleeping
     ? ''
@@ -347,7 +369,7 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
     ? 'barnaby-rig-nod'
     : 'barnaby-rig-breathe';
 
-  const eyeShiftX = paused ? 0 : meta.eyeShiftX;
+  const eyeShiftX = paused ? 0 : isLooking ? 2.4 : meta.eyeShiftX;
   const eyeShiftY = paused ? 0 : meta.eyeShiftY;
 
   return (
@@ -356,6 +378,8 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
       data-character="barnaby-dragon"
       data-variant={variant}
       data-avatar-state={resolvedState}
+      data-locomotion={locomotion}
+      data-facing={facing}
       data-is-speaking={isActivelySpeakingMouth ? 'true' : 'false'}
       data-paused={paused ? 'true' : 'false'}
       role="img"
@@ -369,6 +393,10 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className="w-full h-full overflow-visible"
+        style={{
+          transform: facing === 'left' ? 'scaleX(-1)' : 'scaleX(1)',
+          transition: 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
+        }}
       >
         <defs>
           {/* 2.5D Sky-Blue Dragon Head & Scales Gradient */}
@@ -439,10 +467,26 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
         {/* Subtle Ambient 2.5D Depth Aura */}
         {isFullBody ? (
           <g>
-            <ellipse cx="102" cy="134" rx="96" ry="112" fill={meta.auraColor} opacity="0.68" />
-            {/* Soft Ground Contact Shadow Under Dragon Feet */}
-            <ellipse cx="100" cy="245" rx="64" ry="9" fill="#0F4C45" opacity="0.16" />
-            <ellipse cx="100" cy="245" rx="44" ry="5" fill="#0F4C45" opacity="0.12" />
+            <ellipse
+              cx="102"
+              cy="134"
+              rx="96"
+              ry="112"
+              fill={meta.auraColor}
+              opacity={isAirborne ? '0.45' : '0.62'}
+            />
+            {/* Soft Ground Contact Shadow Under Dragon Feet — shrinks & softens when airborne */}
+            <g
+              style={{
+                transform: isAirborne ? 'translateY(10px) scale(0.62)' : 'translateY(0px) scale(1)',
+                transformOrigin: '100px 245px',
+                opacity: isAirborne ? 0.55 : 1,
+                transition: 'transform 260ms ease, opacity 260ms ease'
+              }}
+            >
+              <ellipse cx="100" cy="245" rx="64" ry="9" fill="#0F4C45" opacity="0.16" />
+              <ellipse cx="100" cy="245" rx="44" ry="5" fill="#0F4C45" opacity="0.12" />
+            </g>
           </g>
         ) : (
           <circle cx="100" cy="108" r="82" fill={meta.auraColor} />
@@ -570,9 +614,15 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
 
           {/* 2.5 Full-Body Legs & Feet (Rendered behind hoodie hem when variant="full") */}
           {isFullBody && (
-            <g data-anatomy-part="legs-and-feet">
+            <g
+              data-anatomy-part="legs-and-feet"
+              style={{
+                transform: isAirborne ? 'translateY(3px)' : undefined,
+                transition: 'transform 220ms ease'
+              }}
+            >
               {/* Left Sky-Blue Dragon Leg & 3-Toed Clawed Foot */}
-              <g>
+              <g className={!paused && isWalking ? 'barnaby-rig-walk-leg-left' : ''}>
                 <path
                   d="M 59 190 C 55 204 58 218 62 229 L 85 229 C 87 216 88 202 88 190 Z"
                   fill={`url(#${uid}-blueDeep)`}
@@ -603,7 +653,7 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
               </g>
 
               {/* Right Sky-Blue Dragon Leg & 3-Toed Clawed Foot */}
-              <g>
+              <g className={!paused && isWalking ? 'barnaby-rig-walk-leg-right' : ''}>
                 <path
                   d="M 112 190 C 112 202 113 216 115 229 L 138 229 C 142 218 145 204 141 190 Z"
                   fill={`url(#${uid}-blueDeep)`}
@@ -771,6 +821,7 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
 
           {/* ================= 4. EXPRESSIVE DRAGON HEAD GROUP (Tilt-Responsive) ================= */}
           <g
+            className={!paused && isLooking ? 'barnaby-rig-look-head' : ''}
             style={{
               transform: headTransform,
               transformOrigin: '100px 96px',

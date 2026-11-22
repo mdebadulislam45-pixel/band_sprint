@@ -552,7 +552,7 @@ describe('SP-3 — Barnaby 2.5D Dragon Companion & Intelligent IELTS Mentor', ()
       assert.match(fullSpeakingHtml, /data-mouth-state="speaking-active"/);
     });
 
-    it('mounts DashboardBarnabyCompanion directly in HomeDashboard without circular cropping and wires speaker_barnaby + drawer open event', async () => {
+    it('renders Barnaby as an independent floating full-body companion rather than boxed inside a HomeDashboard card', async () => {
       const { HomeDashboard } = await import('../../components/HomeDashboard');
       const dashHtml = renderToStaticMarkup(
         React.createElement(HomeDashboard, {
@@ -563,19 +563,18 @@ describe('SP-3 — Barnaby 2.5D Dragon Companion & Intelligent IELTS Mentor', ()
         })
       );
 
-      assert.match(dashHtml, /data-testid="dashboard-barnaby-section"/);
-      assert.match(dashHtml, /data-testid="dashboard-barnaby-avatar"/);
-      assert.match(dashHtml, /data-variant="full"/);
-      assert.match(dashHtml, /data-anatomy-part="legs-and-feet"/);
-      assert.match(dashHtml, /I&#x27;m not here to study instead of you|not here to study instead of you/);
+      // Barnaby must NOT be trapped inside a static HomeDashboard card
+      assert.doesNotMatch(dashHtml, /data-testid="dashboard-barnaby-section"/);
+      assert.doesNotMatch(dashHtml, /data-testid="dashboard-barnaby-avatar"/);
 
-      const companionSrc = readSrc('src/components/home/DashboardBarnabyCompanion.tsx');
+      // FloatingBarnaby renders the unclipped full-body dragon in an independent floating layer across the Dashboard too
       const floatingSrc = readSrc('src/components/common/FloatingBarnaby.tsx');
-      assert.match(companionSrc, /variant="full"/);
-      assert.match(companionSrc, /framed="none"/);
-      assert.match(companionSrc, /speakerId:\s*'speaker_barnaby'/);
-      assert.match(companionSrc, /barnaby-float-open/);
+      assert.match(floatingSrc, /data-testid="barnaby-floating-layer"/);
+      assert.match(floatingSrc, /variant="full"/);
+      assert.match(floatingSrc, /framed="none"/);
+      assert.match(floatingSrc, /speakerId:\s*'speaker_barnaby'/);
       assert.match(floatingSrc, /barnaby-float-open/);
+      assert.doesNotMatch(floatingSrc, /!isDashboardRoute &&/);
     });
   });
 });

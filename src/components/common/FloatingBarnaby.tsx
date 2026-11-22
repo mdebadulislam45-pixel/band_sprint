@@ -1,273 +1,422 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   X,
   Send,
   Volume2,
-  VolumeX,
-  Minus,
-  Sparkles,
   Heart,
-  Apple,
+  Cookie,
   Zap,
-  Compass,
-  Pin,
+  Sparkles,
   ThumbsUp,
   ThumbsDown,
+  RotateCcw,
   ArrowRight,
-  RotateCcw
+  Compass,
+  Pause,
+  Play,
+  EyeOff,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Wind
 } from 'lucide-react';
-import { speakBritish, stopSpeech } from '../../utils/britishVoice';
-import { soundManager } from '../../utils/audioEffects';
 import {
-  BARNABY_STATE_EVENT,
   BarnabyCompanionState,
   BarnabyMessage,
-  MOOD_META,
-  answerBarnabyMiniQuiz,
-  clearBarnabyChat,
+  BARNABY_STATE_EVENT,
+  loadBarnabyState,
+  petBarnaby,
   feedBarnabyWordTreat,
+  startBarnabyMiniQuiz,
+  answerBarnabyMiniQuiz,
+  rateBarnabyMessage,
+  sendBarnabyChatMessage,
+  clearBarnabyChat,
+  toggleBarnabyFreeRoam,
   getBondStage,
   getContextualWhisper,
   getStudentContextSnapshot,
-  loadBarnabyState,
-  petBarnaby,
-  rateBarnabyMessage,
-  sendBarnabyChatMessage,
-  startBarnabyMiniQuiz,
-  toggleBarnabyFreeRoam,
-  updateBarnabyMoodAndActivity
+  generateContextAwareCoachTip
 } from '../../services/barnabyCompanionStore';
 import {
+  BarnabyCompanionEventDetail,
+  BarnabyFacing,
+  BarnabyLocomotionState,
+  BarnabyPoint,
+  BARNABY_COMPANION_EVENT,
+  clampBarnabyPosition,
+  collectScreenObstacles,
+  computeFacing,
+  computeFlightDurationMs,
+  computeWalkStepTarget,
+  findNonObstructiveSpot,
+  getBarnabySize,
+  getSafeViewportBounds,
+  pickApproachTarget,
+  pickNextRoamTarget,
+  pickRestPerch
+} from '../../services/barnabyRoamEngine';
+import { ACTIVE_USER_KEY } from '../../utils/userStorage';
+import { soundManager } from '../../utils/audioEffects';
+import { audioManager } from '../../services/AudioManager';
+import {
+  BarnabyAvatarState,
   BarnabyDragonAvatar,
   mapBarnabyMoodToAvatarState
 } from './BarnabyDragonAvatar';
 
 interface FloatingBarnabyProps {
-  onNavigate: (path: string) => void;
+  onNavigate?: (path: string) => void;
   currentPath?: string;
 }
 
 interface FloatingParticle {
   id: number;
-  symbol: string;
+  emoji: string;
   offsetX: number;
 }
 
-const OPEN_KEY = 'bandsprint_barnaby_open_v1';
-const POS_KEY = 'bandsprint_barnaby_pos_v2';
-
-// Routes where FloatingBarnaby stays hidden so he never covers exam controls,
-// microphone buttons, model answer actions, or the inline Barnaby card on /progress.
-const HIDDEN_ROUTE_PREFIXES = [
-  '/practice/speaking',
-  '/practice/mock-tests',
-  '/practice/listening',
-  '/practice/reading',
-  '/practice/writing',
-  '/practice/ai-tools',
-  '/learn/diagnostic',
-  '/learn/shadowing',
-  '/progress'
-];
-
-const QUICK_CHIPS = [
-  'What should I practise next?',
-  'Give me a Band 8.5 idiom + Bangla',
-  'Explain True / False / Not Given traps',
-  'Plan a 20-min Writing Task 2 sprint'
-];
-
-const IDLE_ACTIVITIES: Array<{
-  mood: 'curious' | 'playful' | 'happy' | 'sleepy';
-  activity: string;
-  whisper: string;
-}> = [
-  {
-    mood: 'curious',
-    activity: 'Sniffing around for C2 idioms...',
-    whisper: 'Sniffing for C2 idioms... tap me for a Band 8.5 Word Treat!'
-  },
-  {
-    mood: 'playful',
-    activity: 'Doing tiny dragon wing-hops!',
-    whisper: 'Ready for a 15-second IELTS trap quiz? Tap me!'
-  },
-  {
-    mood: 'sleepy',
-    activity: 'Taking a cozy dragon nap...',
-    whisper: 'Zzz... dreaming of Band 8.5... tap or drag me to wake me up!'
-  },
-  {
-    mood: 'happy',
-    activity: 'Watching over your IELTS sprint',
-    whisper: 'Tip: You can drag me anywhere on screen so I sit right where you like!'
+const getScopedUserKey = () => {
+  try {
+    return (typeof localStorage !== 'undefined' && localStorage.getItem(ACTIVE_USER_KEY)) || 'guest';
+  } catch {
+    return 'guest';
   }
-];
+};
+const getRestSpotKey = () => `barnaby_rest_spot_v2_${getScopedUserKey()}`;
+const getHiddenPrefKey = () => `barnaby_user_hidden_v2_${getScopedUserKey()}`;
 
-function getViewportBounds() {
-  if (typeof window === 'undefined') {
-    return { width: 1200, height: 800, isMobile: false };
+function loadUserRestSpot(): BarnabyPoint | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(getRestSpotKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+      return { x: parsed.x, y: parsed.y };
+    }
+  } catch {
+    // Ignore storage errors
   }
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  return { width, height, isMobile: width < 768 };
+  return null;
 }
 
-function clampPosition(x: number, y: number): { x: number; y: number } {
-  const { width, height, isMobile } = getViewportBounds();
-  const size = isMobile ? 54 : 60;
-  const padX = isMobile ? 12 : 20;
-  const topMin = isMobile ? 76 : 84;
-  const bottomReserve = isMobile ? 92 : 24;
-  return {
-    x: Math.max(padX, Math.min(width - size - padX, x)),
-    y: Math.max(topMin, Math.min(height - size - bottomReserve, y))
-  };
+function saveUserRestSpot(pos: BarnabyPoint): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(getRestSpotKey(), JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) }));
+  } catch {
+    // Ignore
+  }
 }
 
-function getDefaultPosition(): { x: number; y: number } {
-  const { width, height, isMobile } = getViewportBounds();
-  const size = isMobile ? 54 : 60;
-  const padX = isMobile ? 14 : 24;
-  const bottomReserve = isMobile ? 96 : 28;
-  return clampPosition(width - size - padX, height - size - bottomReserve);
+function loadUserHiddenPref(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(getHiddenPrefKey()) === '1';
+  } catch {
+    return false;
+  }
 }
 
-function pickEdgeRoamSpot(currentX: number, currentY: number): { x: number; y: number } {
-  const { width, height, isMobile } = getViewportBounds();
-  const size = isMobile ? 54 : 60;
-  const padX = isMobile ? 14 : 24;
-  const topMin = isMobile ? 84 : 96;
-  const bottomMax = height - size - (isMobile ? 96 : 28);
-  const midY = Math.round((topMin + bottomMax) * 0.55);
-  const upperY = Math.round(topMin + (bottomMax - topMin) * 0.22);
-
-  // Perimeter spots only — keeps Barnaby lively & free without blocking center reading text
-  const spots = isMobile
-    ? [
-        { x: width - size - padX, y: bottomMax },
-        { x: padX, y: bottomMax },
-        { x: width - size - padX, y: midY },
-        { x: padX, y: midY }
-      ]
-    : [
-        { x: width - size - padX, y: bottomMax },
-        { x: width - size - padX, y: midY },
-        { x: width - size - padX, y: upperY },
-        { x: padX, y: bottomMax },
-        { x: padX, y: midY }
-      ];
-
-  const farSpots = spots.filter(
-    (s) => Math.hypot(s.x - currentX, s.y - currentY) > 100
-  );
-  const pool = farSpots.length > 0 ? farSpots : spots;
-  const chosen = pool[Math.floor(Math.random() * pool.length)];
-  return clampPosition(chosen.x, chosen.y);
+function saveUserHiddenPref(hidden: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(getHiddenPrefKey(), hidden ? '1' : '0');
+  } catch {
+    // Ignore
+  }
 }
 
 export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   onNavigate,
   currentPath = '/'
 }) => {
-  const [state, setState] = useState<BarnabyCompanionState>(() => loadBarnabyState(currentPath));
-  const [isOpen, setIsOpen] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(OPEN_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [isHiddenForExam, setIsHiddenForExam] = useState(false);
-
-  // Free-roam position & drag state
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
-    try {
-      const saved = localStorage.getItem(POS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
-          return clampPosition(parsed.x, parsed.y);
-        }
-      }
-    } catch {}
-    return getDefaultPosition();
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragMetaRef = useRef<{
-    pointerId: number;
-    startClientX: number;
-    startClientY: number;
-    origX: number;
-    origY: number;
-    moved: boolean;
-  } | null>(null);
-
-  // Whisper bubble & particles
-  const [whisper, setWhisper] = useState<{ text: string; action?: { label: string; route: string } } | null>(null);
-  const [particles, setParticles] = useState<FloatingParticle[]>([]);
-  const [input, setInput] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [isDocumentHidden, setIsDocumentHidden] = useState<boolean>(() =>
+  const [companion, setCompanion] = useState<BarnabyCompanionState>(() => loadBarnabyState(currentPath));
+  const [isOpen, setIsOpen] = useState(false);
+  const [isHiddenByExam, setIsHiddenByExam] = useState(false);
+  const [isUserHidden, setIsUserHidden] = useState<boolean>(() => loadUserHiddenPref());
+  const [isPageHidden, setIsPageHidden] = useState<boolean>(() =>
     typeof document !== 'undefined' ? document.hidden : false
   );
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() =>
+  const [reducedMotion, setReducedMotion] = useState<boolean>(() =>
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false
   );
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const posRef = useRef(pos);
+  const [inputText, setInputText] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const [particles, setParticles] = useState<FloatingParticle[]>([]);
+  const [expressionOverride, setExpressionOverride] = useState<BarnabyAvatarState | null>(null);
+
+  // Viewport & full-body independent floating coordinates
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 768
+  }));
+
+  const [pos, setPos] = useState<BarnabyPoint>(() => {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const savedRest = loadUserRestSpot();
+    if (savedRest) {
+      return clampBarnabyPosition(savedRest, vw, vh);
+    }
+    const bounds = getSafeViewportBounds(vw, vh);
+    return { x: bounds.maxX, y: Math.max(bounds.minY + 18, Math.round(bounds.minY + (bounds.maxY - bounds.minY) * 0.24)) };
+  });
+
+  const [locomotion, setLocomotion] = useState<BarnabyLocomotionState>('perched');
+  const [facing, setFacing] = useState<BarnabyFacing>('left');
+  const [flightDurationMs, setFlightDurationMs] = useState<number>(1150);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [bodyAnim, setBodyAnim] = useState<'none' | 'hop' | 'wiggle'>('none');
+  const [whisper, setWhisper] = useState<{ text: string; actionLabel?: string; actionRoute?: string } | null>(null);
+  const [userRestSpot, setUserRestSpot] = useState<BarnabyPoint | null>(() => loadUserRestSpot());
+
+  // Refs to keep timers/event handlers allocation-light and avoid unnecessary re-renders
+  const posRef = useRef<BarnabyPoint>(pos);
   posRef.current = pos;
+  const facingRef = useRef<BarnabyFacing>(facing);
+  facingRef.current = facing;
+  const locomotionRef = useRef<BarnabyLocomotionState>(locomotion);
+  locomotionRef.current = locomotion;
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  const isDraggingRef = useRef(isDragging);
+  isDraggingRef.current = isDragging;
+  const isUserHiddenRef = useRef(isUserHidden);
+  isUserHiddenRef.current = isUserHidden;
+  const isHiddenByExamRef = useRef(isHiddenByExam);
+  isHiddenByExamRef.current = isHiddenByExam;
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
+  const freeRoamRef = useRef(companion.freeRoam);
+  freeRoamRef.current = companion.freeRoam;
+  const userRestSpotRef = useRef<BarnabyPoint | null>(userRestSpot);
+  userRestSpotRef.current = userRestSpot;
 
-  const isHiddenOnRoute = HIDDEN_ROUTE_PREFIXES.some(
-    (prefix) => currentPath === prefix || currentPath.startsWith(`${prefix}/`)
+  const dragStartRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const lastActivityAtRef = useRef<number>(Date.now());
+  const isSleepingIdleRef = useRef<boolean>(false);
+  const hasGreetedDashboardRef = useRef<boolean>(false);
+  const lastMistakeReactionAtRef = useRef<number>(0);
+
+  const flightTimerRef = useRef<number | null>(null);
+  const landTimerRef = useRef<number | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const whisperTimerRef = useRef<number | null>(null);
+  const expressionTimerRef = useRef<number | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const characterSize = useMemo(() => getBarnabySize(viewport.width), [viewport.width]);
+
+  const clearLocomotionTimers = useCallback(() => {
+    if (flightTimerRef.current) {
+      window.clearTimeout(flightTimerRef.current);
+      flightTimerRef.current = null;
+    }
+    if (landTimerRef.current) {
+      window.clearTimeout(landTimerRef.current);
+      landTimerRef.current = null;
+    }
+    if (hoverTimerRef.current) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
+
+  const flashExpression = useCallback((nextExpr: BarnabyAvatarState, durationMs = 3600) => {
+    setExpressionOverride(nextExpr);
+    if (expressionTimerRef.current) {
+      window.clearTimeout(expressionTimerRef.current);
+    }
+    expressionTimerRef.current = window.setTimeout(() => {
+      setExpressionOverride(null);
+      expressionTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
+  const showWhisper = useCallback(
+    (nextWhisper: { text: string; actionLabel?: string; actionRoute?: string }, durationMs = 6800) => {
+      if (isOpenRef.current || isHiddenByExamRef.current || isUserHiddenRef.current) return;
+      setWhisper(nextWhisper);
+      if (whisperTimerRef.current) {
+        window.clearTimeout(whisperTimerRef.current);
+      }
+      whisperTimerRef.current = window.setTimeout(() => {
+        setWhisper(null);
+        whisperTimerRef.current = null;
+      }, durationMs);
+    },
+    []
   );
-  const isDashboardRoute = currentPath === '/' || currentPath === '/home';
 
-  const spawnParticles = useCallback((symbol: string, count = 3) => {
-    const batch: FloatingParticle[] = Array.from({ length: count }).map((_, i) => ({
-      id: Date.now() + Math.random() * 1000 + i,
-      symbol,
-      offsetX: (i - (count - 1) / 2) * 16
+  const spawnParticles = useCallback((emojis: string[]) => {
+    const now = Date.now();
+    const created = emojis.map((emoji, i) => ({
+      id: now + i,
+      emoji,
+      offsetX: (i - (emojis.length - 1) / 2) * 18
     }));
-    setParticles((prev) => [...prev.slice(-6), ...batch]);
+    setParticles((prev) => [...prev.slice(-6), ...created]);
     window.setTimeout(() => {
-      const ids = new Set(batch.map((b) => b.id));
-      setParticles((prev) => prev.filter((p) => !ids.has(p.id)));
+      setParticles((prev) => prev.filter((p) => !created.some((c) => c.id === p.id)));
     }, 1350);
   }, []);
 
-  // Sync with shared barnabyCompanionStore (keeps AITutorWidget & FloatingBarnaby identical!)
-  useEffect(() => {
-    const onSync = (e: Event) => {
-      const detail = (e as CustomEvent<BarnabyCompanionState>).detail;
-      if (detail) setState(detail);
-      else setState(loadBarnabyState(currentPath));
-    };
-    window.addEventListener(BARNABY_STATE_EVENT, onSync);
-    return () => window.removeEventListener(BARNABY_STATE_EVENT, onSync);
-  }, [currentPath]);
-
-  // Keep inside viewport on window resize
-  useEffect(() => {
-    const onResize = () => {
-      setPos((prev) => clampPosition(prev.x, prev.y));
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+  const triggerBodyAnim = useCallback((kind: 'hop' | 'wiggle', durationMs = 950) => {
+    setBodyAnim(kind);
+    window.setTimeout(() => setBodyAnim('none'), durationMs);
   }, []);
 
-  // Hide during CD-IELTS active exam & support explicit open requests from DashboardBarnabyCompanion
+  /**
+   * Core organic flight controller:
+   * - Turns Barnaby toward the destination
+   * - Enters 'flying' posture with proportional duration (never teleporting)
+   * - Smoothly touches down with 'landing' settle -> 'perched' (or optional 'sleeping')
+   */
+  const flyToPosition = useCallback(
+    (
+      target: BarnabyPoint,
+      opts?: {
+        endLocomotion?: 'perched' | 'hovering' | 'sleeping';
+        endFacing?: BarnabyFacing;
+        durationOverrideMs?: number;
+        onArrive?: () => void;
+      }
+    ) => {
+      if (typeof window === 'undefined') return;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const clampedTarget = clampBarnabyPosition(target, vw, vh);
+      const from = posRef.current;
+
+      clearLocomotionTimers();
+
+      const nextFacing = computeFacing(from, clampedTarget, facingRef.current);
+      const duration = reducedMotionRef.current
+        ? 180
+        : opts?.durationOverrideMs ?? computeFlightDurationMs(from, clampedTarget);
+
+      setFacing(nextFacing);
+      setFlightDurationMs(duration);
+      setLocomotion(reducedMotionRef.current ? 'perched' : 'flying');
+      setPos(clampedTarget);
+
+      flightTimerRef.current = window.setTimeout(() => {
+        flightTimerRef.current = null;
+        if (opts?.endFacing) {
+          setFacing(opts.endFacing);
+        } else {
+          // Naturally face inward toward the workspace center when perched near an edge
+          setFacing(clampedTarget.x > vw * 0.5 ? 'left' : 'right');
+        }
+
+        if (opts?.endLocomotion === 'hovering') {
+          setLocomotion('hovering');
+          opts?.onArrive?.();
+          return;
+        }
+
+        if (reducedMotionRef.current) {
+          setLocomotion(opts?.endLocomotion === 'sleeping' ? 'sleeping' : 'perched');
+          opts?.onArrive?.();
+          return;
+        }
+
+        setLocomotion('landing');
+        landTimerRef.current = window.setTimeout(() => {
+          landTimerRef.current = null;
+          setLocomotion(opts?.endLocomotion === 'sleeping' ? 'sleeping' : 'perched');
+          opts?.onArrive?.();
+        }, 440);
+      }, duration);
+    },
+    [clearLocomotionTimers]
+  );
+
+  // Sync companion store on path / auth / BARNABY_STATE_EVENT changes
   useEffect(() => {
-    const hide = () => setIsHiddenForExam(true);
-    const show = () => setIsHiddenForExam(false);
-    const openDrawer = () => {
-      setIsHiddenForExam(false);
+    const syncAll = () => {
+      setCompanion(loadBarnabyState(currentPath));
+      setUserRestSpot(loadUserRestSpot());
+      setIsUserHidden(loadUserHiddenPref());
+    };
+    syncAll();
+
+    window.addEventListener(BARNABY_STATE_EVENT, syncAll);
+    window.addEventListener('user_auth_updated', syncAll);
+    window.addEventListener('user_progress_updated', syncAll);
+    window.addEventListener('bandsprint_diagnostic_saved', syncAll);
+    return () => {
+      window.removeEventListener(BARNABY_STATE_EVENT, syncAll);
+      window.removeEventListener('user_auth_updated', syncAll);
+      window.removeEventListener('user_progress_updated', syncAll);
+      window.removeEventListener('bandsprint_diagnostic_saved', syncAll);
+    };
+  }, [currentPath]);
+
+  // Pause timers & animations cleanly when browser tab is hidden or user prefers reduced motion
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsPageHidden(document.hidden);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    let mediaQuery: MediaQueryList | null = null;
+    const handleMotionPref = (event: MediaQueryListEvent) => {
+      setReducedMotion(event.matches);
+    };
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+      setReducedMotion(mediaQuery.matches);
+      mediaQuery.addEventListener?.('change', handleMotionPref);
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      mediaQuery?.removeEventListener?.('change', handleMotionPref);
+    };
+  }, []);
+
+  // Exam auto-hide + external drawer open events (preserving SP-3 & SP-4B contracts)
+  useEffect(() => {
+    const hide = () => {
+      setIsHiddenByExam(true);
+      setIsOpen(false);
       setWhisper(null);
+      clearLocomotionTimers();
+      audioManager.stopAll();
+      setIsSpeaking(false);
+      setSpeakingMsgId(null);
+    };
+    const show = () => {
+      setIsHiddenByExam(false);
+    };
+    const openDrawer = (event: Event) => {
+      const custom = event as CustomEvent<{ focusInput?: boolean }>;
+      setIsUserHidden(false);
+      saveUserHiddenPref(false);
       setIsOpen(true);
+      setWhisper(null);
+      if (custom?.detail?.focusInput) {
+        window.setTimeout(() => inputRef.current?.focus(), 140);
+      }
     };
     window.addEventListener('barnaby-float-hide', hide);
     window.addEventListener('barnaby-float-show', show);
@@ -277,705 +426,1422 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       window.removeEventListener('barnaby-float-show', show);
       window.removeEventListener('barnaby-float-open', openDrawer);
     };
+  }, [clearLocomotionTimers]);
+
+  // Responsive viewport resize + obstacle evasion
+  useEffect(() => {
+    let resizeRaf = 0;
+    const handleResize = () => {
+      if (resizeRaf) window.cancelAnimationFrame(resizeRaf);
+      resizeRaf = window.requestAnimationFrame(() => {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        setViewport({ width: vw, height: vh });
+        const clamped = clampBarnabyPosition(posRef.current, vw, vh);
+        const obstacles = collectScreenObstacles();
+        const evaded = findNonObstructiveSpot({
+          current: clamped,
+          viewportWidth: vw,
+          viewportHeight: vh,
+          obstacles
+        });
+        setPos(evaded || clamped);
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeRaf) window.cancelAnimationFrame(resizeRaf);
+    };
   }, []);
 
-  // Persist open state
+  // Intelligent Screen Awareness: evade immediately when user focuses an input or opens a modal/dialog
   useEffect(() => {
-    try {
-      localStorage.setItem(OPEN_KEY, isOpen ? '1' : '0');
-    } catch {}
-  }, [isOpen]);
+    if (isHiddenByExam || isUserHidden) return;
 
-  // Smooth auto-scroll on new messages
-  useEffect(() => {
-    if (isOpen) {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-    }
-  }, [state.messages, isSending, isOpen]);
-
-  // Contextual whisper when landing on a meaningful page
-  useEffect(() => {
-    if (isHiddenForExam || isHiddenOnRoute || isOpen) return;
-    const t = window.setTimeout(() => {
-      const ctx = getStudentContextSnapshot(currentPath);
-      const nextWhisper = getContextualWhisper(currentPath, ctx);
-      updateBarnabyMoodAndActivity(nextWhisper.mood, nextWhisper.text.slice(0, 48));
-      setWhisper({ text: nextWhisper.text, action: nextWhisper.action });
-    }, 2400);
-    return () => window.clearTimeout(t);
-  }, [currentPath, isHiddenForExam, isHiddenOnRoute, isOpen]);
-
-  // Auto-hide whisper gently after 9 seconds so screen stays uncluttered
-  useEffect(() => {
-    if (!whisper) return;
-    const t = window.setTimeout(() => setWhisper(null), 9000);
-    return () => window.clearTimeout(t);
-  }, [whisper]);
-
-  // Pause autonomous animations & timers when tab is hidden or reduced-motion is enabled
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const onVisibility = () => setIsDocumentHidden(document.hidden);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
-    mq.addEventListener?.('change', onChange);
-    return () => mq.removeEventListener?.('change', onChange);
-  }, []);
-
-  // Autonomous Free-Roam & Idle Pet Activities (paused during exams, open drawer, hidden tab, or reduced motion)
-  useEffect(() => {
-    if (isHiddenForExam || isHiddenOnRoute || isOpen || isDragging || isDocumentHidden || prefersReducedMotion) {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      const latest = loadBarnabyState(currentPath);
-      if (latest.freeRoam) {
-        const nextSpot = pickEdgeRoamSpot(posRef.current.x, posRef.current.y);
-        setPos(nextSpot);
-        try {
-          localStorage.setItem(POS_KEY, JSON.stringify(nextSpot));
-        } catch {}
+    const evadeIfObstructed = () => {
+      if (isDraggingRef.current || isOpenRef.current || isHiddenByExamRef.current || isUserHiddenRef.current) return;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const obstacles = collectScreenObstacles();
+      const safeSpot = findNonObstructiveSpot({
+        current: posRef.current,
+        viewportWidth: vw,
+        viewportHeight: vh,
+        obstacles
+      });
+      if (safeSpot) {
+        flyToPosition(safeSpot, { durationOverrideMs: 780 });
       }
+    };
 
-      const idleMs = Date.now() - (latest.lastInteractionAt || 0);
-      const picked =
-        idleMs > 90_000
-          ? IDLE_ACTIVITIES[2] // sleepy nap
-          : IDLE_ACTIVITIES[Math.floor(Math.random() * IDLE_ACTIVITIES.length)];
-
-      updateBarnabyMoodAndActivity(picked.mood, picked.activity);
-      if (picked.mood === 'sleepy') {
-        spawnParticles('💤', 2);
-      } else if (picked.mood === 'playful') {
-        spawnParticles('✨', 2);
+    const handleFocusIn = (ev: FocusEvent) => {
+      const target = ev.target as HTMLElement | null;
+      if (!target || target.closest('[data-barnaby-overlay="true"]')) return;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        window.setTimeout(evadeIfObstructed, 40);
       }
-    }, 24_000);
+    };
 
-    return () => window.clearInterval(interval);
+    let mutationTimer: number | null = null;
+    const observer =
+      typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(() => {
+            if (mutationTimer) return;
+            mutationTimer = window.setTimeout(() => {
+              mutationTimer = null;
+              // Only run obstacle check when a dialog/modal is present in the DOM
+              if (document.querySelector('[role="dialog"], [aria-modal="true"]')) {
+                evadeIfObstructed();
+              }
+            }, 240);
+          })
+        : null;
+
+    document.addEventListener('focusin', handleFocusIn, true);
+    if (observer && document.body) {
+      observer.observe(document.body, { childList: true, subtree: false });
+    }
+
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn, true);
+      observer?.disconnect();
+      if (mutationTimer) window.clearTimeout(mutationTimer);
+    };
+  }, [isHiddenByExam, isUserHidden, flyToPosition]);
+
+  // Dashboard fly-in welcome & route-change awareness
+  useEffect(() => {
+    if (isHiddenByExam || isUserHidden) return;
+    const isDashboard = currentPath === '/' || currentPath === '/home';
+
+    if (isDashboard && !hasGreetedDashboardRef.current) {
+      hasGreetedDashboardRef.current = true;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const bounds = getSafeViewportBounds(vw, vh);
+
+      // Start slightly higher right then glide gracefully into a welcoming unobstructed spot
+      const entryPoint: BarnabyPoint = {
+        x: bounds.maxX,
+        y: bounds.minY + 12
+      };
+      setPos(entryPoint);
+
+      const timer = window.setTimeout(() => {
+        if (isDraggingRef.current || isOpenRef.current || isHiddenByExamRef.current || isUserHiddenRef.current) return;
+        const obstacles = collectScreenObstacles();
+        const welcomeSpot = pickApproachTarget({
+          current: entryPoint,
+          viewportWidth: vw,
+          viewportHeight: vh,
+          obstacles
+        });
+        flyToPosition(welcomeSpot, {
+          durationOverrideMs: 1180,
+          onArrive: () => {
+            flashExpression('greeting', 4200);
+            const ctx = getStudentContextSnapshot(currentPath);
+            const whisperTip = getContextualWhisper(currentPath, ctx);
+            showWhisper(whisperTip, 6200);
+          }
+        });
+      }, 420);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    // On other routes, gently ensure Barnaby isn't covering newly mounted interactive controls
+    const checkTimer = window.setTimeout(() => {
+      if (isDraggingRef.current || isOpenRef.current || isHiddenByExamRef.current || isUserHiddenRef.current) return;
+      const obstacles = collectScreenObstacles();
+      const safeSpot = findNonObstructiveSpot({
+        current: posRef.current,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        obstacles
+      });
+      if (safeSpot) {
+        flyToPosition(safeSpot, { durationOverrideMs: 920 });
+      }
+    }, 380);
+
+    return () => window.clearTimeout(checkTimer);
+  }, [currentPath, isHiddenByExam, isUserHidden, flyToPosition, flashExpression, showWhisper]);
+
+  // Track user activity (throttled ref update — zero React re-renders) for natural sleep / wake
+  useEffect(() => {
+    const markActive = () => {
+      const now = Date.now();
+      if (now - lastActivityAtRef.current < 3000) return;
+      lastActivityAtRef.current = now;
+      if (isSleepingIdleRef.current) {
+        isSleepingIdleRef.current = false;
+        setLocomotion('perched');
+        setExpressionOverride(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', markActive, { passive: true });
+    window.addEventListener('keydown', markActive, { passive: true });
+    window.addEventListener('scroll', markActive, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', markActive);
+      window.removeEventListener('keydown', markActive);
+      window.removeEventListener('scroll', markActive);
+    };
+  }, []);
+
+  // Autonomous Life & Movement Loop (organic intervals: fly, hover, look around, walk, rest, sleep)
+  useEffect(() => {
+    const isActive =
+      companion.freeRoam &&
+      !isOpen &&
+      !isDragging &&
+      !isHiddenByExam &&
+      !isUserHidden &&
+      !isPageHidden &&
+      !reducedMotion;
+
+    if (!isActive) return;
+
+    let loopTimer: number | null = null;
+
+    const scheduleNextBehavior = (delayMs?: number) => {
+      const nextDelay = delayMs ?? 9200 + Math.floor(Math.random() * 5800);
+      loopTimer = window.setTimeout(() => {
+        if (
+          !freeRoamRef.current ||
+          isOpenRef.current ||
+          isDraggingRef.current ||
+          isHiddenByExamRef.current ||
+          isUserHiddenRef.current ||
+          reducedMotionRef.current
+        ) {
+          return;
+        }
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const idleMs = Date.now() - lastActivityAtRef.current;
+
+        // 1. Inactivity sleep (> 75s): glide to a peaceful resting perch and nap
+        if (idleMs > 75_000) {
+          if (!isSleepingIdleRef.current) {
+            isSleepingIdleRef.current = true;
+            const obstacles = collectScreenObstacles();
+            const restPoint = pickRestPerch({
+              current: posRef.current,
+              viewportWidth: vw,
+              viewportHeight: vh,
+              obstacles,
+              userRestSpot: userRestSpotRef.current
+            });
+            flyToPosition(restPoint, { endLocomotion: 'sleeping' });
+          }
+          scheduleNextBehavior(14000);
+          return;
+        }
+
+        // 2. Skip if currently mid-flight or landing
+        if (locomotionRef.current === 'flying' || locomotionRef.current === 'landing') {
+          scheduleNextBehavior(5000);
+          return;
+        }
+
+        const obstacles = collectScreenObstacles();
+        const roll = Math.random();
+
+        if (roll < 0.44) {
+          // Organic flight to a fresh, obstacle-free screen position
+          const target = pickNextRoamTarget({
+            current: posRef.current,
+            viewportWidth: vw,
+            viewportHeight: vh,
+            obstacles
+          });
+          flyToPosition(target.point, {
+            endLocomotion: target.kind === 'air' ? 'hovering' : 'perched',
+            onArrive: () => {
+              if (target.kind === 'air') {
+                hoverTimerRef.current = window.setTimeout(() => {
+                  hoverTimerRef.current = null;
+                  if (isDraggingRef.current || isOpenRef.current) return;
+                  const landObstacles = collectScreenObstacles();
+                  const perch = pickRestPerch({
+                    current: posRef.current,
+                    viewportWidth: window.innerWidth,
+                    viewportHeight: window.innerHeight,
+                    obstacles: landObstacles,
+                    userRestSpot: userRestSpotRef.current
+                  });
+                  flyToPosition(perch, { endLocomotion: 'perched' });
+                }, 3800);
+              }
+            }
+          });
+        } else if (roll < 0.62) {
+          // Hover gently in place for a few seconds, then settle back down
+          setLocomotion('hovering');
+          hoverTimerRef.current = window.setTimeout(() => {
+            hoverTimerRef.current = null;
+            if (!isDraggingRef.current) {
+              setLocomotion('landing');
+              landTimerRef.current = window.setTimeout(() => {
+                landTimerRef.current = null;
+                setLocomotion('perched');
+              }, 440);
+            }
+          }, 3200);
+        } else if (roll < 0.78) {
+          // Curious look-around & occasional direction turn
+          setLocomotion('looking');
+          if (Math.random() < 0.5) {
+            setFacing((prev) => (prev === 'left' ? 'right' : 'left'));
+          }
+          hoverTimerRef.current = window.setTimeout(() => {
+            hoverTimerRef.current = null;
+            if (!isDraggingRef.current) setLocomotion('perched');
+          }, 2700);
+        } else if (roll < 0.91) {
+          // Short playful walk/hop along the current perch if unobstructed
+          const walkStep = computeWalkStepTarget({
+            current: posRef.current,
+            viewportWidth: vw,
+            viewportHeight: vh,
+            obstacles
+          });
+          if (walkStep) {
+            setFacing(walkStep.facing);
+            setFlightDurationMs(920);
+            setLocomotion('walking');
+            setPos(walkStep.point);
+            flightTimerRef.current = window.setTimeout(() => {
+              flightTimerRef.current = null;
+              setLocomotion('perched');
+            }, 950);
+          } else {
+            setLocomotion('looking');
+            hoverTimerRef.current = window.setTimeout(() => {
+              hoverTimerRef.current = null;
+              setLocomotion('perched');
+            }, 2200);
+          }
+        } else if (userRestSpotRef.current) {
+          // Naturally return to user's chosen resting perch
+          const restPoint = pickRestPerch({
+            current: posRef.current,
+            viewportWidth: vw,
+            viewportHeight: vh,
+            obstacles,
+            userRestSpot: userRestSpotRef.current
+          });
+          flyToPosition(restPoint, { endLocomotion: 'perched' });
+        }
+
+        scheduleNextBehavior();
+      }, nextDelay);
+    };
+
+    // First autonomous movement happens after a calm pause so initial arrival feels composed
+    scheduleNextBehavior(8200);
+
+    return () => {
+      if (loopTimer) window.clearTimeout(loopTimer);
+    };
   }, [
-    isHiddenForExam,
-    isHiddenOnRoute,
+    companion.freeRoam,
     isOpen,
     isDragging,
-    isDocumentHidden,
-    prefersReducedMotion,
-    currentPath,
-    spawnParticles
+    isHiddenByExam,
+    isUserHidden,
+    isPageHidden,
+    reducedMotion,
+    flyToPosition
   ]);
 
-  // Cleanup speech on unmount
+  // Study dwell encouragement (calm, non-intrusive check-in after studying for ~3 minutes)
   useEffect(() => {
-    return () => stopSpeech();
-  }, []);
+    if (isHiddenByExam || isUserHidden || isPageHidden) return;
+    const isStudyRoute = currentPath.startsWith('/practice') || currentPath.startsWith('/learn');
+    if (!isStudyRoute) return;
 
-  // Pointer drag handlers for dragging Barnaby freely anywhere on screen
-  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const dwellTimer = window.setTimeout(() => {
+      if (isOpenRef.current || isDraggingRef.current || isHiddenByExamRef.current || isUserHiddenRef.current) return;
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT')) {
+        return; // Never interrupt active typing
+      }
+      const obstacles = collectScreenObstacles();
+      const approach = pickApproachTarget({
+        current: posRef.current,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        obstacles
+      });
+      flyToPosition(approach, {
+        onArrive: () => {
+          flashExpression('encouraging', 4500);
+          const ctx = getStudentContextSnapshot(currentPath);
+          const tip = generateContextAwareCoachTip(ctx);
+          showWhisper(
+            {
+              text: `Keep going — small daily steps win! ${tip.suggestedAction.label}?`,
+              actionLabel: tip.suggestedAction.label,
+              actionRoute: tip.suggestedAction.route
+            },
+            7200
+          );
+        }
+      });
+    }, 180_000);
+
+    return () => window.clearTimeout(dwellTimer);
+  }, [currentPath, isHiddenByExam, isUserHidden, isPageHidden, flyToPosition, flashExpression, showWhisper]);
+
+  // AI-Driven / Learning Event Reactions (mistakes, achievements, task completions, summon/hide)
+  useEffect(() => {
+    const handleCompanionEvent = (event: Event) => {
+      const detail = (event as CustomEvent<BarnabyCompanionEventDetail>)?.detail;
+      if (!detail) return;
+
+      if (detail.type === 'summon') {
+        setIsUserHidden(false);
+        saveUserHiddenPref(false);
+        const obstacles = collectScreenObstacles();
+        const spot = pickApproachTarget({
+          current: posRef.current,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          obstacles
+        });
+        flyToPosition(spot, {
+          onArrive: () => {
+            flashExpression('greeting', 3400);
+            spawnParticles(['✨', '💙']);
+          }
+        });
+        return;
+      }
+
+      if (detail.type === 'hide') {
+        setIsUserHidden(true);
+        saveUserHiddenPref(true);
+        setIsOpen(false);
+        setWhisper(null);
+        return;
+      }
+
+      if (isHiddenByExamRef.current || isUserHiddenRef.current) return;
+
+      if (detail.type === 'achievement' || detail.type === 'task_completed') {
+        isSleepingIdleRef.current = false;
+        flashExpression('celebrating', 4200);
+        triggerBodyAnim('hop', 1100);
+        spawnParticles(['🎉', '⭐', '✨']);
+        if (detail.message) {
+          showWhisper({ text: detail.message, actionLabel: 'Open Barnaby' }, 5800);
+        }
+      } else if (detail.type === 'mistake_detected') {
+        isSleepingIdleRef.current = false;
+        const obstacles = collectScreenObstacles();
+        const approach = pickApproachTarget({
+          current: posRef.current,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          obstacles
+        });
+        flyToPosition(approach, {
+          onArrive: () => {
+            flashExpression('correcting', 4400);
+            showWhisper(
+              {
+                text: detail.message || 'Spotted a tricky item! Want to unpack that trap together?',
+                actionLabel: 'Review Mistake',
+                actionRoute: detail.route || '/progress/mistakes'
+              },
+              6600
+            );
+          }
+        });
+      } else if (detail.type === 'study_encouragement') {
+        isSleepingIdleRef.current = false;
+        flashExpression('encouraging', 4000);
+        if (detail.message) {
+          showWhisper({ text: detail.message }, 6000);
+        }
+      }
+    };
+
+    const handleMistakeUpserted = () => {
+      if (isHiddenByExamRef.current || isUserHiddenRef.current || isOpenRef.current) return;
+      const now = Date.now();
+      if (now - lastMistakeReactionAtRef.current < 15_000) return;
+      lastMistakeReactionAtRef.current = now;
+      flashExpression('correcting', 4000);
+      showWhisper(
+        {
+          text: 'Saved that mistake to your Vault — click me anytime to dissect the IELTS trap.',
+          actionLabel: 'Open Vault',
+          actionRoute: '/progress/mistakes'
+        },
+        6200
+      );
+    };
+
+    window.addEventListener(BARNABY_COMPANION_EVENT, handleCompanionEvent);
+    window.addEventListener('bandsprint_mistake_upserted', handleMistakeUpserted);
+    return () => {
+      window.removeEventListener(BARNABY_COMPANION_EVENT, handleCompanionEvent);
+      window.removeEventListener('bandsprint_mistake_upserted', handleMistakeUpserted);
+    };
+  }, [flyToPosition, flashExpression, triggerBodyAnim, spawnParticles, showWhisper]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      clearLocomotionTimers();
+      if (whisperTimerRef.current) window.clearTimeout(whisperTimerRef.current);
+      if (expressionTimerRef.current) window.clearTimeout(expressionTimerRef.current);
+    };
+  }, [clearLocomotionTimers]);
+
+  // Scroll drawer messages to latest
+  useEffect(() => {
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [companion.messages, isOpen]);
+
+  // Pointer Drag Handling (Mouse + Touch — >6px threshold prevents accidental click/pet!)
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragMetaRef.current = {
+    // Ignore pointer downs originating from quick-action buttons
+    const target = e.target as HTMLElement;
+    if (target.closest('button[data-barnaby-control="true"]')) return;
+
+    lastActivityAtRef.current = Date.now();
+    isSleepingIdleRef.current = false;
+    clearLocomotionTimers();
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore synthetic PointerEvent in tests
+    }
+
+    dragStartRef.current = {
       pointerId: e.pointerId,
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      origX: pos.x,
-      origY: pos.y,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: posRef.current.x,
+      origY: posRef.current.y,
       moved: false
     };
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const meta = dragMetaRef.current;
-    if (!meta || meta.pointerId !== e.pointerId) return;
-    const dx = e.clientX - meta.startClientX;
-    const dy = e.clientY - meta.startClientY;
-    if (!meta.moved && Math.hypot(dx, dy) > 6) {
-      meta.moved = true;
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = dragStartRef.current;
+    if (!start || start.pointerId !== e.pointerId) return;
+
+    const dx = e.clientX - start.startX;
+    const dy = e.clientY - start.startY;
+
+    if (!start.moved && Math.hypot(dx, dy) > 6) {
+      start.moved = true;
+      suppressNextClickRef.current = true;
       setIsDragging(true);
+      setLocomotion('dragging');
       setWhisper(null);
+      setFlightDurationMs(0);
     }
-    if (meta.moved) {
-      const next = clampPosition(meta.origX + dx, meta.origY + dy);
-      setPos(next);
+
+    if (start.moved) {
+      if (dx < -4) setFacing('left');
+      else if (dx > 4) setFacing('right');
+
+      const nextPos = clampBarnabyPosition(
+        { x: start.origX + dx, y: start.origY + dy },
+        window.innerWidth,
+        window.innerHeight
+      );
+      setPos(nextPos);
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const meta = dragMetaRef.current;
-    if (!meta || meta.pointerId !== e.pointerId) return;
-    dragMetaRef.current = null;
+  const finishPointerDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = dragStartRef.current;
+    if (!start || start.pointerId !== e.pointerId) return;
+
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
+    } catch {
+      // Ignore
+    }
 
-    if (meta.moved) {
+    const wasDragged = start.moved;
+    dragStartRef.current = null;
+
+    if (wasDragged) {
       setIsDragging(false);
-      try {
-        localStorage.setItem(POS_KEY, JSON.stringify(posRef.current));
-      } catch {}
-      updateBarnabyMoodAndActivity('playful', 'Wheee! Cozy new perch!');
-      spawnParticles('✨', 3);
-      soundManager.playBeep(660, 0.04);
-    } else {
-      // Genuine click/tap: open or close Barnaby
-      setIsOpen((v) => !v);
-      setWhisper(null);
-      if (state.mood === 'sleepy') {
-        updateBarnabyMoodAndActivity('happy', 'Wide awake and ready to study!');
+      const finalSpot = clampBarnabyPosition(posRef.current, window.innerWidth, window.innerHeight);
+      setPos(finalSpot);
+      setUserRestSpot(finalSpot);
+      saveUserRestSpot(finalSpot);
+      setLocomotion(reducedMotionRef.current ? 'perched' : 'landing');
+      if (!reducedMotionRef.current) {
+        landTimerRef.current = window.setTimeout(() => {
+          landTimerRef.current = null;
+          setLocomotion('perched');
+        }, 440);
       }
-      soundManager.playBeep(600, 0.04);
+      // Keep click suppressed for this release gesture so dragging NEVER triggers chat or pet
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false;
+      }, 80);
     }
   };
 
-  const handlePet = () => {
-    const { state: next, quip } = petBarnaby();
-    setState(next);
-    spawnParticles('❤️', 4);
-    soundManager.playSuccess();
-    if (!isOpen) {
-      setWhisper({ text: quip });
+  const handleCharacterClick = () => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
     }
+    lastActivityAtRef.current = Date.now();
+    isSleepingIdleRef.current = false;
+    setLocomotion('perched');
+    soundManager.playBeep(560, 0.04);
+    setWhisper(null);
+    setIsOpen((prev) => !prev);
+  };
+
+  // Manual "Fly Now" action for interactive delight & testing
+  const handleFlySomewhereNew = useCallback(() => {
+    lastActivityAtRef.current = Date.now();
+    isSleepingIdleRef.current = false;
+    const obstacles = collectScreenObstacles();
+    const target = pickNextRoamTarget({
+      current: posRef.current,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      obstacles,
+      minDistance: viewport.width < 640 ? 90 : 160
+    });
+    soundManager.playBeep(620, 0.04);
+    flyToPosition(target.point, { endLocomotion: 'perched' });
+  }, [flyToPosition, viewport.width]);
+
+  const handleToggleHide = useCallback((hide: boolean) => {
+    setIsUserHidden(hide);
+    saveUserHiddenPref(hide);
+    if (hide) {
+      setIsOpen(false);
+      setWhisper(null);
+      clearLocomotionTimers();
+      audioManager.stopAll();
+      setIsSpeaking(false);
+      setSpeakingMsgId(null);
+    } else {
+      lastActivityAtRef.current = Date.now();
+      isSleepingIdleRef.current = false;
+      const obstacles = collectScreenObstacles();
+      const spot = pickApproachTarget({
+        current: posRef.current,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        obstacles
+      });
+      flyToPosition(spot, {
+        onArrive: () => {
+          flashExpression('greeting', 3600);
+          spawnParticles(['✨', '💙']);
+          showWhisper({ text: 'Back with you! Ready to make today count?' }, 4800);
+        }
+      });
+    }
+  }, [clearLocomotionTimers, flyToPosition, flashExpression, spawnParticles, showWhisper]);
+
+  // Companion Actions (Pet, Word Treat, 15s Mini Quiz, TTS, Ratings, Chat — 100% preserved)
+  const handlePet = () => {
+    lastActivityAtRef.current = Date.now();
+    isSleepingIdleRef.current = false;
+    const { state } = petBarnaby();
+    setCompanion(state);
+    soundManager.playBeep(680, 0.05);
+    triggerBodyAnim('wiggle', 750);
+    flashExpression('encouraging', 3200);
+    spawnParticles(['❤️', '✨', '💙']);
   };
 
   const handleFeedTreat = () => {
-    const { state: next, message } = feedBarnabyWordTreat();
-    setState(next);
-    spawnParticles('🍎', 3);
-    soundManager.playSuccess();
-    setIsOpen(true);
-    setPlayingId(message.id);
-    speakBritish(message.text, {
-      speakerId: 'speaker_barnaby',
-      onEnd: () => setPlayingId(null),
-      onError: () => setPlayingId(null)
-    });
+    lastActivityAtRef.current = Date.now();
+    isSleepingIdleRef.current = false;
+    const { state } = feedBarnabyWordTreat();
+    setCompanion(state);
+    soundManager.playBeep(740, 0.06);
+    triggerBodyAnim('hop', 900);
+    flashExpression('celebrating', 3400);
+    spawnParticles(['🍪', '✨', '⭐']);
   };
 
   const handleStartQuiz = () => {
-    const { state: next } = startBarnabyMiniQuiz();
-    setState(next);
-    spawnParticles('⚡', 3);
-    soundManager.playBeep(720, 0.05);
-    setIsOpen(true);
+    lastActivityAtRef.current = Date.now();
+    isSleepingIdleRef.current = false;
+    const { state } = startBarnabyMiniQuiz();
+    setCompanion(state);
+    soundManager.playBeep(600, 0.05);
+    flashExpression('teaching', 3600);
   };
 
-  const handleQuizAnswer = (msgId: string, optIdx: number) => {
-    const { state: next, isCorrect } = answerBarnabyMiniQuiz(msgId, optIdx);
-    setState(next);
+  const handleAnswerQuiz = (msgId: string, idx: number) => {
+    const { state, isCorrect } = answerBarnabyMiniQuiz(msgId, idx);
+    setCompanion(state);
+    soundManager.playBeep(isCorrect ? 820 : 340, 0.07);
     if (isCorrect) {
-      spawnParticles('🎉', 4);
-      soundManager.playSuccess();
+      triggerBodyAnim('hop', 950);
+      flashExpression('celebrating', 3800);
+      spawnParticles(['🎉', '⭐', '+15']);
     } else {
-      soundManager.playBeep(360, 0.06);
+      flashExpression('correcting', 3800);
     }
   };
 
-  const handleRate = (msgId: string, rating: 'up' | 'down') => {
-    const next = rateBarnabyMessage(msgId, rating);
-    setState(next);
+  const handleRateMessage = (msgId: string, rating: 'up' | 'down') => {
+    const state = rateBarnabyMessage(msgId, rating);
+    setCompanion(state);
+    soundManager.playBeep(rating === 'up' ? 720 : 420, 0.04);
     if (rating === 'up') {
-      spawnParticles('🏆', 3);
-      soundManager.playSuccess();
-    } else {
-      soundManager.playBeep(480, 0.04);
+      spawnParticles(['💙', '✨']);
     }
   };
 
-  const handleToggleRoam = () => {
-    const next = toggleBarnabyFreeRoam();
-    setState(next);
-    spawnParticles(next.freeRoam ? '🦋' : '📌', 2);
-    soundManager.playBeep(620, 0.04);
+  const handleSpeak = async (msg: BarnabyMessage) => {
+    if (isSpeaking && speakingMsgId === msg.id) {
+      audioManager.stopAll();
+      setIsSpeaking(false);
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    setIsSpeaking(true);
+    setSpeakingMsgId(msg.id);
+    try {
+      await audioManager.playText(msg.text, {
+        speakerId: 'speaker_barnaby',
+        onEnd: () => {
+          setIsSpeaking(false);
+          setSpeakingMsgId(null);
+        }
+      });
+    } catch {
+      setIsSpeaking(false);
+      setSpeakingMsgId(null);
+    }
   };
 
-  const handleSend = async (textToSend?: string) => {
-    const query = (textToSend ?? input).trim();
+  const handleSend = async (customText?: string) => {
+    const query = (customText ?? inputText).trim();
     if (!query || isSending) return;
-    setInput('');
-    setWhisper(null);
+    if (!customText) setInputText('');
     setIsSending(true);
+    lastActivityAtRef.current = Date.now();
+    isSleepingIdleRef.current = false;
+
+    const optimisticMsg: BarnabyMessage = {
+      id: `temp_${Date.now()}`,
+      sender: 'user',
+      text: query,
+      timestamp: Date.now()
+    };
+    setCompanion((prev) => ({
+      ...prev,
+      mood: 'thinking',
+      messages: [...prev.messages, optimisticMsg]
+    }));
+
     try {
-      const { state: next } = await sendBarnabyChatMessage(query, currentPath);
-      setState(next);
-      spawnParticles('✨', 2);
+      const { state } = await sendBarnabyChatMessage(query, currentPath);
+      setCompanion(state);
+      soundManager.playBeep(640, 0.04);
     } finally {
       setIsSending(false);
     }
   };
 
-  const toggleSpeak = (msg: BarnabyMessage) => {
-    if (playingId === msg.id) {
-      stopSpeech();
-      setPlayingId(null);
-      return;
+  const handleToggleFreeRoam = () => {
+    const next = toggleBarnabyFreeRoam();
+    setCompanion(next);
+    soundManager.playBeep(520, 0.04);
+    if (!next.freeRoam) {
+      clearLocomotionTimers();
+      setLocomotion('perched');
     }
-    stopSpeech();
-    setPlayingId(msg.id);
-    speakBritish(msg.text, {
-      speakerId: 'speaker_barnaby',
-      onEnd: () => setPlayingId(null),
-      onError: () => setPlayingId(null)
-    });
   };
 
-  if (isHiddenForExam || isHiddenOnRoute) return null;
+  const handleClearChat = () => {
+    const next = clearBarnabyChat(currentPath);
+    setCompanion(next);
+  };
 
-  const moodMeta = MOOD_META[state.mood] || MOOD_META.happy;
-  const bond = getBondStage(state.bondXp);
-  const { width: vw } = getViewportBounds();
-  const isOnLeftHalf = pos.x < vw / 2;
-  const isAudioSpeaking = playingId !== null;
-  const avatarState = mapBarnabyMoodToAvatarState(state.mood, {
-    isSpeaking: isAudioSpeaking,
-    isThinking: isSending
-  });
-  const isAutonomousPaused = isHiddenForExam || isDocumentHidden || isDragging;
+  // Hide completely during active IELTS examinations (restored automatically via barnaby-float-show)
+  if (isHiddenByExam) return null;
+
+  const bondStage = getBondStage(companion.bondXp);
+  const avatarState =
+    isSpeaking
+      ? 'speaking'
+      : expressionOverride ||
+        mapBarnabyMoodToAvatarState(companion.mood, {
+          isSpeaking,
+          isThinking: isSending
+        });
+
+  const isAnimationPaused = isPageHidden || reducedMotion;
+  const whisperOnLeft = pos.x > viewport.width * 0.45;
+  const whisperAbove = pos.y > viewport.height * 0.42;
+
+  // Dynamic body motion class reflecting physical locomotion state
+  const outerMotionClass = isAnimationPaused
+    ? ''
+    : bodyAnim === 'hop'
+    ? 'animate-barnaby-hop'
+    : bodyAnim === 'wiggle'
+    ? 'animate-barnaby-wiggle'
+    : locomotion === 'dragging'
+    ? 'animate-barnaby-drag'
+    : locomotion === 'flying'
+    ? 'animate-barnaby-flight-swoop'
+    : locomotion === 'hovering'
+    ? 'animate-barnaby-hover'
+    : locomotion === 'landing'
+    ? 'animate-barnaby-land'
+    : locomotion === 'walking'
+    ? 'animate-barnaby-walk-body'
+    : locomotion === 'sleeping' || avatarState === 'sleeping'
+    ? 'animate-barnaby-nap'
+    : 'animate-barnaby-float';
+
+  // Subtle banking lean while flying left/right
+  const flightTiltDeg =
+    locomotion === 'flying' && !isAnimationPaused
+      ? facing === 'left'
+        ? -7
+        : 7
+      : 0;
 
   return (
-    <>
-      {/* Open Companion Drawer — clean, responsive (360–430px mobile safe), never clipped off-screen */}
-      {isOpen && (
+    <div
+      data-barnaby-overlay="true"
+      data-testid="barnaby-floating-layer"
+      className="fixed inset-0 z-40 pointer-events-none overflow-hidden no-print"
+    >
+      {/* ================= SUMMON TAB WHEN TEMPORARILY HIDDEN ================= */}
+      {isUserHidden && (
+        <div className="fixed bottom-20 md:bottom-5 right-4 pointer-events-auto">
+          <button
+            type="button"
+            data-testid="barnaby-summon-btn"
+            onClick={() => handleToggleHide(false)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0F4C45] hover:bg-[#0B3A35] text-white border border-[#1F8A70]/60 shadow-lg text-xs font-semibold transition-transform hover:-translate-y-0.5 cursor-pointer"
+            title="Bring Barnaby back to your screen"
+          >
+            <BarnabyDragonAvatar
+              variant="bust"
+              framed="circle"
+              size="xs"
+              state="greeting"
+              isSpeaking={false}
+              paused={isAnimationPaused}
+              testId="barnaby-summon-mini-avatar"
+            />
+            <span>Call Barnaby</span>
+          </button>
+        </div>
+      )}
+
+      {/* ================= COMPANION INTERACTION DRAWER ================= */}
+      {!isUserHidden && isOpen && (
         <div
-          className={`fixed bottom-[82px] md:bottom-6 z-50 w-[calc(100vw-1rem)] sm:w-[calc(100vw-1.5rem)] max-w-[396px] h-[540px] sm:h-[560px] max-h-[78vh] rounded-2xl bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] shadow-2xl overflow-hidden flex flex-col animate-fade-in ${
-            isOnLeftHalf ? 'left-2 sm:left-3 md:left-6' : 'right-2 sm:right-3 md:right-6'
-          }`}
+          data-testid="barnaby-companion-drawer"
+          className="fixed bottom-20 md:bottom-5 right-2 sm:right-5 w-[calc(100vw-1rem)] sm:w-[395px] h-[min(78vh,610px)] bg-white dark:bg-[#11201E] rounded-2xl shadow-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/40 flex flex-col overflow-hidden pointer-events-auto animate-scale-in"
         >
-          {/* Living Pet + Bond Header */}
-          <div className="px-4 py-3 bg-[#0F4C45] text-white space-y-2.5">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handlePet}
-                title="Pet Barnaby!"
-                className="relative shrink-0 cursor-pointer group"
-              >
-                <div
-                  className={`rounded-full ring-2 ${moodMeta.ringClass} ${isAudioSpeaking ? '' : moodMeta.animClass}`}
+          {/* Header: Companion Avatar, Bond Level & Controls */}
+          <div className="bg-[#0F4C45] text-white px-4 py-3 shrink-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  type="button"
+                  onClick={handlePet}
+                  title="Tap to pet Barnaby (+5 Bond XP)"
+                  className="relative group focus:outline-none cursor-pointer"
                 >
                   <BarnabyDragonAvatar
                     state={avatarState}
-                    isSpeaking={isAudioSpeaking}
-                    paused={isAutonomousPaused}
+                    isSpeaking={isSpeaking}
+                    paused={isAnimationPaused}
                     size="md"
                     framed="circle"
-                    testId="floating-barnaby-header-avatar"
+                    testId="barnaby-drawer-avatar"
+                    className="border-2 border-[#F4A62A] shadow-md group-hover:scale-105 transition-transform"
                   />
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0F4C45] ${
+                      isSpeaking ? 'bg-[#38BDF8]' : 'bg-[#F4A62A]'
+                    }`}
+                  />
+                </button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-display font-bold text-sm tracking-tight truncate">
+                      Barnaby
+                    </h3>
+                    <span className="px-1.5 py-0.5 rounded bg-[#F4A62A]/20 text-[#F6C25B] text-[9px] font-bold uppercase tracking-wider shrink-0">
+                      Lv.{bondStage.level} {bondStage.title}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#EEF3F1]/80 truncate">
+                    {isSpeaking
+                      ? 'Speaking with British mentor voice…'
+                      : isSending
+                      ? 'Thinking carefully…'
+                      : `Roaming ${companion.freeRoam ? 'active' : 'paused'} · IELTS Mentor`}
+                  </p>
                 </div>
-                <span className="absolute -bottom-1 -right-1 text-xs leading-none bg-white dark:bg-[#0B1514] rounded-full w-5 h-5 flex items-center justify-center shadow">
-                  {moodMeta.emoji}
-                </span>
-              </button>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-bold leading-tight">Barnaby</p>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/15 text-[#F4A62A] font-bold">
-                    Lv.{bond.level} {bond.title}
-                  </span>
-                </div>
-                <p className="text-[11px] text-[#EEF3F1]/85 truncate mt-0.5">
-                  {moodMeta.label} · {state.activityText}
-                </p>
               </div>
 
-              <div className="flex items-center gap-0.5 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
-                  onClick={handleToggleRoam}
-                  className={`p-2 rounded-xl transition cursor-pointer ${
-                    state.freeRoam ? 'bg-white/15 text-[#F4A62A]' : 'hover:bg-white/10 text-white/75'
+                  onClick={handleToggleFreeRoam}
+                  title={companion.freeRoam ? 'Pause autonomous flying' : 'Resume autonomous flying'}
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                    companion.freeRoam
+                      ? 'bg-[#1F8A70] text-white hover:bg-[#1F8A70]/80'
+                      : 'bg-white/10 text-white/75 hover:bg-white/20'
                   }`}
-                  title={state.freeRoam ? 'Free Roam ON (click to perch still)' : 'Perched still (click to let Barnaby roam)'}
-                  aria-label="Toggle Barnaby free roam"
                 >
-                  {state.freeRoam ? <Compass className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+                  {companion.freeRoam ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setState(clearBarnabyChat(currentPath))}
-                  className="p-2 rounded-xl hover:bg-white/10 text-white/80 transition cursor-pointer"
-                  title="Fresh conversation"
-                  aria-label="Fresh conversation"
+                  onClick={() => handleToggleHide(true)}
+                  title="Hide Barnaby temporarily"
+                  className="p-1.5 rounded-lg bg-white/10 text-white/75 hover:bg-white/20 hover:text-white transition-colors cursor-pointer"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearChat}
+                  title="Reset chat thread"
+                  className="p-1.5 rounded-lg bg-white/10 text-white/75 hover:bg-white/20 hover:text-white transition-colors cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsOpen(false);
-                    soundManager.playBeep(520, 0.04);
-                  }}
-                  className="p-2 rounded-xl hover:bg-white/10 transition cursor-pointer"
-                  title="Minimise Barnaby"
-                  aria-label="Minimise Barnaby"
+                  onClick={() => setIsOpen(false)}
+                  aria-label="Close Barnaby companion"
+                  className="p-1.5 rounded-lg bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors cursor-pointer"
                 >
-                  <Minus className="w-4 h-4" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Bond XP Progress Bar */}
-            <div className="flex items-center gap-2 text-[10px] font-mono text-white/80">
-              <span>Bond XP</span>
+            <div className="mt-2.5 flex items-center gap-2">
               <div className="flex-1 h-1.5 rounded-full bg-white/15 overflow-hidden">
                 <div
-                  className="h-full bg-[#F4A62A] rounded-full transition-all duration-500"
-                  style={{ width: `${bond.progressPct}%` }}
+                  className="h-full bg-[#F4A62A] rounded-full transition-all duration-300"
+                  style={{ width: `${bondStage.progressPct}%` }}
                 />
               </div>
-              <span>{bond.currentXp} XP</span>
-            </div>
-          </div>
-
-          {/* Interactive Pet & Mini-Activity Bar */}
-          <div className="px-3 py-2 bg-[#F7F9F8] dark:bg-[#0D1A19] border-b border-[#D3DDDA] dark:border-[#1E3533] grid grid-cols-3 gap-1.5">
-            <button
-              type="button"
-              onClick={handlePet}
-              className="min-h-[38px] px-2 py-1.5 rounded-xl bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] hover:border-rose-400 text-[11px] font-bold text-[#0E1F1E] dark:text-[#EEF3F1] flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
-            >
-              <Heart className="w-3.5 h-3.5 text-rose-500" />
-              <span>Pet (+5)</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleFeedTreat}
-              className="min-h-[38px] px-2 py-1.5 rounded-xl bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] hover:border-[#F4A62A] text-[11px] font-bold text-[#0E1F1E] dark:text-[#EEF3F1] flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
-            >
-              <Apple className="w-3.5 h-3.5 text-[#D97706] dark:text-[#F4A62A]" />
-              <span>Word Treat</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleStartQuiz}
-              className="min-h-[38px] px-2 py-1.5 rounded-xl bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] hover:border-[#0F4C45] text-[11px] font-bold text-[#0E1F1E] dark:text-[#EEF3F1] flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
-            >
-              <Zap className="w-3.5 h-3.5 text-[#0F4C45] dark:text-[#7CD4C4]" />
-              <span>15s Quiz</span>
-            </button>
-          </div>
-
-          {/* Synchronized Message Stream */}
-          <div
-            ref={scrollRef}
-            className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3 bg-[#F7F9F8] dark:bg-[#0B1514]"
-          >
-            {state.messages.map((m) => (
-              <div key={m.id} className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[90%] px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed space-y-2 ${
-                    m.sender === 'user'
-                      ? 'bg-[#0F4C45] text-white rounded-br-md'
-                      : 'bg-white dark:bg-[#11201F] text-[#0E1F1E] dark:text-[#EEF3F1] border border-[#D3DDDA] dark:border-[#1E3533] rounded-bl-md'
-                  }`}
-                >
-                  {m.sender === 'barnaby' && (
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1 text-[10px] font-mono font-bold tracking-wide text-[#0F4C45] dark:text-[#F4A62A]">
-                        <Sparkles className="w-3 h-3 text-[#F4A62A]" />
-                        {m.badge || 'BARNABY'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeak(m)}
-                        className="p-1 rounded-lg hover:bg-[#EEF3F1] dark:hover:bg-white/10 text-[#566664] dark:text-[#9AAEA9] transition cursor-pointer"
-                        title="Hear Barnaby read this"
-                        aria-label="Hear Barnaby read this"
-                      >
-                        {playingId === m.id ? (
-                          <VolumeX className="w-3.5 h-3.5 text-[#F4A62A]" />
-                        ) : (
-                          <Volume2 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  <p className="whitespace-pre-line">{m.text}</p>
-
-                  {/* Interactive 15s Mini Quiz */}
-                  {m.quiz && (
-                    <div className="space-y-1.5 pt-1">
-                      {m.quiz.options.map((opt, idx) => {
-                        const answered = m.quiz!.selectedIndex !== undefined;
-                        const isPicked = m.quiz!.selectedIndex === idx;
-                        const isRight = m.quiz!.correctIndex === idx;
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            disabled={answered}
-                            onClick={() => handleQuizAnswer(m.id, idx)}
-                            className={`w-full text-left px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer disabled:cursor-default ${
-                              answered
-                                ? isRight
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300'
-                                  : isPicked
-                                  ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 text-rose-700 dark:text-rose-300'
-                                  : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1E3533] opacity-60'
-                                : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1E3533] hover:border-[#0F4C45]'
-                            }`}
-                          >
-                            {opt}
-                          </button>
-                        );
-                      })}
-                      {m.quiz.selectedIndex !== undefined && (
-                        <div className="p-2.5 rounded-xl bg-[#0F4C45]/5 dark:bg-[#0F4C45]/20 border border-[#0F4C45]/20 text-xs space-y-1">
-                          <p className="font-medium text-[#0E1F1E] dark:text-[#EEF3F1]">
-                            {m.quiz.selectedIndex === m.quiz.correctIndex ? ' Spot on! (+15 XP) ' : 'Close! (+6 XP) '}
-                            {m.quiz.explanationEn}
-                          </p>
-                          <p className="text-[#0F4C45] dark:text-[#7CD4C4] font-bengali">
-                            <strong>বাংলা:</strong> {m.quiz.explanationBn}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Strategy Tip */}
-                  {m.strategyTip && (
-                    <div className="text-[11px] p-2 rounded-lg bg-[#FDF6E7] dark:bg-[#F4A62A]/10 text-[#66410B] dark:text-[#F9D590] border border-[#F4A62A]/30">
-                      <strong>Exam Trap Tip:</strong> {m.strategyTip}
-                    </div>
-                  )}
-
-                  {/* Bengali Memory Hook */}
-                  {m.bengaliTip && (
-                    <div className="text-[11px] p-2 rounded-lg bg-[#0F4C45]/5 dark:bg-[#0F4C45]/20 text-[#0F4C45] dark:text-[#9EBEB8] font-bengali">
-                      <strong>বাংলা টিপস:</strong> {m.bengaliTip}
-                    </div>
-                  )}
-
-                  {/* Academic Collocations */}
-                  {m.collocations && m.collocations.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-0.5">
-                      {m.collocations.map((c, idx) => (
-                        <span
-                          key={idx}
-                          className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#EEF3F1] dark:bg-[#1A2F2C] text-[#0F4C45] dark:text-[#9EBEB8]"
-                        >
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Smart Guide Navigation Action */}
-                  {m.suggestedAction && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsOpen(false);
-                        onNavigate(m.suggestedAction!.route);
-                      }}
-                      className="w-full min-h-[36px] px-3 py-1.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs font-bold flex items-center justify-between gap-2 transition cursor-pointer"
-                    >
-                      <span>{m.suggestedAction.label}</span>
-                      <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-                    </button>
-                  )}
-
-                  {/* Helpful / Needs Work Rating Bar */}
-                  {m.sender === 'barnaby' && m.id !== 'barnaby_welcome' && (
-                    <div className="flex items-center justify-between pt-1.5 border-t border-[#D3DDDA]/50 dark:border-[#1E3533] text-[10px] text-[#566664] dark:text-[#9AAEA9]">
-                      <span>{m.rating ? 'Thanks for rating Barnaby!' : 'Was this helpful?'}</span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleRate(m.id, 'up')}
-                          className={`p-1 rounded-md transition cursor-pointer ${
-                            m.rating === 'up'
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
-                              : 'hover:bg-[#EEF3F1] dark:hover:bg-white/10'
-                          }`}
-                          aria-label="Rate helpful"
-                          title="Helpful"
-                        >
-                          <ThumbsUp className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRate(m.id, 'down')}
-                          className={`p-1 rounded-md transition cursor-pointer ${
-                            m.rating === 'down'
-                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
-                              : 'hover:bg-[#EEF3F1] dark:hover:bg-white/10'
-                          }`}
-                          aria-label="Rate needs improvement"
-                          title="Could be clearer"
-                        >
-                          <ThumbsDown className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {isSending && (
-              <div className="flex justify-start">
-                <div className="px-3.5 py-2.5 rounded-2xl rounded-bl-md bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] text-xs text-[#566664] dark:text-[#9AAEA9]">
-                  Barnaby is flapping his wings &amp; drafting your answer…
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Prompt Chips */}
-          <div className="px-3 pt-2 pb-1 flex gap-1.5 overflow-x-auto bg-white dark:bg-[#11201F] scrollbar-none">
-            {QUICK_CHIPS.map((chip) => (
-              <button
-                key={chip}
-                type="button"
-                onClick={() => handleSend(chip)}
-                className="shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-xl bg-[#FDF6E7] dark:bg-[#F4A62A]/10 text-[#8A5A0A] dark:text-[#F4A62A] border border-[#F4A62A]/30 hover:bg-[#F4A62A]/20 transition cursor-pointer"
+              <span
+                data-testid="barnaby-bond-xp"
+                className="text-[10px] font-mono text-[#EEF3F1]/85 tabular-nums shrink-0"
               >
-                {chip}
-              </button>
-            ))}
-          </div>
+                {companion.bondXp} XP
+              </span>
+            </div>
 
-          {/* Chat Input */}
-          <div className="p-3 border-t border-[#D3DDDA] dark:border-[#1E3533] bg-white dark:bg-[#11201F] flex items-center gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSend();
-              }}
-              placeholder="Ask Barnaby (English or বাংলা)…"
-              className="flex-1 min-w-0 min-h-[42px] px-3.5 py-2 rounded-xl border border-[#D3DDDA] dark:border-[#1E3533] bg-[#F7F9F8] dark:bg-[#0B1514] text-sm text-[#0E1F1E] dark:text-white placeholder:text-[#566664] focus:outline-none focus:ring-2 focus:ring-[#0F4C45]"
-              aria-label="Ask Barnaby anything"
-            />
-            <button
-              type="button"
-              onClick={() => handleSend()}
-              disabled={isSending || !input.trim()}
-              className="min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] disabled:opacity-40 text-white transition cursor-pointer"
-              title="Send to Barnaby"
-              aria-label="Send to Barnaby"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Free-Roaming Draggable Barnaby Pet Avatar (hidden on Dashboard where full-body Barnaby is displayed inline) */}
-      {!isDashboardRoute && (
-        <div
-          style={{
-            left: 0,
-            top: 0,
-            transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-            transition: isDragging || prefersReducedMotion
-              ? 'none'
-              : 'transform 1.35s cubic-bezier(0.22, 1, 0.36, 1)'
-          }}
-          className="fixed z-40 select-none touch-none will-change-transform"
-        >
-        {/* Floating Reaction Particles (hearts, sparkles, zzz) */}
-        <div className="pointer-events-none absolute -top-4 left-1/2 -translate-x-1/2">
-          {particles.map((p) => (
-            <span
-              key={p.id}
-              style={{ left: `${p.offsetX}px` }}
-              className="absolute text-base animate-barnaby-particle"
-            >
-              {p.symbol}
-            </span>
-          ))}
-        </div>
-
-        {/* Contextual Pet Activity / Guide Whisper Bubble */}
-        {whisper && !isOpen && !isDragging && (
-          <div
-            className={`absolute bottom-[66px] w-[240px] max-w-[74vw] bg-white dark:bg-[#11201F] border border-[#D3DDDA] dark:border-[#1E3533] rounded-2xl shadow-xl px-3.5 py-2.5 animate-fade-in ${
-              isOnLeftHalf ? 'left-0 rounded-bl-sm' : 'right-0 rounded-br-sm'
-            }`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-xs leading-snug text-[#0E1F1E] dark:text-[#EEF3F1]">
-                {whisper.text}
-              </p>
+            {/* Care, Play & Roam Action Strip */}
+            <div className="mt-2.5 grid grid-cols-4 gap-1.5">
               <button
                 type="button"
-                onClick={() => setWhisper(null)}
-                className="p-0.5 rounded-lg hover:bg-[#EEF3F1] dark:hover:bg-white/10 text-[#566664] cursor-pointer shrink-0"
-                aria-label="Dismiss Barnaby whisper"
+                data-testid="barnaby-drawer-pet-btn"
+                onClick={handlePet}
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-white/12 hover:bg-white/20 text-[11px] font-semibold transition-colors cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <Heart className="w-3.5 h-3.5 text-[#FB7185]" />
+                <span>Pet</span>
               </button>
-            </div>
-            {whisper.action && (
+              <button
+                type="button"
+                data-testid="barnaby-drawer-treat-btn"
+                onClick={handleFeedTreat}
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-white/12 hover:bg-white/20 text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                <Cookie className="w-3.5 h-3.5 text-[#F6C25B]" />
+                <span>Treat</span>
+              </button>
+              <button
+                type="button"
+                data-testid="barnaby-drawer-quiz-btn"
+                onClick={handleStartQuiz}
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-white/12 hover:bg-white/20 text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-[#F4A62A]" />
+                <span>15s Quiz</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
-                  setWhisper(null);
-                  onNavigate(whisper.action!.route);
+                  setIsOpen(false);
+                  window.setTimeout(handleFlySomewhereNew, 80);
                 }}
-                className="mt-2 text-[11px] font-bold text-[#0F4C45] dark:text-[#F4A62A] flex items-center gap-1 hover:underline cursor-pointer"
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-white/12 hover:bg-white/20 text-[11px] font-semibold transition-colors cursor-pointer"
+                title="Watch Barnaby glide to a new spot"
               >
-                <span>{whisper.action.label}</span>
-                <ArrowRight className="w-3 h-3" />
+                <Wind className="w-3.5 h-3.5 text-[#9ED9FB]" />
+                <span>Fly</span>
               </button>
-            )}
+            </div>
           </div>
-        )}
 
-        {/* Draggable Living Dragon Button */}
-        <button
-          type="button"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onDoubleClick={handlePet}
-          className={`relative w-[54px] h-[54px] md:w-[60px] md:h-[60px] rounded-full shadow-lg ring-2 ${
-            isOpen ? 'ring-[#0F4C45]' : moodMeta.ringClass
-          } ${isDragging ? 'scale-110 cursor-grabbing shadow-2xl' : `${moodMeta.animClass} cursor-grab hover:scale-105`} transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#F4A62A]`}
-          title={
-            isOpen
-              ? 'Close Barnaby'
-              : `Barnaby (${moodMeta.label}) — Tap to chat, double-tap to pet, drag to move anywhere!`
-          }
-          aria-label={isOpen ? 'Close Barnaby' : 'Chat with Barnaby'}
-        >
-          {isOpen ? (
-            <span className="w-full h-full rounded-full bg-[#0F4C45] text-white flex items-center justify-center">
-              <X className="w-5 h-5" />
-            </span>
-          ) : (
-            <>
-              <div className="w-full h-full rounded-full overflow-hidden pointer-events-none">
-                <BarnabyDragonAvatar
-                  state={avatarState}
-                  isSpeaking={isAudioSpeaking}
-                  paused={isAutonomousPaused}
-                  size="studio"
-                  framed="circle"
-                  className="!max-w-none w-full h-full"
-                  testId="floating-barnaby-launcher-avatar"
-                />
+          {/* Messages Stream */}
+          <div className="flex-1 overflow-y-auto p-3.5 space-y-3 bg-[#F7F9F8] dark:bg-[#0B1514]">
+            {companion.messages.map((msg) => {
+              const isBarnaby = msg.sender === 'barnaby';
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex flex-col ${isBarnaby ? 'items-start' : 'items-end'}`}
+                >
+                  {isBarnaby && msg.badge && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#1F8A70] dark:text-[#6EA098] mb-1 ml-1">
+                      {msg.badge}
+                    </span>
+                  )}
+
+                  <div
+                    className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed shadow-xs ${
+                      isBarnaby
+                        ? 'bg-white dark:bg-[#11201E] text-[#0E1F1E] dark:text-[#EEF3F1] border border-[#D3DDDA] dark:border-[#1F8A70]/30 rounded-tl-sm'
+                        : 'bg-[#0F4C45] text-white rounded-tr-sm'
+                    }`}
+                  >
+                    <p className="whitespace-pre-line">{msg.text}</p>
+
+                    {/* Word Treat Mini Card */}
+                    {msg.treatWord && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-[#FEF6E8] dark:bg-[#1D2D2A] border border-[#F4A62A]/30 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-[#0F4C45] dark:text-[#F6C25B]">
+                            {msg.treatWord.word}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-[#9B6314] dark:text-[#F6C25B]">
+                            {msg.treatWord.band}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#384543] dark:text-[#D3DDDA] mt-0.5">
+                          {msg.treatWord.meaning}
+                        </p>
+                        <p className="text-[11px] italic text-[#566664] dark:text-[#9EBEB8] mt-1">
+                          "{msg.treatWord.example}"
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Interactive 15s Mini Trap Quiz */}
+                    {msg.quiz && (
+                      <div className="mt-2.5 space-y-1.5">
+                        {msg.quiz.options.map((opt, idx) => {
+                          const answered = typeof msg.quiz!.selectedIndex === 'number';
+                          const isSelected = msg.quiz!.selectedIndex === idx;
+                          const isCorrectOpt = idx === msg.quiz!.correctIndex;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              disabled={answered}
+                              onClick={() => handleAnswerQuiz(msg.id, idx)}
+                              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium border transition-colors flex items-center justify-between gap-2 ${
+                                answered
+                                  ? isCorrectOpt
+                                    ? 'bg-[#EEF3F1] dark:bg-[#1F8A70]/25 border-[#1F8A70] text-[#0F4C45] dark:text-white'
+                                    : isSelected
+                                    ? 'bg-[#FDF2F2] dark:bg-[#8C1D18]/25 border-[#CC3333] text-[#8C1D18] dark:text-[#FADCDC]'
+                                    : 'bg-transparent border-[#D3DDDA]/60 dark:border-white/10 opacity-60'
+                                  : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45] cursor-pointer'
+                              }`}
+                            >
+                              <span>{opt}</span>
+                              {answered && isCorrectOpt && (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-[#1F8A70] shrink-0" />
+                              )}
+                              {answered && isSelected && !isCorrectOpt && (
+                                <XCircle className="w-3.5 h-3.5 text-[#CC3333] shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                        {typeof msg.quiz.selectedIndex === 'number' && (
+                          <div className="mt-1.5 p-2 rounded-lg bg-[#EEF3F1] dark:bg-[#0B1514] text-[11px] text-[#384543] dark:text-[#D3DDDA]">
+                            {msg.quiz.explanation}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Optional Navigation CTA */}
+                    {msg.suggestedAction && onNavigate && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onNavigate(msg.suggestedAction!.route);
+                          setIsOpen(false);
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#0F4C45] dark:text-[#F6C25B] hover:underline cursor-pointer"
+                      >
+                        <span>{msg.suggestedAction.label}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Barnaby Message Footer: Speak Aloud + Feedback Rating */}
+                  {isBarnaby && (
+                    <div className="flex items-center gap-2 mt-1 ml-1 text-[#566664] dark:text-[#9EBEB8]">
+                      <button
+                        type="button"
+                        onClick={() => handleSpeak(msg)}
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold hover:text-[#0F4C45] dark:hover:text-white transition-colors cursor-pointer ${
+                          isSpeaking && speakingMsgId === msg.id ? 'text-[#1F8A70]' : ''
+                        }`}
+                        title="Hear Barnaby speak this aloud"
+                      >
+                        <Volume2 className="w-3 h-3" />
+                        <span>{isSpeaking && speakingMsgId === msg.id ? 'Stop' : 'Speak'}</span>
+                      </button>
+
+                      <span className="text-[#D3DDDA] dark:text-white/15">•</span>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRateMessage(msg.id, 'up')}
+                        className={`p-0.5 rounded hover:text-[#1F8A70] transition-colors cursor-pointer ${
+                          msg.rating === 'up' ? 'text-[#1F8A70]' : ''
+                        }`}
+                        title="Helpful (+3 Bond XP)"
+                      >
+                        <ThumbsUp className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRateMessage(msg.id, 'down')}
+                        className={`p-0.5 rounded hover:text-[#CC3333] transition-colors cursor-pointer ${
+                          msg.rating === 'down' ? 'text-[#CC3333]' : ''
+                        }`}
+                        title="Could be sharper"
+                      >
+                        <ThumbsDown className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {isSending && (
+              <div className="flex items-center gap-2 text-xs text-[#566664] dark:text-[#9EBEB8] pl-1">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1F8A70]" />
+                <span>Barnaby is thinking…</span>
               </div>
-              {/* Expressive Mood Badge */}
-              <span
-                className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1E3533] text-[11px] flex items-center justify-center shadow-sm pointer-events-none"
-                aria-hidden="true"
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Quick Prompt Chips */}
+          <div className="px-3 pt-2 pb-1.5 bg-white dark:bg-[#11201E] border-t border-[#D3DDDA]/70 dark:border-[#1F8A70]/20 flex items-center gap-1.5 overflow-x-auto shrink-0">
+            {[
+              'What should I study next?',
+              'Give me a Band 8 word',
+              'TFNG tip please',
+              'Writing Task 2 structure'
+            ].map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                disabled={isSending}
+                onClick={() => handleSend(prompt)}
+                className="px-2.5 py-1 rounded-lg bg-[#EEF3F1] dark:bg-[#0B1514] hover:bg-[#D3DDDA] dark:hover:bg-[#1F8A70]/25 text-[11px] font-medium text-[#0E1F1E] dark:text-[#EEF3F1] whitespace-nowrap transition-colors cursor-pointer shrink-0"
               >
-                {moodMeta.emoji}
-              </span>
-            </>
-          )}
-        </button>
+                {prompt}
+              </button>
+            ))}
+          </div>
+
+          {/* Chat Input Bar */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSend();
+            }}
+            className="p-2.5 bg-white dark:bg-[#11201E] border-t border-[#D3DDDA] dark:border-[#1F8A70]/25 flex items-center gap-2 shrink-0"
+          >
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder="Ask Barnaby anything about IELTS…"
+              className="flex-1 bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 rounded-xl px-3 py-2 text-xs text-[#0E1F1E] dark:text-[#EEF3F1] placeholder:text-[#566664] focus:outline-none focus:border-[#0F4C45]"
+            />
+            <button
+              type="submit"
+              disabled={!inputText.trim() || isSending}
+              aria-label="Send message to Barnaby"
+              className="p-2 rounded-xl bg-[#0F4C45] hover:bg-[#0B3A35] disabled:opacity-45 text-white transition-colors cursor-pointer shrink-0"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
         </div>
       )}
-    </>
+
+      {/* ================= INDEPENDENT FREELY ROAMING FULL-BODY BARNABY ================= */}
+      {!isUserHidden && (
+        <div
+          data-testid="barnaby-roaming-actor"
+          data-locomotion={locomotion}
+          data-facing={facing}
+          data-free-roam={companion.freeRoam ? 'true' : 'false'}
+          data-pos-x={Math.round(pos.x)}
+          data-pos-y={Math.round(pos.y)}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onFocus={() => setIsHovered(true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              setIsHovered(false);
+            }
+          }}
+          style={{
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            width: `${characterSize.width}px`,
+            height: `${characterSize.height}px`,
+            transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+            transition: isDragging
+              ? 'none'
+              : `transform ${flightDurationMs}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+            willChange: 'transform',
+            touchAction: 'none'
+          }}
+          className="pointer-events-auto select-none group"
+        >
+          {/* Floating Heart / Sparkle Reaction Particles */}
+          {particles.map((p) => (
+            <span
+              key={p.id}
+              className="pointer-events-none absolute -top-3 left-1/2 text-sm font-bold animate-barnaby-particle"
+              style={{ marginLeft: `${p.offsetX}px` }}
+            >
+              {p.emoji}
+            </span>
+          ))}
+
+          {/* Contextual Whisper Bubble (auto-positioned away from screen edges) */}
+          {whisper && !isOpen && !isDragging && (
+            <div
+              data-testid="barnaby-whisper-bubble"
+              className={`absolute ${whisperAbove ? 'bottom-full mb-2' : 'top-full mt-2'} ${
+                whisperOnLeft ? 'right-0' : 'left-0'
+              } w-64 max-w-[calc(100vw-2rem)] bg-white/95 dark:bg-[#11201E]/95 backdrop-blur-sm text-[#0E1F1E] dark:text-[#EEF3F1] border border-[#D3DDDA] dark:border-[#1F8A70]/45 rounded-2xl p-3 shadow-xl animate-fade-in z-10`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs leading-snug font-medium">{whisper.text}</p>
+                <button
+                  type="button"
+                  data-barnaby-control="true"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setWhisper(null);
+                  }}
+                  aria-label="Dismiss Barnaby tip"
+                  className="text-[#566664] hover:text-[#0E1F1E] dark:hover:text-white p-0.5 cursor-pointer shrink-0"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                {whisper.actionLabel && whisper.actionRoute && onNavigate ? (
+                  <button
+                    type="button"
+                    data-barnaby-control="true"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigate(whisper.actionRoute!);
+                      setWhisper(null);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C45] dark:text-[#F6C25B] hover:underline cursor-pointer"
+                  >
+                    <span>{whisper.actionLabel}</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-barnaby-control="true"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWhisper(null);
+                      setIsOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C45] dark:text-[#F6C25B] hover:underline cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Chat with Barnaby</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Unclipped Full-Body Draggable Dragon Character */}
+          <div
+            role="button"
+            tabIndex={0}
+            data-testid="barnaby-drag-handle"
+            aria-label={`Barnaby the blue dragon (${locomotion}, Level ${bondStage.level}). Drag to move or press to chat.`}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={finishPointerDrag}
+            onPointerCancel={finishPointerDrag}
+            onClick={handleCharacterClick}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleCharacterClick();
+              }
+            }}
+            className={`relative w-full h-full flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F4A62A] rounded-2xl ${
+              isDragging ? 'cursor-grabbing scale-105' : 'cursor-grab hover:scale-105'
+            } transition-transform duration-150 ${outerMotionClass}`}
+            style={{
+              filter: 'drop-shadow(0 10px 14px rgba(15, 76, 69, 0.22))'
+            }}
+          >
+            <div
+              className="w-full h-full flex items-center justify-center"
+              style={{
+                transform: flightTiltDeg ? `rotate(${flightTiltDeg}deg)` : undefined,
+                transition: 'transform 260ms ease'
+              }}
+            >
+              <BarnabyDragonAvatar
+                variant="full"
+                framed="none"
+                size="studio"
+                state={avatarState}
+                locomotion={locomotion}
+                facing={facing}
+                isSpeaking={isSpeaking}
+                paused={isAnimationPaused}
+                testId="barnaby-floating-avatar"
+                className="w-full h-full max-w-none"
+              />
+            </div>
+
+            {/* Subtle Level Tag when hovered (no heavy boxed chrome) */}
+            {!isDragging && isHovered && !isOpen && (
+              <span className="pointer-events-none absolute -top-2 right-0 px-1.5 py-0.5 rounded-md bg-[#0F4C45]/90 text-[#F6C25B] text-[9px] font-bold tracking-wide shadow-sm">
+                Lv.{bondStage.level}
+              </span>
+            )}
+          </div>
+
+          {/* Subtle Hover / Focus Quick Controls Bar (Pause/Resume, Pet, Fly, Hide) */}
+          {!isDragging && !isOpen && (
+            <div
+              data-testid="barnaby-quick-controls"
+              className={`absolute left-1/2 -translate-x-1/2 ${
+                pos.y > viewport.height - 155 ? '-top-9' : '-bottom-8'
+              } flex items-center gap-1 px-1.5 py-1 rounded-xl bg-[#0F4C45]/92 text-white border border-white/15 shadow-lg backdrop-blur-xs transition-opacity duration-150 ${
+                isHovered ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto'
+              }`}
+            >
+              <button
+                type="button"
+                data-barnaby-control="true"
+                data-testid="barnaby-toggle-roam"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleFreeRoam();
+                }}
+                title={companion.freeRoam ? 'Pause Barnaby movement' : 'Resume Barnaby movement'}
+                aria-label={companion.freeRoam ? 'Pause movement' : 'Resume movement'}
+                className="p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+              >
+                {companion.freeRoam ? (
+                  <Pause className="w-3 h-3 text-[#F6C25B]" />
+                ) : (
+                  <Play className="w-3 h-3 text-[#9ED9FB]" />
+                )}
+              </button>
+              <button
+                type="button"
+                data-barnaby-control="true"
+                data-testid="barnaby-fly-now"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFlySomewhereNew();
+                }}
+                title="Fly to another spot"
+                aria-label="Fly to another spot"
+                className="p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+              >
+                <Compass className="w-3 h-3 text-[#9ED9FB]" />
+              </button>
+              <button
+                type="button"
+                data-barnaby-control="true"
+                data-testid="barnaby-quick-pet"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePet();
+                }}
+                title="Pet Barnaby (+5 Bond XP)"
+                aria-label="Pet Barnaby"
+                className="p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+              >
+                <Heart className="w-3 h-3 text-[#FB7185]" />
+              </button>
+              <button
+                type="button"
+                data-barnaby-control="true"
+                data-testid="barnaby-hide-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleHide(true);
+                }}
+                title="Temporarily hide Barnaby"
+                aria-label="Hide Barnaby"
+                className="p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+              >
+                <EyeOff className="w-3 h-3 text-white/80" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
