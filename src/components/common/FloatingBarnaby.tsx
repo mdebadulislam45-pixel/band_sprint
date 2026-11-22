@@ -58,7 +58,7 @@ import {
 } from '../../services/barnabyRoamEngine';
 import { ACTIVE_USER_KEY } from '../../utils/userStorage';
 import { soundManager } from '../../utils/audioEffects';
-import { audioManager } from '../../services/AudioManager';
+import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import {
   BarnabyAvatarState,
   BarnabyDragonAvatar,
@@ -401,7 +401,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       setIsOpen(false);
       setWhisper(null);
       clearLocomotionTimers();
-      audioManager.stopAll();
+      stopSpeech();
       setIsSpeaking(false);
       setSpeakingMsgId(null);
     };
@@ -1043,7 +1043,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       setIsOpen(false);
       setWhisper(null);
       clearLocomotionTimers();
-      audioManager.stopAll();
+      stopSpeech();
       setIsSpeaking(false);
       setSpeakingMsgId(null);
     } else {
@@ -1120,9 +1120,9 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     }
   };
 
-  const handleSpeak = async (msg: BarnabyMessage) => {
+  const handleSpeak = (msg: BarnabyMessage) => {
     if (isSpeaking && speakingMsgId === msg.id) {
-      audioManager.stopAll();
+      stopSpeech();
       setIsSpeaking(false);
       setSpeakingMsgId(null);
       return;
@@ -1130,18 +1130,17 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
 
     setIsSpeaking(true);
     setSpeakingMsgId(msg.id);
-    try {
-      await audioManager.playText(msg.text, {
-        speakerId: 'speaker_barnaby',
-        onEnd: () => {
-          setIsSpeaking(false);
-          setSpeakingMsgId(null);
-        }
-      });
-    } catch {
-      setIsSpeaking(false);
-      setSpeakingMsgId(null);
-    }
+    speakBritish(msg.text, {
+      speakerId: 'speaker_barnaby',
+      onEnd: () => {
+        setIsSpeaking(false);
+        setSpeakingMsgId(null);
+      },
+      onError: () => {
+        setIsSpeaking(false);
+        setSpeakingMsgId(null);
+      }
+    });
   };
 
   const handleSend = async (customText?: string) => {
@@ -1156,7 +1155,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       id: `temp_${Date.now()}`,
       sender: 'user',
       text: query,
-      timestamp: Date.now()
+      createdAt: Date.now()
     };
     setCompanion((prev) => ({
       ...prev,
@@ -1242,12 +1241,12 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     >
       {/* ================= SUMMON TAB WHEN TEMPORARILY HIDDEN ================= */}
       {isUserHidden && (
-        <div className="fixed bottom-20 md:bottom-5 right-4 pointer-events-auto">
+        <div className="fixed bottom-20 md:bottom-3 right-3 pointer-events-auto">
           <button
             type="button"
             data-testid="barnaby-summon-btn"
             onClick={() => handleToggleHide(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0F4C45] hover:bg-[#0B3A35] text-white border border-[#1F8A70]/60 shadow-lg text-xs font-semibold transition-transform hover:-translate-y-0.5 cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3A35] text-white border border-[#1F8A70]/60 shadow-lg text-[11px] font-semibold transition-transform hover:-translate-y-0.5 cursor-pointer"
             title="Bring Barnaby back to your screen"
           >
             <BarnabyDragonAvatar
@@ -1296,11 +1295,11 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
                   />
                 </button>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="font-display font-bold text-sm tracking-tight truncate">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h3 className="font-display font-bold text-sm tracking-tight shrink-0">
                       Barnaby
                     </h3>
-                    <span className="px-1.5 py-0.5 rounded bg-[#F4A62A]/20 text-[#F6C25B] text-[9px] font-bold uppercase tracking-wider shrink-0">
+                    <span className="px-1.5 py-0.5 rounded bg-[#F4A62A]/20 text-[#F6C25B] text-[9px] font-bold uppercase tracking-wider truncate">
                       Lv.{bondStage.level} {bondStage.title}
                     </span>
                   </div>
@@ -1438,23 +1437,31 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
                   >
                     <p className="whitespace-pre-line">{msg.text}</p>
 
-                    {/* Word Treat Mini Card */}
-                    {msg.treatWord && (
-                      <div className="mt-2 p-2.5 rounded-xl bg-[#FEF6E8] dark:bg-[#1D2D2A] border border-[#F4A62A]/30 text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-[#0F4C45] dark:text-[#F6C25B]">
-                            {msg.treatWord.word}
-                          </span>
-                          <span className="text-[10px] font-mono font-bold text-[#9B6314] dark:text-[#F6C25B]">
-                            {msg.treatWord.band}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-[#384543] dark:text-[#D3DDDA] mt-0.5">
-                          {msg.treatWord.meaning}
-                        </p>
-                        <p className="text-[11px] italic text-[#566664] dark:text-[#9EBEB8] mt-1">
-                          "{msg.treatWord.example}"
-                        </p>
+                    {/* Optional Strategy / Bengali Coaching Tip & Collocations */}
+                    {(msg.strategyTip || msg.bengaliTip || (msg.collocations && msg.collocations.length > 0)) && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-[#FEF6E8] dark:bg-[#1D2D2A] border border-[#F4A62A]/30 text-xs space-y-1">
+                        {msg.strategyTip && (
+                          <p className="text-[11px] font-semibold text-[#0F4C45] dark:text-[#F6C25B]">
+                            {msg.strategyTip}
+                          </p>
+                        )}
+                        {msg.bengaliTip && (
+                          <p className="text-[11px] font-bengali text-[#384543] dark:text-[#D3DDDA]">
+                            {msg.bengaliTip}
+                          </p>
+                        )}
+                        {msg.collocations && msg.collocations.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {msg.collocations.map((col, i) => (
+                              <span
+                                key={i}
+                                className="px-1.5 py-0.5 rounded bg-white/80 dark:bg-[#0B1514] border border-[#F4A62A]/35 text-[10px] font-medium text-[#0F4C45] dark:text-[#F6C25B]"
+                              >
+                                {col}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1492,8 +1499,13 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
                           );
                         })}
                         {typeof msg.quiz.selectedIndex === 'number' && (
-                          <div className="mt-1.5 p-2 rounded-lg bg-[#EEF3F1] dark:bg-[#0B1514] text-[11px] text-[#384543] dark:text-[#D3DDDA]">
-                            {msg.quiz.explanation}
+                          <div className="mt-1.5 p-2 rounded-lg bg-[#EEF3F1] dark:bg-[#0B1514] text-[11px] text-[#384543] dark:text-[#D3DDDA] space-y-1">
+                            <p>{msg.quiz.explanationEn}</p>
+                            {msg.quiz.explanationBn && (
+                              <p className="font-bengali text-[#566664] dark:text-[#9EBEB8]">
+                                {msg.quiz.explanationBn}
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1616,7 +1628,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       )}
 
       {/* ================= INDEPENDENT FREELY ROAMING FULL-BODY BARNABY ================= */}
-      {!isUserHidden && (
+      {!isUserHidden && !isOpen && (
         <div
           data-testid="barnaby-roaming-actor"
           data-locomotion={locomotion}
@@ -1658,8 +1670,8 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
             </span>
           ))}
 
-          {/* Contextual Whisper Bubble (auto-positioned away from screen edges) */}
-          {whisper && !isOpen && !isDragging && (
+          {/* Contextual Whisper Bubble (auto-positioned away from screen edges; hidden mid-flight) */}
+          {whisper && !isOpen && !isDragging && locomotion !== 'flying' && (
             <div
               data-testid="barnaby-whisper-bubble"
               className={`absolute ${whisperAbove ? 'bottom-full mb-2' : 'top-full mt-2'} ${

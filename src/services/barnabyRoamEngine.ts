@@ -222,11 +222,11 @@ export function collectScreenObstacles(doc?: Document): BarnabyRect[] {
     // Ignore
   }
 
-  // 3. Interactive buttons & links (capped to keep sampling <1ms)
+  // 3. Interactive buttons, links & prominent headings (capped to keep sampling <1ms)
   try {
-    const interactiveNodes = targetDoc.querySelectorAll('button, a[href], [role="button"]');
-    const step = interactiveNodes.length > 90 ? Math.ceil(interactiveNodes.length / 90) : 1;
-    for (let i = 0; i < interactiveNodes.length && obstacles.length < 190; i += step) {
+    const interactiveNodes = targetDoc.querySelectorAll('button, a[href], [role="button"], h1, h2, h3');
+    const step = interactiveNodes.length > 100 ? Math.ceil(interactiveNodes.length / 100) : 1;
+    for (let i = 0; i < interactiveNodes.length && obstacles.length < 200; i += step) {
       const el = interactiveNodes[i] as HTMLElement;
       if (el.closest('[data-barnaby-overlay="true"]')) continue;
       const rect = el.getBoundingClientRect();
