@@ -153,14 +153,14 @@ export interface CompanionVoiceProfile {
   accent: 'British';
   preferredCloudVoiceId: 'gemini-3.8-flash-tts:Puck' | 'gemini-3.8-flash-lite-tts:Puck';
   geminiVoiceName: 'Puck';
-  edgeNeuralVoiceId: 'en-GB-MaisieNeural';
+  edgeNeuralVoiceId: 'en-GB-ThomasNeural';
   preferredBrowserVoiceNames: string[];
-  acousticSignatureId: 'companion-uk-barnaby-playful-puck-v1';
+  acousticSignatureId: 'companion-uk-barnaby-mentor-v2';
   speakingRatePreference: number;
   browserRatePreference: number;
   pitchPreference: number;
   deliveryProfile: 'barnaby_companion';
-  cacheVersionPrefix: 'v1_barnaby_companion';
+  cacheVersionPrefix: 'v2_barnaby_mentor';
   styleInstruction: string;
   personaDescription: string;
 }
@@ -169,32 +169,32 @@ export const BARNABY_VOICE_PROFILE: CompanionVoiceProfile = {
   companionId: 'barnaby',
   speakerId: 'speaker_barnaby',
   personaName: 'Barnaby',
-  displayName: 'Barnaby · Friendly & Playful Sprint AI Companion',
-  shortLabel: 'Barnaby — AI Companion',
+  displayName: 'Barnaby · Warm British IELTS Mentor Companion',
+  shortLabel: 'Barnaby — IELTS Mentor',
   gender: 'male',
   locale: 'en-GB',
   accent: 'British',
   preferredCloudVoiceId: 'gemini-3.8-flash-tts:Puck',
   geminiVoiceName: 'Puck',
-  edgeNeuralVoiceId: 'en-GB-MaisieNeural',
+  edgeNeuralVoiceId: 'en-GB-ThomasNeural',
   preferredBrowserVoiceNames: [
-    'Microsoft Maisie Online (Natural) - English (United Kingdom)',
-    'Microsoft Libby Online (Natural) - English (United Kingdom)',
-    'Google UK English Female',
+    'Microsoft Thomas Online (Natural) - English (United Kingdom)',
+    'Microsoft Oliver Online (Natural) - English (United Kingdom)',
     'Google UK English Male',
     'Daniel',
-    'Arthur'
+    'Arthur',
+    'Oliver'
   ],
-  acousticSignatureId: 'companion-uk-barnaby-playful-puck-v1',
-  speakingRatePreference: 1.0,
+  acousticSignatureId: 'companion-uk-barnaby-mentor-v2',
+  speakingRatePreference: 1.02,
   browserRatePreference: 0.98,
-  pitchPreference: 1.04,
+  pitchPreference: 1.03,
   deliveryProfile: 'barnaby_companion',
-  cacheVersionPrefix: 'v1_barnaby_companion',
+  cacheVersionPrefix: 'v2_barnaby_mentor',
   styleInstruction:
-    'Cute, friendly, warm, bright, and gently playful British English AI study companion named Barnaby. Speak with a soft, reassuring, expressive conversational rhythm, gentle intonation variation, and clear British English pronunciation. Sound like an encouraging, charming companion in a premium educational app—never robotic, formal, babyish, squeaky, or exaggerated.',
+    'Warm, intelligent, expressive British English young-adult IELTS mentor named Barnaby. Speak with natural conversational pacing, clear British pronunciation, encouraging warmth, and subtle wit—distinct from formal examiners, yet strictly composed, credible, and never childish, babyish, squeaky, or exaggerated.',
   personaDescription:
-    'Cute, friendly, warm, bright, and gently playful AI companion with clear British English pronunciation and expressive conversational rhythm.'
+    'Warm, expressive British English mentor voice—friendly, encouraging, and distinct from formal IELTS examiners without sounding childish.'
 };
 
 export function isBarnabyCompanionVoice(identifier?: string | null): boolean {
@@ -205,8 +205,8 @@ export function isBarnabyCompanionVoice(identifier?: string | null): boolean {
 /**
  * Builds a deterministic, collision-proof synthesis cache key incorporating provider,
  * speakerId, voiceId, gender, locale, deliveryProfile, rate, pitch, and normalized text.
- * Uses a separate cache namespace for Barnaby ('v1_barnaby_companion') so changing Barnaby
- * never invalidates or collides with Arthur or Clara ('v19_gemini_neural_examiner').
+ * Uses a separate cache namespace for Barnaby ('v2_barnaby_mentor') so changing Barnaby
+ * never invalidates or collides with Arthur or Clara ('v24_studio_neural').
  */
 export function buildVoiceSynthesisCacheKey(params: {
   provider: string;
@@ -221,7 +221,7 @@ export function buildVoiceSynthesisCacheKey(params: {
 }): string {
   const cleanText = params.text.trim().replace(/\s+/g, ' ');
   const isBarnaby = isBarnabyCompanionVoice(params.speakerId) || params.deliveryProfile === 'barnaby_companion';
-  const namespace = isBarnaby ? BARNABY_VOICE_PROFILE.cacheVersionPrefix : 'v21_gemini_neural_examiner';
+  const namespace = isBarnaby ? BARNABY_VOICE_PROFILE.cacheVersionPrefix : 'v24_studio_neural';
   return [
     namespace,
     params.provider.trim().toLowerCase(),
@@ -251,8 +251,8 @@ export const DEFAULT_MASTER_MALE_VOICE: MasterMaleVoiceProfile = {
   id: 'speaker_04',
   name: 'Arthur',
   displayName: 'Prof. Arthur Pendelton · Senior British Examiner (RP)',
-  geminiVoiceName: 'Fenrir',
-  role: 'Authoritative, calm, measured British Received Pronunciation IELTS examiner',
+  geminiVoiceName: 'Charon',
+  role: 'Mature, confident, measured British Received Pronunciation IELTS examiner',
   rate: 1.0,
   pitch: 1.0,
   lang: 'en-GB'

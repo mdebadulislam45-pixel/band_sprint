@@ -401,15 +401,15 @@ export const PreExamHardwareCheck: React.FC<PreExamHardwareCheckProps> = ({
           className={`px-4 sm:px-6 py-3 border-b-2 ${theme.border} ${theme.headerBg} flex items-center justify-between shrink-0 font-mono`}
         >
           <div className="flex items-center gap-3">
-            <div className="p-1.5 bg-sky-600 text-white rounded-none">
+            <div className="p-1.5 bg-[#F4A62A] text-[#0E1F1E] rounded-md">
               <Headphones className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-xs font-bold uppercase tracking-widest text-sky-400">
-                OFFICIAL CD-IELTS WORKSTATION VERIFICATION
+              <div className="text-xs font-bold uppercase tracking-widest text-[#F4A62A]">
+                BANDSPRINT EXAM WORKSTATION CHECK
               </div>
               <h2 className="text-sm sm:text-base font-bold tracking-tight text-white">
-                Pre-Flight System Sound & Microphone Calibration
+                Pre-Exam Audio &amp; Microphone Verification
               </h2>
             </div>
           </div>
@@ -447,9 +447,9 @@ export const PreExamHardwareCheck: React.FC<PreExamHardwareCheckProps> = ({
           <div className={`p-4 border-2 ${theme.border} ${theme.cardBg} space-y-3`}>
             <div className="flex items-center justify-between border-b border-gray-400/60 pb-2">
               <div className="flex items-center gap-2">
-                <Volume2 className="w-4 h-4 text-sky-600" />
+                <Volume2 className="w-4 h-4 text-[#0F4C45]" />
                 <span className="text-xs font-mono font-bold uppercase tracking-wider">
-                  Step 1 · Official Audio & Headphone Sound Check
+                  Step 1 · Audio &amp; Headphone Sound Check
                 </span>
               </div>
               {hasTestedAudio && (
@@ -460,7 +460,7 @@ export const PreExamHardwareCheck: React.FC<PreExamHardwareCheckProps> = ({
             </div>
 
             <p className="text-xs leading-relaxed opacity-90">
-              Put on your official test headset. Click the sample audio button below to verify volume level and ensure both left and right audio channels are balanced.
+              Put on your headphones. Click the sample audio button below to verify volume level and ensure both left and right audio channels are balanced.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -470,11 +470,11 @@ export const PreExamHardwareCheck: React.FC<PreExamHardwareCheckProps> = ({
                 onClick={handlePlaySoundSample}
                 disabled={isPlayingAudio}
                 className={`px-4 py-2 text-xs font-mono font-bold border transition flex items-center gap-2 cursor-pointer ${
-                  isPlayingAudio ? 'bg-amber-400 text-black' : theme.accentBtn
+                  isPlayingAudio ? 'bg-[#F4A62A] text-[#0E1F1E]' : theme.accentBtn
                 } disabled:opacity-50`}
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{isPlayingAudio ? 'Playing Sample Audio...' : 'Play Official Sound Check'}</span>
+                <span>{isPlayingAudio ? 'Playing Sample Audio...' : 'Play Sound Check'}</span>
               </button>
 
               {/* Stereo Left & Right Channel Checks */}
@@ -562,10 +562,10 @@ export const PreExamHardwareCheck: React.FC<PreExamHardwareCheckProps> = ({
             </div>
 
             <p className="text-xs leading-relaxed opacity-90">
-              The CD-IELTS Speaking engine requires clear acoustic signal-to-noise ratio. Start the live sound check and speak the official verification sentence into your microphone:
+              The CD-IELTS Speaking practice engine requires a clear microphone signal. Start the live sound check and speak the verification sentence below:
             </p>
 
-            <div className="p-3 border border-gray-400 bg-black/5 font-mono text-xs font-bold text-sky-800 dark:text-sky-300">
+            <div className="p-3 border border-current/25 bg-black/5 font-mono text-xs font-bold">
               "My candidate number is {candidateCode()} and I am ready to begin the speaking evaluation."
             </div>
 
@@ -731,12 +731,12 @@ export const PreExamHardwareCheck: React.FC<PreExamHardwareCheckProps> = ({
             type="button"
             disabled={!canProceed}
             onClick={handleEnterFullscreenAndStart}
-            className={`px-6 py-2.5 text-xs sm:text-sm font-bold uppercase transition flex items-center gap-2 cursor-pointer ${
-              canProceed ? 'bg-sky-600 hover:bg-sky-500 text-white' : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+            className={`px-6 py-2.5 text-xs sm:text-sm font-bold uppercase transition flex items-center gap-2 cursor-pointer rounded-md ${
+              canProceed ? 'bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E]' : 'bg-white/15 text-white/50 cursor-not-allowed'
             }`}
           >
             <Maximize2 className="w-4 h-4" />
-            <span>Launch Official CD-IELTS Workstation</span>
+            <span>Launch Practice Exam Workstation</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </footer>

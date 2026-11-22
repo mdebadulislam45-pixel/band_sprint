@@ -225,6 +225,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   const isHiddenOnRoute = HIDDEN_ROUTE_PREFIXES.some(
     (prefix) => currentPath === prefix || currentPath.startsWith(`${prefix}/`)
   );
+  const isDashboardRoute = currentPath === '/' || currentPath === '/home';
 
   const spawnParticles = useCallback((symbol: string, count = 3) => {
     const batch: FloatingParticle[] = Array.from({ length: count }).map((_, i) => ({
@@ -259,15 +260,22 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Hide during CD-IELTS active exam
+  // Hide during CD-IELTS active exam & support explicit open requests from DashboardBarnabyCompanion
   useEffect(() => {
     const hide = () => setIsHiddenForExam(true);
     const show = () => setIsHiddenForExam(false);
+    const openDrawer = () => {
+      setIsHiddenForExam(false);
+      setWhisper(null);
+      setIsOpen(true);
+    };
     window.addEventListener('barnaby-float-hide', hide);
     window.addEventListener('barnaby-float-show', show);
+    window.addEventListener('barnaby-float-open', openDrawer);
     return () => {
       window.removeEventListener('barnaby-float-hide', hide);
       window.removeEventListener('barnaby-float-show', show);
+      window.removeEventListener('barnaby-float-open', openDrawer);
     };
   }, []);
 
@@ -860,18 +868,19 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
         </div>
       )}
 
-      {/* Free-Roaming Draggable Barnaby Pet Avatar (GPU translate3d positioning) */}
-      <div
-        style={{
-          left: 0,
-          top: 0,
-          transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-          transition: isDragging || prefersReducedMotion
-            ? 'none'
-            : 'transform 1.35s cubic-bezier(0.22, 1, 0.36, 1)'
-        }}
-        className="fixed z-40 select-none touch-none will-change-transform"
-      >
+      {/* Free-Roaming Draggable Barnaby Pet Avatar (hidden on Dashboard where full-body Barnaby is displayed inline) */}
+      {!isDashboardRoute && (
+        <div
+          style={{
+            left: 0,
+            top: 0,
+            transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+            transition: isDragging || prefersReducedMotion
+              ? 'none'
+              : 'transform 1.35s cubic-bezier(0.22, 1, 0.36, 1)'
+          }}
+          className="fixed z-40 select-none touch-none will-change-transform"
+        >
         {/* Floating Reaction Particles (hearts, sparkles, zzz) */}
         <div className="pointer-events-none absolute -top-4 left-1/2 -translate-x-1/2">
           {particles.map((p) => (
@@ -965,7 +974,8 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
             </>
           )}
         </button>
-      </div>
+        </div>
+      )}
     </>
   );
 };

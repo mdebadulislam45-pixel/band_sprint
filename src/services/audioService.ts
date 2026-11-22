@@ -97,18 +97,18 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
   },
   speaker_01: {
     id: 'speaker_01',
-    name: 'Thomas (Sprint Academic Assessor)',
-    role: 'Official British Male Assessor & Presenter (RP)',
+    name: 'Thomas (Academic Presenter)',
+    role: 'British Male Academic Presenter & Campus Officer (RP)',
     accent: 'British Received Pronunciation (en-GB)',
     gender: 'male',
-    geminiVoiceName: 'Puck',
+    geminiVoiceName: 'Orus',
     defaultRate: 1.0,
     defaultPitch: 1.0
   },
   speaker_02: {
     id: 'speaker_02',
-    name: 'Libby (Sprint Academic Coordinator)',
-    role: 'Official British Female Academic Officer (RP)',
+    name: 'Libby (Academic Coordinator)',
+    role: 'British Female Academic Officer (RP)',
     accent: 'British Received Pronunciation (en-GB)',
     gender: 'female',
     geminiVoiceName: 'Kore',
@@ -247,13 +247,13 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
   },
   speaker_barnaby: {
     id: 'speaker_barnaby',
-    name: 'Barnaby (Friendly & Playful Sprint AI Companion)',
-    role: 'Cute, friendly, warm, and gently playful Sprint AI Study Companion',
-    accent: 'British English (en-GB · Companion)',
+    name: 'Barnaby (British IELTS Mentor Companion)',
+    role: 'Warm, articulate, encouraging British English IELTS mentor and study companion',
+    accent: 'British English (en-GB · Mentor)',
     gender: 'male',
     geminiVoiceName: 'Puck',
-    defaultRate: 1.0,
-    defaultPitch: 1.04
+    defaultRate: 1.02,
+    defaultPitch: 1.03
   },
 
   // British Regional Speaking Examiners (Northern UK & Scottish Standard)
@@ -859,7 +859,7 @@ class AudioService {
     const spDef = IELTS_SPEAKERS[speakerId];
     const resolvedGender = genderOverride || spDef?.gender || getPreferredVoiceGender();
     const isBarnaby = isBarnabyCompanionVoice(speakerId) || meta?.deliveryProfile === 'barnaby_companion';
-    const defaultVersion = isBarnaby ? 'barnaby_v1' : 'v22';
+    const defaultVersion = isBarnaby ? 'barnaby_v2_mentor' : 'v24';
     const params = new URLSearchParams({
       text: clean,
       speakerId,

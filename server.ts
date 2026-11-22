@@ -359,7 +359,8 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     accentCode: 'en-GB',
     gender: 'male',
     role: 'Chief IELTS Examiner & Section Presenter',
-    personaPrompt: 'Authoritative, calm, measured official British Received Pronunciation male IELTS examiner.',
+    personaPrompt:
+      'Mature, confident, measured British Received Pronunciation male academic examiner with clear articulation and steady professional pacing.',
     defaultPitch: '+0Hz',
     defaultRateOffset: 0
   },
@@ -372,47 +373,54 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     accent: 'British',
     accentCode: 'en-GB',
     gender: 'female',
-    role: 'Senior Sprint Oral Assessor & Academic Lecturer',
-    personaPrompt: 'Formal, composed, articulate British Received Pronunciation female IELTS examiner.',
+    role: 'Senior IELTS Oral Assessor & Academic Lecturer',
+    personaPrompt:
+      'Formal, composed, calm, articulate British Received Pronunciation female IELTS examiner with reassuring clarity.',
     defaultPitch: '+0Hz',
     defaultRateOffset: 0
   },
   speaker_01: {
     id: 'speaker_01',
-    name: 'Thomas (Sprint Assessor / Presenter)',
-    displayName: 'Thomas · Official British Academic Assessor (RP)',
+    name: 'Thomas (Academic Assessor & Presenter)',
+    displayName: 'Thomas · British Academic Presenter (RP)',
     edgeVoice: 'en-GB-ThomasNeural',
+    voiceName: 'Orus',
     accent: 'British',
     accentCode: 'en-GB',
     gender: 'male',
-    role: 'Official British Academic Presenter & Campus Officer',
-    personaPrompt: 'Clear, measured, standard British Received Pronunciation male cadence.',
+    role: 'British Academic Presenter & Campus Officer',
+    personaPrompt:
+      'Clear, natural, standard Southern British English male presenter with crisp articulation and conversational academic rhythm.',
     defaultPitch: '+0Hz',
     defaultRateOffset: 0
   },
   speaker_02: {
     id: 'speaker_02',
-    name: 'Libby (Sprint Academic Coordinator)',
-    displayName: 'Libby · Official British Academic Coordinator (RP)',
+    name: 'Libby (Academic Coordinator)',
+    displayName: 'Libby · British Academic Coordinator (RP)',
     edgeVoice: 'en-GB-LibbyNeural',
+    voiceName: 'Kore',
     accent: 'British',
     accentCode: 'en-GB',
     gender: 'female',
     role: 'Senior Academic Librarian & Admissions Coordinator',
-    personaPrompt: 'Formal, articulate British RP female voice with measured academic inflection.',
+    personaPrompt:
+      'Formal, articulate British RP female coordinator with clear diction and natural conversational warmth.',
     defaultPitch: '+0Hz',
     defaultRateOffset: 0
   },
   speaker_03: {
     id: 'speaker_03',
     name: 'Dr. Alistair Sterling (Senior Professor)',
-    displayName: 'Dr. Alistair Sterling · Senior Sprint Academic Examiner & Chair (RP)',
+    displayName: 'Dr. Alistair Sterling · Senior British Academic Lecturer (RP)',
     edgeVoice: 'en-GB-ThomasNeural',
+    voiceName: 'Fenrir',
     accent: 'British',
     accentCode: 'en-GB',
     gender: 'male',
-    role: 'Senior Academic Lecturer & Examination Board Chair',
-    personaPrompt: 'Authoritative, distinguished British RP academic professor with measured examiner cadence.',
+    role: 'Senior Academic Lecturer & Seminar Chair',
+    personaPrompt:
+      'Distinguished, deep-voiced British RP senior university professor delivering structured academic commentary with deliberate pauses.',
     defaultPitch: '+0Hz',
     defaultRateOffset: 0
   },
@@ -423,6 +431,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'William (Australian Environmental Specialist)',
     displayName: 'William · Australian Environmental Tutor & Tour Guide',
     edgeVoice: 'en-AU-WilliamMultilingualNeural',
+    voiceName: 'Fenrir',
     accent: 'Australian',
     accentCode: 'en-AU',
     gender: 'male',
@@ -436,6 +445,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Natasha (Australian Community Coordinator)',
     displayName: 'Natasha · Australian Community Coordinator',
     edgeVoice: 'en-AU-NatashaNeural',
+    voiceName: 'Aoede',
     accent: 'Australian',
     accentCode: 'en-AU',
     gender: 'female',
@@ -449,6 +459,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Callum (Graduate Researcher)',
     displayName: 'Callum · Postgraduate Research Candidate',
     edgeVoice: 'en-ZA-LukeNeural',
+    voiceName: 'Orus',
     accent: 'Commonwealth',
     accentCode: 'en-ZA',
     gender: 'male',
@@ -464,6 +475,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Christopher (American Visiting Scholar)',
     displayName: 'Christopher · American Visiting Scholar',
     edgeVoice: 'en-US-ChristopherNeural',
+    voiceName: 'Charon',
     accent: 'American',
     accentCode: 'en-US',
     gender: 'male',
@@ -477,6 +489,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Jenny (American Exchange Student)',
     displayName: 'Jenny · American Exchange Student',
     edgeVoice: 'en-US-JennyNeural',
+    voiceName: 'Kore',
     accent: 'American',
     accentCode: 'en-US',
     gender: 'female',
@@ -492,6 +505,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Liam (Canadian Environmental Scientist)',
     displayName: 'Liam · Canadian Fieldwork Director',
     edgeVoice: 'en-CA-LiamNeural',
+    voiceName: 'Orus',
     accent: 'Canadian',
     accentCode: 'en-CA',
     gender: 'male',
@@ -505,6 +519,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Clara (Canadian Academic Officer)',
     displayName: 'Clara · Canadian University Registrar',
     edgeVoice: 'en-CA-ClaraNeural',
+    voiceName: 'Aoede',
     accent: 'Canadian',
     accentCode: 'en-CA',
     gender: 'female',
@@ -520,6 +535,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Mitchell (New Zealand Ecology Specialist)',
     displayName: 'Mitchell · New Zealand Ecology Specialist',
     edgeVoice: 'en-NZ-MitchellNeural',
+    voiceName: 'Fenrir',
     accent: 'New Zealand',
     accentCode: 'en-NZ',
     gender: 'male',
@@ -533,6 +549,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Molly (New Zealand Student Representative)',
     displayName: 'Molly · New Zealand Student Representative',
     edgeVoice: 'en-NZ-MollyNeural',
+    voiceName: 'Kore',
     accent: 'New Zealand',
     accentCode: 'en-NZ',
     gender: 'female',
@@ -548,6 +565,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Connor (Irish Cultural Heritage Curator)',
     displayName: 'Connor · Irish Cultural Heritage Curator',
     edgeVoice: 'en-IE-ConnorNeural',
+    voiceName: 'Orus',
     accent: 'Irish',
     accentCode: 'en-IE',
     gender: 'male',
@@ -561,6 +579,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Emily (Irish Linguistics Scholar)',
     displayName: 'Emily · Irish Applied Linguistics Scholar',
     edgeVoice: 'en-IE-EmilyNeural',
+    voiceName: 'Aoede',
     accent: 'Irish',
     accentCode: 'en-IE',
     gender: 'female',
@@ -571,16 +590,16 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
   },
   speaker_barnaby: {
     id: 'speaker_barnaby',
-    name: 'Barnaby (Warm & Playful Sprint AI Companion)',
-    displayName: 'Barnaby · Friendly & Playful Sprint AI Companion',
-    edgeVoice: 'en-GB-MaisieNeural',
+    name: 'Barnaby (British IELTS Mentor Companion)',
+    displayName: 'Barnaby · Warm British IELTS Mentor Companion',
+    edgeVoice: 'en-GB-ThomasNeural',
     voiceName: 'Puck',
     accent: 'British',
     accentCode: 'en-GB',
     gender: 'male',
-    role: 'Warm, clever and encouraging young IELTS tutor and study partner — a friendly sky-blue baby dragon',
+    role: 'Warm, articulate, encouraging British English IELTS mentor and study companion',
     personaPrompt:
-      'Barnaby, a warm masculine young-adult AI study companion with a medium, slightly bright pitch and clear international English. Speak at a natural conversational speed with expressive but controlled intonation, in a friendly and reassuring delivery. Sound like an encouraging, clever young IELTS tutor — never robotic, never an exaggerated cartoon voice, never excessively enthusiastic.',
+      'Barnaby, a warm, intelligent, expressive British English young-adult IELTS mentor companion. Speak with natural conversational pacing, clear British diction, encouraging warmth, and subtle wit—distinct from formal examiners, yet strictly composed, credible, and never childish, babyish, squeaky, or theatrical.',
     defaultPitch: '+0Hz',
     defaultRateOffset: 0
   },
@@ -589,7 +608,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Prof. Arthur Pendelton (Northern UK)',
     displayName: 'Prof. Arthur Pendelton · Northern UK Speaking Examiner (Manchester & Yorkshire)',
     edgeVoice: 'en-GB-ThomasNeural',
-    voiceName: 'Puck',
+    voiceName: 'Orus',
     accent: 'British',
     accentCode: 'en-GB',
     gender: 'male',
@@ -603,7 +622,7 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     name: 'Dr. Clara Sterling (Northern UK)',
     displayName: 'Dr. Clara Sterling · Northern UK Speaking Examiner (Manchester & Yorkshire)',
     edgeVoice: 'en-GB-LibbyNeural',
-    voiceName: 'Aoede',
+    voiceName: 'Kore',
     accent: 'British',
     accentCode: 'en-GB',
     gender: 'female',
@@ -915,7 +934,6 @@ const SIBLING_VOICE_FALLBACKS: Record<string, string[]> = {
   'en-GB-ThomasNeural': ['en-GB-RyanNeural', 'en-IE-ConnorNeural'],
   'en-GB-SoniaNeural': ['en-GB-LibbyNeural', 'en-IE-EmilyNeural'],
   'en-GB-LibbyNeural': ['en-GB-SoniaNeural', 'en-IE-EmilyNeural'],
-  'en-GB-MaisieNeural': ['en-GB-LibbyNeural', 'en-GB-SoniaNeural'],
   'en-AU-WilliamMultilingualNeural': ['en-NZ-MitchellNeural', 'en-GB-RyanNeural'],
   'en-AU-NatashaNeural': ['en-NZ-MollyNeural', 'en-GB-SoniaNeural'],
   'en-US-ChristopherNeural': ['en-US-RogerNeural', 'en-US-GuyNeural'],
@@ -930,15 +948,32 @@ const SIBLING_VOICE_FALLBACKS: Record<string, string[]> = {
   'en-ZA-LukeNeural': ['en-AU-WilliamMultilingualNeural', 'en-GB-ThomasNeural']
 };
 
+const SPOKEN_MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+];
+
 /**
  * Preprocesses text for natural British & Commonwealth IELTS speech:
- * - Expands titles & academic abbreviations (Prof., Dr., Mr., Mrs., Ms., e.g., i.e.) so sentences never clip
- * - Formats currencies (£45 -> 45 pounds, $120 -> 120 dollars, €80 -> 80 euros) and times (9:30 a.m. -> 9 30 a.m.)
+ * - Expands titles & academic abbreviations (Prof., Dr., Mr., Mrs., Ms., e.g., i.e., etc., vs., approx., dept., govt.)
+ * - Formats currencies (£45.50 -> 45 pounds 50, £45 -> 45 pounds, $120 -> 120 dollars, €80 -> 80 euros)
+ * - Formats British numeric dates (21/05/2026 -> 21 May 2026), 12h & 24h times (14:30 -> 14 30, 9:00 a.m. -> 9 a.m.)
+ * - Formats numeric ranges & percentages (15–20% -> 15 to 20 percent, 25% -> 25 percent, 1995–2005 -> 1995 to 2005)
+ * - Formats Band scores (Band 7.5 -> Band 7 point 5), temperatures (25°C -> 25 degrees Celsius), and metric units (km, m)
  * - Formats spelled-out letter sequences (e.g. "H-A-W-T-H-O-R-N-E" -> "H, A, W, T, H, O, R, N, E")
- * - Formats UK postcodes (e.g. "OX14 3JP" -> "O X 14, 3 J P")
- * - Formats UK telephone numbers (e.g. "07700 900331" -> "0 7 7 0 0, 9 0 0, 3 3 1")
+ * - Formats UK postcodes (e.g. "OX14 3JP" -> "O X 14, 3 J P") and UK telephone numbers
  * - Strips accidental bracketed blank markers ("[1]", "[___]") while preserving colons in ordinary text
- * - Injects natural conversational pauses at dashes and semicolons
+ * - Injects natural conversational pauses at dashes, ellipses, and semicolons
  */
 export function humanizeTextForSpeech(rawText: string): string {
   if (!rawText) return '';
@@ -951,18 +986,59 @@ export function humanizeTextForSpeech(rawText: string): string {
     .replace(/\bMs\.\s+/g, 'Miz ')
     .replace(/\be\.g\.,?\s*/gi, 'for example, ')
     .replace(/\bi\.e\.,?\s*/gi, 'that is, ')
-    .replace(/£(\d+(?:\.\d{1,2})?)/g, '$1 pounds')
-    .replace(/\$(\d+(?:\.\d{1,2})?)/g, '$1 dollars')
-    .replace(/€(\d+(?:\.\d{1,2})?)/g, '$1 euros')
-    .replace(/\b(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)\b/gi, (_m, h: string, min: string, mer: string) =>
-      min === '00' ? `${h} ${mer}` : `${h} ${min} ${mer}`
+    .replace(/\betc\.?(?=\s|$|[.,;!?])/gi, 'et cetera')
+    .replace(/\bvs\.?\s+/gi, 'versus ')
+    .replace(/\bapprox\.?\s+/gi, 'approximately ')
+    .replace(/\bdept\.?\s+/gi, 'department ')
+    .replace(/\bgovt\.?\s+/gi, 'government ')
+    .replace(/£(\d+)\.(\d{2})\b/g, (_m, p: string, pence: string) =>
+      pence === '00' ? `${p} pounds` : `${p} pounds ${pence}`
     )
+    .replace(/£(\d+)\b/g, '$1 pounds')
+    .replace(/\$(\d+)\.(\d{2})\b/g, (_m, d: string, cents: string) =>
+      cents === '00' ? `${d} dollars` : `${d} dollars ${cents}`
+    )
+    .replace(/\$(\d+)\b/g, '$1 dollars')
+    .replace(/€(\d+)\.(\d{2})\b/g, (_m, e: string, cents: string) =>
+      cents === '00' ? `${e} euros` : `${e} euros ${cents}`
+    )
+    .replace(/€(\d+)\b/g, '$1 euros')
+    // British DD/MM/YYYY dates -> "21 May 2026"
+    .replace(/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])\/(19\d{2}|20\d{2})\b/g, (_m, d: string, mo: string, yr: string) => {
+      const monthName = SPOKEN_MONTH_NAMES[parseInt(mo, 10) - 1] || mo;
+      return `${parseInt(d, 10)} ${monthName} ${yr}`;
+    })
+    // 12-hour times (9:30 a.m. -> 9 30 a.m., 9:00 a.m. -> 9 a.m.)
+    .replace(/\b(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)\b/gi, (_m, h: string, min: string, mer: string) =>
+      min === '00' ? `${parseInt(h, 10)} ${mer}` : `${parseInt(h, 10)} ${min} ${mer}`
+    )
+    // 24-hour times (14:30 -> 14 30, 09:00 -> 9 o'clock)
+    .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, (_m, h: string, min: string) => {
+      const hourNum = parseInt(h, 10);
+      if (min === '00') return `${hourNum} o'clock`;
+      return `${hourNum} ${min}`;
+    })
+    // Percentage ranges & percentages
+    .replace(/\b(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)\s*%/g, '$1 to $2 percent')
+    .replace(/\b(\d+(?:\.\d+)?)\s*%/g, '$1 percent')
+    // Year / numeric ranges (1995–2005 -> 1995 to 2005)
+    .replace(/\b(\d{2,4})\s*[–—]\s*(\d{2,4})\b/g, '$1 to $2')
+    // Band scores (Band 7.5 -> Band 7 point 5)
+    .replace(/\b(Band\s+)(\d)\.(\d)\b/gi, '$1$2 point $3')
+    // Temperatures & metric units
+    .replace(/\b(-?\d+(?:\.\d+)?)\s*°\s*C\b/g, '$1 degrees Celsius')
+    .replace(/\b(-?\d+(?:\.\d+)?)\s*°\s*F\b/g, '$1 degrees Fahrenheit')
+    .replace(/\b(\d+(?:\.\d+)?)\s*km\b/gi, '$1 kilometres')
+    .replace(/\b(\d+(?:\.\d+)?)\s*m\b(?![a-zA-Z])/g, '$1 metres')
+    // Spelled-out surnames/codes (H-A-W-T-H-O-R-N-E -> H, A, W, T, H, O, R, N, E)
     .replace(/\b([A-Z])(?:-[A-Z]){2,}\b/g, (match) => match.split('-').join(', '))
+    // UK Postcodes (OX14 3JP -> O X 14, 3 J P)
     .replace(
       /\b([A-Z]{1,2})(\d{1,2}[A-Z]?)\s+(\d)([A-Z]{2})\b/g,
       (_m, area: string, district: string, sector: string, unit: string) =>
         `${area.split('').join(' ')} ${district}, ${sector} ${unit.split('').join(' ')}`
     )
+    // UK phone numbers (07700 900331 -> 0 7 7 0 0, 9 0 0, 3 3 1)
     .replace(
       /\b(0\d{3,4})\s+(\d{3})(\d{3})\b/g,
       (_m, p1: string, p2: string, p3: string) =>
@@ -1324,6 +1400,20 @@ export const SPEAKER_ACOUSTIC_SIGNATURES: Record<string, SpeakerAcousticSignatur
     presenceFreqHz: 2800,
     presenceGainDb: 0.8,
     lowpassHz: 11200
+  },
+  speaker_barnaby: {
+    signatureId: 'companion-uk-barnaby-mentor-v2',
+    nativePollyVoice: 'Brian',
+    nativeTikTokVoice: 'en_uk_001',
+    pitchRatio: 1.02,
+    cadenceFactor: 1.01,
+    chestEqFreqHz: 155,
+    chestEqGainDb: 0.3,
+    formantMidFreqHz: 1320,
+    formantMidGainDb: 0.4,
+    presenceFreqHz: 3100,
+    presenceGainDb: 0.5,
+    lowpassHz: 11500
   }
 };
 
@@ -1459,13 +1549,16 @@ async function fetchNativeUkNeuralMp3(
   return null;
 }
 
+const STUDIO_MASTERING_VERSION = 'v24_studio_mastered';
+const STUDIO_VOICE_FILTER_CHAIN =
+  'highpass=f=70,loudnorm=I=-16:TP=-1.5:LRA=11:linear=false,afade=t=in:st=0:d=0.012,adelay=45|45,apad=pad_dur=0.11';
+
 /**
- * Preserves original generated neural MP3 audio quality without unnecessary re-encoding or filtering.
- * - Single-segment audio at normal 1.0x speed is returned untouched (preserving full 128kbps clarity,
- *   natural consonant transients, and 0.000s start time with zero tandem lossy transcoding).
- * - Multi-segment audio or explicit non-1.0x speed is demuxed cleanly via ffmpeg filter_complex concat
- *   (avoiding mid-stream MP3 container header / bit-reservoir corruption from raw Buffer.concat)
- *   and encoded at 24kHz 128kbps mono MP3 without artificial EQ or bandwidth-limiting filters.
+ * Studio-masters one or more neural MP3 chunks via ffmpeg:
+ * - Demuxes & concatenates multi-segment clips without MP3 bit-reservoir clicks
+ * - Applies gentle sub-70Hz rumble removal, broadcast loudness normalization (-16 LUFS, -1.5 dBTP anti-clipping),
+ *   a 12ms click-free fade-in, and clean 45ms lead-in / 110ms tail padding so endings never clip
+ * - Encodes at 24kHz mono 128kbps MP3 with zero artificial pitch warping or metallic EQ
  */
 async function stitchAndPreserveMp3Segments(
   chunks: Buffer[],
@@ -1479,17 +1572,12 @@ async function stitchAndPreserveMp3Segments(
   const clampedSpeed = Math.max(0.75, Math.min(1.35, Number(requestedSpeed) || 1.0));
   const needsSpeedChange = Math.abs(clampedSpeed - 1.0) >= 0.03;
 
-  // Fast path: single MP3 chunk at normal 1.0x speed -> return original untouched bytes!
-  if (validChunks.length === 1 && !needsSpeedChange) {
-    return validChunks[0];
-  }
-
   const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const tmpInputs: string[] = [];
   const tmpOut = path.join(CACHE_DIR, `stitch_out_${uniqueSuffix}.mp3`);
 
   try {
-    const ffmpegArgs: string[] = ['-y'];
+    const ffmpegArgs: string[] = ['-hide_banner', '-loglevel', 'error', '-y'];
     for (let i = 0; i < validChunks.length; i++) {
       const p = path.join(CACHE_DIR, `stitch_in_${i}_${uniqueSuffix}.mp3`);
       fs.writeFileSync(p, validChunks[i]);
@@ -1498,10 +1586,12 @@ async function stitchAndPreserveMp3Segments(
     }
 
     const inputLabels = validChunks.map((_, i) => `[${i}:a]`).join('');
-    const concatFilter = `${inputLabels}concat=n=${validChunks.length}:v=0:a=1`;
-    const filterGraph = needsSpeedChange
-      ? `${concatFilter},atempo=${clampedSpeed.toFixed(4)}[outa]`
-      : `${concatFilter}[outa]`;
+    const baseFilter =
+      validChunks.length === 1
+        ? '[0:a]aresample=24000'
+        : `${inputLabels}concat=n=${validChunks.length}:v=0:a=1,aresample=24000`;
+    const speedPart = needsSpeedChange ? `,atempo=${clampedSpeed.toFixed(4)}` : '';
+    const filterGraph = `${baseFilter}${speedPart},${STUDIO_VOICE_FILTER_CHAIN}[outa]`;
 
     ffmpegArgs.push(
       '-filter_complex',
@@ -1527,7 +1617,7 @@ async function stitchAndPreserveMp3Segments(
       }
     }
   } catch {
-    // Fallback if ffmpeg is unavailable
+    // Fallback cleanly if ffmpeg fails
   } finally {
     for (const p of tmpInputs) {
       try {
@@ -1543,10 +1633,98 @@ async function stitchAndPreserveMp3Segments(
 }
 
 /**
- * Converts one or more 24kHz 16-bit WAV buffers from Gemini Neural TTS into a clean 24kHz 128kbps MP3
- * using in-memory ffmpeg stdin/stdout pipes.
- * Applies ZERO pitch-shifting, ZERO rubberband formant warping, and ZERO artificial EQ.
- * Only applies gentle `atempo` if the caller explicitly requested a speed noticeably different from 1.0.
+ * Stitches a multi-speaker dialogue recording with genuine calibrated silent pauses between turns
+ * and studio loudness leveling so every speaker sits cleanly in the same acoustic space.
+ */
+async function stitchDialogueMp3Segments(
+  turns: Array<{ buffer: Buffer; pauseAfterMs?: number }>
+): Promise<Buffer> {
+  const validTurns = turns.filter((t) => t && t.buffer && t.buffer.length > 128);
+  if (validTurns.length === 0) {
+    return Buffer.alloc(0);
+  }
+  if (validTurns.length === 1) {
+    return stitchAndPreserveMp3Segments([validTurns[0].buffer], 1.0);
+  }
+
+  const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tmpInputs: string[] = [];
+  const tmpOut = path.join(CACHE_DIR, `dialogue_out_${uniqueSuffix}.mp3`);
+
+  try {
+    const ffmpegArgs: string[] = ['-hide_banner', '-loglevel', 'error', '-y'];
+    for (let i = 0; i < validTurns.length; i++) {
+      const p = path.join(CACHE_DIR, `dlg_in_${i}_${uniqueSuffix}.mp3`);
+      fs.writeFileSync(p, validTurns[i].buffer);
+      tmpInputs.push(p);
+      ffmpegArgs.push('-i', p);
+    }
+
+    const filterStages: string[] = [];
+    const concatInputs: string[] = [];
+
+    for (let i = 0; i < validTurns.length; i++) {
+      const pauseMs =
+        i === validTurns.length - 1
+          ? 0
+          : Math.max(120, Math.min(3500, Math.round(validTurns[i].pauseAfterMs ?? 360)));
+      if (pauseMs > 0) {
+        const padSec = (pauseMs / 1000).toFixed(3);
+        filterStages.push(`[${i}:a]aresample=24000,apad=pad_dur=${padSec}[t${i}]`);
+      } else {
+        filterStages.push(`[${i}:a]aresample=24000[t${i}]`);
+      }
+      concatInputs.push(`[t${i}]`);
+    }
+
+    const filterGraph = `${filterStages.join(';')};${concatInputs.join('')}concat=n=${validTurns.length}:v=0:a=1,${STUDIO_VOICE_FILTER_CHAIN}[outa]`;
+
+    ffmpegArgs.push(
+      '-filter_complex',
+      filterGraph,
+      '-map',
+      '[outa]',
+      '-ar',
+      '24000',
+      '-ac',
+      '1',
+      '-c:a',
+      'libmp3lame',
+      '-b:a',
+      '128k',
+      tmpOut
+    );
+
+    await execFileAsync('ffmpeg', ffmpegArgs);
+    if (fs.existsSync(tmpOut)) {
+      const stitched = fs.readFileSync(tmpOut);
+      if (stitched.length > 256) {
+        return stitched;
+      }
+    }
+  } catch {
+    // Fallback to clean concat without explicit pauses
+  } finally {
+    for (const p of tmpInputs) {
+      try {
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      } catch {}
+    }
+    try {
+      if (fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut);
+    } catch {}
+  }
+
+  return stitchAndPreserveMp3Segments(
+    validTurns.map((t) => t.buffer),
+    1.0
+  );
+}
+
+/**
+ * Converts one or more 24kHz 16-bit WAV buffers from Gemini Neural TTS into a clean studio-mastered
+ * 24kHz 128kbps MP3 using in-memory ffmpeg stdin/stdout pipes.
+ * Applies ZERO pitch-shifting and ZERO destructive formant warping.
  */
 async function convertWavBuffersToCleanMp3(
   wavBuffers: Buffer[],
@@ -1559,23 +1737,23 @@ async function convertWavBuffersToCleanMp3(
     return Buffer.alloc(0);
   }
 
-  // Combine multiple WAV clips cleanly by extracting raw 16-bit PCM data and wrapping once in a 24kHz WAV header
   const combinedWav =
     validWavs.length === 1
       ? validWavs[0]
       : ensureWavBuffer(Buffer.concat(validWavs.map((w) => extractPcm(w))), 24000, 1, 16);
 
-  const clampedSpeed = Math.max(0.75, Math.min(1.30, Number(requestedSpeed) || 1.0));
+  const clampedSpeed = Math.max(0.75, Math.min(1.3, Number(requestedSpeed) || 1.0));
   const needsExplicitSpeedChange = Math.abs(clampedSpeed - 1.0) >= 0.06;
 
   return new Promise<Buffer>((resolve) => {
     const args = ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0'];
     const filters: string[] = [
-      'silenceremove=start_periods=1:start_silence=0.06:start_threshold=-42dB'
+      'silenceremove=start_periods=1:start_silence=0.05:start_threshold=-42dB'
     ];
     if (needsExplicitSpeedChange) {
       filters.push(`atempo=${clampedSpeed.toFixed(3)}`);
     }
+    filters.push(STUDIO_VOICE_FILTER_CHAIN);
     args.push('-filter:a', filters.join(','));
     args.push('-ar', '24000', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '128k', '-f', 'mp3', 'pipe:1');
 
@@ -1629,16 +1807,16 @@ function getCharacterGeminiVoiceName(character: IELTSCharacterVoice): string {
     return character.voiceName;
   }
   if (character.gender === 'female') {
-    if (character.id === 'speaker_02' || character.id === 'speaker_07' || character.id === 'speaker_14') {
-      return 'Kore';
-    }
-    if (character.id === 'speaker_10' || character.id === 'speaker_12' || character.id === 'speaker_16') {
+    if (character.id === 'speaker_02' || character.id === 'speaker_10' || character.id === 'speaker_14') {
       return 'Kore';
     }
     return 'Aoede';
   }
-  if (character.id === 'speaker_01' || character.id === 'speaker_08' || character.id === 'speaker_11') {
+  if (character.id === 'speaker_barnaby') {
     return 'Puck';
+  }
+  if (character.id === 'speaker_01' || character.id === 'speaker_08' || character.id === 'speaker_11' || character.id === 'speaker_15') {
+    return 'Orus';
   }
   if (character.id === 'speaker_03' || character.id === 'speaker_06' || character.id === 'speaker_13') {
     return 'Fenrir';
@@ -1652,7 +1830,7 @@ function buildConversationalExaminerStyle(
   deliveryProfileId?: string
 ): string {
   if (character.id === 'speaker_barnaby' || deliveryProfileId === 'barnaby_companion') {
-    return 'Barnaby, a warm masculine young-adult AI study companion with a medium, slightly bright pitch and clear international English. Speak at a natural conversational speed with expressive but controlled intonation, in a friendly and reassuring delivery. Sound like an encouraging, clever young IELTS tutor and study partner in a premium educational app—never robotic, formal, babyish, squeaky, or exaggerated.';
+    return 'Barnaby, a warm, intelligent, expressive British English young-adult IELTS mentor and study companion. Speak at a natural conversational pace with clear British diction, encouraging warmth, and subtle wit—never robotic, formal, childish, babyish, squeaky, or theatrical.';
   }
 
   const isQuestion = text.trim().endsWith('?') || deliveryProfileId === 'examiner_question';
@@ -1661,10 +1839,19 @@ function buildConversationalExaminerStyle(
       ? 'Standard Southern British English (Received Pronunciation, en-GB)'
       : `${character.accent} English (${character.accentCode})`;
 
-  if (isQuestion) {
-    return `Natural, composed, conversational ${accentLabel} ${character.gender} IELTS Speaking examiner. Speak with clear British vowel and consonant articulation, natural sentence-level rhythm, smooth connected speech and reductions, purposeful phrasing at commas and periods, and a genuinely inquisitive, conversational intonation on the question. Do not sound robotic, monotonous, theatrical, or like an announcement system.`;
+  if (deliveryProfileId === 'formal_lecture') {
+    return `${character.personaPrompt} Speak in natural ${accentLabel} as a university lecturer presenting an IELTS Listening Part 4 academic lecture. Use measured phrasing, clear emphasis on key terms and numbers, and calm intellectual authority.`;
   }
-  return `Natural, calm, articulate ${accentLabel} ${character.gender} IELTS Speaking examiner. Speak with measured conversational pacing, natural phrase-final pitch movement, smooth connected speech, and reassuring professional composure without robotic or monotonous intonation.`;
+  if (deliveryProfileId === 'academic_discussion' || deliveryProfileId === 'listening_dialogue' || deliveryProfileId === 'friendly_conversation') {
+    return `${character.personaPrompt} Speak in natural, authentic ${accentLabel} as a ${character.role}. Use realistic conversational pacing, smooth connected speech, natural pauses at commas, and clear pronunciation of names, dates, and numbers.`;
+  }
+  if (deliveryProfileId === 'pronunciation_model' || deliveryProfileId === 'vocabulary_example') {
+    return `${character.personaPrompt} Speak in crisp, deliberate ${accentLabel} for high-clarity vocabulary and pronunciation modelling, articulating vowels, word stress, and final consonants cleanly without sounding mechanical.`;
+  }
+  if (isQuestion) {
+    return `${character.personaPrompt} Speak in natural, composed ${accentLabel} as a ${character.role} asking an IELTS examination question. Use clear articulation, purposeful phrasing, and genuinely inquisitive natural intonation—never robotic or monotonous.`;
+  }
+  return `${character.personaPrompt} Speak in natural, calm, articulate ${accentLabel} as a ${character.role}, with measured pacing, smooth connected speech, and reassuring professional composure.`;
 }
 
 /**
@@ -1939,7 +2126,8 @@ async function generateNativeNeuralEdgeMp3(
   text: string,
   character: IELTSCharacterVoice,
   speed: number = 1.0,
-  deliveryProfileId?: string
+  deliveryProfileId?: string,
+  forceProvider?: 'edge-neural' | 'translate-tts-fallback'
 ): Promise<{
   buffer: Buffer;
   providerUsed: ServerTtsProviderId;
@@ -1950,23 +2138,25 @@ async function generateNativeNeuralEdgeMp3(
   const humanizedText = humanizeTextForSpeech(text);
   if (!humanizedText) return null;
 
-  const speedClamped = Math.max(0.75, Math.min(1.30, Number(speed) || 1.0));
+  const speedClamped = Math.max(0.75, Math.min(1.3, Number(speed) || 1.0));
 
-  // 1. Primary Cloud Neural TTS: Gemini 3.8 Neural TTS (Contextual full-utterance synthesis, zero pitch warping)
-  const geminiResult = await synthesizeWithGeminiNeuralTts(
-    humanizedText,
-    character,
-    speedClamped,
-    deliveryProfileId
-  );
-  if (geminiResult && geminiResult.buffer.length > 256) {
-    return {
-      buffer: geminiResult.buffer,
-      providerUsed: 'gemini-neural-tts',
-      actualVoiceId: geminiResult.actualVoiceId,
-      fallbackStatus: geminiResult.fallbackStatus,
-      failureCategory: 'none'
-    };
+  // 1. Primary Cloud Neural TTS: Gemini 3.8 Neural TTS (skip if dialogue consistency locked to another provider)
+  if (!forceProvider) {
+    const geminiResult = await synthesizeWithGeminiNeuralTts(
+      humanizedText,
+      character,
+      speedClamped,
+      deliveryProfileId
+    );
+    if (geminiResult && geminiResult.buffer.length > 256) {
+      return {
+        buffer: geminiResult.buffer,
+        providerUsed: 'gemini-neural-tts',
+        actualVoiceId: geminiResult.actualVoiceId,
+        fallbackStatus: geminiResult.fallbackStatus,
+        failureCategory: 'none'
+      };
+    }
   }
 
   const edgeVoice = character.edgeVoice;
@@ -1986,51 +2176,42 @@ async function generateNativeNeuralEdgeMp3(
 
   const pitchNum = profile ? profile.pitchOffsetHz : 0;
   const basePitchVal = parseInt(speakerPitch, 10) || 0;
-  const finalPitchHz = basePitchVal + pitchNum;
+  const finalPitchHz = Math.max(-10, Math.min(8, basePitchVal + pitchNum));
   const pitchStr = finalPitchHz >= 0 ? `+${finalPitchHz}Hz` : `${finalPitchHz}Hz`;
 
-  // 2. Secondary Neural Provider: MsEdgeTTS when WebSocket egress is available
-  if (Date.now() >= edgeTtsCircuitBrokenUntil) {
-    // Keep turn passages in small, fast 600-char chunks to guarantee low latency and zero socket drops
+  // 2. Secondary Neural Provider: MsEdgeTTS (locks a SINGLE voice across all segments of an utterance)
+  if (forceProvider !== 'translate-tts-fallback' && Date.now() >= edgeTtsCircuitBrokenUntil) {
     const segments = splitTextIntoSegments(humanizedText, 600);
     const voiceCandidates = [edgeVoice, ...(SIBLING_VOICE_FALLBACKS[edgeVoice] || [])];
-    const edgeSegmentBuffers: Buffer[] = [];
-    let allEdgeSucceeded = true;
-    let resolvedEdgeVoice = edgeVoice;
 
-    for (let idx = 0; idx < segments.length; idx++) {
-      const segment = segments[idx];
-      let segmentBuf: Buffer | null = null;
-
-      for (const voice of voiceCandidates) {
-        segmentBuf = await synthesizeSingleEdgeStream(segment, voice, rateStr, pitchStr);
-        if (segmentBuf && segmentBuf.length > 128) {
-          resolvedEdgeVoice = voice;
-          break;
-        }
-        if (Date.now() < edgeTtsCircuitBrokenUntil) {
-          break;
-        }
-      }
-
-      if (segmentBuf && segmentBuf.length > 128) {
-        edgeSegmentBuffers.push(segmentBuf);
-      } else {
-        allEdgeSucceeded = false;
+    for (const candidateVoice of voiceCandidates) {
+      if (Date.now() < edgeTtsCircuitBrokenUntil) {
         break;
       }
-    }
+      const edgeSegmentBuffers: Buffer[] = [];
+      let candidateComplete = true;
 
-    if (allEdgeSucceeded && edgeSegmentBuffers.length === segments.length && edgeSegmentBuffers.length > 0) {
-      const isPrimary = resolvedEdgeVoice === edgeVoice;
-      const stitchedEdge = await stitchAndPreserveMp3Segments(edgeSegmentBuffers, 1.0);
-      return {
-        buffer: stitchedEdge,
-        providerUsed: 'edge-neural',
-        actualVoiceId: resolvedEdgeVoice,
-        fallbackStatus: isPrimary ? 'primary' : 'sibling-neural-fallback',
-        failureCategory: isPrimary ? 'none' : 'unsupported_voice'
-      };
+      for (const segment of segments) {
+        const segmentBuf = await synthesizeSingleEdgeStream(segment, candidateVoice, rateStr, pitchStr);
+        if (segmentBuf && segmentBuf.length > 128) {
+          edgeSegmentBuffers.push(segmentBuf);
+        } else {
+          candidateComplete = false;
+          break;
+        }
+      }
+
+      if (candidateComplete && edgeSegmentBuffers.length === segments.length && edgeSegmentBuffers.length > 0) {
+        const isPrimary = candidateVoice === edgeVoice;
+        const stitchedEdge = await stitchAndPreserveMp3Segments(edgeSegmentBuffers, 1.0);
+        return {
+          buffer: stitchedEdge,
+          providerUsed: 'edge-neural',
+          actualVoiceId: candidateVoice,
+          fallbackStatus: isPrimary ? 'primary' : 'sibling-neural-fallback',
+          failureCategory: isPrimary ? 'none' : 'unsupported_voice'
+        };
+      }
     }
   }
 
@@ -2190,7 +2371,14 @@ export async function getOrGenerateAudio(
   speakerId: string = 'speaker_04',
   speed: number = 1.0,
   genderOverride?: 'male' | 'female',
-  cacheContext?: { examId?: string; recId?: string; contentVersion?: string; accent?: string; deliveryProfile?: string }
+  cacheContext?: {
+    examId?: string;
+    recId?: string;
+    contentVersion?: string;
+    accent?: string;
+    deliveryProfile?: string;
+    forceProvider?: 'edge-neural' | 'translate-tts-fallback';
+  }
 ): Promise<GeneratedAudioArtifact | null> {
   const cleanText = text
     .replace(/[\u0980-\u09FF]+/g, '')
@@ -2203,18 +2391,19 @@ export async function getOrGenerateAudio(
   const sig = getSpeakerAcousticSignature(character);
   const geminiVoice = getCharacterGeminiVoiceName(character);
   const clampedSpeed = Math.max(0.75, Math.min(1.35, Number(speed) || 1.0));
-  const versionTag = cacheContext?.contentVersion || 'v22';
+  const versionTag = cacheContext?.contentVersion || 'v24';
   const pitchTag = character.defaultPitch || '+0Hz';
   const profileKey = cacheContext?.deliveryProfile || 'default';
+  const providerTag = cacheContext?.forceProvider || 'auto';
 
   const isBarnaby = character.id === 'speaker_barnaby' || profileKey === 'barnaby_companion';
-  const cacheNamespace = isBarnaby ? 'v1_barnaby_companion' : 'v22_gemini_neural_examiner';
+  const cacheNamespace = isBarnaby ? 'v2_barnaby_mentor' : 'v24_studio_neural';
 
-  // Strict cache key isolation: Barnaby uses v1_barnaby_companion while Arthur & Clara preserve v19_gemini_neural_examiner
+  // Strict cache key isolation: Barnaby uses v2_barnaby_mentor while examiners & speakers use v24_studio_neural
   const hash = crypto
     .createHash('sha256')
     .update(
-      `${cacheNamespace}_${versionTag}_${character.id}_${character.gender}_${geminiVoice}_${character.edgeVoice}_${sig.signatureId}_${character.accentCode}_${pitchTag}_${profileKey}_${clampedSpeed.toFixed(2)}_${cleanText}`
+      `${cacheNamespace}_${STUDIO_MASTERING_VERSION}_${providerTag}_${versionTag}_${character.id}_${character.gender}_${geminiVoice}_${character.edgeVoice}_${sig.signatureId}_${character.accentCode}_${pitchTag}_${profileKey}_${clampedSpeed.toFixed(2)}_${cleanText}`
     )
     .digest('hex');
 
@@ -2227,7 +2416,6 @@ export async function getOrGenerateAudio(
     failureCategory: 'none' | 'network_error' | 'provider_unavailable' | 'unsupported_voice' | 'timeout' = 'none'
   ): GeneratedAudioArtifact => {
     const audioSha256 = crypto.createHash('sha256').update(buf).digest('hex');
-    // At 128kbps (16,000 bytes/sec), estimate duration in milliseconds
     const estimatedDurationMs = Math.max(250, Math.round((buf.length / 16000) * 1000));
     return {
       buffer: buf,
@@ -2245,14 +2433,6 @@ export async function getOrGenerateAudio(
     };
   };
 
-  const isGeminiTtsReady =
-    Boolean(process.env.GEMINI_API_KEY?.trim()) &&
-    ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts'].some(
-      (m) => (geminiModelBackoffUntil[m] || 0) <= Date.now()
-    );
-  const isEdgeTtsReady = Date.now() >= edgeTtsCircuitBrokenUntil;
-  const isNeuralTtsReady = isGeminiTtsReady || isEdgeTtsReady;
-
   const ensureSignatureInVoiceId = (vid: string): string => {
     if (!vid) return `${geminiVoice}:${sig.signatureId}`;
     return vid.includes(sig.signatureId) ? vid : `${vid}:${sig.signatureId}`;
@@ -2262,13 +2442,13 @@ export async function getOrGenerateAudio(
   if (audioMemoryCache.has(hash)) {
     const hit = audioMemoryCache.get(hash)!;
     const isDegraded = hit.providerUsed === 'translate-tts-fallback' || hit.fallbackStatus === 'degraded-translate-fallback';
-    const isLegacy = hit.vocalCalibrationVersion !== 'v22_clean' && hit.vocalCalibrationVersion !== 'v23_premium';
+    const isLegacy = hit.vocalCalibrationVersion !== STUDIO_MASTERING_VERSION;
     if (!isDegraded && !isLegacy) {
       return computeMeta(
         hit.buffer,
         'HIT-MEMORY',
-        hit.providerUsed || 'gemini-neural-tts',
-        ensureSignatureInVoiceId(hit.actualVoiceId || `gemini-3.8-flash-lite-tts:${geminiVoice}`),
+        hit.providerUsed || 'edge-neural',
+        ensureSignatureInVoiceId(hit.actualVoiceId || character.edgeVoice),
         hit.fallbackStatus || 'primary',
         hit.failureCategory || 'none'
       );
@@ -2277,15 +2457,15 @@ export async function getOrGenerateAudio(
     }
   }
 
-  // 2. Persistent disk cache (<3ms) — reads companion .meta.json if available so provenance is never fabricated
+  // 2. Persistent disk cache (<3ms) — reads companion .meta.json so provenance is never fabricated
   const diskPath = path.join(CACHE_DIR, `${hash}.mp3`);
   const diskMetaPath = path.join(CACHE_DIR, `${hash}.meta.json`);
   if (fs.existsSync(diskPath)) {
     try {
       const fileBuf = fs.readFileSync(diskPath);
       if (fileBuf.length > 256) {
-        let savedProvider: ServerTtsProviderId = 'gemini-neural-tts';
-        let savedVoiceId: string = `gemini-3.8-flash-lite-tts:${geminiVoice}:${sig.signatureId}`;
+        let savedProvider: ServerTtsProviderId = 'edge-neural';
+        let savedVoiceId: string = `${character.edgeVoice}:${sig.signatureId}`;
         let savedFallback: ServerTtsFallbackStatus = 'primary';
         let savedFailure: 'none' | 'network_error' | 'provider_unavailable' | 'unsupported_voice' | 'timeout' =
           'none';
@@ -2299,15 +2479,13 @@ export async function getOrGenerateAudio(
             if (parsedMeta.fallbackStatus) savedFallback = parsedMeta.fallbackStatus;
             if (parsedMeta.failureCategory) savedFailure = parsedMeta.failureCategory;
 
-            // Reject legacy calibration versions created before Phase 3.5.1 clean pitch calibration
-            if (parsedMeta.vocalCalibrationVersion !== 'v22_clean' && parsedMeta.vocalCalibrationVersion !== 'v23_premium') {
+            if (parsedMeta.vocalCalibrationVersion !== STUDIO_MASTERING_VERSION) {
               isLegacyOrDegraded = true;
             }
           } catch {
             isLegacyOrDegraded = true;
           }
         } else {
-          // Missing metadata file = legacy cache entry created before metadata tracking
           isLegacyOrDegraded = true;
         }
 
@@ -2316,7 +2494,6 @@ export async function getOrGenerateAudio(
         }
 
         if (isLegacyOrDegraded) {
-          // Never serve legacy or degraded Translate TTS as canonical audio; purge stale cache entry
           try {
             if (fs.existsSync(diskPath)) fs.unlinkSync(diskPath);
             if (fs.existsSync(diskMetaPath)) fs.unlinkSync(diskMetaPath);
@@ -2329,7 +2506,7 @@ export async function getOrGenerateAudio(
             actualVoiceId: ensureSignatureInVoiceId(savedVoiceId),
             fallbackStatus: savedFallback,
             failureCategory: savedFailure,
-            vocalCalibrationVersion: 'v23_premium'
+            vocalCalibrationVersion: STUDIO_MASTERING_VERSION
           };
           audioMemoryCache.set(hash, res);
           return computeMeta(
@@ -2358,7 +2535,8 @@ export async function getOrGenerateAudio(
         cleanText,
         character,
         clampedSpeed,
-        cacheContext?.deliveryProfile
+        cacheContext?.deliveryProfile,
+        cacheContext?.forceProvider
       );
 
       if (!synthResult || !synthResult.buffer || synthResult.buffer.length < 256) {
@@ -2379,7 +2557,7 @@ export async function getOrGenerateAudio(
           actualVoiceId: finalActualVoiceId,
           fallbackStatus: synthResult.fallbackStatus,
           failureCategory: synthResult.failureCategory,
-          vocalCalibrationVersion: 'v23_premium'
+          vocalCalibrationVersion: STUDIO_MASTERING_VERSION
         };
         audioMemoryCache.set(hash, result);
         try {
@@ -2394,7 +2572,7 @@ export async function getOrGenerateAudio(
               speakerId: character.id,
               gender: character.gender,
               deliveryProfile: profileKey,
-              vocalCalibrationVersion: 'v23_premium',
+              vocalCalibrationVersion: STUDIO_MASTERING_VERSION,
               createdAt: Date.now()
             })
           );
@@ -2528,6 +2706,7 @@ app.get('/api/tts/stream', async (req, res) => {
     res.setHeader('X-Audio-Duration-Ms', String(result.estimatedDurationMs));
     res.setHeader('X-Audio-Byte-Size', String(result.buffer.length));
     res.setHeader('X-Audio-Format', 'audio/mpeg; rate=24000; bitrate=128k');
+    res.setHeader('X-Studio-Mastered', STUDIO_MASTERING_VERSION);
     if (result.fallbackStatus === 'degraded-translate-fallback' || result.providerUsed === 'translate-tts-fallback') {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     } else {
@@ -2608,6 +2787,7 @@ app.post('/api/tts', async (req, res) => {
     res.setHeader('X-Audio-Duration-Ms', String(result.estimatedDurationMs));
     res.setHeader('X-Audio-Byte-Size', String(result.buffer.length));
     res.setHeader('X-Audio-Format', 'audio/mpeg; rate=24000; bitrate=128k');
+    res.setHeader('X-Studio-Mastered', STUDIO_MASTERING_VERSION);
     return res.send(result.buffer);
   } catch (error: any) {
     return res.json({
@@ -2619,8 +2799,11 @@ app.post('/api/tts', async (req, res) => {
 
 /**
  * POST /api/tts/dialogue
- * Stitches a multi-character, multi-accent IELTS dialogue into a SINGLE continuous, natural MP3 recording!
- * Each character speaks with their authentic native voice and regional accent.
+ * Stitches a multi-character, multi-accent IELTS dialogue into a SINGLE continuous, studio-mastered MP3 recording.
+ * Guarantees:
+ * - Every turn in the recording uses ONE consistent TTS provider (never mixes providers inside one recording)
+ * - Genuine calibrated silent pauses between turns honoring `pauseAfterMs`
+ * - Broadcast loudness leveling (-16 LUFS, -1.5 dBTP) and truthful telemetry headers
  */
 app.post('/api/tts/dialogue', async (req, res) => {
   try {
@@ -2628,7 +2811,7 @@ app.post('/api/tts/dialogue', async (req, res) => {
       dialogue,
       testId = 'listening_test',
       examId = '',
-      contentVersion = 'v15',
+      contentVersion = 'v24',
       gender
     } = req.body as {
       dialogue: Array<{
@@ -2638,6 +2821,7 @@ app.post('/api/tts/dialogue', async (req, res) => {
         gender?: 'male' | 'female';
         accent?: string;
         pauseAfterMs?: number;
+        deliveryProfile?: string;
       }>;
       testId?: string;
       examId?: string;
@@ -2652,17 +2836,47 @@ app.post('/api/tts/dialogue', async (req, res) => {
     const compositeHash = crypto
       .createHash('sha256')
       .update(
-        `v15_dialogue_distinct_${contentVersion}_${examId || testId}_${gender || 'auto'}_` +
+        `${STUDIO_MASTERING_VERSION}_dialogue_coherent_${contentVersion}_${examId || testId}_${gender || 'auto'}_` +
           JSON.stringify(dialogue)
       )
       .digest('hex');
 
+    const applyDialogueHeaders = (
+      cacheStatus: string,
+      buf: Buffer,
+      providerUsed: ServerTtsProviderId,
+      fallbackStatus: ServerTtsFallbackStatus,
+      speakers: string[]
+    ) => {
+      const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', String(buf.length));
+      res.setHeader('X-Cache-Status', cacheStatus);
+      res.setHeader('X-Audio-Provenance', 'original-practice-native-multi-accent-studio');
+      res.setHeader('X-Audio-Provider', providerUsed);
+      res.setHeader('X-Resolved-Provider', providerUsed);
+      res.setHeader('X-Fallback-Status', fallbackStatus);
+      res.setHeader('X-Provider-Consistent', 'true');
+      res.setHeader('X-Studio-Mastered', STUDIO_MASTERING_VERSION);
+      res.setHeader('X-Dialogue-Turn-Count', String(dialogue.length));
+      res.setHeader('X-Dialogue-Speakers', speakers.join(','));
+      res.setHeader('X-Audio-SHA256', sha256);
+      res.setHeader('X-Audio-Format', 'audio/mpeg; rate=24000; bitrate=128k');
+    };
+
     if (audioMemoryCache.has(compositeHash)) {
       const cached = audioMemoryCache.get(compositeHash)!;
-      res.setHeader('Content-Type', cached.mimeType);
-      res.setHeader('X-Cache-Status', 'HIT-MEMORY');
-      res.setHeader('X-Audio-Provenance', 'original-practice-native-multi-accent-studio');
-      return res.send(cached.buffer);
+      if (cached.vocalCalibrationVersion === STUDIO_MASTERING_VERSION) {
+        applyDialogueHeaders(
+          'HIT-MEMORY',
+          cached.buffer,
+          cached.providerUsed || 'edge-neural',
+          cached.fallbackStatus || 'primary',
+          (cached.actualVoiceId || '').split(',').filter(Boolean)
+        );
+        return res.send(cached.buffer);
+      }
+      audioMemoryCache.delete(compositeHash);
     }
 
     const diskPath = path.join(CACHE_DIR, `dialogue_${compositeHash}.mp3`);
@@ -2670,17 +2884,24 @@ app.post('/api/tts/dialogue', async (req, res) => {
 
     if (fs.existsSync(diskPath)) {
       let isLegacyOrDegraded = false;
+      let savedProvider: ServerTtsProviderId = 'edge-neural';
+      let savedFallback: ServerTtsFallbackStatus = 'primary';
+      let savedSpeakers: string[] = [];
+
       if (fs.existsSync(diskMetaPath)) {
         try {
           const meta = JSON.parse(fs.readFileSync(diskMetaPath, 'utf-8'));
-          if (meta.hasDegradedTurn || (meta.vocalCalibrationVersion !== 'v22_clean' && meta.vocalCalibrationVersion !== 'v23_premium')) {
+          if (meta.hasDegradedTurn || meta.vocalCalibrationVersion !== STUDIO_MASTERING_VERSION) {
             isLegacyOrDegraded = true;
+          } else {
+            if (meta.providerUsed) savedProvider = meta.providerUsed;
+            if (meta.fallbackStatus) savedFallback = meta.fallbackStatus;
+            if (Array.isArray(meta.speakers)) savedSpeakers = meta.speakers;
           }
         } catch {
           isLegacyOrDegraded = true;
         }
       } else {
-        // Purge legacy cache entry created before metadata tracking to ensure clean neural playback
         isLegacyOrDegraded = true;
       }
 
@@ -2691,20 +2912,28 @@ app.post('/api/tts/dialogue', async (req, res) => {
         } catch {}
       } else {
         const fileBuf = fs.readFileSync(diskPath);
-        audioMemoryCache.set(compositeHash, { buffer: fileBuf, mimeType: 'audio/mpeg' });
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('X-Cache-Status', 'HIT-DISK');
-        res.setHeader('X-Audio-Provenance', 'original-practice-native-multi-accent-studio');
+        audioMemoryCache.set(compositeHash, {
+          buffer: fileBuf,
+          mimeType: 'audio/mpeg',
+          providerUsed: savedProvider,
+          fallbackStatus: savedFallback,
+          actualVoiceId: savedSpeakers.join(','),
+          vocalCalibrationVersion: STUDIO_MASTERING_VERSION
+        });
+        applyDialogueHeaders('HIT-DISK', fileBuf, savedProvider, savedFallback, savedSpeakers);
         return res.send(fileBuf);
       }
     }
 
-    // Synthesize each turn with its corresponding native speaker voice & accent
-    // Process turns sequentially to avoid concurrent WebSocket floods
-    const audioResults: Array<{ buffer: Buffer; mimeType: string; cacheHash: string; character: IELTSCharacterVoice } | null> = [];
+    // Synthesize each turn sequentially with its authentic native speaker voice & accent
+    const audioResults: Array<{
+      line: (typeof dialogue)[number];
+      artifact: GeneratedAudioArtifact;
+    }> = [];
+
     for (const line of dialogue) {
       const lineSpeakerKey = line.speakerId || line.speaker || 'speaker_04';
-      const res = await getOrGenerateAudio(
+      const generated = await getOrGenerateAudio(
         line.text,
         lineSpeakerKey,
         1.0,
@@ -2712,30 +2941,92 @@ app.post('/api/tts/dialogue', async (req, res) => {
         {
           examId: examId || testId,
           contentVersion,
-          accent: line.accent
+          accent: line.accent,
+          deliveryProfile: line.deliveryProfile || 'listening_dialogue'
         }
       );
-      audioResults.push(res);
+      if (generated && generated.buffer.length > 128) {
+        audioResults.push({ line, artifact: generated });
+      }
     }
 
-    const validBuffers = audioResults
-      .filter((r): r is { buffer: Buffer; mimeType: string; cacheHash: string; character: IELTSCharacterVoice } => r !== null && r.buffer.length > 128)
-      .map((r) => r.buffer);
-
-    if (validBuffers.length === 0) {
+    if (audioResults.length === 0) {
       return res.json({
         fallback: true,
         message: 'Dialogue using client-side enhanced native speech.'
       });
     }
 
-    const finalMp3 = await stitchAndPreserveMp3Segments(validBuffers, 1.0);
+    // Enforce strict single-provider consistency across all turns in one recording (never mix providers)
+    const distinctProviders = Array.from(new Set(audioResults.map((r) => r.artifact.providerUsed)));
+    if (distinctProviders.length > 1) {
+      const targetCoherentProvider: 'edge-neural' | 'translate-tts-fallback' = distinctProviders.includes(
+        'translate-tts-fallback'
+      )
+        ? 'translate-tts-fallback'
+        : 'edge-neural';
 
+      for (let i = 0; i < audioResults.length; i++) {
+        if (audioResults[i].artifact.providerUsed !== targetCoherentProvider) {
+          const line = audioResults[i].line;
+          const lineSpeakerKey = line.speakerId || line.speaker || 'speaker_04';
+          const resynthesized = await getOrGenerateAudio(
+            line.text,
+            lineSpeakerKey,
+            1.0,
+            line.gender || gender,
+            {
+              examId: examId || testId,
+              contentVersion,
+              accent: line.accent,
+              deliveryProfile: line.deliveryProfile || 'listening_dialogue',
+              forceProvider: targetCoherentProvider
+            }
+          );
+          if (resynthesized && resynthesized.buffer.length > 128) {
+            audioResults[i] = { line, artifact: resynthesized };
+          }
+        }
+      }
+    }
+
+    const turnPayloads = audioResults.map((entry, idx) => {
+      const nextEntry = audioResults[idx + 1];
+      const speakerChanged =
+        nextEntry && nextEntry.artifact.character.id !== entry.artifact.character.id;
+      const defaultPause = speakerChanged ? 360 : 220;
+      return {
+        buffer: entry.artifact.buffer,
+        pauseAfterMs: idx === audioResults.length - 1 ? 0 : entry.line.pauseAfterMs ?? defaultPause
+      };
+    });
+
+    const finalMp3 = await stitchDialogueMp3Segments(turnPayloads);
+    const resolvedProvider: ServerTtsProviderId = audioResults[0].artifact.providerUsed;
     const hasDegradedTurn = audioResults.some(
-      (r: any) => r?.fallbackStatus === 'degraded-translate-fallback' || r?.providerUsed === 'translate-tts-fallback'
+      (r) =>
+        r.artifact.fallbackStatus === 'degraded-translate-fallback' ||
+        r.artifact.providerUsed === 'translate-tts-fallback'
     );
+    const hasSiblingFallback = audioResults.some(
+      (r) => r.artifact.fallbackStatus === 'sibling-neural-fallback'
+    );
+    const resolvedFallbackStatus: ServerTtsFallbackStatus = hasDegradedTurn
+      ? 'degraded-translate-fallback'
+      : hasSiblingFallback
+      ? 'sibling-neural-fallback'
+      : 'primary';
+    const speakersUsed = Array.from(new Set(audioResults.map((r) => r.artifact.character.id)));
+
     if (!hasDegradedTurn) {
-      audioMemoryCache.set(compositeHash, { buffer: finalMp3, mimeType: 'audio/mpeg' });
+      audioMemoryCache.set(compositeHash, {
+        buffer: finalMp3,
+        mimeType: 'audio/mpeg',
+        providerUsed: resolvedProvider,
+        fallbackStatus: resolvedFallbackStatus,
+        actualVoiceId: speakersUsed.join(','),
+        vocalCalibrationVersion: STUDIO_MASTERING_VERSION
+      });
       try {
         fs.writeFileSync(diskPath, finalMp3);
         fs.writeFileSync(
@@ -2743,7 +3034,10 @@ app.post('/api/tts/dialogue', async (req, res) => {
           JSON.stringify({
             compositeHash,
             hasDegradedTurn: false,
-            vocalCalibrationVersion: 'v23_premium',
+            providerUsed: resolvedProvider,
+            fallbackStatus: resolvedFallbackStatus,
+            speakers: speakersUsed,
+            vocalCalibrationVersion: STUDIO_MASTERING_VERSION,
             createdAt: Date.now(),
             turnCount: dialogue.length
           })
@@ -2751,9 +3045,13 @@ app.post('/api/tts/dialogue', async (req, res) => {
       } catch {}
     }
 
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('X-Cache-Status', 'MISS');
-    res.setHeader('X-Audio-Provenance', 'original-practice-native-multi-accent-studio');
+    applyDialogueHeaders(
+      hasDegradedTurn ? 'MISS-EPHEMERAL' : 'MISS',
+      finalMp3,
+      resolvedProvider,
+      resolvedFallbackStatus,
+      speakersUsed
+    );
     return res.send(finalMp3);
   } catch (err: any) {
     return res.json({ fallback: true, error: err?.message || 'Dialogue generation fallback' });

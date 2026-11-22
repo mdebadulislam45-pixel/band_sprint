@@ -135,7 +135,9 @@ export interface BarnabyDragonAvatarProps {
   /** Pauses autonomous CSS animations (used during active exams / live demonstrations). */
   paused?: boolean;
   /** Visual size preset or full-container studio mode. */
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'studio';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'dashboard' | 'studio';
+  /** Bust portrait (default for compact circular badges) vs unclipped full-body dragon silhouette. */
+  variant?: 'bust' | 'full';
   /** Circular framing (floating launcher) vs rounded portrait/open stage. */
   framed?: 'circle' | 'rounded' | 'none';
   /** Optional subtle graduation cap toggle (defaults true to match canonical artwork). */
@@ -250,6 +252,7 @@ const SIZE_CLASSES: Record<NonNullable<BarnabyDragonAvatarProps['size']>, string
   md: 'w-12 h-12',
   lg: 'w-16 h-16',
   xl: 'w-24 h-24',
+  dashboard: 'w-[144px] h-[156px] sm:w-[178px] sm:h-[194px] md:w-[192px] md:h-[210px]',
   studio: 'w-full h-full max-w-[270px] sm:max-w-[310px]'
 };
 
@@ -279,12 +282,14 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
   mouthOpenness = 0,
   paused = false,
   size = 'md',
+  variant = 'bust',
   framed = 'none',
   showCap = true,
   className = '',
   testId = 'barnaby-dragon-avatar'
 }) => {
   const uid = useId().replace(/:/g, '');
+  const isFullBody = variant === 'full';
   // Effective state promotes to speaking ONLY when actual audio is speaking;
   // conversely, mouth speech animation NEVER runs unless `isSpeaking === true`.
   const resolvedState: BarnabyAvatarState = isSpeaking ? 'speaking' : state === 'speaking' ? 'idle' : state;
@@ -349,6 +354,7 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
     <div
       data-testid={testId}
       data-character="barnaby-dragon"
+      data-variant={variant}
       data-avatar-state={resolvedState}
       data-is-speaking={isActivelySpeakingMouth ? 'true' : 'false'}
       data-paused={paused ? 'true' : 'false'}
@@ -359,7 +365,7 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
       } ${className}`}
     >
       <svg
-        viewBox="0 0 200 200"
+        viewBox={isFullBody ? '-18 6 244 256' : '0 0 200 200'}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className="w-full h-full overflow-visible"
@@ -431,7 +437,16 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
         </defs>
 
         {/* Subtle Ambient 2.5D Depth Aura */}
-        <circle cx="100" cy="108" r="82" fill={meta.auraColor} />
+        {isFullBody ? (
+          <g>
+            <ellipse cx="102" cy="134" rx="96" ry="112" fill={meta.auraColor} opacity="0.68" />
+            {/* Soft Ground Contact Shadow Under Dragon Feet */}
+            <ellipse cx="100" cy="245" rx="64" ry="9" fill="#0F4C45" opacity="0.16" />
+            <ellipse cx="100" cy="245" rx="44" ry="5" fill="#0F4C45" opacity="0.12" />
+          </g>
+        ) : (
+          <circle cx="100" cy="108" r="82" fill={meta.auraColor} />
+        )}
 
         {/* Listening Acoustic Waves */}
         {isListening && (
@@ -444,28 +459,53 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
         )}
 
         {/* ================= WHOLE DRAGON BODY RIG (Breathing / Nodding) ================= */}
-        <g className={bodyAnimClass}>
+        <g className={bodyAnimClass} data-anatomy={isFullBody ? 'full-body' : 'bust'}>
           {/* 1. Expressive Curled Dragon Tail with Golden Spikes (Right Side) */}
-          <g className={tailAnimClass}>
-            <path
-              d="M 140 164 C 166 164 182 146 177 120 C 175 112 167 110 164 118 C 162 132 152 142 138 148 Z"
-              fill={`url(#${uid}-blueDeep)`}
-              stroke="#1E5D8A"
-              strokeWidth="2"
-              strokeLinejoin="round"
-            />
-            {/* Cream underside ridge of tail */}
-            <path
-              d="M 146 158 C 164 156 174 143 172 126"
-              stroke="#FBF3E0"
-              strokeWidth="3.2"
-              strokeLinecap="round"
-              opacity="0.7"
-            />
-            {/* Three Golden Tail Spikes */}
-            <path d="M 164 149 L 176 144 L 171 155 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
-            <path d="M 169 135 L 182 131 L 175 142 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
-            <path d="M 168 122 L 179 116 L 174 127 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+          <g className={tailAnimClass} data-anatomy-part="tail">
+            {isFullBody ? (
+              <>
+                <path
+                  d="M 134 188 C 170 194 198 176 196 144 C 195 130 184 127 179 136 C 175 150 162 166 138 172 Z"
+                  fill={`url(#${uid}-blueDeep)`}
+                  stroke="#1E5D8A"
+                  strokeWidth="2.1"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M 142 183 C 169 185 188 170 189 147"
+                  stroke="#FBF3E0"
+                  strokeWidth="3.6"
+                  strokeLinecap="round"
+                  opacity="0.76"
+                />
+                <path d="M 162 175 L 176 172 L 169 183 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+                <path d="M 178 164 L 194 162 L 185 173 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+                <path d="M 186 150 L 201 146 L 193 158 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+                <path d="M 184 136 L 196 129 L 191 142 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+              </>
+            ) : (
+              <>
+                <path
+                  d="M 140 164 C 166 164 182 146 177 120 C 175 112 167 110 164 118 C 162 132 152 142 138 148 Z"
+                  fill={`url(#${uid}-blueDeep)`}
+                  stroke="#1E5D8A"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+                {/* Cream underside ridge of tail */}
+                <path
+                  d="M 146 158 C 164 156 174 143 172 126"
+                  stroke="#FBF3E0"
+                  strokeWidth="3.2"
+                  strokeLinecap="round"
+                  opacity="0.7"
+                />
+                {/* Three Golden Tail Spikes */}
+                <path d="M 164 149 L 176 144 L 171 155 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+                <path d="M 169 135 L 182 131 L 175 142 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+                <path d="M 168 122 L 179 116 L 174 127 Z" fill={`url(#${uid}-gold)`} stroke="#9A5E08" strokeWidth="1.2" />
+              </>
+            )}
           </g>
 
           {/* 2. Articulated Dragon Wings with Golden Filigree Membranes */}
@@ -528,8 +568,74 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
             />
           </g>
 
+          {/* 2.5 Full-Body Legs & Feet (Rendered behind hoodie hem when variant="full") */}
+          {isFullBody && (
+            <g data-anatomy-part="legs-and-feet">
+              {/* Left Sky-Blue Dragon Leg & 3-Toed Clawed Foot */}
+              <g>
+                <path
+                  d="M 59 190 C 55 204 58 218 62 229 L 85 229 C 87 216 88 202 88 190 Z"
+                  fill={`url(#${uid}-blueDeep)`}
+                  stroke="#1B5580"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+                {/* Soft inner thigh 2.5D highlight */}
+                <path
+                  d="M 65 196 C 64 206 65 215 67 223"
+                  stroke="#9ED9FB"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  opacity="0.45"
+                />
+                {/* Plump Left Dragon Foot */}
+                <path
+                  d="M 50 237 C 49 226 60 221 74 223 C 86 225 91 232 88 240 C 85 245 53 245 50 237 Z"
+                  fill={`url(#${uid}-blueHead)`}
+                  stroke="#1B5580"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+                {/* Foot Cream Toe Claws (3 toes) */}
+                <path d="M 53 238 C 47 239 47 244 54 243 Z" fill={`url(#${uid}-cream)`} stroke="#9A6E38" strokeWidth="1.2" />
+                <path d="M 63 241 C 59 245 64 247 68 242 Z" fill={`url(#${uid}-cream)`} stroke="#9A6E38" strokeWidth="1.2" />
+                <path d="M 75 240 C 74 245 80 246 82 240 Z" fill={`url(#${uid}-cream)`} stroke="#9A6E38" strokeWidth="1.2" />
+              </g>
+
+              {/* Right Sky-Blue Dragon Leg & 3-Toed Clawed Foot */}
+              <g>
+                <path
+                  d="M 112 190 C 112 202 113 216 115 229 L 138 229 C 142 218 145 204 141 190 Z"
+                  fill={`url(#${uid}-blueDeep)`}
+                  stroke="#1B5580"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M 135 196 C 136 206 135 215 133 223"
+                  stroke="#9ED9FB"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  opacity="0.45"
+                />
+                {/* Plump Right Dragon Foot */}
+                <path
+                  d="M 112 240 C 109 232 114 225 126 223 C 140 221 151 226 150 237 C 147 245 115 245 112 240 Z"
+                  fill={`url(#${uid}-blueHead)`}
+                  stroke="#1B5580"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+                {/* Foot Cream Toe Claws (3 toes) */}
+                <path d="M 118 240 C 120 246 126 245 125 240 Z" fill={`url(#${uid}-cream)`} stroke="#9A6E38" strokeWidth="1.2" />
+                <path d="M 132 242 C 136 247 141 245 137 241 Z" fill={`url(#${uid}-cream)`} stroke="#9A6E38" strokeWidth="1.2" />
+                <path d="M 146 243 C 153 244 153 239 147 238 Z" fill={`url(#${uid}-cream)`} stroke="#9A6E38" strokeWidth="1.2" />
+              </g>
+            </g>
+          )}
+
           {/* 3. Navy-Blue BandSprint Hoodie & Cream Dragon Belly */}
-          <g>
+          <g data-anatomy-part="hoodie-and-belly">
             {/* Hoodie Collar / Back Hood Fold */}
             <path
               d="M 56 134 C 66 122 134 122 144 134 C 150 142 144 152 136 150 L 64 150 C 56 152 50 142 56 134 Z"
@@ -540,7 +646,11 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
 
             {/* Main Hoodie Torso */}
             <path
-              d="M 46 194 C 48 152 64 136 100 136 C 136 136 152 152 154 194 Z"
+              d={
+                isFullBody
+                  ? 'M 47 195 C 47 152 64 136 100 136 C 136 136 153 152 153 195 C 142 201 58 201 47 195 Z'
+                  : 'M 46 194 C 48 152 64 136 100 136 C 136 136 152 152 154 194 Z'
+              }
               fill={`url(#${uid}-hoodie)`}
               stroke="#0F1C38"
               strokeWidth="2.2"
@@ -548,24 +658,37 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
 
             {/* Open Zip Hoodie Center Showing Fluffy Cream Belly */}
             <path
-              d="M 78 140 C 86 137 114 137 122 140 C 127 156 128 176 124 194 L 76 194 C 72 176 73 156 78 140 Z"
+              d={
+                isFullBody
+                  ? 'M 78 140 C 86 137 114 137 122 140 C 128 156 128 178 124 198 Q 100 204 76 198 C 72 178 72 156 78 140 Z'
+                  : 'M 78 140 C 86 137 114 137 122 140 C 127 156 128 176 124 194 L 76 194 C 72 176 73 156 78 140 Z'
+              }
               fill={`url(#${uid}-cream)`}
             />
             {/* Subtle Belly Plastron Lines for 2.5D Depth */}
             <path
-              d="M 85 162 Q 100 166 115 162 M 84 176 Q 100 180 116 176"
+              d="M 85 162 Q 100 166 115 162 M 84 176 Q 100 180 116 176 M 85 189 Q 100 193 115 189"
               stroke="#DFCDA8"
               strokeWidth="1.4"
               strokeLinecap="round"
-              opacity="0.7"
+              opacity="0.72"
             />
 
-            {/* Hoodie Zip Borders & Drawstrings */}
+            {/* Hoodie Zip Borders, Ribbed Hem & Drawstrings */}
             <path
-              d="M 78 140 C 74 156 73 175 76 194 M 122 140 C 126 156 127 175 124 194"
+              d="M 78 140 C 74 156 73 175 76 197 M 122 140 C 126 156 127 175 124 197"
               stroke="#0E1B36"
               strokeWidth="2.2"
             />
+            {isFullBody && (
+              <path
+                d="M 48 190 Q 62 194 75 193 M 125 193 Q 138 194 152 190"
+                stroke="#3B5B9A"
+                strokeWidth="2"
+                strokeLinecap="round"
+                opacity="0.75"
+              />
+            )}
             <path
               d="M 73 144 L 71 168 M 127 144 L 129 168"
               stroke="#3B5B9A"
@@ -575,12 +698,68 @@ export const BarnabyDragonAvatar: React.FC<BarnabyDragonAvatarProps> = ({
             <circle cx="71" cy="170" r="2.2" fill="#F5B731" />
             <circle cx="129" cy="170" r="2.2" fill="#F5B731" />
 
-            {/* Subtle Gold BandSprint Crest Pin on Left Chest */}
-            <circle cx="136" cy="166" r="5.5" fill="#0F4C45" stroke="#F4A62A" strokeWidth="1.4" />
-            <path d="M 134 166 L 135.8 167.8 L 139 164.2" stroke="#FDE68A" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            {/* Gold & Pine BandSprint Crest Pin + Wordmark on Hoodie Chest */}
+            <circle cx="136" cy="158" r="4.8" fill="#0F4C45" stroke="#F4A62A" strokeWidth="1.3" />
+            <path d="M 134 158 L 135.5 159.6 L 138.4 156.4" stroke="#FDE68A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            {isFullBody && (
+              <text
+                x="136"
+                y="169"
+                textAnchor="middle"
+                fill="#FDE68A"
+                fontSize="4.1"
+                fontWeight="700"
+                fontFamily="sans-serif"
+                letterSpacing="0.15"
+              >
+                BandSprint
+              </text>
+            )}
 
-            {/* Cute Blue Dragon Paw Accent */}
-            {isGreeting && (
+            {/* Full-Body Hoodie Sleeves & Cute Dragon Paws */}
+            {isFullBody && (
+              <g data-anatomy-part="arms-and-paws">
+                {/* Left Sleeve + Paw (Raised warmly when greeting/teaching, relaxed at side otherwise) */}
+                {isGreeting || isTeaching ? (
+                  <g transform="translate(-4, -4) rotate(-24 52 152)">
+                    <path
+                      d="M 55 144 C 41 146 31 153 28 162 C 33 168 44 168 53 161 Z"
+                      fill={`url(#${uid}-hoodie)`}
+                      stroke="#0F1C38"
+                      strokeWidth="1.8"
+                    />
+                    <ellipse cx="26" cy="161" rx="7.5" ry="6.5" fill={`url(#${uid}-blueHead)`} stroke="#1D5C8A" strokeWidth="1.5" />
+                    <circle cx="20" cy="157" r="2.2" fill="#7ACAF7" stroke="#1D5C8A" strokeWidth="1" />
+                    <circle cx="24" cy="154" r="2.4" fill="#7ACAF7" stroke="#1D5C8A" strokeWidth="1" />
+                    <circle cx="29" cy="155" r="2.2" fill="#7ACAF7" stroke="#1D5C8A" strokeWidth="1" />
+                  </g>
+                ) : (
+                  <g>
+                    <path
+                      d="M 54 146 C 41 154 38 168 41 178 C 47 181 55 178 57 167 Z"
+                      fill={`url(#${uid}-hoodie)`}
+                      stroke="#0F1C38"
+                      strokeWidth="1.8"
+                    />
+                    <ellipse cx="44" cy="181" rx="7" ry="6" fill={`url(#${uid}-blueHead)`} stroke="#1D5C8A" strokeWidth="1.5" />
+                  </g>
+                )}
+
+                {/* Right Sleeve + Paw */}
+                <g>
+                  <path
+                    d="M 146 146 C 159 154 162 168 159 178 C 153 181 145 178 143 167 Z"
+                    fill={`url(#${uid}-hoodie)`}
+                    stroke="#0F1C38"
+                    strokeWidth="1.8"
+                  />
+                  <ellipse cx="156" cy="181" rx="7" ry="6" fill={`url(#${uid}-blueHead)`} stroke="#1D5C8A" strokeWidth="1.5" />
+                </g>
+              </g>
+            )}
+
+            {/* Cute Blue Dragon Paw Accent in Bust Greeting Mode */}
+            {!isFullBody && isGreeting && (
               <g transform="translate(36, 126) rotate(-18)">
                 <ellipse cx="10" cy="12" rx="9" ry="8" fill={`url(#${uid}-blueHead)`} stroke="#1D5C8A" strokeWidth="1.6" />
                 <circle cx="4" cy="6" r="2.8" fill="#7ACAF7" stroke="#1D5C8A" strokeWidth="1.2" />

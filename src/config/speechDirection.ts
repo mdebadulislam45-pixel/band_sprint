@@ -209,21 +209,36 @@ export const SPEECH_DELIVERY_PROFILES: Record<SpeechDeliveryProfileId, SpeechDel
   },
   barnaby_companion: {
     id: 'barnaby_companion',
-    name: 'Barnaby AI Companion',
-    description: 'Cute, friendly, warm, bright, and gently playful British study companion cadence',
+    name: 'Barnaby IELTS Mentor',
+    description: 'Warm, expressive British English mentor cadence—encouraging and approachable without sounding childish',
     rateOffsetPercent: 2,
     pitchOffsetHz: 2,
-    commaPauseMs: 120,
-    sentencePauseMs: 320,
+    commaPauseMs: 125,
+    sentencePauseMs: 340,
     punctuationEnhancement: true
   }
 };
 
+const CLIENT_SPOKEN_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+];
+
 /**
  * Normalizes raw text for natural, human-like British/Commonwealth IELTS speech synthesis:
- * - Expands titles & academic abbreviations (Prof., Dr., e.g., i.e.) so TTS does not clip mid-sentence
- * - Formats currencies (£45 -> 45 pounds), times (9:30 a.m. -> 9 30 a.m.), and spelled-out letters
- * - Formats UK postcodes and phone numbers with natural spoken grouping
+ * - Expands titles & academic abbreviations (Prof., Dr., e.g., i.e., etc., vs., approx., dept., govt.)
+ * - Formats currencies (£45.50 -> 45 pounds 50), British dates, 12h & 24h times, percentages, Band scores, and units
+ * - Formats spelled-out letters, UK postcodes, and phone numbers with natural spoken grouping
  * - Preserves colons in ordinary text (never deletes text before a colon unless it is an explicit speaker tag)
  */
 export function normalizeTextForNaturalSpeech(
@@ -240,12 +255,42 @@ export function normalizeTextForNaturalSpeech(
     .replace(/\bMs\.\s+/g, 'Miz ')
     .replace(/\be\.g\.,?\s*/gi, 'for example, ')
     .replace(/\bi\.e\.,?\s*/gi, 'that is, ')
-    .replace(/£(\d+(?:\.\d{1,2})?)/g, '$1 pounds')
-    .replace(/\$(\d+(?:\.\d{1,2})?)/g, '$1 dollars')
-    .replace(/€(\d+(?:\.\d{1,2})?)/g, '$1 euros')
-    .replace(/\b(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)\b/gi, (_m, h: string, min: string, mer: string) =>
-      min === '00' ? `${h} ${mer}` : `${h} ${min} ${mer}`
+    .replace(/\betc\.?(?=\s|$|[.,;!?])/gi, 'et cetera')
+    .replace(/\bvs\.?\s+/gi, 'versus ')
+    .replace(/\bapprox\.?\s+/gi, 'approximately ')
+    .replace(/\bdept\.?\s+/gi, 'department ')
+    .replace(/\bgovt\.?\s+/gi, 'government ')
+    .replace(/£(\d+)\.(\d{2})\b/g, (_m, p: string, pence: string) =>
+      pence === '00' ? `${p} pounds` : `${p} pounds ${pence}`
     )
+    .replace(/£(\d+)\b/g, '$1 pounds')
+    .replace(/\$(\d+)\.(\d{2})\b/g, (_m, d: string, cents: string) =>
+      cents === '00' ? `${d} dollars` : `${d} dollars ${cents}`
+    )
+    .replace(/\$(\d+)\b/g, '$1 dollars')
+    .replace(/€(\d+)\.(\d{2})\b/g, (_m, e: string, cents: string) =>
+      cents === '00' ? `${e} euros` : `${e} euros ${cents}`
+    )
+    .replace(/€(\d+)\b/g, '$1 euros')
+    .replace(/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])\/(19\d{2}|20\d{2})\b/g, (_m, d: string, mo: string, yr: string) => {
+      const monthName = CLIENT_SPOKEN_MONTHS[parseInt(mo, 10) - 1] || mo;
+      return `${parseInt(d, 10)} ${monthName} ${yr}`;
+    })
+    .replace(/\b(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)\b/gi, (_m, h: string, min: string, mer: string) =>
+      min === '00' ? `${parseInt(h, 10)} ${mer}` : `${parseInt(h, 10)} ${min} ${mer}`
+    )
+    .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, (_m, h: string, min: string) => {
+      const hourNum = parseInt(h, 10);
+      return min === '00' ? `${hourNum} o'clock` : `${hourNum} ${min}`;
+    })
+    .replace(/\b(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)\s*%/g, '$1 to $2 percent')
+    .replace(/\b(\d+(?:\.\d+)?)\s*%/g, '$1 percent')
+    .replace(/\b(\d{2,4})\s*[–—]\s*(\d{2,4})\b/g, '$1 to $2')
+    .replace(/\b(Band\s+)(\d)\.(\d)\b/gi, '$1$2 point $3')
+    .replace(/\b(-?\d+(?:\.\d+)?)\s*°\s*C\b/g, '$1 degrees Celsius')
+    .replace(/\b(-?\d+(?:\.\d+)?)\s*°\s*F\b/g, '$1 degrees Fahrenheit')
+    .replace(/\b(\d+(?:\.\d+)?)\s*km\b/gi, '$1 kilometres')
+    .replace(/\b(\d+(?:\.\d+)?)\s*m\b(?![a-zA-Z])/g, '$1 metres')
     .replace(/\b([A-Z])(?:-[A-Z]){2,}\b/g, (match) => match.split('-').join(', '))
     .replace(
       /\b([A-Z]{1,2})(\d{1,2}[A-Z]?)\s+(\d)([A-Z]{2})\b/g,

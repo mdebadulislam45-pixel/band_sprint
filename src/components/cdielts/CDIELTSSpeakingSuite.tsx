@@ -317,6 +317,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evaluation, setEvaluation] = useState<CDIELTSSpeakingEvaluation | null>(null);
   const [showTRFModal, setShowTRFModal] = useState<boolean>(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState<boolean>(false);
 
   // Part 1 index
   const [part1QuestionIdx, setPart1QuestionIdx] = useState<number>(0);
@@ -352,9 +353,15 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
     'Do you think technology will solve our environmental crises or create new ones?'
   ];
 
-  // Clean up TTS and recording on unmount
+  // Hide floating Barnaby companion during timed Speaking exam & clean up audio on unmount
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('barnaby-float-hide'));
+    }
     return () => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('barnaby-float-show'));
+      }
       stopSpeech();
       if (recognitionRef.current) {
         try {
@@ -637,31 +644,61 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
   const theme = getCDIELTSThemeClasses(colorScheme);
   const fontSizeClass = getCDIELTSFontSizeClass(zoomLevel);
+  const isStandard = colorScheme === 'standard';
+  const stageSteps: Array<{ id: SpeakingStage; label: string }> = [
+    { id: 'part1', label: 'Part 1 · Intro' },
+    { id: 'part2_prep', label: 'Part 2 · Prep (1m)' },
+    { id: 'part2_speak', label: 'Part 2 · Long Turn (2m)' },
+    { id: 'part3', label: 'Part 3 · Discussion' },
+    { id: 'result', label: 'Assessment' }
+  ];
+  const activeStepIdx = stageSteps.findIndex((s) => s.id === stage);
+
+  const handleRequestExit = () => {
+    const hasProgress =
+      stage !== 'intro' &&
+      stage !== 'result' &&
+      (spokenTranscript.trim().length > 0 || candidateNotes.trim().length > 0 || isRecording);
+    if (hasProgress) {
+      setShowExitConfirmModal(true);
+      return;
+    }
+    stopSpeech();
+    handleStopRecording();
+    onExit();
+  };
+
+  const handleConfirmExit = () => {
+    setShowExitConfirmModal(false);
+    stopSpeech();
+    handleStopRecording();
+    onExit();
+  };
 
   return (
-    <div className={`min-h-screen ${theme.bg} ${fontSizeClass} flex flex-col font-sans select-none`}>
+    <div className={`min-h-screen ${theme.bg} ${fontSizeClass} flex flex-col font-sans select-none transition-colors duration-150`}>
       {/* CD-IELTS Top Exam Bar */}
-      <header className={`px-4 sm:px-6 py-3 border-b ${theme.border} ${theme.headerBg} flex items-center justify-between font-mono`}>
-        <div className="flex items-center gap-3">
-          <span className="px-2.5 py-1 bg-sky-600 text-white font-bold text-xs uppercase tracking-wider">
+      <header className={`px-4 sm:px-6 py-3 border-b ${theme.border} ${theme.headerBg} flex flex-wrap items-center justify-between gap-2 font-mono`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="px-2.5 py-1 bg-[#F4A62A] text-[#0E1F1E] rounded-md font-bold text-xs uppercase tracking-wider shrink-0">
             CD-IELTS SPEAKING
           </span>
-          <span className="hidden sm:inline text-xs text-slate-300">
-            Candidate: <strong>{candidateName}</strong> · Standard Practice Interview
+          <span className="hidden sm:inline text-xs opacity-90 truncate">
+            Candidate: <strong>{candidateName}</strong> · Timed Oral Simulation
           </span>
         </div>
 
         {/* Accessibility & Options */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Zoom Selector */}
-          <div className="flex items-center gap-1 border border-gray-600 px-2 py-1 text-xs text-gray-200">
-            <span>Zoom:</span>
+          <div className="hidden sm:flex items-center gap-1 border border-current/25 rounded-md px-2 py-1 text-xs">
+            <span className="opacity-75">Size:</span>
             {(['100%', '125%', '150%'] as CDIELTSZoomLevel[]).map((lvl) => (
               <button
                 key={lvl}
                 onClick={() => setZoomLevel(lvl)}
-                className={`px-1.5 py-0.5 font-bold cursor-pointer transition ${
-                  zoomLevel === lvl ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'
+                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition ${
+                  zoomLevel === lvl ? 'bg-[#F4A62A] text-[#0E1F1E]' : 'hover:bg-white/10 opacity-80'
                 }`}
               >
                 {lvl}
@@ -671,23 +708,20 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
           {/* Color Scheme Selector */}
           <select
+            aria-label="Speaking Display Contrast"
             value={colorScheme}
             onChange={(e) => setColorScheme(e.target.value as CDIELTSColorScheme)}
-            className="border border-gray-600 bg-gray-900 text-gray-200 text-xs px-2 py-1 outline-none cursor-pointer"
+            className="border border-current/25 bg-black/25 text-current rounded-md text-xs px-2 py-1 outline-none cursor-pointer font-bold"
           >
-            <option value="standard">Standard Contrast</option>
-            <option value="black-on-yellow">Black on Yellow</option>
-            <option value="yellow-on-black">Yellow on Black</option>
-            <option value="white-on-black">White on Black</option>
+            <option value="standard" className="bg-white text-[#0E1F1E]">Standard (BandSprint)</option>
+            <option value="black-on-yellow" className="bg-[#FFF100] text-black">Black on Yellow</option>
+            <option value="yellow-on-black" className="bg-black text-[#FFF100]">Yellow on Black</option>
+            <option value="white-on-black" className="bg-black text-white">White on Black</option>
           </select>
 
           <button
-            onClick={() => {
-              stopSpeech();
-              handleStopRecording();
-              onExit();
-            }}
-            className="px-3 py-1.5 border border-gray-600 hover:bg-gray-800 text-xs font-semibold text-gray-200 flex items-center gap-1 cursor-pointer"
+            onClick={handleRequestExit}
+            className="px-3 py-1.5 border border-current/25 rounded-md hover:bg-white/10 text-xs font-semibold flex items-center gap-1 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
             <span>Exit Room</span>
@@ -695,33 +729,79 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
         </div>
       </header>
 
+      {/* Persistent Speaking Interview Stage Stepper */}
+      {stage !== 'intro' && (
+        <nav
+          aria-label="Speaking interview progress"
+          className={`w-full px-4 sm:px-6 py-2.5 border-b ${theme.border} ${isStandard ? 'bg-[#E9EFEC]' : theme.cardBg} font-mono text-xs overflow-x-auto`}
+        >
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 min-w-max">
+            {stageSteps.map((step, idx) => {
+              const isCurrent = step.id === stage;
+              const isDone = activeStepIdx > idx;
+              return (
+                <div
+                  key={step.id}
+                  className={`flex items-center gap-2 px-3 py-1 rounded-md border text-[11px] font-bold ${
+                    isCurrent
+                      ? isStandard
+                        ? 'bg-[#0F4C45] text-white border-[#0B3833]'
+                        : theme.contrastBadge
+                      : isDone
+                      ? isStandard
+                        ? 'bg-white text-[#0F4C45] border-[#0F4C45]/40'
+                        : `${theme.cardBg} ${theme.border} opacity-90`
+                      : `${theme.cardBg} ${theme.border} opacity-60`
+                  }`}
+                >
+                  <span className="tabular-nums">{idx + 1}.</span>
+                  <span>{step.label}</span>
+                  {isDone && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                </div>
+              );
+            })}
+          </div>
+        </nav>
+      )}
+
       {/* Main Suite Container */}
       <div className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center">
         {/* ================= INTRO STAGE ================= */}
         {stage === 'intro' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 text-center animate-fade-in max-w-4xl mx-auto w-full">
-            <div className="w-16 h-16 rounded-2xl bg-blue-600/20 text-blue-400 mx-auto flex items-center justify-center">
-              <Mic className="w-8 h-8" />
+          <div className={`p-6 sm:p-8 rounded-2xl border ${theme.border} ${theme.cardBg} space-y-6 text-center animate-fade-in max-w-4xl mx-auto w-full shadow-sm`}>
+            <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${isStandard ? 'bg-[#0F4C45]/10 text-[#0F4C45]' : theme.contrastBadge}`}>
+              <Mic className="w-7 h-7" />
             </div>
 
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-300 text-xs font-mono">
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                <span>IELTS Oral Simulation</span>
+              <div className={`text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 ${isStandard ? 'text-[#0F4C45]' : theme.subtext}`}>
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>BandSprint Speaking Practice Simulation</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+              <h1 className={`text-2xl sm:text-3xl font-bold tracking-tight font-display ${theme.text}`}>
                 1:1 IELTS Speaking Interview
               </h1>
-              <p className="text-xs sm:text-sm text-slate-400 max-w-lg mx-auto">
-                Featuring interactive AI Speaking Examiners with authentic British RP pronunciation, lip-synced articulation, and real-time Practice Band 9 assessment.
+              <p className={`text-xs sm:text-sm max-w-xl mx-auto ${theme.subtext}`}>
+                Practice all three speaking parts with a formal British examiner voice (distinct from Barnaby&apos;s mentor voice), structured timers, and rubric-aligned feedback.
+              </p>
+            </div>
+
+            {/* Honest Evidence & Pronunciation Notice */}
+            <div className={`p-3.5 rounded-xl border text-left max-w-2xl mx-auto text-xs leading-relaxed ${isStandard ? 'bg-amber-50 border-amber-300 text-amber-950' : `${theme.cardBg} ${theme.border}`}`}>
+              <div className="font-mono font-bold uppercase text-[11px] flex items-center gap-1.5 mb-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>Honest Evidence &amp; Pronunciation Policy</span>
+              </div>
+              <p>
+                Transcript-only submissions evaluate Fluency &amp; Coherence, Lexical Resource, and Grammatical Range &amp; Accuracy. Acoustic Pronunciation requires verified audio evidence and remains marked <strong>Unassessed</strong> whenever only text transcripts are available.
               </p>
             </div>
 
             {/* Examiner Persona Selector */}
-            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 text-left space-y-3 max-w-xl mx-auto">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <UserCheck className="w-3.5 h-3.5 text-blue-400" />
-                <span>Select Your IELTS Speaking Examiner:</span>
+            <div className={`p-5 rounded-xl border ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg} text-left space-y-3 max-w-2xl mx-auto`}>
+              <span className={`text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 ${isStandard ? 'text-[#0F4C45]' : theme.subtext}`}>
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Select Your British Speaking Examiner</span>
               </span>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -741,19 +821,25 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                       onError: () => setIsExaminerSpeaking(false)
                     });
                   }}
-                  className={`p-3.5 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                  className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 cursor-pointer ${
                     examinerGender === 'female'
-                      ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      ? isStandard
+                        ? 'bg-[#0F4C45] border-[#0B3833] text-white shadow-sm'
+                        : theme.contrastBadge
+                      : `${theme.cardBg} ${theme.border} ${theme.text} hover:border-[#0F4C45]`
                   }`}
                 >
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-rose-500 via-pink-400 to-indigo-500 flex items-center justify-center text-xl shadow-inner border border-white/20 shrink-0">
-                    👩‍🏫
+                  <div className={`w-11 h-11 rounded-lg flex items-center justify-center font-mono font-black text-sm shrink-0 border ${
+                    examinerGender === 'female'
+                      ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A]'
+                      : 'bg-[#0F4C45]/10 text-[#0F4C45] border-[#0F4C45]/25'
+                  }`}>
+                    CS
                   </div>
                   <div>
-                    <div className="font-bold text-xs text-white">Dr. Clara Sterling</div>
-                    <div className="text-[10px] text-blue-300 font-mono">Senior Female Assessor Persona</div>
-                    <div className="text-[10px] text-slate-400">Standard Southern British (RP)</div>
+                    <div className="font-bold text-xs">Dr. Clara Sterling</div>
+                    <div className="text-[11px] font-mono opacity-80">Composed British Examiner (RP)</div>
+                    <div className="text-[10px] opacity-75">Formal female assessor voice</div>
                   </div>
                 </button>
 
@@ -773,36 +859,42 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                       onError: () => setIsExaminerSpeaking(false)
                     });
                   }}
-                  className={`p-3.5 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                  className={`p-3.5 rounded-xl border-2 text-left transition flex items-center gap-3 cursor-pointer ${
                     examinerGender === 'male'
-                      ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      ? isStandard
+                        ? 'bg-[#0F4C45] border-[#0B3833] text-white shadow-sm'
+                        : theme.contrastBadge
+                      : `${theme.cardBg} ${theme.border} ${theme.text} hover:border-[#0F4C45]`
                   }`}
                 >
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-sky-600 via-indigo-500 to-amber-500 flex items-center justify-center text-xl shadow-inner border border-white/20 shrink-0">
-                    👨‍🏫
+                  <div className={`w-11 h-11 rounded-lg flex items-center justify-center font-mono font-black text-sm shrink-0 border ${
+                    examinerGender === 'male'
+                      ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A]'
+                      : 'bg-[#0F4C45]/10 text-[#0F4C45] border-[#0F4C45]/25'
+                  }`}>
+                    AP
                   </div>
                   <div>
-                    <div className="font-bold text-xs text-white">Prof. Arthur Pendelton</div>
-                    <div className="text-[10px] text-blue-300 font-mono">Senior Male Assessor Persona</div>
-                    <div className="text-[10px] text-slate-400">Standard Southern British (RP)</div>
+                    <div className="font-bold text-xs">Prof. Arthur Pendelton</div>
+                    <div className="text-[11px] font-mono opacity-80">Senior British Examiner (RP)</div>
+                    <div className="text-[10px] opacity-75">Mature male assessor voice</div>
                   </div>
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left max-w-lg mx-auto text-xs">
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                <div className="font-bold text-blue-400 mb-0.5">Part 1 (4–5 mins)</div>
-                <div className="text-slate-400">Familiar introductory questions</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left max-w-2xl mx-auto text-xs">
+              <div className={`p-3.5 rounded-xl border ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg}`}>
+                <div className={`font-bold mb-0.5 ${isStandard ? 'text-[#0F4C45]' : ''}`}>Part 1 (4–5 mins)</div>
+                <div className={theme.subtext}>Familiar introductory questions</div>
               </div>
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                <div className="font-bold text-amber-400 mb-0.5">Part 2 (3–4 mins)</div>
-                <div className="text-slate-400">1-min prep + 2-min cue card</div>
+              <div className={`p-3.5 rounded-xl border ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg}`}>
+                <div className={`font-bold mb-0.5 ${isStandard ? 'text-[#B45309]' : ''}`}>Part 2 (3–4 mins)</div>
+                <div className={theme.subtext}>1-min prep + 2-min cue card</div>
               </div>
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                <div className="font-bold text-emerald-400 mb-0.5">Part 3 (4–5 mins)</div>
-                <div className="text-slate-400">In-depth thematic analysis</div>
+              <div className={`p-3.5 rounded-xl border ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg}`}>
+                <div className={`font-bold mb-0.5 ${isStandard ? 'text-[#0F4C45]' : ''}`}>Part 3 (4–5 mins)</div>
+                <div className={theme.subtext}>In-depth thematic analysis</div>
               </div>
             </div>
 
@@ -812,24 +904,26 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                 soundManager.playSuccess();
                 speakPrompt(part1Questions[0]);
               }}
-              className="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+              className={`px-8 py-3 rounded-xl font-bold text-sm shadow-sm transition inline-flex items-center gap-2 cursor-pointer ${
+                isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+              }`}
             >
               <span>Begin Speaking Interview</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 text-[#F4A62A]" />
             </button>
           </div>
         )}
 
         {/* ================= PART 1: INTRODUCTORY QUESTIONS ================= */}
         {stage === 'part1' && (
-          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <span className="text-xs font-mono font-bold text-blue-400 uppercase">
+          <div className={`p-5 sm:p-7 rounded-2xl border space-y-5 shadow-sm ${theme.cardBg} ${theme.border}`}>
+            <div className={`flex items-center justify-between border-b pb-3 ${theme.border}`}>
+              <span className={`text-xs font-mono font-bold uppercase ${isStandard ? 'text-[#0F4C45]' : ''}`}>
                 PART 1 · QUESTION {part1QuestionIdx + 1} OF {part1Questions.length}
               </span>
               <button
                 onClick={() => speakPrompt(part1Questions[part1QuestionIdx])}
-                className="text-xs text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                className={`text-xs hover:underline flex items-center gap-1.5 font-semibold cursor-pointer ${isStandard ? 'text-[#0F4C45]' : ''}`}
               >
                 <Volume2 className="w-3.5 h-3.5" /> Repeat Question
               </button>
@@ -850,52 +944,55 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               </div>
 
               <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
-                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-                  <div className="text-[11px] font-mono text-slate-400 uppercase">
-                    Examiner Spoken Question:
+                <div className={`p-5 rounded-xl border space-y-2 ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg}`}>
+                  <div className={`text-[11px] font-mono uppercase font-semibold ${theme.subtext}`}>
+                    Examiner Question
                   </div>
-                  <h2 className="text-lg sm:text-xl font-bold text-white leading-relaxed">
+                  <h2 className="text-lg sm:text-xl font-bold leading-relaxed">
                     "{part1Questions[part1QuestionIdx]}"
                   </h2>
-                  <p className="text-xs text-slate-400 pt-1">
+                  <p className={`text-xs pt-1 ${theme.subtext}`}>
                     Speak naturally into your microphone for 20–30 seconds.
                   </p>
                 </div>
 
                 {/* Candidate Recording Button & Live Speech Feedback */}
-                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-300">
-                      {isRecording ? 'Candidate Microphone Active · Speaking...' : 'Ready to Answer'}
+                <div className={`p-4 rounded-xl border space-y-3 ${theme.border} ${isStandard ? 'bg-white' : theme.bg}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-semibold flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-rose-600 animate-pulse' : 'bg-[#0F4C45]/40'}`} />
+                      {isRecording ? 'Microphone Active · Recording Response' : 'Ready to Answer'}
                     </span>
                     {!isRecording ? (
                       <button
                         onClick={handleStartRecording}
-                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                        className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                       >
                         <Mic className="w-3.5 h-3.5" />
-                        <span>Start Speaking</span>
+                        <span>Start Recording</span>
                       </button>
                     ) : (
                       <button
                         onClick={handleStopRecording}
-                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
+                        className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition ${
+                          isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                        }`}
                       >
-                        <span>Done Speaking</span>
+                        <span>Stop Recording</span>
                       </button>
                     )}
                   </div>
 
                   {spokenTranscript && (
-                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 italic">
+                    <div className={`p-3 rounded-lg border text-xs italic leading-relaxed ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.cardBg}`}>
                       "{spokenTranscript}"
                     </div>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between pt-2">
-                  <span className="text-xs text-slate-500 font-mono">
-                    Target: Fluency without long hesitations
+                <div className="flex items-center justify-between pt-2 flex-wrap gap-2">
+                  <span className={`text-xs font-mono ${theme.subtext}`}>
+                    Target: Natural pace without prolonged pauses
                   </span>
 
                   {part1QuestionIdx < part1Questions.length - 1 ? (
@@ -907,7 +1004,9 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                         soundManager.playBeep(520, 0.03);
                         speakPrompt(part1Questions[next]);
                       }}
-                      className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                      className={`px-6 py-2.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer ${
+                        isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                      }`}
                     >
                       <span>Next Question</span>
                       <ChevronRight className="w-4 h-4" />
@@ -921,7 +1020,9 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                         setStage('part2_prep');
                         soundManager.playSuccess();
                       }}
-                      className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                      className={`px-6 py-2.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer ${
+                        isStandard ? 'bg-[#F4A62A] hover:bg-[#E09620] text-[#0E1F1E]' : theme.accentBtn
+                      }`}
                     >
                       <span>Proceed to Part 2 (Cue Card)</span>
                       <ArrowRight className="w-4 h-4" />
@@ -935,12 +1036,16 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
         {/* ================= PART 2: CUE CARD PREP (1-MINUTE TIMER) ================= */}
         {stage === 'part2_prep' && (
-          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <span className="text-xs font-mono font-bold text-amber-400 uppercase">
-                PART 2 · CANDIDATE CUE CARD & 1-MINUTE PREP
+          <div className={`p-5 sm:p-7 rounded-2xl border space-y-5 shadow-sm ${theme.cardBg} ${theme.border}`}>
+            <div className={`flex items-center justify-between border-b pb-3 flex-wrap gap-2 ${theme.border}`}>
+              <span className={`text-xs font-mono font-bold uppercase ${isStandard ? 'text-[#B45309]' : ''}`}>
+                PART 2 · CANDIDATE CUE CARD & 1-MINUTE PREPARATION
               </span>
-              <div className="flex items-center gap-2 font-mono font-bold text-sm text-amber-400 bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/20">
+              <div className={`flex items-center gap-2 font-mono font-bold text-sm px-3 py-1 rounded-lg border ${
+                isStandard
+                  ? 'text-[#0E1F1E] bg-[#F4A62A]/20 border-[#F4A62A]/60'
+                  : `${theme.border} ${theme.bg}`
+              }`}>
                 <Clock className="w-4 h-4" />
                 <span>00:{prepSecondsLeft.toString().padStart(2, '0')}</span>
               </div>
@@ -960,11 +1065,15 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
               <div className="lg:col-span-7 space-y-4">
                 {/* Cue Card Display */}
-                <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-2.5">
-                  <div className="text-xs font-mono font-bold text-amber-500 uppercase">Topic Prompt:</div>
-                  <h2 className="text-base sm:text-lg font-bold text-white">{part2CueCard.title}</h2>
-                  <p className="text-xs text-slate-300">You should say:</p>
-                  <ul className="text-xs text-slate-300 space-y-1 list-disc pl-5">
+                <div className={`p-5 rounded-xl border space-y-2.5 ${
+                  isStandard ? 'bg-[#FFFDF7] border-[#F4A62A]/50' : `${theme.bg} ${theme.border}`
+                }`}>
+                  <div className={`text-xs font-mono font-bold uppercase ${isStandard ? 'text-[#B45309]' : ''}`}>
+                    Candidate Cue Card
+                  </div>
+                  <h2 className="text-base sm:text-lg font-bold">{part2CueCard.title}</h2>
+                  <p className={`text-xs font-medium ${theme.subtext}`}>You should say:</p>
+                  <ul className="text-xs sm:text-sm space-y-1.5 list-disc pl-5">
                     {part2CueCard.cues.map((c, i) => (
                       <li key={i}>{c}</li>
                     ))}
@@ -973,16 +1082,16 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
                 {/* Digital Scratchpad Note Taker */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-blue-400" />
-                    <span>Candidate Margin Scratchpad (Jot Keywords & Structure)</span>
+                  <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${theme.subtext}`}>
+                    <FileText className={`w-4 h-4 ${isStandard ? 'text-[#0F4C45]' : ''}`} />
+                    <span>Candidate Scratchpad (Keywords & Outline)</span>
                   </label>
                   <textarea
                     value={candidateNotes}
                     onChange={(e) => setCandidateNotes(e.target.value)}
                     placeholder="e.g. 1. Solar desalination project, 2. Arabian Gulf, 3. Reduces brine pollution, 4. Scalable & green..."
                     rows={3}
-                    className="w-full p-3 rounded-xl border border-slate-700 bg-slate-900 text-xs sm:text-sm text-slate-200 outline-none focus:border-blue-500"
+                    className={`w-full p-3 rounded-xl border text-xs sm:text-sm outline-none focus:ring-2 focus:ring-[#0F4C45] ${theme.inputBg} ${theme.text}`}
                   />
                 </div>
 
@@ -990,14 +1099,16 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   {!isPrepTimerRunning ? (
                     <button
                       onClick={handleStartPrep}
-                      className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                      className={`px-5 py-2.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer ${
+                        isStandard ? 'bg-[#F4A62A] hover:bg-[#E09620] text-[#0E1F1E]' : theme.accentBtn
+                      }`}
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
                       <span>Start 1-Minute Prep Timer</span>
                     </button>
                   ) : (
-                    <span className="text-xs text-slate-400 italic">
-                      Prep timer running... jot down key vocabulary.
+                    <span className={`text-xs italic ${theme.subtext}`}>
+                      Preparation timer active — outline key ideas and vocabulary.
                     </span>
                   )}
 
@@ -1008,9 +1119,11 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                       setStage('part2_speak');
                       soundManager.playBeep(520, 0.05);
                     }}
-                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    className={`px-5 py-2.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer ${
+                      isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                    }`}
                   >
-                    <span>Ready to Speak (Start 2-Min Turn)</span>
+                    <span>Begin 2-Minute Long Turn</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -1021,16 +1134,18 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
         {/* ================= PART 2: 2-MINUTE SPEAKING TURN ================= */}
         {stage === 'part2_speak' && (
-          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <span className="text-xs font-mono font-bold text-emerald-400 uppercase">
+          <div className={`p-5 sm:p-7 rounded-2xl border space-y-5 shadow-sm ${theme.cardBg} ${theme.border}`}>
+            <div className={`flex items-center justify-between border-b pb-3 flex-wrap gap-2 ${theme.border}`}>
+              <span className={`text-xs font-mono font-bold uppercase ${isStandard ? 'text-[#0F4C45]' : ''}`}>
                 PART 2 · CANDIDATE LONG TURN (2 MINUTES)
               </span>
               <div
                 className={`flex items-center gap-2 font-mono font-bold text-sm px-3 py-1 rounded-lg border ${
                   speakSecondsLeft < 30
-                    ? 'text-rose-400 bg-rose-500/10 border-rose-500/20 animate-pulse'
-                    : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                    ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse'
+                    : isStandard
+                    ? 'text-[#0F4C45] bg-[#0F4C45]/10 border-[#0F4C45]/30'
+                    : `${theme.border} ${theme.bg}`
                 }`}
               >
                 <Clock className="w-4 h-4" />
@@ -1056,25 +1171,27 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               <div className="lg:col-span-7 space-y-4">
                 {/* Note reference drawer */}
                 {candidateNotes && (
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-                    <span className="font-bold text-slate-400 uppercase font-mono text-[10px]">
+                  <div className={`p-3 rounded-xl border text-xs ${theme.border} ${isStandard ? 'bg-[#FFFDF7]' : theme.bg}`}>
+                    <span className={`font-bold uppercase font-mono text-[10px] ${theme.subtext}`}>
                       Your Prep Notes:
                     </span>
-                    <p className="text-slate-300 mt-1">{candidateNotes}</p>
+                    <p className="mt-1 whitespace-pre-wrap">{candidateNotes}</p>
                   </div>
                 )}
 
                 {/* Audio Voice Recording Controls */}
-                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
+                <div className={`p-4 rounded-xl border text-center space-y-3 ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg}`}>
                   <div className="flex items-center justify-center gap-3">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-600/20 text-blue-400">
-                      <Mic className={`w-6 h-6 ${isRecording ? 'text-rose-500 animate-pulse' : ''}`} />
+                    <div className={`w-11 h-11 rounded-full flex items-center justify-center ${
+                      isRecording ? 'bg-rose-600/15 text-rose-600' : isStandard ? 'bg-[#0F4C45]/15 text-[#0F4C45]' : 'border border-current'
+                    }`}>
+                      <Mic className={`w-5 h-5 ${isRecording ? 'animate-pulse' : ''}`} />
                     </div>
                     <div className="text-left">
-                      <h3 className="text-sm font-bold text-white">
+                      <h3 className="text-sm font-bold">
                         {isRecording ? 'Examiner Listening · Candidate Recording Active' : 'Press Start to Begin 2-Minute Monologue'}
                       </h3>
-                      <p className="text-xs text-slate-400">
+                      <p className={`text-xs ${theme.subtext}`}>
                         Aim to speak continuously for at least 1 minute 30 seconds.
                       </p>
                     </div>
@@ -1084,15 +1201,17 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                     {!isRecording ? (
                       <button
                         onClick={handleStartRecording}
-                        className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+                        className="px-6 py-2.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs shadow-sm transition inline-flex items-center gap-2 cursor-pointer"
                       >
                         <Mic className="w-4 h-4" />
-                        <span>Start Speaking</span>
+                        <span>Start Recording</span>
                       </button>
                     ) : (
                       <button
                         onClick={handleStopRecording}
-                        className="px-6 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition inline-flex items-center gap-2 cursor-pointer"
+                        className={`px-6 py-2 rounded-lg font-bold text-xs transition inline-flex items-center gap-2 cursor-pointer ${
+                          isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                        }`}
                       >
                         <span>Stop Recording</span>
                       </button>
@@ -1106,24 +1225,24 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   )}
 
                   {/* Real-Time Live Speech Analytics */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-left font-mono">
-                    <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                      <div className="text-[10px] text-slate-400 uppercase">Speech Rate</div>
-                      <div className={`text-xs font-bold mt-0.5 ${currentWpm >= 115 && currentWpm <= 160 ? 'text-emerald-400' : currentWpm > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                  <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 pt-3 border-t text-left font-mono ${theme.border}`}>
+                    <div className={`p-2.5 rounded-lg border ${theme.border} ${theme.cardBg}`}>
+                      <div className={`text-[10px] uppercase ${theme.subtext}`}>Speech Rate</div>
+                      <div className={`text-xs font-bold mt-0.5 ${currentWpm >= 115 && currentWpm <= 160 ? (isStandard ? 'text-[#0F4C45]' : '') : currentWpm > 0 ? (isStandard ? 'text-[#B45309]' : '') : theme.subtext}`}>
                         {currentWpm > 0 ? `${currentWpm} WPM` : 'Measuring...'}
                       </div>
                     </div>
 
-                    <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                      <div className="text-[10px] text-slate-400 uppercase">Fillers</div>
-                      <div className={`text-xs font-bold mt-0.5 ${detectedFillers > 3 ? 'text-rose-400' : 'text-slate-200'}`}>
+                    <div className={`p-2.5 rounded-lg border ${theme.border} ${theme.cardBg}`}>
+                      <div className={`text-[10px] uppercase ${theme.subtext}`}>Fillers</div>
+                      <div className={`text-xs font-bold mt-0.5 ${detectedFillers > 3 && isStandard ? 'text-rose-700' : ''}`}>
                         {detectedFillers} words
                       </div>
                     </div>
 
-                    <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                      <div className="text-[10px] text-slate-400 uppercase">C1 Lexis</div>
-                      <div className="text-xs font-bold text-sky-400 mt-0.5">
+                    <div className={`p-2.5 rounded-lg border ${theme.border} ${theme.cardBg}`}>
+                      <div className={`text-[10px] uppercase ${theme.subtext}`}>C1 Lexis</div>
+                      <div className={`text-xs font-bold mt-0.5 ${isStandard ? 'text-[#0F4C45]' : ''}`}>
                         {detectedAcademicWords.length} collocations
                       </div>
                     </div>
@@ -1132,15 +1251,15 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
                 {/* Captured Transcript Box */}
                 <div className="space-y-1">
-                  <label className="text-[11px] font-mono font-bold uppercase text-slate-400">
-                    Live Captured Speech Transcript:
+                  <label className={`text-[11px] font-mono font-bold uppercase ${theme.subtext}`}>
+                    Live Captured Speech Transcript
                   </label>
                   <textarea
                     value={spokenTranscript}
                     onChange={(e) => setSpokenTranscript(e.target.value)}
                     placeholder="Your spoken words will appear here automatically while recording..."
                     rows={2}
-                    className="w-full p-2.5 rounded-xl border border-slate-700 bg-slate-900 text-xs text-slate-200 outline-none focus:border-blue-500"
+                    className={`w-full p-2.5 rounded-xl border text-xs outline-none focus:ring-2 focus:ring-[#0F4C45] ${theme.inputBg} ${theme.text}`}
                   />
                 </div>
 
@@ -1152,7 +1271,9 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                       soundManager.playSuccess();
                       speakPrompt(part3Questions[0]);
                     }}
-                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    className={`px-6 py-2.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer ${
+                      isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                    }`}
                   >
                     <span>Proceed to Part 3 (Discussion)</span>
                     <ArrowRight className="w-4 h-4" />
@@ -1165,14 +1286,14 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
         {/* ================= PART 3: THEMATIC DISCUSSION ================= */}
         {stage === 'part3' && (
-          <div className="p-5 sm:p-7 rounded-3xl bg-slate-950 border border-slate-800 space-y-5 animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <span className="text-xs font-mono font-bold text-blue-400 uppercase">
+          <div className={`p-5 sm:p-7 rounded-2xl border space-y-5 shadow-sm ${theme.cardBg} ${theme.border}`}>
+            <div className={`flex items-center justify-between border-b pb-3 ${theme.border}`}>
+              <span className={`text-xs font-mono font-bold uppercase ${isStandard ? 'text-[#0F4C45]' : ''}`}>
                 PART 3 · THEMATIC DISCUSSION ({part3QuestionIdx + 1} OF {part3Questions.length})
               </span>
               <button
                 onClick={() => speakPrompt(part3Questions[part3QuestionIdx])}
-                className="text-xs text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                className={`text-xs hover:underline flex items-center gap-1.5 font-semibold cursor-pointer ${isStandard ? 'text-[#0F4C45]' : ''}`}
               >
                 <Volume2 className="w-3.5 h-3.5" /> Repeat Prompt
               </button>
@@ -1192,51 +1313,54 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               </div>
 
               <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
-                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-                  <div className="text-[11px] font-mono text-slate-400 uppercase">
-                    Discussion Question:
+                <div className={`p-5 rounded-xl border space-y-2 ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg}`}>
+                  <div className={`text-[11px] font-mono uppercase font-semibold ${theme.subtext}`}>
+                    Discussion Question
                   </div>
-                  <h2 className="text-lg sm:text-xl font-bold text-white leading-relaxed">
+                  <h2 className="text-lg sm:text-xl font-bold leading-relaxed">
                     "{part3Questions[part3QuestionIdx]}"
                   </h2>
-                  <p className="text-xs text-slate-400 pt-1">
-                    Develop arguments with concrete real-world examples and nuanced perspectives.
+                  <p className={`text-xs pt-1 ${theme.subtext}`}>
+                    Develop arguments with concrete real-world examples and balanced perspectives.
                   </p>
                 </div>
 
                 {/* Candidate Recording Button */}
-                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-300">
-                      {isRecording ? 'Candidate Microphone Active · Speaking...' : 'Ready to Answer'}
+                <div className={`p-4 rounded-xl border space-y-3 ${theme.border} ${isStandard ? 'bg-white' : theme.bg}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-semibold flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-rose-600 animate-pulse' : 'bg-[#0F4C45]/40'}`} />
+                      {isRecording ? 'Microphone Active · Recording Response' : 'Ready to Answer'}
                     </span>
                     {!isRecording ? (
                       <button
                         onClick={handleStartRecording}
-                        className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                        className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                       >
                         <Mic className="w-3.5 h-3.5" />
-                        <span>Start Speaking</span>
+                        <span>Start Recording</span>
                       </button>
                     ) : (
                       <button
                         onClick={handleStopRecording}
-                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
+                        className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition ${
+                          isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                        }`}
                       >
-                        <span>Done Speaking</span>
+                        <span>Stop Recording</span>
                       </button>
                     )}
                   </div>
 
                   {spokenTranscript && (
-                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 italic">
+                    <div className={`p-3 rounded-lg border text-xs italic leading-relaxed ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.cardBg}`}>
                       "{spokenTranscript}"
                     </div>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between pt-2 flex-wrap gap-3">
-                  <span className="text-xs text-slate-400 italic">
+                  <span className={`text-xs italic ${theme.subtext}`}>
                     Abstract analysis & C1 discourse markers.
                   </span>
 
@@ -1249,7 +1373,9 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                         soundManager.playBeep(520, 0.03);
                         speakPrompt(part3Questions[next]);
                       }}
-                      className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                      className={`px-6 py-2.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer ${
+                        isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                      }`}
                     >
                       <span>Next Question</span>
                       <ChevronRight className="w-4 h-4" />
@@ -1257,10 +1383,12 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   ) : (
                     <button
                       onClick={handleCompleteInterview}
-                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                      className={`px-6 py-2.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer ${
+                        isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                      }`}
                     >
                       <span>Complete Interview & Evaluate</span>
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 className="w-4 h-4 text-[#F4A62A]" />
                     </button>
                   )}
                 </div>
@@ -1269,44 +1397,46 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
           </div>
         )}
 
-        {/* ================= RESULT STAGE: AI BAND SCORECARD ================= */}
+        {/* ================= RESULT STAGE: BAND SCORECARD ================= */}
         {stage === 'result' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-950 border border-slate-800 space-y-6 animate-fade-in max-w-4xl mx-auto w-full">
+          <div className={`p-6 sm:p-8 rounded-2xl border space-y-6 shadow-sm max-w-4xl mx-auto w-full ${theme.cardBg} ${theme.border}`}>
             {isEvaluating ? (
               <div className="py-12 text-center space-y-3">
-                <Loader2 className="w-10 h-10 text-blue-400 animate-spin mx-auto" />
-                <h3 className="text-lg font-bold text-white">Evaluating Speaking Performance...</h3>
-                <p className="text-xs text-slate-400">
-                  Analyzing fluency, lexical resource, grammatical range, and pronunciation against Practice descriptors.
+                <Loader2 className={`w-10 h-10 animate-spin mx-auto ${isStandard ? 'text-[#0F4C45]' : ''}`} />
+                <h3 className="text-lg font-bold">Evaluating Speaking Performance...</h3>
+                <p className={`text-xs ${theme.subtext}`}>
+                  Analyzing fluency, lexical resource, grammatical range, and pronunciation against BandSprint practice descriptors.
                 </p>
               </div>
-                ) : evaluation &&
-                  (evaluation.assessmentStatus === 'evaluated' ||
-                    evaluation.assessmentStatus === 'partial_transcript_only') ? (
+            ) : evaluation &&
+              (evaluation.assessmentStatus === 'evaluated' ||
+                evaluation.assessmentStatus === 'partial_transcript_only') ? (
               <>
                 <div className="text-center space-y-2">
                   <div
-                    className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${
+                    className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${
                       evaluation.assessmentStatus === 'evaluated'
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'bg-amber-500/20 text-amber-300'
+                        ? isStandard ? 'bg-[#0F4C45] text-[#F4A62A]' : theme.contrastBadge
+                        : isStandard ? 'bg-[#F4A62A]/25 text-[#B45309]' : theme.contrastBadge
                     }`}
                   >
-                    <Award className="w-8 h-8" />
+                    <Award className="w-7 h-7" />
                   </div>
-                  <h2 className="text-2xl font-bold tracking-tight text-white">
+                  <h2 className="text-2xl font-bold tracking-tight">
                     {evaluation.assessmentStatus === 'evaluated'
                       ? 'Speaking Assessment Complete'
                       : 'Partial Speaking Assessment (Transcript-Only)'}
                   </h2>
-                  <p className="text-xs text-slate-400">
-                    AI IELTS Examiner (Practice Rubric-Aligned) · {evaluation.wordCount} Words Analyzed
+                  <p className={`text-xs ${theme.subtext}`}>
+                    BandSprint Practice Rubric Assessment · {evaluation.wordCount} Words Analyzed
                   </p>
                 </div>
 
                 {evaluation.assessmentStatus === 'partial_transcript_only' && (
-                  <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 space-y-1.5">
-                    <div className="font-bold uppercase font-mono text-amber-300 flex items-center gap-1.5">
+                  <div className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+                    isStandard ? 'bg-[#FFFDF7] border-[#F4A62A]/60 text-[#0E1F1E]' : `${theme.bg} ${theme.border}`
+                  }`}>
+                    <div className={`font-bold uppercase font-mono flex items-center gap-1.5 ${isStandard ? 'text-[#B45309]' : ''}`}>
                       <AlertCircle className="w-4 h-4 shrink-0" />
                       <span>Incomplete Speaking Evidence — Pronunciation Unassessed</span>
                     </div>
@@ -1324,14 +1454,14 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                     { title: 'Grammar Accuracy', band: evaluation.grammarBand },
                     { title: 'Pronunciation', band: evaluation.pronunciationBand }
                   ].map((c) => (
-                    <div key={c.title} className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
-                      <div className="text-[10px] uppercase font-mono text-slate-400">{c.title}</div>
+                    <div key={c.title} className={`p-3.5 rounded-xl border ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.bg}`}>
+                      <div className={`text-[10px] uppercase font-mono ${theme.subtext}`}>{c.title}</div>
                       {typeof c.band === 'number' ? (
-                        <div className="text-2xl font-black font-mono text-emerald-400 my-1">
+                        <div className={`text-2xl font-black font-mono my-1 ${isStandard ? 'text-[#0F4C45]' : ''}`}>
                           Band {c.band.toFixed(1)}
                         </div>
                       ) : (
-                        <div className="text-sm font-bold font-mono text-amber-300 my-2">
+                        <div className={`text-sm font-bold font-mono my-2 ${isStandard ? 'text-[#B45309]' : ''}`}>
                           Unassessed
                         </div>
                       )}
@@ -1339,9 +1469,11 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   ))}
                 </div>
 
-                <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs space-y-2">
-                  <div className="font-bold text-blue-400 flex items-center gap-1.5 uppercase font-mono">
-                    <Sparkles className="w-4 h-4" />
+                <div className={`p-4 rounded-xl border text-xs space-y-2 ${
+                  isStandard ? 'bg-[#F5F7F6] border-[#0F4C45]/25' : `${theme.bg} ${theme.border}`
+                }`}>
+                  <div className={`font-bold flex items-center gap-1.5 uppercase font-mono ${isStandard ? 'text-[#0F4C45]' : ''}`}>
+                    <Sparkles className="w-4 h-4 text-[#F4A62A]" />
                     {evaluation.assessmentStatus === 'evaluated' && typeof evaluation.overallBand === 'number' ? (
                       <span>Overall Speaking Band: {evaluation.overallBand.toFixed(1)}</span>
                     ) : typeof evaluation.partialThreeCriterionIndex === 'number' ? (
@@ -1352,25 +1484,29 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                       <span>Overall Speaking Band: Unassessed</span>
                     )}
                   </div>
-                  <p className="text-slate-300 leading-relaxed">{evaluation.examinerFeedback}</p>
+                  <p className="leading-relaxed">{evaluation.examinerFeedback}</p>
                 </div>
               </>
             ) : evaluation && evaluation.assessmentStatus === 'unavailable' ? (
               <div className="text-center space-y-4 py-6">
-                <div className="w-14 h-14 rounded-2xl bg-rose-500/20 text-rose-400 mx-auto flex items-center justify-center">
+                <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${
+                  isStandard ? 'bg-rose-50 text-rose-700 border border-rose-200' : theme.contrastBadge
+                }`}>
                   <AlertCircle className="w-7 h-7" />
                 </div>
-                <h2 className="text-xl font-bold text-white">
+                <h2 className="text-xl font-bold">
                   {evaluation.authRequired ? 'Sign In Required for AI Evaluation' : 'AI Speaking Evaluation Unavailable'}
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+                <p className={`text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${theme.subtext}`}>
                   {evaluation.examinerFeedback}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   {evaluation.canRetry && (
                     <button
                       onClick={handleCompleteInterview}
-                      className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                      className={`px-6 py-2.5 rounded-lg font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer ${
+                        isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                      }`}
                     >
                       <RotateCcw className="w-4 h-4" />
                       <span>Retry AI Evaluation</span>
@@ -1378,7 +1514,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   )}
                   <button
                     onClick={() => setStage('part2_speak')}
-                    className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                    className={`px-6 py-2.5 rounded-lg border font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer ${theme.border}`}
                   >
                     <span>Return to Part 2 Transcript</span>
                   </button>
@@ -1386,17 +1522,21 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               </div>
             ) : (
               <div className="text-center space-y-4 py-6">
-                <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center">
+                <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${
+                  isStandard ? 'bg-[#FFFDF7] text-[#B45309] border border-[#F4A62A]/50' : theme.contrastBadge
+                }`}>
                   <AlertCircle className="w-7 h-7" />
                 </div>
-                <h2 className="text-xl font-bold text-white">Insufficient Spoken Response Recorded</h2>
-                <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+                <h2 className="text-xl font-bold">Insufficient Spoken Response Recorded</h2>
+                <p className={`text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${theme.subtext}`}>
                   {evaluation?.examinerFeedback ||
                     'We do not assign a synthetic band score when fewer than 5 spoken words are recorded. Return to Part 2 to record your voice or enter your spoken transcript.'}
                 </p>
                 <button
                   onClick={() => setStage('part2_speak')}
-                  className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                  className={`px-6 py-2.5 rounded-lg font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer ${
+                    isStandard ? 'bg-[#F4A62A] hover:bg-[#E09620] text-[#0E1F1E]' : theme.accentBtn
+                  }`}
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>Retry Part 2 Recording</span>
@@ -1408,15 +1548,17 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               {shouldPersistCDIELTSSpeakingToFirestore(evaluation) && (
                 <button
                   onClick={() => setShowTRFModal(true)}
-                  className="px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition inline-flex items-center gap-2 cursor-pointer"
+                  className="px-6 py-2.5 rounded-lg bg-[#F4A62A] hover:bg-[#E09620] text-[#0E1F1E] font-bold text-xs shadow-sm transition inline-flex items-center gap-2 cursor-pointer"
                 >
-                  <Award className="w-4 h-4 text-slate-950" />
+                  <Award className="w-4 h-4" />
                   <span>Speaking Practice Summary</span>
                 </button>
               )}
               <button
                 onClick={onExit}
-                className="px-8 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition cursor-pointer"
+                className={`px-8 py-2.5 rounded-lg font-bold text-xs shadow-sm transition cursor-pointer ${
+                  isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
+                }`}
               >
                 Return to Dashboard
               </button>
@@ -1424,6 +1566,44 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
           </div>
         )}
       </div>
+
+      {/* Exit Session Confirmation Dialog */}
+      {showExitConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+          <div className={`max-w-md w-full p-6 rounded-2xl border ${theme.border} ${theme.cardBg} ${theme.text} space-y-4 shadow-2xl`}>
+            <div className="flex items-center justify-between border-b border-current/15 pb-2.5">
+              <div className="flex items-center gap-2 font-mono font-bold text-sm uppercase">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>Leave Speaking Interview?</span>
+              </div>
+              <button
+                onClick={() => setShowExitConfirmModal(false)}
+                className="p-1 hover:bg-black/10 rounded cursor-pointer"
+                aria-label="Close confirmation"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className={`text-xs leading-relaxed ${theme.subtext}`}>
+              Your active spoken transcript and Part 2 scratchpad notes have not been submitted for evaluation yet. Leaving now will discard this session.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                onClick={() => setShowExitConfirmModal(false)}
+                className={`px-4 py-2 rounded-lg border text-xs font-bold cursor-pointer ${theme.border}`}
+              >
+                Stay in Interview
+              </button>
+              <button
+                onClick={handleConfirmExit}
+                className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold cursor-pointer"
+              >
+                Exit Room
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Practice Speaking Summary Modal — ONLY for complete 4-criterion Speaking evaluations */}
       {evaluation && shouldPersistCDIELTSSpeakingToFirestore(evaluation) && (

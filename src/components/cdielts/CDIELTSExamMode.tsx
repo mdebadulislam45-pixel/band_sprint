@@ -382,7 +382,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       if (diffSec <= 0) {
         setIsTimerRunning(false);
         soundManager.playBeep(440, 0.4);
-        setWarningModalText('TIME EXPIRED: The official test duration has concluded. Please submit your responses.');
+        setWarningModalText('TIME EXPIRED: The scheduled practice test duration has concluded. Please submit your responses.');
       } else if (diffSec <= 600 && diffSec > 598 && !hasShown10mWarning) {
         setHasShown10mWarning(true);
         setIsTimeHidden(false);
@@ -1181,16 +1181,16 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       case 'standard':
       default:
         return {
-          bg: 'bg-[#EEF2F6] text-[#0F172A]',
-          headerBg: 'bg-[#002F6C] text-white',
-          subHeaderBg: 'bg-[#001F4D] text-slate-200',
-          border: 'border-[#CBD5E1]',
-          borderStrong: 'border-[#002F6C]',
+          bg: 'bg-[#F5F7F6] text-[#0E1F1E]',
+          headerBg: 'bg-[#0F4C45] text-white',
+          subHeaderBg: 'bg-[#0B3833] text-[#E6F2EF]',
+          border: 'border-[#D3DDDA]',
+          borderStrong: 'border-[#0B3833]',
           cardBg: 'bg-white',
-          inputBg: 'bg-white text-[#0F172A]',
-          accentBtn: 'bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D]',
-          activeTile: 'bg-[#002F6C] text-white border-2 border-[#001F4D]',
-          flaggedTile: 'bg-[#FEF08A] text-[#713F12] border-2 border-[#CA8A04]'
+          inputBg: 'bg-white text-[#0E1F1E]',
+          accentBtn: 'bg-[#0F4C45] hover:bg-[#0B3833] text-white border border-[#0B3833]',
+          activeTile: 'bg-[#0F4C45] text-white border-2 border-[#0B3833]',
+          flaggedTile: 'bg-[#FEF3C7] text-[#78350F] border-2 border-[#D97706]'
         };
     }
   };
@@ -1462,7 +1462,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       {/* Selection Micro-Popup for Text Highlighting, Underlining & Note Making */}
       {selectionMenu && (
         <div
-          className="fixed z-50 bg-[#001F4D] text-white text-xs font-mono font-bold py-1 px-2.5 rounded-none shadow-2xl flex items-center gap-2 border-2 border-white selection-tooltip-menu"
+          className="fixed z-50 bg-[#0B3833] text-white text-xs font-mono font-bold py-1.5 px-3 rounded-lg shadow-2xl flex items-center gap-2 border border-white/25 selection-tooltip-menu"
           style={{
             left: `${Math.min(Math.max(selectionMenu.x, 110), (typeof window !== 'undefined' ? window.innerWidth : 800) - 130)}px`,
             top: `${selectionMenu.y}px`,
@@ -1471,36 +1471,36 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         >
           <button
             onClick={() => toggleHighlight(selectionMenu.text)}
-            className="hover:text-yellow-300 text-yellow-400 flex items-center gap-1 cursor-pointer px-1 py-0.5"
+            className="hover:text-[#F4A62A] text-amber-300 flex items-center gap-1 cursor-pointer px-1.5 py-0.5 rounded"
             title="Highlight selected text in yellow"
           >
             <Highlighter className="w-3.5 h-3.5" />
-            <span>[ Highlight ]</span>
+            <span>Highlight</span>
           </button>
-          <span className="text-slate-500">|</span>
+          <span className="text-white/30">|</span>
           <button
             onClick={() => toggleUnderline(selectionMenu.text)}
-            className="hover:text-sky-300 text-sky-200 flex items-center gap-1 cursor-pointer px-1 py-0.5 underline font-bold"
+            className="hover:text-teal-200 text-teal-100 flex items-center gap-1 cursor-pointer px-1.5 py-0.5 underline font-bold rounded"
             title="Underline selected text"
           >
-            <span><u>U</u> [ Underline ]</span>
+            <span><u>U</u> Underline</span>
           </button>
-          <span className="text-slate-500">|</span>
+          <span className="text-white/30">|</span>
           <button
             onClick={() => {
               setActiveQuote(selectionMenu.text);
               setShowNotesDrawer(true);
               setSelectionMenu(null);
             }}
-            className="hover:text-emerald-300 text-emerald-200 flex items-center gap-1 cursor-pointer px-1 py-0.5"
+            className="hover:text-emerald-300 text-emerald-200 flex items-center gap-1 cursor-pointer px-1.5 py-0.5 rounded"
             title="Add margin note for this selection"
           >
             <StickyNote className="w-3.5 h-3.5" />
-            <span>[ Note ]</span>
+            <span>Note</span>
           </button>
           <button
             onClick={() => setSelectionMenu(null)}
-            className="text-slate-400 hover:text-white cursor-pointer ml-1 p-0.5"
+            className="text-white/60 hover:text-white cursor-pointer ml-1 p-0.5"
             title="Close menu"
           >
             <X className="w-3 h-3" />
@@ -1508,9 +1508,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
       )}
 
-      {/* ================= 1. OFFICIAL STANDARDIZED EXAM HEADER ================= */}
+      {/* ================= 1. BANDSPRINT CD-IELTS EXAM HEADER ================= */}
       {/* Responsive Header: 2-Row Stack on mobile (<sm / <500px), 1-Row Bar on desktop (>=sm) */}
-      <header className={`w-full ${theme.headerBg} border-b-2 ${theme.borderStrong || 'border-[#001D43]'} shrink-0 flex flex-col font-mono select-none z-20 rounded-none shadow-none`}>
+      <header className={`w-full ${theme.headerBg} border-b ${theme.borderStrong || 'border-[#0B3833]'} shrink-0 flex flex-col font-mono select-none z-20`}>
         {customPilotSet && (
           <div className="w-full px-3 sm:px-4 py-1.5 bg-emerald-950 text-emerald-100 border-b border-emerald-600/60 flex items-center justify-between gap-2 text-xs font-mono font-bold">
             <div className="flex items-center gap-2 truncate">
@@ -1527,98 +1527,94 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 audioService.stop();
                 onExit();
               }}
-              className="px-2.5 py-0.5 bg-emerald-900 hover:bg-emerald-800 text-white border border-emerald-500 text-[11px] font-bold cursor-pointer shrink-0"
+              className="px-2.5 py-0.5 bg-emerald-900 hover:bg-emerald-800 text-white border border-emerald-500 rounded text-[11px] font-bold cursor-pointer shrink-0"
             >
               Exit AI Pilot
             </button>
           </div>
         )}
         {/* ROW 1: Candidate Details (Left) + Countdown Clock (Right) */}
-        <div className="w-full min-h-11 sm:h-12 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b-2 border-black/20">
+        <div className="w-full min-h-11 sm:h-12 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-white/15">
           {/* Candidate Info */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 font-mono text-xs">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="opacity-75 hidden min-[420px]:inline uppercase">Candidate:</span>
-              <span className="font-bold tracking-tight truncate max-w-[96px] min-[420px]:max-w-[200px] sm:max-w-none text-white border-b border-white/60">
-                {candidateName.toUpperCase()}
+            <div className="flex items-center gap-2 truncate">
+              <span className="opacity-75 hidden min-[420px]:inline uppercase text-[11px]">Candidate</span>
+              <span className="font-bold tracking-tight truncate max-w-[96px] min-[420px]:max-w-[200px] sm:max-w-none">
+                {candidateName}
               </span>
-              <span className="text-[11px] font-mono text-sky-200 shrink-0">
-                [ID: {candidateId}]
-              </span>
-              <span className="text-[11px] font-mono text-sky-300 hidden md:inline shrink-0">
-                [DESK: CD-04]
+              <span className="text-[11px] font-mono opacity-80 shrink-0">
+                · ID {candidateId}
               </span>
             </div>
 
-            {/* Official Module Badge (Desktop) */}
-            <div className="hidden lg:flex items-center gap-1.5 ml-2 pl-3 border-l-2 border-white/30">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-sky-200">
+            {/* Active Module Context (Desktop) */}
+            <div className="hidden lg:flex items-center gap-1.5 ml-1 pl-3 border-l border-white/25">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#F4A62A]">
                 {activeSkill === 'reading'
-                  ? `[ MODULE: ${activeReadingBadge.toUpperCase()} ]`
+                  ? activeReadingBadge
                   : activeSkill === 'listening'
-                  ? `[ MODULE: IELTS LISTENING — PART ${listeningSection}/4 ]`
-                  : `[ MODULE: IELTS ACADEMIC WRITING — TASK ${activeWritingTask}/2 ]`}
+                  ? `Listening · Part ${listeningSection} of 4`
+                  : `Writing · Task ${activeWritingTask} of 2`}
               </span>
             </div>
 
-            {/* Exam Room setup chips — aim band & exam date (from ExamSetup) */}
-            <div className="hidden md:flex items-center gap-1.5 ml-2 pl-3 border-l-2 border-white/30">
-              <span className="px-2 py-0.5 bg-amber-400 text-black text-[11px] font-mono font-black rounded-none whitespace-nowrap">
-                TARGET BAND {examSetup.targetBand.toFixed(1)}
+            {/* Target Band & Exam Date Context */}
+            <div className="hidden xl:flex items-center gap-2 ml-1 pl-3 border-l border-white/25 text-[11px]">
+              <span className="font-bold text-[#F4A62A] whitespace-nowrap">
+                Target Band {examSetup.targetBand.toFixed(1)}
               </span>
-              <span className="px-2 py-0.5 bg-white/10 text-white text-[11px] font-mono font-bold border border-white/30 rounded-none whitespace-nowrap">
+              <span aria-hidden="true" className="opacity-40">·</span>
+              <span className="opacity-85 whitespace-nowrap">
                 {examSetup.examDate
-                  ? `EXAM ${formatExamDate(examSetup.examDate).toUpperCase()} · ${examDaysLeft === null ? 'DATE PASSED' : examDaysLeft === 0 ? 'TODAY' : `${examDaysLeft}D LEFT`}`
-                  : 'NO EXAM DATE'}
+                  ? `${formatExamDate(examSetup.examDate)} (${examDaysLeft === null ? 'Passed' : examDaysLeft === 0 ? 'Today' : `${examDaysLeft}d left`})`
+                  : 'Practice Simulation'}
               </span>
             </div>
           </div>
 
-          {/* Official Countdown Timer */}
+          {/* Countdown Timer & Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 font-mono">
             <div
-              className={`flex items-center gap-2 font-mono font-bold text-xs sm:text-sm px-3 py-1 border-2 rounded-none ${
+              className={`flex items-center gap-2 font-mono font-bold text-xs sm:text-sm px-3 py-1 border rounded-md ${
                 timeRemainingSec <= 300
-                  ? 'bg-rose-950 text-rose-200 border-rose-500 animate-pulse'
-                  : 'bg-black/40 text-white border-sky-400/40'
+                  ? 'bg-rose-950 text-rose-200 border-rose-400 animate-pulse'
+                  : 'bg-black/30 text-white border-white/25'
               }`}
             >
-              <Clock className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+              <Clock className="w-3.5 h-3.5 text-[#F4A62A] shrink-0" />
               <span className="tabular-nums tracking-wide">
                 {isAudioNetworkStalled ? (
                   <>
-                    <span className="hidden sm:inline">BUFFERING </span>[{formatTimer(timeRemainingSec)}]
+                    <span className="hidden sm:inline">Buffering </span>{formatTimer(timeRemainingSec)}
                   </>
                 ) : isTimeHidden ? (
-                  'CLOCK: [HIDDEN]'
+                  '••:••'
                 ) : (
-                  <>
-                    <span className="hidden sm:inline">CLOCK: </span>
-                    {formatTimer(timeRemainingSec)}
-                  </>
+                  formatTimer(timeRemainingSec)
                 )}
               </span>
             </div>
 
             <button
               onClick={() => setIsTimeHidden(!isTimeHidden)}
-              className="text-[11px] font-mono hover:bg-white/10 px-2 py-1 text-slate-200 border border-white/30 cursor-pointer hidden md:block rounded-none"
+              className="text-[11px] font-mono hover:bg-white/10 px-2 py-1 border border-white/25 rounded-md cursor-pointer hidden md:block"
+              title={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
             >
-              {isTimeHidden ? '[SHOW]' : '[HIDE]'}
+              {isTimeHidden ? 'Show Clock' : 'Hide Clock'}
             </button>
 
-            {/* Barnaby guide — target-band help for this section */}
+            {/* Barnaby target-band guide */}
             <button
               onClick={() => setShowBarnabyGuide((v) => !v)}
-              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono font-black border cursor-pointer rounded-none ${
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono font-bold border rounded-md cursor-pointer transition ${
                 showBarnabyGuide
-                  ? 'bg-amber-400 text-black border-amber-500'
-                  : 'bg-amber-400/15 text-amber-300 border-amber-400/50 hover:bg-amber-400/25'
+                  ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A]'
+                  : 'bg-[#F4A62A]/15 text-[#F4A62A] border-[#F4A62A]/45 hover:bg-[#F4A62A]/25'
               }`}
               title="Barnaby's guide for your target band"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              BARNABY
+              <span>Guide</span>
             </button>
 
             {/* IELTS Practice Set Selector (hidden when running an isolated AI Pilot) */}
@@ -1649,11 +1645,11 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                   soundManager.playBeep(550, 0.04);
                   onShowToast(`Loaded ${MOCK_EXAM_SETS[idx]?.title}`);
                 }}
-                className="bg-black/50 text-white text-[11px] font-mono font-bold px-2 py-1 border-2 border-slate-600 outline-none cursor-pointer hidden md:block rounded-none max-w-[190px] truncate"
+                className="bg-black/30 text-white text-[11px] font-mono font-bold px-2 py-1 border border-white/25 rounded-md outline-none cursor-pointer hidden md:block max-w-[185px] truncate"
                 title="Select IELTS Practice Set"
               >
                 {MOCK_EXAM_SETS.map((s, idx) => (
-                  <option key={s.id} value={idx}>
+                  <option key={s.id} value={idx} className="bg-white text-[#0E1F1E]">
                     {s.title}
                   </option>
                 ))}
@@ -1663,7 +1659,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
             {/* Desktop Quick Finish Button */}
             <button
               onClick={() => setShowReviewModal(true)}
-              className="hidden sm:flex items-center px-3.5 py-1 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-mono font-bold text-xs tracking-wider uppercase border-2 border-[#7F1D1D] rounded-none shadow-none cursor-pointer ml-1"
+              className="hidden sm:flex items-center px-3.5 py-1 bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E] font-mono font-bold text-xs tracking-wide rounded-md cursor-pointer ml-1 transition"
             >
               Finish Test
             </button>
@@ -1671,38 +1667,36 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
 
         {/* ROW 2 (Accessibility & Station Controls Toolbar) */}
-        <div className={`w-full min-h-9 sm:h-10 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 ${theme.subHeaderBg || 'bg-[#001F4D] text-slate-200'} text-xs font-mono border-b-2 border-black/30 rounded-none`}>
+        <div className={`w-full min-h-9 sm:h-10 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 ${theme.subHeaderBg || 'bg-[#0B3833] text-[#E6F2EF]'} text-xs font-mono border-b border-black/20`}>
           {/* Left: Mobile stage title or font resizer */}
           <div className="flex items-center gap-2 min-w-0">
-            <span className="sm:hidden text-[11px] font-bold text-sky-200 uppercase tracking-tight truncate">
+            <span className="sm:hidden text-[11px] font-bold text-[#F4A62A] uppercase tracking-tight truncate">
               {activeSkill === 'reading'
-                ? `[${activeReadingBadge.toUpperCase()}]`
+                ? activeReadingBadge
                 : activeSkill === 'listening'
-                ? `[LISTENING · SEC ${listeningSection}/4]`
-                : `[WRITING · TASK ${activeWritingTask}]`}
+                ? `Listening · Part ${listeningSection}/4`
+                : `Writing · Task ${activeWritingTask}`}
             </span>
 
             {/* Font Resizer (Desktop/Tablet) */}
-            <div className="hidden sm:flex items-center border-2 border-slate-600 font-mono text-[11px] font-bold rounded-none bg-black/20">
+            <div className="hidden sm:flex items-center border border-white/25 font-mono text-[11px] font-bold rounded-md overflow-hidden bg-black/20">
               <button
                 onClick={() => setZoomLevel('100%')}
-                className={`px-2.5 py-0.5 cursor-pointer rounded-none ${zoomLevel === '100%' ? 'bg-sky-600 text-white font-black' : 'hover:bg-white/10 text-slate-300'}`}
+                className={`px-2.5 py-0.5 cursor-pointer transition ${zoomLevel === '100%' ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'}`}
                 title="Standard Font Size (16px)"
               >
                 16px
               </button>
-              <span className="text-slate-500">|</span>
               <button
                 onClick={() => setZoomLevel('125%')}
-                className={`px-2.5 py-0.5 cursor-pointer rounded-none ${zoomLevel === '125%' ? 'bg-sky-600 text-white font-black' : 'hover:bg-white/10 text-slate-300'}`}
+                className={`px-2.5 py-0.5 cursor-pointer border-l border-white/20 transition ${zoomLevel === '125%' ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'}`}
                 title="Large Font Size (18px)"
               >
                 18px
               </button>
-              <span className="text-slate-500">|</span>
               <button
                 onClick={() => setZoomLevel('150%')}
-                className={`px-2.5 py-0.5 cursor-pointer rounded-none ${zoomLevel === '150%' ? 'bg-sky-600 text-white font-black' : 'hover:bg-white/10 text-slate-300'}`}
+                className={`px-2.5 py-0.5 cursor-pointer border-l border-white/20 transition ${zoomLevel === '150%' ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'}`}
                 title="Extra Large Font Size (20px)"
               >
                 20px
@@ -1714,53 +1708,54 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           <div className="flex items-center gap-1.5 shrink-0 font-mono">
             {/* Contrast Switcher */}
             <select
+              aria-label="Display Contrast Mode"
               value={colorScheme}
               onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
-              className="bg-black/50 text-white text-[11px] font-mono font-bold px-2 py-0.5 border-2 border-slate-600 outline-none cursor-pointer max-w-[110px] min-[420px]:max-w-[140px] sm:max-w-none truncate rounded-none"
+              className="bg-black/30 text-current text-[11px] font-mono font-bold px-2 py-0.5 border border-white/25 rounded-md outline-none cursor-pointer max-w-[115px] min-[420px]:max-w-[155px] sm:max-w-none truncate"
               title="Switch Color Contrast Mode"
             >
-              <option value="standard">Standard (Practice Blue)</option>
-              <option value="black-on-yellow">Black on Yellow</option>
-              <option value="yellow-on-black">Yellow on Black</option>
-              <option value="white-on-black">White on Black</option>
+              <option value="standard" className="bg-white text-[#0E1F1E]">Standard (BandSprint)</option>
+              <option value="black-on-yellow" className="bg-[#FFF100] text-black">Black on Yellow</option>
+              <option value="yellow-on-black" className="bg-black text-[#FFF100]">Yellow on Black</option>
+              <option value="white-on-black" className="bg-black text-white">White on Black</option>
             </select>
 
             {/* Notes Drawer Toggle (Alt+V) */}
             <button
               onClick={() => setShowNotesDrawer((prev) => !prev)}
-              className={`px-2.5 py-0.5 border-2 border-slate-600 text-[11px] font-mono font-bold flex items-center gap-1.5 cursor-pointer rounded-none ${
-                showNotesDrawer ? 'bg-amber-400 text-black border-amber-500' : 'hover:bg-white/10 text-slate-200'
+              className={`px-2.5 py-0.5 border text-[11px] font-mono font-bold flex items-center gap-1.5 cursor-pointer rounded-md transition ${
+                showNotesDrawer ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A]' : 'border-white/25 hover:bg-white/10'
               }`}
               title="Toggle Margin Notes & Highlights (Alt+V)"
             >
               <StickyNote className="w-3 h-3" />
-              <span className="hidden min-[420px]:inline">[NOTES: {notes.length}]</span>
+              <span className="hidden min-[420px]:inline">Notes ({notes.length})</span>
             </button>
 
             {/* Instructions / Help Modal */}
             <button
               onClick={() => setShowHelpModal(true)}
-              className="px-2 py-0.5 hover:bg-white/10 border-2 border-slate-600 text-slate-300 cursor-pointer rounded-none font-mono text-[11px] font-bold"
+              className="px-2.5 py-0.5 hover:bg-white/10 border border-white/25 cursor-pointer rounded-md font-mono text-[11px] font-bold"
               title="Exam Instructions & Shortcuts"
             >
-              [HELP]
+              Help
             </button>
 
             {/* In-App Exit Session Guard Button */}
             <button
               onClick={() => setShowExitConfirmModal(true)}
-              className="px-2.5 py-0.5 border-2 border-slate-600 hover:bg-white/10 text-slate-200 font-mono font-bold text-[11px] cursor-pointer rounded-none"
+              className="px-2.5 py-0.5 border border-white/25 hover:bg-white/10 font-mono font-bold text-[11px] cursor-pointer rounded-md"
               title="Exit Exam Session"
             >
-              [EXIT]
+              Exit
             </button>
 
             {/* Mobile-Only Finish Test Button in Toolbar */}
             <button
               onClick={() => setShowReviewModal(true)}
-              className="sm:hidden px-2.5 py-0.5 bg-[#B91C1C] text-white font-mono font-bold text-[11px] uppercase tracking-wider border-2 border-[#7F1D1D] rounded-none cursor-pointer"
+              className="sm:hidden px-2.5 py-0.5 bg-[#F4A62A] text-[#0E1F1E] font-mono font-bold text-[11px] uppercase tracking-wider rounded-md cursor-pointer"
             >
-              SUBMIT
+              Finish
             </button>
           </div>
         </div>
@@ -1829,44 +1824,44 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       )}
 
       {/* ================= 2. ACTIVE TEST STAGE BAR & MODULE SWITCHER ================= */}
-      <div className={`w-full px-3 sm:px-4 py-2 border-b-2 ${theme.border} flex flex-wrap items-center justify-between gap-2.5 shrink-0 bg-[#E2E8F0] text-[#002F6C] font-mono select-none rounded-none`}>
+      <div className={`w-full px-3 sm:px-4 py-2 border-b ${theme.border} flex flex-wrap items-center justify-between gap-2.5 shrink-0 ${colorScheme === 'standard' ? 'bg-[#E9EFEC] text-[#0F4C45]' : theme.cardBg} font-mono select-none`}>
         {/* Practice Module Switcher Navigation Tabs */}
         <div className="flex items-center gap-1.5 font-mono text-xs overflow-x-auto">
           <button
             type="button"
             onClick={() => handleSwitchModule('listening')}
-            className={`px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
               activeSkill === 'listening'
-                ? 'bg-[#002F6C] text-white border-[#001F4D] shadow-inner'
-                : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                ? theme.activeTile
+                : `${theme.cardBg} ${theme.border} hover:opacity-90`
             }`}
           >
             <Headphones className="w-3.5 h-3.5" />
-            <span>1. LISTENING</span>
+            <span>1. Listening</span>
           </button>
           <button
             type="button"
             onClick={() => handleSwitchModule('reading')}
-            className={`px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
               activeSkill === 'reading'
-                ? 'bg-[#002F6C] text-white border-[#001F4D] shadow-inner'
-                : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                ? theme.activeTile
+                : `${theme.cardBg} ${theme.border} hover:opacity-90`
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>2. READING</span>
+            <span>2. Reading</span>
           </button>
           <button
             type="button"
             onClick={() => handleSwitchModule('writing')}
-            className={`px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
               activeSkill === 'writing'
-                ? 'bg-[#002F6C] text-white border-[#001F4D] shadow-inner'
-                : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                ? theme.activeTile
+                : `${theme.cardBg} ${theme.border} hover:opacity-90`
             }`}
           >
             <PenTool className="w-3.5 h-3.5" />
-            <span>3. WRITING</span>
+            <span>3. Writing</span>
           </button>
           <button
             type="button"
@@ -1879,11 +1874,11 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 onShowToast('Speaking Interview module is opening.');
               }
             }}
-            className="px-3 py-1 font-bold border-2 rounded-none flex items-center gap-1.5 cursor-pointer bg-white text-rose-700 border-slate-400 hover:border-rose-600 hover:bg-rose-50 whitespace-nowrap"
+            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${theme.cardBg} ${theme.border} hover:opacity-90`}
             title="Open AI Speaking Practice Suite"
           >
-            <Mic className="w-3.5 h-3.5 text-rose-600" />
-            <span>4. SPEAKING</span>
+            <Mic className="w-3.5 h-3.5 text-[#D97706]" />
+            <span>4. Speaking</span>
           </button>
         </div>
 
@@ -1892,10 +1887,10 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           {activeSkill === 'listening' && (
             <button
               onClick={handleProceedToReading}
-              className="px-3 py-1 bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D] cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider"
+              className={`px-3 py-1.5 rounded-md cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider transition ${theme.accentBtn}`}
               title="Finish Listening and proceed to 60-minute Academic Reading"
             >
-              <span>NEXT: READING (60M)</span>
+              <span>Next: Reading (60m)</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
@@ -1903,10 +1898,10 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           {activeSkill === 'reading' && (
             <button
               onClick={handleProceedToWriting}
-              className="px-3 py-1 bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D] cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider"
+              className={`px-3 py-1.5 rounded-md cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider transition ${theme.accentBtn}`}
               title="Finish Reading and proceed to 60-minute Academic Writing"
             >
-              <span>NEXT: WRITING (60M)</span>
+              <span>Next: Writing (60m)</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
@@ -1914,10 +1909,10 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           {activeSkill === 'writing' && (
             <button
               onClick={() => setShowReviewModal(true)}
-              className="px-3 py-1 bg-[#B91C1C] hover:bg-[#991B1B] text-white border-2 border-[#7F1D1D] cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider"
-              title="Finish and submit test for official 4-criterion AI grading"
+              className="px-3 py-1.5 bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E] rounded-md cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider transition"
+              title="Finish and submit test for 4-criterion practice evaluation"
             >
-              <span>FINISH TEST & GRADE</span>
+              <span>Finish &amp; Grade</span>
               <Sparkles className="w-3.5 h-3.5" />
             </button>
           )}
@@ -1926,26 +1921,26 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           <div className="flex md:hidden items-center gap-1.5 shrink-0 font-mono">
             <button
               onClick={() => handleSwitchMobilePane('left')}
-              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-1.5 ${
-                mobilePane === 'left' ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border rounded-md cursor-pointer flex items-center gap-1.5 ${
+                mobilePane === 'left' ? theme.activeTile : `${theme.cardBg} ${theme.border}`
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span>{activeSkill === 'reading' ? 'PASSAGE' : 'PROMPT'}</span>
+              <span>{activeSkill === 'reading' ? 'Passage' : 'Prompt'}</span>
             </button>
             <button
               onClick={() => handleSwitchMobilePane('right')}
-              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-1.5 ${
-                mobilePane === 'right' ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border rounded-md cursor-pointer flex items-center gap-1.5 ${
+                mobilePane === 'right' ? theme.activeTile : `${theme.cardBg} ${theme.border}`
               }`}
             >
-              <span>QUESTIONS ({answeredCount}/{totalQuestions})</span>
+              <span>Questions ({answeredCount}/{totalQuestions})</span>
             </button>
           </div>
 
-          <div className="hidden xl:flex items-center gap-1.5 px-2 py-0.5 bg-white border border-slate-400 text-slate-800 text-[11px]">
-            <span className="w-2 h-2 bg-emerald-600 rounded-none shrink-0" />
-            <span className="tabular-nums">SAVED: {lastAutoSavedTime}</span>
+          <div className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1 border rounded-md text-[11px] ${theme.cardBg} ${theme.border}`}>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span className="tabular-nums">Saved {lastAutoSavedTime}</span>
           </div>
         </div>
       </div>
@@ -1962,9 +1957,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         >
           {activeSkill === 'reading' && (
             <div className="space-y-4">
-              <div className="border-b-2 border-slate-300 pb-2 flex flex-wrap items-center justify-between gap-2 font-mono">
-                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
-                  [ READING PRACTICE SET {selectedSetIdx + 1} OF {MOCK_EXAM_SETS.length} ]
+              <div className={`border-b ${theme.border} pb-2.5 flex flex-wrap items-center justify-between gap-2 font-mono`}>
+                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                  Reading Practice Set {selectedSetIdx + 1} of {MOCK_EXAM_SETS.length}
                 </span>
                 <div className="flex items-center gap-1 font-mono text-xs">
                   {MOCK_EXAM_SETS.map((set, pIdx) => (
@@ -1979,52 +1974,52 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                         soundManager.playBeep(540, 0.03);
                         onShowToast(`Viewing ${MOCK_EXAM_SETS[pIdx]?.title || `Practice Set ${pIdx + 1}`}`);
                       }}
-                      className={`px-3 py-1.5 min-h-[38px] border-2 rounded-none cursor-pointer font-bold ${
+                      className={`px-3 py-1.5 min-h-[38px] border rounded-md cursor-pointer font-bold transition ${
                         selectedSetIdx === pIdx
-                          ? 'bg-[#002F6C] text-white border-[#001F4D]'
-                          : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                          ? theme.activeTile
+                          : `${theme.cardBg} ${theme.border} hover:opacity-85`
                       }`}
                     >
-                      SET {pIdx + 1}
+                      Set {pIdx + 1}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-slate-600 bg-slate-100 p-2 border border-slate-300">
-                <span>[ PASSAGE TOPIC: {activeReadingTitle} · {activeReadingBadge} ]</span>
-                <span>[ PASSAGE LENGTH: {(activePassageText || currentSet.readingPassage || '').trim().split(/\s+/).filter(Boolean).length} WORDS ]</span>
+              <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono opacity-85 p-2.5 rounded-md border ${theme.border} ${theme.cardBg}`}>
+                <span>{activeReadingBadge} · {activeReadingTitle}</span>
+                <span>{(activePassageText || currentSet.readingPassage || '').trim().split(/\s+/).filter(Boolean).length} words</span>
               </div>
 
-              <h1 className="text-xl sm:text-2xl font-bold leading-tight text-[#002F6C] font-mono">
+              <h1 className={`text-xl sm:text-2xl font-bold leading-tight font-display ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
                 {activeReadingTitle}
               </h1>
 
-              <div className="space-y-4 leading-relaxed font-sans text-justify text-slate-900 text-sm sm:text-base">
+              <div className="space-y-4 leading-relaxed font-sans select-text">
                 {(activePassageText || currentSet.readingPassage || '').split('\n\n').map((paragraph, pIdx) => (
-                  <p key={pIdx} className="indent-4 leading-relaxed">
+                  <p key={pIdx} className="leading-relaxed">
                     {renderParagraphWithHighlights(paragraph)}
                   </p>
                 ))}
               </div>
 
-              <div className="pt-4 border-t-2 border-slate-300 flex flex-wrap items-center justify-between gap-3 font-mono">
-                <span className="text-xs text-slate-600">
-                  Select text to highlight in yellow, underline, or record margin notes (Alt+V)
+              <div className={`pt-4 border-t ${theme.border} flex flex-wrap items-center justify-between gap-3 font-mono`}>
+                <span className="text-xs opacity-75">
+                  Select any text to highlight, underline, or add a margin note (Alt+V)
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleSwitchMobilePane('right')}
-                    className="md:hidden px-4 py-2 bg-[#002F6C] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] flex items-center gap-2 cursor-pointer shadow-sm active:scale-95 min-h-[44px]"
+                    className={`md:hidden px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider rounded-md flex items-center gap-2 cursor-pointer min-h-[44px] ${theme.accentBtn}`}
                   >
-                    <span>GO TO QUESTIONS ({answeredCount}/{totalQuestions})</span>
+                    <span>Go to Questions ({answeredCount}/{totalQuestions})</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={handleProceedToWriting}
-                    className="hidden sm:flex px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] items-center gap-2 cursor-pointer shadow-sm"
+                    className={`hidden sm:flex px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider rounded-md items-center gap-2 cursor-pointer ${theme.accentBtn}`}
                   >
-                    <span>PROCEED TO WRITING MODULE (60 MINS)</span>
+                    <span>Proceed to Writing (60 min)</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -2035,9 +2030,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           {activeSkill === 'listening' && (
             <div className="space-y-4">
               {/* Section Header & Part Switcher */}
-              <div className="border-b-2 border-slate-300 pb-2 flex flex-wrap items-center justify-between gap-2 font-mono">
-                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
-                  [ LISTENING MODULE · SECTION {listeningSection} OF 4 (SINGLE-PLAY RULE) ]
+              <div className={`border-b ${theme.border} pb-2.5 flex flex-wrap items-center justify-between gap-2 font-mono`}>
+                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                  Listening · Part {listeningSection} of 4 (Single-Play)
                 </span>
                 <div className="flex items-center gap-1 font-mono text-xs">
                   {[1, 2, 3, 4].map((s) => {
@@ -2059,18 +2054,18 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                           }
                           setListeningSection(s as 1 | 2 | 3 | 4);
                         }}
-                        className={`px-2.5 py-1 border-2 rounded-none flex items-center gap-1 cursor-pointer font-bold ${
+                        className={`px-2.5 py-1 border rounded-md flex items-center gap-1 cursor-pointer font-bold transition ${
                           listeningSection === s
-                            ? 'bg-[#002F6C] text-white border-[#001F4D]'
-                            : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                            ? theme.activeTile
+                            : `${theme.cardBg} ${theme.border} hover:opacity-85`
                         }`}
                         title={
                           isCompleted
                             ? `Completed at ${new Date(completedListeningParts[s]).toLocaleTimeString()}`
-                            : `Section ${s}`
+                            : `Part ${s}`
                         }
                       >
-                        <span>SEC {s}</span>
+                        <span>Part {s}</span>
                         {isCompleted && <CheckCircle2 className="w-3 h-3 text-emerald-500 inline" />}
                       </button>
                     );
@@ -2079,11 +2074,11 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               </div>
 
               {/* Practice Device Sound Check Banner */}
-              <div className="p-3 border-2 border-slate-400 bg-slate-50 flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
+              <div className={`p-3 border rounded-lg ${theme.border} ${theme.cardBg} flex flex-wrap items-center justify-between gap-2 font-mono text-xs`}>
                 <div className="flex items-center gap-2">
-                  <Headphones className="w-4 h-4 text-[#002F6C]" />
-                  <span className="font-bold text-[#002F6C]">
-                    SOUND CHECK: {hasTestedHeadset ? '✓ AUDIO VERIFIED & READY' : '⚠️ CLICK TEST TO CHECK HEADSET'}
+                  <Headphones className={`w-4 h-4 ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`} />
+                  <span className="font-bold">
+                    Headset Check: {hasTestedHeadset ? 'Verified & Ready' : 'Click to test audio'}
                   </span>
                 </div>
 
@@ -2091,52 +2086,43 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                   <button
                     onClick={handleRunSoundCheck}
                     disabled={isAudioPlaying}
-                    className="px-3 py-1 bg-white hover:bg-slate-200 text-[#002F6C] font-mono font-bold text-xs border border-slate-400 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    className={`px-3 py-1.5 font-mono font-bold text-xs border rounded-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50 ${theme.accentBtn}`}
                   >
-                    <Volume2 className="w-3.5 h-3.5 text-blue-700" />
-                    <span>{isSoundCheckPlaying ? 'Testing Sound...' : '[ 🎧 PLAY SOUND TEST ]'}</span>
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>{isSoundCheckPlaying ? 'Testing Sound...' : 'Play Sound Test'}</span>
                   </button>
                 </div>
               </div>
 
               {/* Standardized Practice Section Transitions & Silence Buffers Banner */}
-              <div className="my-2 p-4 sm:p-5 border-2 border-[#002F6C]/40 bg-white space-y-3.5 shadow-none rounded-none font-mono">
+              <div className={`my-2 p-4 sm:p-5 border rounded-lg ${theme.border} ${theme.cardBg} space-y-3.5 font-mono`}>
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono font-bold">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full ${
-                        isAudioPlaying || listeningPhase === 'playing'
-                          ? 'bg-rose-600 animate-ping'
-                          : listeningPhase === 'completed'
-                          ? 'bg-gray-500'
-                          : 'bg-amber-500 animate-pulse'
-                      }`}
-                    />
                     <span className="uppercase text-[11px] sm:text-xs">
-                      {listeningPhase === 'pre_read' && `PRE-READ SILENCE BUFFER · PART ${listeningSection} OF 4`}
-                      {listeningPhase === 'playing' && `SINGLE-PLAY BROADCAST ACTIVE · PART ${listeningSection} OF 4`}
-                      {listeningPhase === 'section_check' && `POST-SECTION CHECK BUFFER · PART ${listeningSection} OF 4`}
-                      {listeningPhase === 'end_of_test_buffer' && `FINAL 2-MINUTE END-OF-TEST CHECK BUFFER`}
-                      {listeningPhase === 'completed' && `LISTENING BROADCAST CONCLUDED (LOCKED)`}
+                      {listeningPhase === 'pre_read' && `Pre-Read Buffer · Part ${listeningSection} of 4`}
+                      {listeningPhase === 'playing' && `Single-Play Audio Active · Part ${listeningSection} of 4`}
+                      {listeningPhase === 'section_check' && `Section Check Window · Part ${listeningSection} of 4`}
+                      {listeningPhase === 'end_of_test_buffer' && `Final 2-Minute Answer Check`}
+                      {listeningPhase === 'completed' && `Listening Concluded (Locked)`}
                     </span>
                   </div>
 
-                  <span className="px-2.5 py-0.5 bg-black text-white font-mono text-xs font-bold tracking-wider">
+                  <span className="px-2.5 py-0.5 bg-[#0F4C45] text-white rounded font-mono text-xs font-bold tabular-nums tracking-wider">
                     {listeningPhase === 'completed' ? '00:00' : formatTimer(phaseCountdownSec)}
                   </span>
                 </div>
 
-                <p className="text-xs font-sans font-bold leading-relaxed opacity-95">
+                <p className="text-xs font-sans leading-relaxed opacity-90">
                   {listeningPhase === 'pre_read' &&
-                    `"You will have some time (${phaseCountdownSec}s) to look at questions ${(listeningSection - 1) * 10 + 1} to ${listeningSection * 10} before the recording begins."`}
+                    `You have ${phaseCountdownSec} seconds to preview questions ${(listeningSection - 1) * 10 + 1} to ${listeningSection * 10} before the recording begins.`}
                   {listeningPhase === 'playing' &&
-                    `Audio is playing strictly once (${audioPlaybackSec}s elapsed). Seek bar, pause controls, and speed multipliers are disabled per official CD-IELTS examination rules.`}
+                    `Recording playing once (${audioPlaybackSec}s elapsed). Scrubbing, pausing, and speed changes are disabled to mirror timed CD-IELTS rules.`}
                   {listeningPhase === 'section_check' &&
-                    `"You now have ${phaseCountdownSec} seconds to check your answers for Section ${listeningSection} before advancing to the next section."`}
+                    `You have ${phaseCountdownSec} seconds to review your answers for Part ${listeningSection} before advancing.`}
                   {listeningPhase === 'end_of_test_buffer' &&
-                    `Standard 2-Minute CD-IELTS Final Check Window (${formatTimer(phaseCountdownSec)} remaining). Review your responses across all questions before answers lock permanently.`}
+                    `Final 2-minute answer check (${formatTimer(phaseCountdownSec)} remaining). Review your answers before they lock.`}
                   {listeningPhase === 'completed' &&
-                    `All 4 Listening sections and the 2-minute check period have concluded. Responses are locked for grading.`}
+                    `All 4 Listening parts and the final check period have finished. Responses are locked for grading.`}
                 </p>
 
                 {/* Pre-Read Action Button (Skip Silence & Start Immediately) */}
@@ -2144,13 +2130,13 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                   <div className="pt-2 flex flex-wrap items-center gap-3">
                     <button
                       onClick={handleSkipPreReadAndStartAudio}
-                      className="px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                      className={`px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider rounded-md flex items-center gap-2 cursor-pointer transition ${theme.accentBtn}`}
                     >
-                      <Play className="w-3.5 h-3.5 fill-white" />
-                      <span>START RECORDING NOW (SKIP PRE-READ)</span>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Start Recording Now</span>
                     </button>
-                    <span className="text-xs text-slate-600 font-mono">
-                      Recording starts automatically in {phaseCountdownSec}s
+                    <span className="text-xs opacity-75 font-mono tabular-nums">
+                      Starts automatically in {phaseCountdownSec}s
                     </span>
                   </div>
                 )}
@@ -2333,23 +2319,23 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
 
           {activeSkill === 'writing' && (
             <div className="space-y-4">
-              <div className="border-b-2 border-slate-300 pb-2 flex items-center justify-between font-mono">
-                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
-                  [ ACADEMIC WRITING MODULE · TASK {activeWritingTask} ]
+              <div className={`border-b ${theme.border} pb-2.5 flex items-center justify-between font-mono`}>
+                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                  Academic Writing · Task {activeWritingTask}
                 </span>
                 <div className="flex items-center gap-2 font-mono">
                   <button
                     onClick={() => setActiveWritingTask(1)}
-                    className={`px-3 py-1 text-xs font-mono font-bold border-2 rounded-none cursor-pointer ${
-                      activeWritingTask === 1 ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+                    className={`px-3 py-1 text-xs font-mono font-bold border rounded-md cursor-pointer ${
+                      activeWritingTask === 1 ? theme.activeTile : `${theme.cardBg} ${theme.border}`
                     }`}
                   >
                     Task 1 (Min 150w)
                   </button>
                   <button
                     onClick={() => setActiveWritingTask(2)}
-                    className={`px-3 py-1 text-xs font-mono font-bold border-2 rounded-none cursor-pointer ${
-                      activeWritingTask === 2 ? 'bg-[#002F6C] text-white border-[#001F4D]' : 'bg-white text-slate-800 border-slate-400'
+                    className={`px-3 py-1 text-xs font-mono font-bold border rounded-md cursor-pointer ${
+                      activeWritingTask === 2 ? theme.activeTile : `${theme.cardBg} ${theme.border}`
                     }`}
                   >
                     Task 2 (Min 250w)
@@ -2357,34 +2343,50 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 </div>
               </div>
 
-              <div className="p-4 border-2 border-[#002F6C]/40 bg-white space-y-2 rounded-none shadow-none font-mono">
-                <div className="text-xs font-mono font-bold uppercase text-[#002F6C]">
-                  [ OFFICIAL WRITING PROMPT · TASK {activeWritingTask} ]
+              <div className={`p-4 border rounded-lg ${theme.border} ${theme.cardBg} space-y-2 font-mono`}>
+                <div className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                  Writing Prompt · Task {activeWritingTask}
                 </div>
-                <p className="font-bold leading-relaxed text-sm sm:text-base font-sans text-[#0F172A]">
+                <p className="font-semibold leading-relaxed text-sm sm:text-base font-sans">
                   {activeWritingTask === 1
                     ? currentSet.task1Prompt || 'Summarise the main features of the statistical chart and make comparisons where relevant. Write at least 150 words.'
                     : currentSet.writingPrompt}
                 </p>
-                <p className="text-xs opacity-75 pt-2 border-t border-slate-200">
+                <p className={`text-xs opacity-75 pt-2 border-t ${theme.border}`}>
                   {activeWritingTask === 1
-                    ? 'Recommended time: 20 minutes. Minimum length: 150 words. Under-length submissions incur automatic Task Achievement penalties.'
-                    : 'Recommended time: 40 minutes. Minimum length: 250 words. Under-length submissions incur automatic Task Response penalties.'}
+                    ? 'Recommended time: 20 minutes. Minimum length: 150 words.'
+                    : 'Recommended time: 40 minutes. Minimum length: 250 words.'}
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Draggable Vertical Splitter Handle */}
+        {/* Draggable & Keyboard-Accessible Vertical Splitter Handle */}
         <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize left and right exam panes"
+          aria-valuemin={25}
+          aria-valuemax={75}
+          aria-valuenow={Math.round(leftPanePercent)}
+          tabIndex={0}
           onMouseDown={handleSplitterMouseDown}
-          className={`hidden md:flex w-2 hover:w-3 bg-gray-400 cursor-col-resize items-center justify-center transition-all ${
-            isDraggingSplitter ? 'bg-sky-600 w-3' : ''
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              setLeftPanePercent((p) => Math.max(25, p - 5));
+            } else if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              setLeftPanePercent((p) => Math.min(75, p + 5));
+            }
+          }}
+          className={`hidden md:flex w-2 hover:w-3 bg-[#D3DDDA] focus:bg-[#0F4C45] focus:outline-none cursor-col-resize items-center justify-center transition-all ${
+            isDraggingSplitter ? 'bg-[#0F4C45] w-3' : ''
           }`}
-          title="Drag to resize passage and question panes"
+          title="Drag or press Left/Right arrow keys to resize panes"
         >
-          <div className="w-0.5 h-8 bg-gray-600 rounded-none" />
+          <div className="w-0.5 h-8 bg-[#0F4C45]/60 rounded-full" />
         </div>
 
         {/* Right Column: Question Panel OR Writing Editor Area */}
@@ -2394,34 +2396,33 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           className={`flex flex-1 min-h-0 md:flex-none md:h-full p-5 sm:p-6 overflow-y-auto flex-col justify-between bg-inherit`}
         >
           {activeSkill === 'reading' && (
-            <div className="md:hidden mb-4 pb-2 border-b border-gray-300 flex items-center justify-between">
+            <div className={`md:hidden mb-4 pb-2 border-b ${theme.border} flex items-center justify-between`}>
               <button
                 onClick={() => handleSwitchMobilePane('left')}
-                className="min-h-[44px] px-3.5 py-2 bg-sky-800 text-white font-mono font-bold text-xs uppercase flex items-center gap-2 active:bg-sky-900 rounded-none shadow-sm cursor-pointer"
+                className={`min-h-[44px] px-3.5 py-2 font-mono font-bold text-xs uppercase flex items-center gap-2 rounded-md cursor-pointer ${theme.accentBtn}`}
                 aria-label="Switch to Reading Passage"
               >
-                <span>←</span>
-                <span>[ 📄 VIEW PASSAGE ]</span>
+                <span>← View Passage</span>
               </button>
-              <span className="text-xs font-mono font-bold text-slate-700">
-                Passage 1 of 1
+              <span className="text-xs font-mono font-bold opacity-80">
+                {activeReadingBadge}
               </span>
             </div>
           )}
           {activeSkill === 'writing' ? (
             <div className="flex-1 flex flex-col space-y-3 font-mono">
-              <div className="flex items-center justify-between border-b-2 border-slate-300 pb-2">
-                <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
-                  [ CANDIDATE ESSAY RESPONSE AREA · TASK {activeWritingTask} ]
+              <div className={`flex items-center justify-between border-b ${theme.border} pb-2`}>
+                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                  Candidate Essay Response · Task {activeWritingTask}
                 </span>
                 <span
-                  className={`text-xs font-mono font-bold px-3 py-1 border-2 rounded-none tabular-nums ${
+                  className={`text-xs font-mono font-bold px-3 py-1 border rounded-md tabular-nums ${
                     (activeWritingTask === 1 ? task1WordCount < 150 : task2WordCount < 250)
                       ? 'border-amber-600 text-amber-800 bg-amber-50'
                       : 'border-emerald-600 text-emerald-800 bg-emerald-50'
                   }`}
                 >
-                  WORDS: {activeWritingTask === 1 ? task1WordCount : task2WordCount} / {activeWritingTask === 1 ? 150 : 250} MIN
+                  Words: {activeWritingTask === 1 ? task1WordCount : task2WordCount} / {activeWritingTask === 1 ? 150 : 250} min
                 </span>
               </div>
 
@@ -2436,47 +2437,47 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
-                placeholder={`Type your official Writing Task ${activeWritingTask} response here... (Auto-saved every 30s)`}
-                className="flex-1 min-h-[380px] w-full p-4 border-2 border-slate-400 focus:border-[#002F6C] bg-white text-[#0F172A] font-mono text-sm sm:text-base leading-relaxed outline-none rounded-none resize-none shadow-none"
+                placeholder={`Type your Writing Task ${activeWritingTask} practice response here... (Auto-saved every 30s)`}
+                className={`flex-1 min-h-[380px] w-full p-4 border rounded-lg ${theme.border} ${theme.inputBg} focus:border-[#0F4C45] font-sans text-sm sm:text-base leading-relaxed outline-none resize-none select-text`}
               />
 
-              <div className="flex flex-wrap items-center justify-between pt-1 text-xs opacity-85 font-mono border-t border-slate-300">
-                <span>[ SPELLCHECK: DISABLED PER OFFICIAL CD-IELTS RULES ]</span>
-                <span>[ 4-CRITERION AI EVALUATOR READY: TA/TR · CC · LR · GRA ]</span>
+              <div className={`flex flex-wrap items-center justify-between pt-1 text-xs opacity-80 font-mono border-t ${theme.border}`}>
+                <span>Spellcheck disabled for timed practice</span>
+                <span>4-criterion diagnostic evaluation on submit</span>
               </div>
             </div>
           ) : (
             <div className="flex-1 flex flex-col justify-between space-y-6 font-mono">
               <div className="space-y-4">
-                <div className="flex items-center justify-between border-b-2 border-slate-300 pb-2 font-mono">
-                  <span className="text-xs font-mono font-bold uppercase text-[#002F6C]">
-                    [ QUESTION {activeQuestionIdx + 1} OF {skillQuestions.length} · {activeQuestionObj?.type.toUpperCase()} ]
+                <div className={`flex items-center justify-between border-b ${theme.border} pb-2 font-mono`}>
+                  <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                    Question {activeQuestionIdx + 1} of {skillQuestions.length} · {activeQuestionObj?.type}
                   </span>
 
                   {/* Flag for Review Checkbox (Alt+R) */}
                   <label
-                    className="flex items-center gap-2 text-xs font-mono font-bold cursor-pointer px-2 py-0.5 border border-slate-400 bg-white hover:bg-slate-50 rounded-none"
+                    className={`flex items-center gap-2 text-xs font-mono font-bold cursor-pointer px-2.5 py-1 border rounded-md ${theme.border} ${theme.cardBg}`}
                     title="Flag question for review (Shortcut: Alt+R)"
                   >
                     <input
                       type="checkbox"
                       checked={flaggedQuestions.has(activeQuestionId)}
                       onChange={() => toggleFlag(activeQuestionId)}
-                      className="accent-amber-500 w-4 h-4 cursor-pointer rounded-none"
+                      className="accent-[#D97706] w-4 h-4 cursor-pointer"
                     />
-                    <span>REVIEW (Alt+R)</span>
+                    <span>Flag (Alt+R)</span>
                   </label>
                 </div>
 
                 {/* Current Active Question Display */}
                 {activeQuestionObj && (
                   <div className="space-y-4 font-mono">
-                    <div className="p-4 border-2 border-slate-300 bg-white space-y-2 rounded-none shadow-none">
-                      <div className="flex items-center justify-between text-xs font-mono font-bold text-[#002F6C]">
-                        <span>[ QUESTION #{activeQuestionObj.id} ]</span>
-                        <span>[ TYPE: {activeQuestionObj.type.toUpperCase()} ]</span>
+                    <div className={`p-4 border rounded-lg ${theme.border} ${theme.cardBg} space-y-2`}>
+                      <div className={`flex items-center justify-between text-xs font-mono font-bold ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                        <span>Question {activeQuestionObj.id}</span>
+                        <span className="opacity-75 uppercase">{activeQuestionObj.type}</span>
                       </div>
-                      <div className="font-bold text-sm sm:text-base leading-snug text-[#0F172A] font-sans">
+                      <div className="font-semibold text-sm sm:text-base leading-snug font-sans">
                         {activeQuestionObj.prompt}
                       </div>
                     </div>
@@ -2529,12 +2530,12 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                                 }));
                                 soundManager.playBeep(540, 0.03);
                               }}
-                              className={`flex items-center gap-3 p-3.5 border-2 rounded-none font-mono transition-none ${
+                              className={`flex items-center gap-3 p-3.5 border rounded-lg font-mono transition ${
                                 isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
                               } ${
                                 isSelected
-                                  ? 'bg-[#002F6C] text-white border-[#001F4D] font-bold'
-                                  : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300 font-medium'
+                                  ? `${theme.activeTile} font-bold`
+                                  : `${theme.cardBg} ${theme.border} hover:opacity-90 font-medium`
                               }`}
                             >
                               <input
@@ -2544,9 +2545,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                                 name={`q_${activeQuestionId}`}
                                 checked={isSelected}
                                 onChange={() => {}}
-                                className="w-4 h-4 accent-[#002F6C] cursor-pointer rounded-none shrink-0"
+                                className="w-4 h-4 accent-[#0F4C45] cursor-pointer shrink-0"
                               />
-                              <span className="font-mono font-bold text-xs px-1.5 py-0.5 border border-current shrink-0">
+                              <span className="font-mono font-bold text-xs px-1.5 py-0.5 border border-current rounded shrink-0">
                                 {optionLetter}
                               </span>
                               <span className="text-xs sm:text-sm font-sans">{opt.replace(/^[A-Z]\.\s*/, '')}</span>
@@ -2557,8 +2558,8 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     ) : (
                       /* Short Answer / Fill in the Blanks (Sequential Tab Focus) */
                       <div className="space-y-2 pt-2 font-mono">
-                        <label className="block text-xs font-mono font-bold uppercase text-slate-700">
-                          [ TYPE EXACT RESPONSE ANSWER (TAB / SHIFT+TAB FOR NEXT BLANK) ]:
+                        <label className="block text-xs font-mono font-bold uppercase opacity-80">
+                          Type Answer (Tab / Shift+Tab for next question):
                         </label>
                         <input
                           tabIndex={1}
@@ -2585,9 +2586,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                           placeholder={
                             activeSkill === 'listening' && isListeningLocked
                               ? 'Listening answers locked after 2-minute check period'
-                              : 'Type candidate answer here...'
+                              : 'Type your answer here...'
                           }
-                          className="w-full p-3 border-2 border-slate-400 focus:border-[#002F6C] bg-white text-[#0F172A] font-mono font-bold text-sm rounded-none outline-none shadow-none disabled:opacity-60"
+                          className={`w-full p-3 border-2 rounded-lg ${theme.border} ${theme.inputBg} focus:border-[#0F4C45] font-mono font-bold text-sm outline-none disabled:opacity-60`}
                         />
                       </div>
                     )}
@@ -2596,25 +2597,25 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               </div>
 
               {/* Prev / Next Buttons flanking question */}
-              <div className="pt-4 border-t-2 border-slate-300 flex items-center justify-between gap-3 font-mono">
+              <div className={`pt-4 border-t ${theme.border} flex items-center justify-between gap-3 font-mono`}>
                 <button
                   disabled={activeQuestionIdx <= 0}
                   onClick={() => {
                     setActiveQuestionIdx((q) => Math.max(0, q - 1));
                     soundManager.playBeep(480, 0.03);
                   }}
-                  className="px-4 py-2 border-2 border-slate-400 bg-white hover:bg-slate-100 text-slate-800 text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer rounded-none"
+                  className={`px-4 py-2 border rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.cardBg} ${theme.border}`}
                   title="Previous Question (Alt+P)"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                  <span>BACK [Alt+P]</span>
+                  <span>Previous</span>
                 </button>
 
                 <button
                   onClick={() => setShowReviewModal(true)}
-                  className="px-3.5 py-2 border-2 border-[#002F6C] bg-white hover:bg-slate-100 text-[#002F6C] text-xs font-mono font-bold rounded-none uppercase cursor-pointer"
+                  className={`px-3.5 py-2 border rounded-md text-xs font-mono font-bold uppercase cursor-pointer ${theme.cardBg} ${theme.border}`}
                 >
-                  [ REVIEW & SUBMIT ({answeredCount}/{totalQuestions}) ]
+                  Review &amp; Submit ({answeredCount}/{totalQuestions})
                 </button>
 
                 <button
@@ -2623,10 +2624,10 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     setActiveQuestionIdx((q) => Math.min(skillQuestions.length - 1, q + 1));
                     soundManager.playBeep(520, 0.03);
                   }}
-                  className="px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white border-2 border-[#001F4D] text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer rounded-none"
+                  className={`px-4 py-2 rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.accentBtn}`}
                   title="Next Question (Alt+N)"
                 >
-                  <span>NEXT [Alt+N]</span>
+                  <span>Next</span>
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -2756,23 +2757,23 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         )}
       </div>
 
-      {/* ================= 4. OFFICIAL BOTTOM QUESTION NAVIGATION DOCK ================= */}
-      <footer className={`w-full border-t-2 ${theme.border} px-3 sm:px-4 py-2.5 shrink-0 bg-[#EEF2F6] select-none z-10 font-mono rounded-none`}>
+      {/* ================= 4. BOTTOM QUESTION NAVIGATION DOCK ================= */}
+      <footer className={`w-full border-t ${theme.border} px-3 sm:px-4 py-2.5 shrink-0 ${colorScheme === 'standard' ? 'bg-[#E9EFEC]' : theme.bg} select-none z-10 font-mono`}>
         {/* Dock Header: Response Metrics & Review Status */}
         <div className="flex items-center justify-between gap-2 mb-2 text-xs font-mono font-bold">
           {/* Status Metrics Legend */}
           <div className="flex items-center gap-3 sm:gap-4 flex-wrap text-[11px] sm:text-xs">
             <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 bg-[#002F6C] border-2 border-[#001F4D] rounded-none inline-block" />
-              <span>ANSWERED ({answeredCount})</span>
+              <span className={`w-3.5 h-3.5 rounded-sm inline-block ${theme.activeTile}`} />
+              <span>Answered ({answeredCount})</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 bg-white border-2 border-slate-400 rounded-none inline-block" />
-              <span>UNANSWERED ({totalQuestions - answeredCount})</span>
+              <span className={`w-3.5 h-3.5 rounded-sm border inline-block ${theme.cardBg} ${theme.border}`} />
+              <span>Unanswered ({totalQuestions - answeredCount})</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 bg-[#FEF08A] border-2 border-[#CA8A04] rounded-none inline-block" />
-              <span>FLAGGED ({flaggedQuestions.size})</span>
+              <span className={`w-3.5 h-3.5 rounded-sm inline-block ${theme.flaggedTile}`} />
+              <span>Flagged ({flaggedQuestions.size})</span>
             </span>
           </div>
 
@@ -2780,22 +2781,22 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowReviewModal(true)}
-              className="px-3 py-1 bg-white hover:bg-slate-100 text-[#002F6C] border-2 border-[#002F6C] text-[11px] sm:text-xs font-mono font-bold cursor-pointer rounded-none uppercase"
+              className={`px-3 py-1 border rounded-md text-[11px] sm:text-xs font-mono font-bold cursor-pointer uppercase ${theme.cardBg} ${theme.border}`}
             >
-              [ REVIEW SUMMARY ({answeredCount}/{totalQuestions}) ]
+              Review Summary ({answeredCount}/{totalQuestions})
             </button>
             <button
               onClick={() => setShowPalette(!showPalette)}
-              className="text-[11px] font-mono px-2 py-1 border border-slate-400 bg-white hover:bg-slate-100 cursor-pointer hidden min-[420px]:inline rounded-none text-slate-700"
+              className={`text-[11px] font-mono px-2.5 py-1 border rounded-md cursor-pointer hidden min-[420px]:inline ${theme.cardBg} ${theme.border}`}
             >
-              {showPalette ? '[HIDE TILES]' : '[SHOW TILES]'}
+              {showPalette ? 'Hide Palette' : 'Show Palette'}
             </button>
           </div>
         </div>
 
         {/* Clean, Horizontally Scrollable Question Tiles Rail (Fixed Height, No Stacking/Crowding) */}
         {showPalette && (
-          <div className="w-full overflow-x-auto whitespace-nowrap scrollbar-thin py-2 px-1 flex items-center gap-1.5 border-2 border-[#CBD5E1] bg-white touch-pan-x rounded-none">
+          <div className={`w-full overflow-x-auto whitespace-nowrap scrollbar-thin py-2 px-1.5 flex items-center gap-1.5 border rounded-lg ${theme.border} ${theme.cardBg} touch-pan-x`}>
             {activeSkill === 'writing' ? (
               <div className="flex items-center gap-2 px-1">
                 <button
@@ -2803,15 +2804,15 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     setActiveWritingTask(1);
                     soundManager.playBeep(520, 0.02);
                   }}
-                  className={`px-4 py-2 font-mono text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-2 ${
+                  className={`px-4 py-2 font-mono text-xs font-bold border rounded-md cursor-pointer flex items-center gap-2 ${
                     activeWritingTask === 1
-                      ? 'bg-[#002F6C] text-white border-[#001F4D] ring-2 ring-[#002F6C]'
-                      : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                      ? theme.activeTile
+                      : `${theme.cardBg} ${theme.border}`
                   }`}
                 >
-                  <span>TASK 1 (150 WORDS)</span>
-                  <span className={`px-1.5 py-0.5 text-[10px] font-mono ${task1WordCount >= 150 ? 'bg-emerald-600 text-white' : 'bg-black/20 text-slate-800'}`}>
-                    {task1WordCount} words
+                  <span>Task 1 (150w)</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${task1WordCount >= 150 ? 'bg-emerald-600 text-white' : 'bg-black/15'}`}>
+                    {task1WordCount}w
                   </span>
                 </button>
                 <button
@@ -2819,15 +2820,15 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     setActiveWritingTask(2);
                     soundManager.playBeep(520, 0.02);
                   }}
-                  className={`px-4 py-2 font-mono text-xs font-bold border-2 rounded-none cursor-pointer flex items-center gap-2 ${
+                  className={`px-4 py-2 font-mono text-xs font-bold border rounded-md cursor-pointer flex items-center gap-2 ${
                     activeWritingTask === 2
-                      ? 'bg-[#002F6C] text-white border-[#001F4D] ring-2 ring-[#002F6C]'
-                      : 'bg-white text-slate-800 border-slate-400 hover:border-[#002F6C]'
+                      ? theme.activeTile
+                      : `${theme.cardBg} ${theme.border}`
                   }`}
                 >
-                  <span>TASK 2 (250 WORDS)</span>
-                  <span className={`px-1.5 py-0.5 text-[10px] font-mono ${task2WordCount >= 250 ? 'bg-emerald-600 text-white' : 'bg-black/20 text-slate-800'}`}>
-                    {task2WordCount} words
+                  <span>Task 2 (250w)</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${task2WordCount >= 250 ? 'bg-emerald-600 text-white' : 'bg-black/15'}`}>
+                    {task2WordCount}w
                   </span>
                 </button>
               </div>
@@ -2837,9 +2838,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 const isFlagged = flaggedQuestions.has(q.id);
                 const isActive = activeQuestionIdx === idx;
 
-                let tileStyle = 'bg-white text-slate-800 border-2 border-slate-400 hover:border-[#002F6C]';
-                if (isAnswered) tileStyle = 'bg-[#002F6C] text-white border-2 border-[#001F4D] font-bold';
-                if (isFlagged) tileStyle = 'bg-[#FEF08A] text-[#713F12] border-2 border-[#CA8A04] font-black';
+                let tileStyle = `${theme.cardBg} border ${theme.border} hover:border-[#0F4C45]`;
+                if (isAnswered) tileStyle = `${theme.activeTile} font-bold`;
+                if (isFlagged) tileStyle = `${theme.flaggedTile} font-black`;
 
                 const isSectionDivider = idx > 0 && idx % 10 === 0;
 
@@ -2848,9 +2849,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     {/* Subtle Part/Section Boundary Marker */}
                     {isSectionDivider && (
                       <div
-                        className="px-2 py-1 bg-[#E2E8F0] text-[#002F6C] font-mono text-[10px] font-bold tracking-wider shrink-0 border border-slate-400 rounded-none select-none"
+                        className={`px-2 py-1 font-mono text-[10px] font-bold tracking-wider shrink-0 border rounded select-none ${theme.border} opacity-80`}
                       >
-                        PART {Math.floor(idx / 10) + 1}
+                        Part {Math.floor(idx / 10) + 1}
                       </div>
                     )}
                     <button
@@ -2859,13 +2860,14 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                         if (window.innerWidth < 768) handleSwitchMobilePane('right');
                         soundManager.playBeep(520, 0.02);
                       }}
-                      className={`w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center font-mono text-xs sm:text-sm font-bold border-2 transition-none cursor-pointer rounded-none relative ${tileStyle} ${
-                        isActive ? 'ring-2 ring-[#002F6C] ring-offset-2 ring-offset-white font-black z-10' : ''
+                      className={`w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center font-mono text-xs sm:text-sm font-bold transition cursor-pointer rounded-md relative tabular-nums ${tileStyle} ${
+                        isActive ? 'ring-2 ring-[#F4A62A] ring-offset-1 font-black z-10' : ''
                       }`}
                       title={`Question ${idx + 1} (${isAnswered ? 'Answered' : 'Unanswered'}${isFlagged ? ', Flagged' : ''})`}
+                      aria-current={isActive ? 'step' : undefined}
                     >
                       {isFlagged && (
-                        <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-[#CA8A04]" title="Flagged" />
+                        <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-[#D97706]" title="Flagged" />
                       )}
                       {idx + 1}
                     </button>
@@ -2877,36 +2879,36 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         )}
       </footer>
 
-      {/* ================= 5. OFFICIAL HELP, REVIEW & ROUTE GUARD MODALS ================= */}
+      {/* ================= 5. HELP, REVIEW & ROUTE GUARD MODALS ================= */}
       {showHelpModal && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-white text-black p-6 border-2 border-black max-w-xl w-full space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b-2 border-black pb-2">
-              <h2 className="text-lg font-bold uppercase font-mono">OFFICIAL CD-IELTS EXAM INSTRUCTIONS & SHORTCUTS</h2>
-              <button onClick={() => setShowHelpModal(false)} className="p-1 hover:bg-gray-200 cursor-pointer">
+          <div className="bg-white text-[#0E1F1E] p-6 border border-[#D3DDDA] rounded-2xl max-w-xl w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#D3DDDA] pb-2.5">
+              <h2 className="text-base sm:text-lg font-bold uppercase font-mono text-[#0F4C45]">BandSprint Exam Instructions &amp; Shortcuts</h2>
+              <button onClick={() => setShowHelpModal(false)} className="p-1 hover:bg-slate-100 rounded cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="text-xs leading-relaxed space-y-2 font-sans">
-              <p className="font-bold">1. Official Keyboard Shortcuts:</p>
+              <p className="font-bold">1. Keyboard Shortcuts:</p>
               <p>• <strong>Alt + N</strong>: Advance to the next question.</p>
               <p>• <strong>Alt + P</strong>: Return to the previous question.</p>
-              <p>• <strong>Alt + R</strong>: Toggle the [ Review ] flag checkbox for the active question.</p>
+              <p>• <strong>Alt + R</strong>: Toggle the review flag for the active question.</p>
               <p>• <strong>Alt + V</strong>: Open or close the Margin Notes and Highlighter side panel.</p>
               <p>• <strong>Tab / Shift + Tab</strong>: Move focus sequentially across completion blanks.</p>
 
-              <p className="font-bold">2. Strict Listening Audio Rules:</p>
-              <p>Audio tracks play strictly once with zero scrubbing. Includes a 35s pre-read countdown, 60s check buffer between sections, and a 2-minute final check buffer.</p>
+              <p className="font-bold">2. Listening Audio Rules:</p>
+              <p>Audio tracks play once with no scrubbing, matching timed computer-delivered practice rules (35s pre-read buffer, 60s section check, and 2-minute final check).</p>
 
-              <p className="font-bold">3. Highlighting & Margin Notes:</p>
-              <p>Select any text in the reading passage to trigger the [ Highlight ] and [ Make Note ] micro-popup.</p>
+              <p className="font-bold">3. Highlighting &amp; Margin Notes:</p>
+              <p>Select any text in the reading passage to open the Highlight, Underline, and Note toolbar.</p>
             </div>
 
             <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setShowHelpModal(false)}
-                className="px-4 py-2 bg-black text-white font-bold text-xs cursor-pointer"
+                className="px-4 py-2 bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-xs rounded-lg cursor-pointer"
               >
                 Close Instructions
               </button>
@@ -3008,7 +3010,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           <div className="bg-amber-400 text-black p-6 border-4 border-black max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-center gap-2 font-mono font-black text-base border-b-2 border-black pb-2">
               <AlertTriangle className="w-6 h-6 text-black" />
-              <span>OFFICIAL TEST TIME ALERT</span>
+              <span>EXAM TIME ALERT</span>
             </div>
             <p className="text-xs font-bold leading-relaxed font-mono">{warningModalText}</p>
             <div className="flex justify-end pt-2">

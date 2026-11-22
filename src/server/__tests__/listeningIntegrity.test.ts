@@ -864,16 +864,16 @@ function runListeningIntegrityTests() {
   const allSpeakerKeys = Object.keys(SPEAKER_EDGE_VOICE_MAP);
   const allAssignedVoices = Object.values(SPEAKER_EDGE_VOICE_MAP);
   const uniqueVoices = new Set(allAssignedVoices);
-  // 16 distinct neural models across 17 roles; speaker_01 & speaker_03 share en-GB-ThomasNeural with distinctive acoustic pitch/rate profiles
+  // 15 distinct underlying Edge neural models across 17 roles; speaker_01, speaker_03 (-5Hz/-5), and speaker_barnaby (+3Hz/+2) use distinct acoustic profiles + separate Gemini voices (Orus/Fenrir/Puck)
   assert.equal(
     uniqueVoices.size,
-    16,
-    `CRITICAL AUDIT: 17 characters must map to 16 distinct verified neural voice models (with speaker_01 and speaker_03 acoustically differentiated)! Found ${uniqueVoices.size}`
+    15,
+    `CRITICAL AUDIT: 17 characters must map to 15 distinct verified neural voice models (with speaker_01, speaker_03, and speaker_barnaby acoustically differentiated)! Found ${uniqueVoices.size}`
   );
   assert.equal(SPEAKER_EDGE_VOICE_MAP['speaker_01'], 'en-GB-ThomasNeural');
   assert.equal(SPEAKER_EDGE_VOICE_MAP['speaker_03'], 'en-GB-ThomasNeural');
-  assert.equal(SPEAKER_EDGE_VOICE_MAP['speaker_barnaby'], 'en-GB-MaisieNeural');
-  console.log(`PASS [5B.5.3]: Global Voice Integrity verified: 17 characters mapped to 16 verified neural models with controlled acoustic differentiation.`);
+  assert.equal(SPEAKER_EDGE_VOICE_MAP['speaker_barnaby'], 'en-GB-ThomasNeural');
+  console.log(`PASS [5B.5.3]: Global Voice Integrity verified: 17 characters mapped to 15 verified neural models with controlled acoustic & persona differentiation.`);
 
   // 4. Verify Part 1 dialogue speaker separation: 2 speakers with 100% disjoint neural voices
   const part1Dialogue = [

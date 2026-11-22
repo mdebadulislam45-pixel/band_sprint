@@ -1022,7 +1022,7 @@ export const SPEAKER_EDGE_VOICE_MAP: Record<string, string> = {
   speaker_14: 'en-NZ-MollyNeural',
   speaker_15: 'en-IE-ConnorNeural',
   speaker_16: 'en-IE-EmilyNeural',
-  speaker_barnaby: 'en-GB-MaisieNeural'
+  speaker_barnaby: 'en-GB-ThomasNeural'
 };
 
 /**

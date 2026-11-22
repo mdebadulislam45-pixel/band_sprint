@@ -161,7 +161,7 @@ export class AudioManagerService {
       'speaker_06', // William AU Specialist (en-AU-WilliamMultilingualNeural)
       'speaker_08', // Luke ZA Field Researcher (en-ZA-LukeNeural)
       'speaker_11', // Liam CA Field Director (en-CA-LiamNeural)
-      'speaker_03', // Alistair UK Professor (en-GB-ThomasNeural)
+      'speaker_03', // Alistair UK Professor (en-GB-ThomasNeural deeper -5Hz cadence)
       'speaker_04'  // Arthur UK RP Examiner (en-GB-RyanNeural - reserved as last resort only)
     ];
     const femalePool = [
@@ -190,7 +190,7 @@ export class AudioManagerService {
       speaker_14: 'en-NZ-MollyNeural',
       speaker_15: 'en-IE-ConnorNeural',
       speaker_16: 'en-IE-EmilyNeural',
-      speaker_barnaby: 'en-GB-MaisieNeural'
+      speaker_barnaby: 'en-GB-ThomasNeural'
     };
 
     const usedSpeakerIds = new Set<string>();

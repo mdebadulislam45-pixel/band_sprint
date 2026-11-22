@@ -19,6 +19,7 @@ import { HomeExtendedBlocks } from './home/HomeExtendedBlocks';
 import { AnimatedNumber, FadeInSection, StaggerGroup, StaggerItem } from './common/MotionPrimitives';
 import { QuickSmartDrillModal } from './daily/QuickSmartDrillModal';
 import { aggregateExamHistory, validateOptionalHalfBand } from '../utils/historyAggregation';
+import { DashboardBarnabyCompanion } from './home/DashboardBarnabyCompanion';
 
 interface HomeDashboardProps {
   user?: UserProfile | null;
@@ -269,6 +270,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
           </StaggerGroup>
         </div>
       </section>
+
+      {/* =====================================================================
+          1.5 FULL-BODY BARNABY STUDY COMPANION & IELTS MENTOR SHOWCASE
+      ===================================================================== */}
+      <DashboardBarnabyCompanion onNavigate={onNavigate} onShowToast={onShowToast} />
 
       {/* =====================================================================
           2. MAIN 12-COLUMN WORKSPACE (IELTSly.ai Action Center + Sidebar)

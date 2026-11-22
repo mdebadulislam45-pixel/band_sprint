@@ -67,15 +67,15 @@ export function getCDIELTSThemeClasses(scheme: CDIELTSColorScheme): CDIELTSTheme
     case 'standard':
     default:
       return {
-        bg: 'bg-[#EEF2F6] text-[#0F172A]',
-        headerBg: 'bg-[#002F6C] text-white',
-        border: 'border-[#CBD5E1]',
+        bg: 'bg-[#F5F7F6] text-[#0E1F1E]',
+        headerBg: 'bg-[#0F4C45] text-white',
+        border: 'border-[#D3DDDA]',
         cardBg: 'bg-white',
-        inputBg: 'bg-white text-[#0F172A]',
-        accentBtn: 'bg-[#002F6C] text-white hover:bg-[#001F4D]',
-        contrastBadge: 'bg-[#002F6C] text-white border-[#001F4D]',
-        text: 'text-[#0F172A]',
-        subtext: 'text-slate-600'
+        inputBg: 'bg-white text-[#0E1F1E]',
+        accentBtn: 'bg-[#0F4C45] text-white hover:bg-[#0B3833]',
+        contrastBadge: 'bg-[#0F4C45] text-white border-[#0B3833]',
+        text: 'text-[#0E1F1E]',
+        subtext: 'text-[#4A5E5B]'
       };
   }
 }
@@ -167,17 +167,17 @@ export const CDIELTSThemeContainer: React.FC<CDIELTSThemeContainerProps> = ({
         {showTopBarControls && (
           <div className={`w-full px-4 py-2 border-b ${theme.border} ${theme.headerBg} flex items-center justify-between text-xs font-mono`}>
             <div className="flex items-center gap-2">
-              <span className="font-bold uppercase tracking-wider">Official CD-IELTS Display Setup</span>
+              <span className="font-bold uppercase tracking-wider">BandSprint Exam Display Controls</span>
             </div>
             <div className="flex items-center gap-3">
               {/* Font Size Selector */}
-              <div className="flex items-center border border-current">
+              <div className="flex items-center border border-current/40 rounded-md overflow-hidden">
                 {(['100%', '125%', '150%'] as CDIELTSZoomLevel[]).map((z) => (
                   <button
                     key={z}
                     onClick={() => setZoomLevel(z)}
-                    className={`px-2 py-0.5 font-bold ${
-                      zoomLevel === z ? 'bg-sky-600 text-white' : 'opacity-80 hover:opacity-100'
+                    className={`px-2 py-0.5 font-bold cursor-pointer ${
+                      zoomLevel === z ? 'bg-[#F4A62A] text-[#0E1F1E]' : 'opacity-80 hover:opacity-100'
                     }`}
                   >
                     {z === '100%' ? 'Standard (16px)' : z === '125%' ? 'Large (18px)' : 'XL (20px)'}
@@ -189,12 +189,12 @@ export const CDIELTSThemeContainer: React.FC<CDIELTSThemeContainerProps> = ({
               <select
                 value={colorScheme}
                 onChange={(e) => setColorScheme(e.target.value as CDIELTSColorScheme)}
-                className="bg-black text-white px-2 py-1 border border-gray-600 font-mono font-bold cursor-pointer"
+                className="bg-black/30 text-current px-2 py-1 border border-current/30 rounded-md font-mono font-bold cursor-pointer"
               >
-                <option value="standard">Standard Contrast (Off-White)</option>
-                <option value="black-on-yellow">High Contrast (Black on Yellow)</option>
-                <option value="yellow-on-black">High Contrast (Yellow on Black)</option>
-                <option value="white-on-black">High Contrast (White on Black)</option>
+                <option value="standard" className="bg-white text-[#0E1F1E]">Standard Contrast (BandSprint Paper)</option>
+                <option value="black-on-yellow" className="bg-[#FFF100] text-black">High Contrast (Black on Yellow)</option>
+                <option value="yellow-on-black" className="bg-black text-[#FFF100]">High Contrast (Yellow on Black)</option>
+                <option value="white-on-black" className="bg-black text-white">High Contrast (White on Black)</option>
               </select>
             </div>
           </div>

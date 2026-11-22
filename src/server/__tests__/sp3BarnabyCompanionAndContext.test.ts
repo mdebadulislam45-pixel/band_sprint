@@ -513,4 +513,70 @@ describe('SP-3 — Barnaby 2.5D Dragon Companion & Intelligent IELTS Mentor', ()
       assert.match(serverSrc, /Never invent or fabricate an IELTS band score/);
     });
   });
+
+  describe('5. SP-3.1 — Dashboard Full-Body Dragon Presentation & Framing', () => {
+    it('renders full-body dragon anatomy (legs, clawed feet, hoodie, belly, wings, tail) without circular clipping', () => {
+      const fullHtml = renderToStaticMarkup(
+        React.createElement(BarnabyDragonAvatar, {
+          variant: 'full',
+          framed: 'none',
+          size: 'studio',
+          state: 'idle',
+          isSpeaking: false,
+          testId: 'dashboard-barnaby-avatar'
+        })
+      );
+
+      assert.match(fullHtml, /data-variant="full"/);
+      assert.match(fullHtml, /data-anatomy="full-body"/);
+      assert.match(fullHtml, /data-anatomy-part="legs-and-feet"/);
+      assert.match(fullHtml, /data-anatomy-part="hoodie-and-belly"/);
+      assert.match(fullHtml, /data-anatomy-part="arms-and-paws"/);
+      assert.match(fullHtml, /data-anatomy-part="tail"/);
+      assert.match(fullHtml, /viewBox="-18 6 244 256"/);
+      assert.match(fullHtml, /BandSprint/);
+      assert.match(fullHtml, /overflow-visible/);
+      assert.doesNotMatch(fullHtml, /rounded-full overflow-hidden/);
+      assert.doesNotMatch(fullHtml, /data-mouth-state="speaking-active"/);
+
+      // Verify TTS speaking gates mouth animation in full-body variant too
+      const fullSpeakingHtml = renderToStaticMarkup(
+        React.createElement(BarnabyDragonAvatar, {
+          variant: 'full',
+          framed: 'none',
+          state: 'idle',
+          isSpeaking: true
+        })
+      );
+      assert.match(fullSpeakingHtml, /data-is-speaking="true"/);
+      assert.match(fullSpeakingHtml, /data-mouth-state="speaking-active"/);
+    });
+
+    it('mounts DashboardBarnabyCompanion directly in HomeDashboard without circular cropping and wires speaker_barnaby + drawer open event', async () => {
+      const { HomeDashboard } = await import('../../components/HomeDashboard');
+      const dashHtml = renderToStaticMarkup(
+        React.createElement(HomeDashboard, {
+          user: null,
+          onNavigate: () => {},
+          onShowToast: () => {},
+          onOpenBandModal: () => {}
+        })
+      );
+
+      assert.match(dashHtml, /data-testid="dashboard-barnaby-section"/);
+      assert.match(dashHtml, /data-testid="dashboard-barnaby-avatar"/);
+      assert.match(dashHtml, /data-variant="full"/);
+      assert.match(dashHtml, /data-anatomy-part="legs-and-feet"/);
+      assert.match(dashHtml, /I&#x27;m not here to study instead of you|not here to study instead of you/);
+
+      const companionSrc = readSrc('src/components/home/DashboardBarnabyCompanion.tsx');
+      const floatingSrc = readSrc('src/components/common/FloatingBarnaby.tsx');
+      assert.match(companionSrc, /variant="full"/);
+      assert.match(companionSrc, /framed="none"/);
+      assert.match(companionSrc, /speakerId:\s*'speaker_barnaby'/);
+      assert.match(companionSrc, /barnaby-float-open/);
+      assert.match(floatingSrc, /barnaby-float-open/);
+    });
+  });
 });
+

@@ -197,7 +197,7 @@ export const ACADEMIC_WRITING_SETS: WritingTestSet[] = [
     task1Prompt:
       'The bar chart and accompanying table below illustrate the percentage of total electricity generated from renewable sources across four nations between 2010 and 2025, alongside national grid storage investment. Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
     task1ChartTitle: 'Share of Electricity From Renewable Sources (%) · 2010–2025',
-    task1ChartSubtitle: 'Official Department of Energy & Eurostat Comparative Dataset',
+    task1ChartSubtitle: 'Comparative Energy & Eurostat Practice Dataset',
     task1Unit: '% of Total Grid Output',
     task1Categories: ['Norway', 'Germany', 'United Kingdom', 'Australia'],
     task1Series: [
@@ -1083,6 +1083,15 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
     return () => clearInterval(interval);
   }, [saveDraftToStorage]);
 
+  // Hide floating Barnaby launcher while inside distraction-free Writing exam room
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new Event('barnaby-float-hide'));
+    return () => {
+      window.dispatchEvent(new Event('barnaby-float-show'));
+    };
+  }, []);
+
   // Accidental refresh / tab close protection
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1526,11 +1535,11 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
         {/* Center: Format Switcher, 60:00 Countdown Timer & Task 1 / Task 2 Tabs */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Academic / General Training Stream Toggle */}
-          <div className="hidden lg:flex items-center p-1 bg-slate-800 rounded-xl border border-slate-700 text-xs font-bold">
+          <div className="hidden lg:flex items-center p-1 bg-black/25 rounded-xl border border-white/15 text-xs font-bold">
             <button
               onClick={() => handleSwitchFormat('Academic')}
               className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                examFormat === 'Academic' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                examFormat === 'Academic' ? 'bg-[#F4A62A] text-[#0E1F1E] shadow-xs' : 'text-white/75 hover:text-white'
               }`}
             >
               Academic
@@ -1538,7 +1547,7 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
             <button
               onClick={() => handleSwitchFormat('General Training')}
               className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                examFormat === 'General Training' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                examFormat === 'General Training' ? 'bg-[#F4A62A] text-[#0E1F1E] shadow-xs' : 'text-white/75 hover:text-white'
               }`}
             >
               General Training
@@ -1546,48 +1555,48 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
           </div>
 
           {/* Task Switcher Segmented Control */}
-          <div className="flex items-center p-1 bg-slate-800 rounded-xl border border-slate-700">
+          <div className="flex items-center p-1 bg-black/25 rounded-xl border border-white/15">
             <button
               onClick={() => handleSwitchTask(1)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
                 activeTask === 1
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white'
+                  ? 'bg-[#F4A62A] text-[#0E1F1E] shadow-xs'
+                  : 'text-white/80 hover:text-white'
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5" />
               <span>{examFormat === 'General Training' ? 'Task 1: Letter' : 'Task 1: Report'}</span>
-              <span className="hidden md:inline text-[10px] font-mono opacity-80">({task1WordCount}w)</span>
+              <span className="hidden md:inline text-[10px] font-mono tabular-nums opacity-85">({task1WordCount}w)</span>
             </button>
             <button
               onClick={() => handleSwitchTask(2)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
                 activeTask === 2
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white'
+                  ? 'bg-[#F4A62A] text-[#0E1F1E] shadow-xs'
+                  : 'text-white/80 hover:text-white'
               }`}
             >
               <PenTool className="w-3.5 h-3.5" />
               <span>Task 2: Essay</span>
-              <span className="hidden md:inline text-[10px] font-mono opacity-80">({task2WordCount}w)</span>
+              <span className="hidden md:inline text-[10px] font-mono tabular-nums opacity-85">({task2WordCount}w)</span>
             </button>
           </div>
 
-          {/* 60:00 Official Countdown Clock */}
+          {/* 60:00 Timed Countdown Clock */}
           <div
-            className={`px-3 py-1.5 rounded-xl border font-mono text-xs sm:text-sm font-black flex items-center gap-2 ${
+            className={`px-3 py-1.5 rounded-xl border font-mono text-xs sm:text-sm font-black tabular-nums flex items-center gap-2 ${
               timeRemainingSec <= 300
-                ? 'bg-rose-950/90 border-rose-500 text-rose-300 animate-pulse'
+                ? 'bg-rose-950/90 border-rose-400 text-rose-200 animate-pulse'
                 : timeRemainingSec <= 600
-                ? 'bg-amber-950/90 border-amber-500 text-amber-300'
-                : 'bg-slate-800 border-slate-700 text-emerald-400'
+                ? 'bg-amber-950/90 border-[#F4A62A] text-[#F4A62A]'
+                : 'bg-black/30 border-white/20 text-white'
             }`}
           >
-            <Clock className="w-4 h-4 shrink-0" />
+            <Clock className="w-4 h-4 shrink-0 text-[#F4A62A]" />
             <span>{isTimeHidden ? '••:••' : formatTimer(timeRemainingSec)}</span>
             <button
               onClick={() => setIsTimeHidden(!isTimeHidden)}
-              className="text-slate-400 hover:text-white ml-1"
+              className="text-white/70 hover:text-white ml-1 cursor-pointer"
               title={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
             >
               {isTimeHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -1718,14 +1727,14 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
       )}
 
       {/* Mobile Stream & Pane Switcher (<md, 360px-430px optimized) */}
-      <div className="md:hidden flex flex-col border-b border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-        <div className="flex items-center justify-between px-3 py-2 bg-slate-100 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 text-xs font-bold">
-          <span className="text-slate-600 dark:text-slate-400 font-mono text-[11px]">STREAM:</span>
+      <div className="md:hidden flex flex-col border-b border-[#D3DDDA] dark:border-slate-800 bg-white dark:bg-[#11201E] shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 bg-[#F5F7F6] dark:bg-[#0B1514] border-b border-[#D3DDDA] dark:border-slate-800 text-xs font-bold">
+          <span className="text-[#4A5E5B] dark:text-slate-400 font-mono text-[11px]">FORMAT:</span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => handleSwitchFormat('Academic')}
               className={`min-h-[34px] px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
-                examFormat === 'Academic' ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700'
+                examFormat === 'Academic' ? 'bg-[#0F4C45] text-white' : 'text-[#4A5E5B] dark:text-slate-300 bg-white border border-[#D3DDDA] dark:bg-slate-800'
               }`}
             >
               Academic
@@ -1733,7 +1742,7 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
             <button
               onClick={() => handleSwitchFormat('General Training')}
               className={`min-h-[34px] px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
-                examFormat === 'General Training' ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700'
+                examFormat === 'General Training' ? 'bg-[#0F4C45] text-white' : 'text-[#4A5E5B] dark:text-slate-300 bg-white border border-[#D3DDDA] dark:bg-slate-800'
               }`}
             >
               General Training
@@ -1746,7 +1755,7 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
             onClick={() => setMobilePane('prompt')}
             className={`flex-1 min-h-[44px] py-2.5 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1.5 cursor-pointer ${
               mobilePane === 'prompt'
-                ? 'border-blue-600 text-blue-600 bg-blue-50/50 dark:bg-blue-950/30'
+                ? 'border-[#0F4C45] text-[#0F4C45] bg-[#0F4C45]/5 dark:text-[#F4A62A] dark:border-[#F4A62A]'
                 : 'border-transparent text-slate-500'
             }`}
           >
@@ -1756,11 +1765,11 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
             onClick={() => setMobilePane('editor')}
             className={`flex-1 min-h-[44px] py-2.5 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1.5 cursor-pointer ${
               mobilePane === 'editor'
-                ? 'border-blue-600 text-blue-600 bg-blue-50/50 dark:bg-blue-950/30'
+                ? 'border-[#0F4C45] text-[#0F4C45] bg-[#0F4C45]/5 dark:text-[#F4A62A] dark:border-[#F4A62A]'
                 : 'border-transparent text-slate-500'
             }`}
           >
-            <span>2. Response ({currentWordCount}w / {minWordThreshold}m)</span>
+            <span className="tabular-nums">2. Response ({currentWordCount}w / {minWordThreshold}m)</span>
           </button>
         </div>
       </div>
@@ -2075,7 +2084,7 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
 
                   {/* Salutation & Sign-off Guideline */}
                   <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
-                    <strong className="block font-bold mb-0.5">Official Tone &amp; Conventions:</strong>
+                    <strong className="block font-bold mb-0.5">Tone &amp; Letter Conventions:</strong>
                     {currentSet.task1LetterType === 'Formal' && (
                       <span>Open with <em>Dear Sir or Madam,</em> and conclude with <em>Yours faithfully,</em> followed by your name. Maintain an objective, professional register.</span>
                     )}
@@ -2116,10 +2125,10 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
           )}
 
           {/* Mobile Jump to Editor CTA */}
-          <div className="pt-4 md:hidden border-t border-slate-200 dark:border-slate-800">
+          <div className="pt-4 md:hidden border-t border-[#D3DDDA] dark:border-slate-800">
             <button
               onClick={() => setMobilePane('editor')}
-              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              className="w-full py-3 px-4 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-sm shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95"
             >
               <span>Go to Response Editor ({currentWordCount} words)</span>
               <ArrowRight className="w-4 h-4" />
@@ -2127,45 +2136,61 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
           </div>
         </div>
 
-        {/* DRAGGABLE SPLITTER BAR (Desktop) */}
+        {/* DRAGGABLE & KEYBOARD-ACCESSIBLE SPLITTER BAR (Desktop) */}
         <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize prompt and writing editor panes"
+          aria-valuemin={30}
+          aria-valuemax={70}
+          aria-valuenow={Math.round(leftPanePercent)}
+          tabIndex={0}
           onMouseDown={handleSplitterMouseDown}
-          className={`hidden md:flex w-2 hover:w-3 bg-slate-300 dark:bg-slate-800 cursor-col-resize items-center justify-center transition-all shrink-0 ${
-            isDraggingSplitter ? 'bg-blue-600 w-3' : ''
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              setLeftPanePercent((p) => Math.max(30, p - 5));
+            } else if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              setLeftPanePercent((p) => Math.min(70, p + 5));
+            }
+          }}
+          className={`hidden md:flex w-2 hover:w-3 bg-[#D3DDDA] dark:bg-slate-800 focus:bg-[#0F4C45] focus:outline-none cursor-col-resize items-center justify-center transition-all shrink-0 ${
+            isDraggingSplitter ? 'bg-[#0F4C45] w-3' : ''
           }`}
-          title="Drag to resize Prompt & Editor panes"
+          title="Drag or press Left/Right arrow keys to resize Prompt & Editor panes"
         >
-          <div className="w-0.5 h-10 bg-slate-500 rounded-full" />
+          <div className="w-0.5 h-10 bg-[#0F4C45]/60 rounded-full" />
         </div>
 
-        {/* RIGHT PANE: Official Plain Text Editor (Spellcheck Strictly Disabled) */}
+        {/* RIGHT PANE: Plain Text Exam Editor (Spellcheck Disabled) */}
         <div
           style={{
             width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - leftPanePercent}%` : '100%'
           }}
           className={`${
             mobilePane === 'editor' ? 'flex' : 'hidden md:flex'
-          } h-full flex-col bg-slate-50 dark:bg-slate-950 p-5 sm:p-7 justify-between overflow-y-auto`}
+          } h-full flex-col ${isHighContrast ? cdTheme.bg : 'bg-[#F5F7F6] dark:bg-[#0B1514]'} p-5 sm:p-7 justify-between overflow-y-auto`}
         >
           {/* Mobile Back to Prompt Bar */}
-          <div className="md:hidden pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
+          <div className="md:hidden pb-3 border-b border-[#D3DDDA] dark:border-slate-800 shrink-0">
             <button
               onClick={() => setMobilePane('prompt')}
-              className="w-full py-2.5 px-3 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              className="w-full py-2.5 px-3 rounded-lg bg-white dark:bg-slate-800 border border-[#D3DDDA] dark:border-slate-700 text-[#0F4C45] dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>← View Task {activeTask} Prompt &amp; Instructions</span>
             </button>
           </div>
 
           {/* Editor Top Status Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#D3DDDA] dark:border-slate-800 shrink-0">
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-mono font-bold uppercase text-slate-700 dark:text-slate-300">
-                OFFICIAL PLAIN-TEXT SHEET · TASK {activeTask}
+              <span className="font-mono font-bold uppercase text-[#0F4C45] dark:text-[#F4A62A]">
+                PLAIN-TEXT EXAM SHEET · TASK {activeTask}
               </span>
               <span aria-hidden="true" className="text-slate-400">·</span>
               <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
-                <Save className="w-3 h-3 text-emerald-500" />
+                <Save className="w-3 h-3 text-emerald-600" />
                 Auto-saved ({lastSavedTimestamp})
               </span>
             </div>
@@ -2291,9 +2316,9 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
 
             <button
               onClick={handleFinishAndEvaluate}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95"
+              className="px-5 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-xs shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95"
             >
-              <Award className="w-4 h-4" />
+              <Award className="w-4 h-4 text-[#F4A62A]" />
               <span>Finish &amp; Evaluate Essay</span>
             </button>
           </div>
@@ -2885,13 +2910,13 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
           <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
             {/* Header */}
-            <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-900 to-blue-950 text-white border-b border-slate-800 flex items-center justify-between">
+            <div className="p-5 bg-[#0F4C45] text-white border-b border-[#0B3833] flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+                <div className="w-10 h-10 rounded-2xl bg-[#F4A62A]/20 border border-[#F4A62A]/40 flex items-center justify-center text-[#F4A62A] shrink-0">
                   <Award className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-blue-300 font-bold block">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-[#F4A62A] font-bold block">
                     CD-IELTS Submission Review
                   </span>
                   <h3 className="text-base sm:text-lg font-black text-white">
@@ -3028,10 +3053,10 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                 </button>
                 <button
                   onClick={() => executeEvaluation(evaluatingTask)}
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-2 active:scale-95"
+                  className="px-5 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs font-bold shadow-sm cursor-pointer flex items-center gap-2 active:scale-95"
                 >
                   <span>Confirm &amp; Evaluate Task {evaluatingTask}</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 text-[#F4A62A]" />
                 </button>
               </div>
             </div>
