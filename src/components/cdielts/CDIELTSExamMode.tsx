@@ -108,6 +108,10 @@ interface CDIELTSExamModeProps {
   initialSkill?: 'reading' | 'listening' | 'writing' | 'full_mock';
   onNavigateToSpeaking?: () => void;
   customPilotSet?: MockExamSet | null;
+  standaloneSkill?: boolean;
+  secondaryModeLabel?: string;
+  onOpenSecondaryMode?: () => void;
+  onOpenAiPilots?: () => void;
 }
 
 export type ColorScheme = 'standard' | 'black-on-yellow' | 'yellow-on-black' | 'white-on-black';
@@ -121,7 +125,11 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   candidateId: propCandidateId,
   initialSkill,
   onNavigateToSpeaking,
-  customPilotSet
+  customPilotSet,
+  standaloneSkill = false,
+  secondaryModeLabel,
+  onOpenSecondaryMode,
+  onOpenAiPilots
 }) => {
   const activeUser = getCurrentUser();
   const candidateName = propCandidateName || activeUser?.name || 'Candidate Student';
@@ -213,6 +221,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [showListeningScript, setShowListeningScript] = useState(false);
 
   // Warning Modals (10-minute and 5-minute mandatory alerts)
   const [hasShown10mWarning, setHasShown10mWarning] = useState(false);
@@ -308,11 +317,17 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     saveListeningAudioState(payload);
   }, [listeningSection, listeningPhase, phaseCountdownSec, audioPlaybackSec, completedListeningParts, submittedResults]);
 
-  // Hide the floating Barnaby bubble while the exam runs (the exam has its own Barnaby panel).
+  // Hide the floating Barnaby companion while the exam runs (flag prevents lazy-load race conditions)
   useEffect(() => {
-    window.dispatchEvent(new Event('barnaby-float-hide'));
+    if (typeof window !== 'undefined') {
+      (window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__ = true;
+      window.dispatchEvent(new Event('barnaby-float-hide'));
+    }
     return () => {
-      window.dispatchEvent(new Event('barnaby-float-show'));
+      if (typeof window !== 'undefined') {
+        (window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__ = false;
+        window.dispatchEvent(new Event('barnaby-float-show'));
+      }
     };
   }, []);
 
@@ -373,7 +388,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   // Reading & Writing Wall-Clock Timer Countdown (Listening countdown is synchronized with the phase state machine below)
   useEffect(() => {
     if (activeSkill === 'listening') return;
-    if (!isTimerRunning || isAudioNetworkStalled) return;
+    if (!isTimerRunning || isAudioNetworkStalled || submittedResults) return;
     const interval = setInterval(() => {
       const now = Date.now();
       const diffSec = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
@@ -397,7 +412,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     }, 500);
 
     return () => clearInterval(interval);
-  }, [activeSkill, isTimerRunning, isAudioNetworkStalled, hasShown10mWarning, hasShown5mWarning]);
+  }, [activeSkill, isTimerRunning, isAudioNetworkStalled, submittedResults, hasShown10mWarning, hasShown5mWarning]);
 
   // Helper to extract authentic section dialogue - guarantees Sections 2-4 never fall back to Section 1 or paragraph fragments
   const getSectionDialogueText = useCallback((sectionNum: 1 | 2 | 3 | 4): string => {
@@ -891,8 +906,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   ]);
 
   const formatTimer = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
+    const safe = Math.max(0, Math.floor(seconds));
+    const m = Math.floor(safe / 60);
+    const s = safe % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
@@ -1508,13 +1524,12 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
       )}
 
-      {/* ================= 1. BANDSPRINT CD-IELTS EXAM HEADER ================= */}
-      {/* Responsive Header: 2-Row Stack on mobile (<sm / <500px), 1-Row Bar on desktop (>=sm) */}
+      {/* ================= 1. BANDSPRINT CD-IELTS EXAM HEADER (RESTRAINED SINGLE-BAR WORKSTATION) ================= */}
       <header className={`w-full ${theme.headerBg} border-b ${theme.borderStrong || 'border-[#0B3833]'} shrink-0 flex flex-col font-mono select-none z-20`}>
         {customPilotSet && (
-          <div className="w-full px-3 sm:px-4 py-1.5 bg-emerald-950 text-emerald-100 border-b border-emerald-600/60 flex items-center justify-between gap-2 text-xs font-mono font-bold">
+          <div className="w-full px-3 sm:px-4 py-1 bg-emerald-950 text-emerald-100 border-b border-emerald-600/60 flex items-center justify-between gap-2 text-xs font-mono font-bold">
             <div className="flex items-center gap-2 truncate">
-              <span className="uppercase tracking-wider text-emerald-300">
+              <span className="uppercase tracking-wider text-emerald-300 whitespace-nowrap">
                 AI PILOT — APPROVED PRACTICE
               </span>
               <span aria-hidden="true">·</span>
@@ -1527,99 +1542,84 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 audioService.stop();
                 onExit();
               }}
-              className="px-2.5 py-0.5 bg-emerald-900 hover:bg-emerald-800 text-white border border-emerald-500 rounded text-[11px] font-bold cursor-pointer shrink-0"
+              className="px-2.5 py-0.5 bg-emerald-900 hover:bg-emerald-800 text-white border border-emerald-500 rounded text-[11px] font-bold cursor-pointer shrink-0 whitespace-nowrap"
             >
               Exit AI Pilot
             </button>
           </div>
         )}
-        {/* ROW 1: Candidate Details (Left) + Countdown Clock (Right) */}
-        <div className="w-full min-h-11 sm:h-12 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-white/15">
-          {/* Candidate Info */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 font-mono text-xs">
-            <div className="flex items-center gap-2 truncate">
-              <span className="opacity-75 hidden min-[420px]:inline uppercase text-[11px]">Candidate</span>
-              <span className="font-bold tracking-tight truncate max-w-[96px] min-[420px]:max-w-[200px] sm:max-w-none">
-                {candidateName}
-              </span>
-              <span className="text-[11px] font-mono opacity-80 shrink-0">
-                · ID {candidateId}
-              </span>
-            </div>
 
-            {/* Active Module Context (Desktop) */}
-            <div className="hidden lg:flex items-center gap-1.5 ml-1 pl-3 border-l border-white/25">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#F4A62A]">
-                {activeSkill === 'reading'
+        {/* Primary Examination Top Bar — Single Row on Desktop (>=lg), Clean 2-Line Flex on Narrow Mobile */}
+        <div className="w-full min-h-12 px-2.5 sm:px-4 py-1.5 flex items-center justify-between gap-2">
+          {/* Left: Exit + Module Status + Candidate ID */}
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => setShowExitConfirmModal(true)}
+              className="px-2.5 py-1 border border-white/25 bg-white/10 hover:bg-white/20 text-current font-mono font-bold text-xs rounded cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1"
+              title="Exit Exam Session"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Exit</span>
+            </button>
+
+            <div className="h-4 w-px bg-white/20 hidden sm:block shrink-0" />
+
+            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wide text-[#F4A62A] truncate">
+                {activeSkill === 'listening'
+                  ? `Listening · Part ${listeningSection}/4`
+                  : activeSkill === 'reading'
                   ? activeReadingBadge
-                  : activeSkill === 'listening'
-                  ? `Listening · Part ${listeningSection} of 4`
-                  : `Writing · Task ${activeWritingTask} of 2`}
+                  : `Writing · Task ${activeWritingTask}`}
               </span>
-            </div>
-
-            {/* Target Band & Exam Date Context */}
-            <div className="hidden xl:flex items-center gap-2 ml-1 pl-3 border-l border-white/25 text-[11px]">
-              <span className="font-bold text-[#F4A62A] whitespace-nowrap">
-                Target Band {examSetup.targetBand.toFixed(1)}
+              <span className="sm:hidden text-[11px] font-bold uppercase tracking-wide text-[#F4A62A] truncate">
+                {activeSkill === 'listening'
+                  ? `L·P${listeningSection}`
+                  : activeSkill === 'reading'
+                  ? `R·Q${activeQuestionIdx + 1}`
+                  : `W·T${activeWritingTask}`}
               </span>
-              <span aria-hidden="true" className="opacity-40">·</span>
-              <span className="opacity-85 whitespace-nowrap">
-                {examSetup.examDate
-                  ? `${formatExamDate(examSetup.examDate)} (${examDaysLeft === null ? 'Passed' : examDaysLeft === 0 ? 'Today' : `${examDaysLeft}d left`})`
-                  : 'Practice Simulation'}
+              <span className="hidden xl:inline text-[11px] opacity-80 truncate">
+                · {candidateName} ({candidateId})
               </span>
             </div>
           </div>
 
-          {/* Countdown Timer & Actions */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 font-mono">
+          {/* Center: Prominent Countdown Timer + Set Selector */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <div
-              className={`flex items-center gap-2 font-mono font-bold text-xs sm:text-sm px-3 py-1 border rounded-md ${
+              data-testid="exam-countdown-timer"
+              className={`flex items-center gap-1.5 font-mono font-bold text-xs sm:text-sm px-2.5 py-1 border rounded whitespace-nowrap ${
                 timeRemainingSec <= 300
                   ? 'bg-rose-950 text-rose-200 border-rose-400 animate-pulse'
+                  : timeRemainingSec <= 600
+                  ? 'bg-amber-950 text-[#F4A62A] border-[#F4A62A]/70'
                   : 'bg-black/30 text-white border-white/25'
               }`}
             >
               <Clock className="w-3.5 h-3.5 text-[#F4A62A] shrink-0" />
               <span className="tabular-nums tracking-wide">
-                {isAudioNetworkStalled ? (
-                  <>
-                    <span className="hidden sm:inline">Buffering </span>{formatTimer(timeRemainingSec)}
-                  </>
-                ) : isTimeHidden ? (
-                  '••:••'
-                ) : (
-                  formatTimer(timeRemainingSec)
-                )}
+                {isAudioNetworkStalled
+                  ? `Buffering ${formatTimer(timeRemainingSec)}`
+                  : isTimeHidden
+                  ? '••:••'
+                  : formatTimer(timeRemainingSec)}
               </span>
+              <button
+                type="button"
+                onClick={() => setIsTimeHidden(!isTimeHidden)}
+                className="ml-0.5 opacity-75 hover:opacity-100 cursor-pointer"
+                title={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
+                aria-label={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
+              >
+                <span className="text-[10px] underline hidden md:inline">{isTimeHidden ? 'Show' : 'Hide'}</span>
+              </button>
             </div>
 
-            <button
-              onClick={() => setIsTimeHidden(!isTimeHidden)}
-              className="text-[11px] font-mono hover:bg-white/10 px-2 py-1 border border-white/25 rounded-md cursor-pointer hidden md:block"
-              title={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
-            >
-              {isTimeHidden ? 'Show Clock' : 'Hide Clock'}
-            </button>
-
-            {/* Barnaby target-band guide */}
-            <button
-              onClick={() => setShowBarnabyGuide((v) => !v)}
-              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono font-bold border rounded-md cursor-pointer transition ${
-                showBarnabyGuide
-                  ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A]'
-                  : 'bg-[#F4A62A]/15 text-[#F4A62A] border-[#F4A62A]/45 hover:bg-[#F4A62A]/25'
-              }`}
-              title="Barnaby's guide for your target band"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Guide</span>
-            </button>
-
-            {/* IELTS Practice Set Selector (hidden when running an isolated AI Pilot) */}
             {!customPilotSet && (
               <select
+                aria-label="Select IELTS Practice Set"
                 value={selectedSetIdx}
                 onChange={(e) => {
                   activePlaybackTokenRef.current += 1;
@@ -1645,7 +1645,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                   soundManager.playBeep(550, 0.04);
                   onShowToast(`Loaded ${MOCK_EXAM_SETS[idx]?.title}`);
                 }}
-                className="bg-black/30 text-white text-[11px] font-mono font-bold px-2 py-1 border border-white/25 rounded-md outline-none cursor-pointer hidden md:block max-w-[185px] truncate"
+                className="bg-black/30 text-white text-[11px] font-mono font-bold px-2 py-1 border border-white/25 rounded outline-none cursor-pointer hidden lg:block max-w-[165px] truncate"
                 title="Select IELTS Practice Set"
               >
                 {MOCK_EXAM_SETS.map((s, idx) => (
@@ -1655,107 +1655,95 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 ))}
               </select>
             )}
-
-            {/* Desktop Quick Finish Button */}
-            <button
-              onClick={() => setShowReviewModal(true)}
-              className="hidden sm:flex items-center px-3.5 py-1 bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E] font-mono font-bold text-xs tracking-wide rounded-md cursor-pointer ml-1 transition"
-            >
-              Finish Test
-            </button>
           </div>
-        </div>
 
-        {/* ROW 2 (Accessibility & Station Controls Toolbar) */}
-        <div className={`w-full min-h-9 sm:h-10 h-auto py-1 sm:py-0 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 ${theme.subHeaderBg || 'bg-[#0B3833] text-[#E6F2EF]'} text-xs font-mono border-b border-black/20`}>
-          {/* Left: Mobile stage title or font resizer */}
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="sm:hidden text-[11px] font-bold text-[#F4A62A] uppercase tracking-tight truncate">
-              {activeSkill === 'reading'
-                ? activeReadingBadge
-                : activeSkill === 'listening'
-                ? `Listening · Part ${listeningSection}/4`
-                : `Writing · Task ${activeWritingTask}`}
-            </span>
-
-            {/* Font Resizer (Desktop/Tablet) */}
-            <div className="hidden sm:flex items-center border border-white/25 font-mono text-[11px] font-bold rounded-md overflow-hidden bg-black/20">
-              <button
-                onClick={() => setZoomLevel('100%')}
-                className={`px-2.5 py-0.5 cursor-pointer transition ${zoomLevel === '100%' ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'}`}
-                title="Standard Font Size (16px)"
-              >
-                16px
-              </button>
-              <button
-                onClick={() => setZoomLevel('125%')}
-                className={`px-2.5 py-0.5 cursor-pointer border-l border-white/20 transition ${zoomLevel === '125%' ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'}`}
-                title="Large Font Size (18px)"
-              >
-                18px
-              </button>
-              <button
-                onClick={() => setZoomLevel('150%')}
-                className={`px-2.5 py-0.5 cursor-pointer border-l border-white/20 transition ${zoomLevel === '150%' ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'}`}
-                title="Extra Large Font Size (20px)"
-              >
-                20px
-              </button>
+          {/* Right: Accessibility Display Controls, Notes, Help, Optional Mode Switch, Finish */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Font Resizer (Desktop) */}
+            <div className="hidden md:flex items-center border border-white/25 font-mono text-[11px] font-bold rounded overflow-hidden bg-black/20">
+              {(['100%', '125%', '150%'] as ZoomLevel[]).map((lvl, idx) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setZoomLevel(lvl)}
+                  className={`px-2 py-1 cursor-pointer transition whitespace-nowrap ${idx > 0 ? 'border-l border-white/20' : ''} ${
+                    zoomLevel === lvl ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'
+                  }`}
+                  title={`Text size ${lvl}`}
+                >
+                  {lvl === '100%' ? 'A' : lvl === '125%' ? 'A+' : 'A++'}
+                </button>
+              ))}
             </div>
-          </div>
 
-          {/* Right: Accessibility Controls (Contrast Switcher, Notes, Help, Exit, Mobile Finish) */}
-          <div className="flex items-center gap-1.5 shrink-0 font-mono">
             {/* Contrast Switcher */}
             <select
               aria-label="Display Contrast Mode"
               value={colorScheme}
               onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
-              className="bg-black/30 text-current text-[11px] font-mono font-bold px-2 py-0.5 border border-white/25 rounded-md outline-none cursor-pointer max-w-[115px] min-[420px]:max-w-[155px] sm:max-w-none truncate"
+              className="hidden sm:block bg-black/30 text-current text-[11px] font-mono font-bold px-2 py-1 border border-white/25 rounded outline-none cursor-pointer max-w-[125px] truncate"
               title="Switch Color Contrast Mode"
             >
-              <option value="standard" className="bg-white text-[#0E1F1E]">Standard (BandSprint)</option>
-              <option value="black-on-yellow" className="bg-[#FFF100] text-black">Black on Yellow</option>
-              <option value="yellow-on-black" className="bg-black text-[#FFF100]">Yellow on Black</option>
-              <option value="white-on-black" className="bg-black text-white">White on Black</option>
+              <option value="standard" className="bg-white text-[#0E1F1E]">Standard</option>
+              <option value="black-on-yellow" className="bg-[#FFF100] text-black">Black / Yellow</option>
+              <option value="yellow-on-black" className="bg-black text-[#FFF100]">Yellow / Black</option>
+              <option value="white-on-black" className="bg-black text-white">White / Black</option>
             </select>
 
             {/* Notes Drawer Toggle (Alt+V) */}
             <button
+              type="button"
               onClick={() => setShowNotesDrawer((prev) => !prev)}
-              className={`px-2.5 py-0.5 border text-[11px] font-mono font-bold flex items-center gap-1.5 cursor-pointer rounded-md transition ${
+              className={`hidden sm:flex px-2 py-1 border text-[11px] font-mono font-bold items-center gap-1 cursor-pointer rounded transition whitespace-nowrap ${
                 showNotesDrawer ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A]' : 'border-white/25 hover:bg-white/10'
               }`}
               title="Toggle Margin Notes & Highlights (Alt+V)"
             >
-              <StickyNote className="w-3 h-3" />
-              <span className="hidden min-[420px]:inline">Notes ({notes.length})</span>
+              <StickyNote className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">Notes ({notes.length})</span>
             </button>
 
             {/* Instructions / Help Modal */}
             <button
+              type="button"
               onClick={() => setShowHelpModal(true)}
-              className="px-2.5 py-0.5 hover:bg-white/10 border border-white/25 cursor-pointer rounded-md font-mono text-[11px] font-bold"
+              className="hidden lg:inline-flex px-2 py-1 hover:bg-white/10 border border-white/25 cursor-pointer rounded font-mono text-[11px] font-bold whitespace-nowrap"
               title="Exam Instructions & Shortcuts"
             >
               Help
             </button>
 
-            {/* In-App Exit Session Guard Button */}
-            <button
-              onClick={() => setShowExitConfirmModal(true)}
-              className="px-2.5 py-0.5 border border-white/25 hover:bg-white/10 font-mono font-bold text-[11px] cursor-pointer rounded-md"
-              title="Exit Exam Session"
-            >
-              Exit
-            </button>
+            {/* Optional Secondary Lab / AI Pilots Switch (Standalone Skill Practice) */}
+            {onOpenSecondaryMode && secondaryModeLabel && (
+              <button
+                type="button"
+                onClick={onOpenSecondaryMode}
+                className="hidden xl:inline-flex px-2.5 py-1 hover:bg-white/15 bg-white/10 border border-white/25 cursor-pointer rounded font-mono text-[11px] font-bold whitespace-nowrap"
+                title={secondaryModeLabel}
+              >
+                {secondaryModeLabel}
+              </button>
+            )}
 
-            {/* Mobile-Only Finish Test Button in Toolbar */}
+            {onOpenAiPilots && (
+              <button
+                type="button"
+                onClick={onOpenAiPilots}
+                className="hidden 2xl:inline-flex px-2.5 py-1 hover:bg-white/15 bg-white/10 border border-white/25 cursor-pointer rounded font-mono text-[11px] font-bold whitespace-nowrap"
+                title="Open AI Pilot Sets"
+              >
+                AI Pilots
+              </button>
+            )}
+
+            {/* Primary Finish & Submit CTA */}
             <button
+              type="button"
+              data-testid="exam-finish-btn"
               onClick={() => setShowReviewModal(true)}
-              className="sm:hidden px-2.5 py-0.5 bg-[#F4A62A] text-[#0E1F1E] font-mono font-bold text-[11px] uppercase tracking-wider rounded-md cursor-pointer"
+              className="px-3 py-1 bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E] font-mono font-bold text-xs rounded cursor-pointer transition whitespace-nowrap shrink-0"
             >
-              Finish
+              Finish Test
             </button>
           </div>
         </div>
@@ -1823,135 +1811,317 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
       )}
 
-      {/* ================= 2. ACTIVE TEST STAGE BAR & MODULE SWITCHER ================= */}
-      <div className={`w-full px-3 sm:px-4 py-2 border-b ${theme.border} flex flex-wrap items-center justify-between gap-2.5 shrink-0 ${colorScheme === 'standard' ? 'bg-[#E9EFEC] text-[#0F4C45]' : theme.cardBg} font-mono select-none`}>
-        {/* Practice Module Switcher Navigation Tabs */}
-        <div className="flex items-center gap-1.5 font-mono text-xs overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => handleSwitchModule('listening')}
-            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
-              activeSkill === 'listening'
-                ? theme.activeTile
-                : `${theme.cardBg} ${theme.border} hover:opacity-90`
-            }`}
-          >
-            <Headphones className="w-3.5 h-3.5" />
-            <span>1. Listening</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSwitchModule('reading')}
-            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
-              activeSkill === 'reading'
-                ? theme.activeTile
-                : `${theme.cardBg} ${theme.border} hover:opacity-90`
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>2. Reading</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSwitchModule('writing')}
-            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
-              activeSkill === 'writing'
-                ? theme.activeTile
-                : `${theme.cardBg} ${theme.border} hover:opacity-90`
-            }`}
-          >
-            <PenTool className="w-3.5 h-3.5" />
-            <span>3. Writing</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (onNavigateToSpeaking) {
-                stopSpeech();
-                audioService.stop();
-                onNavigateToSpeaking();
-              } else {
-                onShowToast('Speaking Interview module is opening.');
-              }
-            }}
-            className={`px-3 py-1.5 font-bold border rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${theme.cardBg} ${theme.border} hover:opacity-90`}
-            title="Open AI Speaking Practice Suite"
-          >
-            <Mic className="w-3.5 h-3.5 text-[#D97706]" />
-            <span>4. Speaking</span>
-          </button>
-        </div>
-
-        {/* Stage Progression & Navigation Shortcuts */}
-        <div className="flex items-center gap-2 font-mono text-xs font-bold">
-          {activeSkill === 'listening' && (
+      {/* ================= 2. FULL-MOCK MODULE SWITCHER (ONLY IN MULTI-SKILL MOCK) ================= */}
+      {!standaloneSkill && (
+        <div className={`w-full px-3 sm:px-4 py-1.5 border-b ${theme.border} flex items-center justify-between gap-2 shrink-0 ${colorScheme === 'standard' ? 'bg-[#E9EFEC] text-[#0F4C45]' : theme.cardBg} font-mono select-none overflow-x-auto`}>
+          <div className="flex items-center gap-1.5 text-xs">
             <button
-              onClick={handleProceedToReading}
-              className={`px-3 py-1.5 rounded-md cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider transition ${theme.accentBtn}`}
-              title="Finish Listening and proceed to 60-minute Academic Reading"
+              type="button"
+              onClick={() => handleSwitchModule('listening')}
+              className={`px-2.5 py-1 font-bold border rounded flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
+                activeSkill === 'listening' ? theme.activeTile : `${theme.cardBg} ${theme.border} hover:opacity-90`
+              }`}
             >
-              <span>Next: Reading (60m)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <Headphones className="w-3.5 h-3.5" />
+              <span>1. Listening</span>
             </button>
-          )}
-
-          {activeSkill === 'reading' && (
             <button
-              onClick={handleProceedToWriting}
-              className={`px-3 py-1.5 rounded-md cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider transition ${theme.accentBtn}`}
-              title="Finish Reading and proceed to 60-minute Academic Writing"
-            >
-              <span>Next: Writing (60m)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {activeSkill === 'writing' && (
-            <button
-              onClick={() => setShowReviewModal(true)}
-              className="px-3 py-1.5 bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E] rounded-md cursor-pointer flex items-center gap-1 text-[11px] uppercase tracking-wider transition"
-              title="Finish and submit test for 4-criterion practice evaluation"
-            >
-              <span>Finish &amp; Grade</span>
-              <Sparkles className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Mobile Viewport Toggle (Passage/Prompt vs Questions) */}
-          <div className="flex md:hidden items-center gap-1.5 shrink-0 font-mono">
-            <button
-              onClick={() => handleSwitchMobilePane('left')}
-              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border rounded-md cursor-pointer flex items-center gap-1.5 ${
-                mobilePane === 'left' ? theme.activeTile : `${theme.cardBg} ${theme.border}`
+              type="button"
+              onClick={() => handleSwitchModule('reading')}
+              className={`px-2.5 py-1 font-bold border rounded flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
+                activeSkill === 'reading' ? theme.activeTile : `${theme.cardBg} ${theme.border} hover:opacity-90`
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span>{activeSkill === 'reading' ? 'Passage' : 'Prompt'}</span>
+              <span>2. Reading</span>
             </button>
             <button
-              onClick={() => handleSwitchMobilePane('right')}
-              className={`px-3 py-1.5 min-h-[44px] text-xs font-bold border rounded-md cursor-pointer flex items-center gap-1.5 ${
-                mobilePane === 'right' ? theme.activeTile : `${theme.cardBg} ${theme.border}`
+              type="button"
+              onClick={() => handleSwitchModule('writing')}
+              className={`px-2.5 py-1 font-bold border rounded flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${
+                activeSkill === 'writing' ? theme.activeTile : `${theme.cardBg} ${theme.border} hover:opacity-90`
               }`}
             >
-              <span>Questions ({answeredCount}/{totalQuestions})</span>
+              <PenTool className="w-3.5 h-3.5" />
+              <span>3. Writing</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigateToSpeaking) {
+                  stopSpeech();
+                  audioService.stop();
+                  onNavigateToSpeaking();
+                } else {
+                  onShowToast('Speaking Interview module is opening.');
+                }
+              }}
+              className={`px-2.5 py-1 font-bold border rounded flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition ${theme.cardBg} ${theme.border} hover:opacity-90`}
+            >
+              <Mic className="w-3.5 h-3.5 text-[#D97706]" />
+              <span>4. Speaking</span>
             </button>
           </div>
 
-          <div className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1 border rounded-md text-[11px] ${theme.cardBg} ${theme.border}`}>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="tabular-nums">Saved {lastAutoSavedTime}</span>
+          <div className="hidden lg:flex items-center gap-2 text-[11px] font-bold shrink-0">
+            <span className="opacity-75 tabular-nums">Saved {lastAutoSavedTime}</span>
+            {activeSkill === 'listening' && (
+              <button
+                type="button"
+                onClick={handleProceedToReading}
+                className={`px-2.5 py-1 rounded cursor-pointer flex items-center gap-1 uppercase whitespace-nowrap ${theme.accentBtn}`}
+              >
+                <span>Next: Reading</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
+            {activeSkill === 'reading' && (
+              <button
+                type="button"
+                onClick={handleProceedToWriting}
+                className={`px-2.5 py-1 rounded cursor-pointer flex items-center gap-1 uppercase whitespace-nowrap ${theme.accentBtn}`}
+              >
+                <span>Next: Writing</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* ================= 2. WORKSTATION SPLIT PANE CONTAINER ================= */}
-      <div ref={splitContainerRef} className="flex-1 w-full flex flex-col md:flex-row overflow-hidden relative">
-        {/* Left Column: Passage / Listening Transcript / Writing Prompt */}
+      {/* ================= 2B. COMPACT LISTENING SINGLE-PLAY AUDIO BAR (WHEN ACTIVE SKILL IS LISTENING) ================= */}
+      {activeSkill === 'listening' && (
+        <div
+          data-testid="listening-audio-bar"
+          className={`w-full px-3 sm:px-5 py-2 border-b ${theme.border} ${colorScheme === 'standard' ? 'bg-[#EEF3F1]' : theme.cardBg} shrink-0 font-mono text-xs`}
+        >
+          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2.5">
+            {/* Part 1–4 Switcher */}
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4].map((s) => {
+                const isCompleted = Boolean(completedListeningParts[s]);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      if (isCompleted) {
+                        onShowToast(`Section ${s} audio has already played once (Single-Play Rule). Viewing questions only.`);
+                      } else if (s !== listeningSection) {
+                        activePlaybackTokenRef.current += 1;
+                        stopSpeech();
+                        audioService.stop();
+                        setIsAudioPlaying(false);
+                        setListeningAudioError(null);
+                        setListeningPhase('pre_read');
+                        setPhaseCountdownSec(35);
+                      }
+                      setListeningSection(s as 1 | 2 | 3 | 4);
+                      const firstPartIdx = (s - 1) * 10;
+                      if (firstPartIdx < skillQuestions.length) {
+                        setActiveQuestionIdx(firstPartIdx);
+                      }
+                    }}
+                    className={`px-2.5 py-1 border rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap transition ${
+                      listeningSection === s ? theme.activeTile : `${theme.cardBg} ${theme.border} hover:opacity-90`
+                    }`}
+                  >
+                    <span>Part {s}</span>
+                    {isCompleted && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Playback Phase + Single-Play Primary Action */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`px-2 py-1 rounded border text-[11px] font-bold tabular-nums whitespace-nowrap ${theme.cardBg} ${theme.border}`}>
+                {listeningPhase === 'pre_read' && `Pre-Read · ${formatTimer(phaseCountdownSec)}`}
+                {listeningPhase === 'playing' && `Single-Play Active · ${audioPlaybackSec}s`}
+                {listeningPhase === 'section_check' && `Check Answers · ${formatTimer(phaseCountdownSec)}`}
+                {listeningPhase === 'end_of_test_buffer' && `Final Check · ${formatTimer(phaseCountdownSec)}`}
+                {listeningPhase === 'completed' && 'Audio Finished (Locked)'}
+              </span>
+
+              {listeningPhase === 'pre_read' && (
+                <button
+                  type="button"
+                  data-testid="listening-start-audio-btn"
+                  onClick={handleSkipPreReadAndStartAudio}
+                  className={`px-3 py-1 rounded font-bold text-[11px] uppercase flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${theme.accentBtn}`}
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>Start Audio</span>
+                </button>
+              )}
+
+              {listeningPhase === 'section_check' && (
+                <button
+                  type="button"
+                  onClick={handleAdvanceSection}
+                  className="px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] uppercase flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                >
+                  <span>{listeningSection < 4 ? `Next: Part ${listeningSection + 1}` : 'Final Check'}</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleRunSoundCheck}
+                disabled={isAudioPlaying}
+                className={`px-2.5 py-1 rounded border text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 whitespace-nowrap ${theme.cardBg} ${theme.border}`}
+                title="Verify headset audio output"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{isSoundCheckPlaying ? 'Testing...' : hasTestedHeadset ? 'Sound OK' : 'Sound Check'}</span>
+              </button>
+            </div>
+
+            {/* Compact Headset Volume + Optional Script Context Toggle */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextMuted = !isListeningMuted;
+                  setIsListeningMuted(nextMuted);
+                  audioService.setVolume(nextMuted ? 0 : listeningVolume);
+                  soundManager.playBeep(600, 0.02);
+                }}
+                className={`p-1 rounded border cursor-pointer ${theme.cardBg} ${theme.border}`}
+                aria-label="Toggle Headset Mute"
+                title="Toggle Headset Mute"
+              >
+                {isListeningMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-600" /> : <Volume2 className="w-3.5 h-3.5 text-[#0F4C45]" />}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isListeningMuted ? 0 : listeningVolume}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setListeningVolume(val);
+                  audioService.setVolume(val);
+                  setIsListeningMuted(val === 0);
+                }}
+                className="w-20 sm:w-24 accent-[#0F4C45] cursor-pointer h-1.5"
+                aria-label="Listening Headset Volume"
+              />
+              <span className="text-[11px] font-bold tabular-nums w-8 text-right">
+                {Math.round((isListeningMuted ? 0 : listeningVolume) * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowListeningScript((v) => !v)}
+                className={`px-2 py-1 rounded border text-[11px] font-bold cursor-pointer whitespace-nowrap ${
+                  showListeningScript ? theme.activeTile : `${theme.cardBg} ${theme.border}`
+                }`}
+                title="Show or hide section reference context"
+              >
+                {showListeningScript ? 'Hide Context' : 'Context'}
+              </button>
+            </div>
+          </div>
+
+          {/* Inline Audio Error or Live Spoken Status */}
+          {listeningAudioError && listeningAudioError.sectionNum === listeningSection && (
+            <div className="max-w-6xl mx-auto mt-2 px-3 py-2 rounded border border-amber-500 bg-amber-50 text-amber-950 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                <span className="font-sans">{listeningAudioError.message}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {listeningAudioError.canRetry && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const count = audioRetryCountRef.current[listeningSection] || 0;
+                      audioRetryCountRef.current[listeningSection] = count + 1;
+                      setListeningAudioError(null);
+                      startListeningPlayback(listeningSection);
+                    }}
+                    className="px-2.5 py-1 rounded bg-[#0F4C45] text-white font-bold text-[11px] cursor-pointer"
+                  >
+                    Retry Audio
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setListeningAudioError(null);
+                    setListeningPhase('section_check');
+                    setPhaseCountdownSec(60);
+                  }}
+                  className="px-2.5 py-1 rounded bg-white border border-amber-400 text-amber-950 font-bold text-[11px] cursor-pointer"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {listeningPhase === 'playing' && currentSpokenLine && (!listeningAudioError || listeningAudioError.sectionNum !== listeningSection) && (
+            <div className="max-w-6xl mx-auto mt-1.5 px-2.5 py-1 rounded border border-[#0F4C45]/25 bg-white text-[#0E1F1E] text-[11px] flex items-center justify-between gap-2">
+              <span className="truncate font-sans">{currentSpokenLine}</span>
+              <span className="text-[10px] font-mono uppercase text-[#0F4C45] shrink-0">Single-Play Lock</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================= 2C. MOBILE SEGMENTED PANE SWITCHER (READING & WRITING ON <768px) ================= */}
+      {activeSkill !== 'listening' && (
+        <div className={`md:hidden w-full flex border-b ${theme.border} ${theme.cardBg} shrink-0 font-mono text-xs`}>
+          <button
+            type="button"
+            onClick={() => setMobilePane('left')}
+            className={`flex-1 min-h-[42px] py-2 font-bold border-b-2 transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              mobilePane === 'left'
+                ? 'border-[#0F4C45] text-[#0F4C45] bg-[#0F4C45]/5'
+                : 'border-transparent opacity-70'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>{activeSkill === 'reading' ? 'Reading Passage' : 'Writing Prompt'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePane('right')}
+            className={`flex-1 min-h-[42px] py-2 font-bold border-b-2 transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              mobilePane === 'right'
+                ? 'border-[#0F4C45] text-[#0F4C45] bg-[#0F4C45]/5'
+                : 'border-transparent opacity-70'
+            }`}
+          >
+            <span className="tabular-nums">
+              {activeSkill === 'reading' ? `Questions (${answeredCount}/${totalQuestions})` : 'Essay Sheet'}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* ================= 3. WORKSTATION MAIN VIEWPORT ================= */}
+      <div
+        ref={splitContainerRef}
+        style={{
+          ['--cd-left-width' as string]: `${leftPanePercent}%`,
+          ['--cd-right-width' as string]: `${100 - leftPanePercent}%`
+        }}
+        className="flex-1 w-full flex flex-col md:flex-row overflow-hidden relative min-h-0"
+      >
+        {/* Left Column: Reading Passage / Writing Prompt / Optional Listening Context */}
+        {(activeSkill !== 'listening' || showListeningScript) && (
         <div
           ref={leftPaneScrollRef}
-          style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${leftPanePercent}%` : '100%' }}
-          className={`flex basis-[45%] shrink-0 md:basis-auto md:shrink md:h-full p-4 sm:p-6 overflow-y-auto flex-col space-y-4 border-b md:border-b-0 md:border-r ${theme.border} bg-inherit`}
+          className={`${
+            activeSkill === 'listening'
+              ? 'flex w-full md:w-[38%] h-[38%] md:h-full'
+              : mobilePane === 'left'
+              ? 'flex w-full md:w-[var(--cd-left-width)] h-full'
+              : 'hidden md:flex md:w-[var(--cd-left-width)] h-full'
+          } p-4 sm:p-6 overflow-y-auto flex-col space-y-4 border-b md:border-b-0 md:border-r ${theme.border} ${colorScheme === 'standard' ? 'bg-white' : theme.cardBg}`}
           onMouseUp={handleTextSelection}
           onTouchEnd={handleTextSelection}
         >
@@ -2027,287 +2197,37 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
             </div>
           )}
 
-          {activeSkill === 'listening' && (
-            <div className="space-y-4">
-              {/* Section Header & Part Switcher */}
-              <div className={`border-b ${theme.border} pb-2.5 flex flex-wrap items-center justify-between gap-2 font-mono`}>
-                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                  Listening · Part {listeningSection} of 4 (Single-Play)
-                </span>
-                <div className="flex items-center gap-1 font-mono text-xs">
-                  {[1, 2, 3, 4].map((s) => {
-                    const isCompleted = Boolean(completedListeningParts[s]);
-                    return (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          if (isCompleted) {
-                            onShowToast(`Section ${s} audio has already played once (Single-Play Rule). Viewing questions only.`);
-                          } else if (s !== listeningSection) {
-                            activePlaybackTokenRef.current += 1;
-                            stopSpeech();
-                            audioService.stop();
-                            setIsAudioPlaying(false);
-                            setListeningAudioError(null);
-                            setListeningPhase('pre_read');
-                            setPhaseCountdownSec(35);
-                          }
-                          setListeningSection(s as 1 | 2 | 3 | 4);
-                        }}
-                        className={`px-2.5 py-1 border rounded-md flex items-center gap-1 cursor-pointer font-bold transition ${
-                          listeningSection === s
-                            ? theme.activeTile
-                            : `${theme.cardBg} ${theme.border} hover:opacity-85`
-                        }`}
-                        title={
-                          isCompleted
-                            ? `Completed at ${new Date(completedListeningParts[s]).toLocaleTimeString()}`
-                            : `Part ${s}`
-                        }
-                      >
-                        <span>Part {s}</span>
-                        {isCompleted && <CheckCircle2 className="w-3 h-3 text-emerald-500 inline" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Practice Device Sound Check Banner */}
-              <div className={`p-3 border rounded-lg ${theme.border} ${theme.cardBg} flex flex-wrap items-center justify-between gap-2 font-mono text-xs`}>
-                <div className="flex items-center gap-2">
-                  <Headphones className={`w-4 h-4 ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`} />
-                  <span className="font-bold">
-                    Headset Check: {hasTestedHeadset ? 'Verified & Ready' : 'Click to test audio'}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleRunSoundCheck}
-                    disabled={isAudioPlaying}
-                    className={`px-3 py-1.5 font-mono font-bold text-xs border rounded-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50 ${theme.accentBtn}`}
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>{isSoundCheckPlaying ? 'Testing Sound...' : 'Play Sound Test'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Standardized Practice Section Transitions & Silence Buffers Banner */}
-              <div className={`my-2 p-4 sm:p-5 border rounded-lg ${theme.border} ${theme.cardBg} space-y-3.5 font-mono`}>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono font-bold">
-                  <div className="flex items-center gap-2">
-                    <span className="uppercase text-[11px] sm:text-xs">
-                      {listeningPhase === 'pre_read' && `Pre-Read Buffer · Part ${listeningSection} of 4`}
-                      {listeningPhase === 'playing' && `Single-Play Audio Active · Part ${listeningSection} of 4`}
-                      {listeningPhase === 'section_check' && `Section Check Window · Part ${listeningSection} of 4`}
-                      {listeningPhase === 'end_of_test_buffer' && `Final 2-Minute Answer Check`}
-                      {listeningPhase === 'completed' && `Listening Concluded (Locked)`}
-                    </span>
-                  </div>
-
-                  <span className="px-2.5 py-0.5 bg-[#0F4C45] text-white rounded font-mono text-xs font-bold tabular-nums tracking-wider">
-                    {listeningPhase === 'completed' ? '00:00' : formatTimer(phaseCountdownSec)}
-                  </span>
-                </div>
-
-                <p className="text-xs font-sans leading-relaxed opacity-90">
-                  {listeningPhase === 'pre_read' &&
-                    `You have ${phaseCountdownSec} seconds to preview questions ${(listeningSection - 1) * 10 + 1} to ${listeningSection * 10} before the recording begins.`}
-                  {listeningPhase === 'playing' &&
-                    `Recording playing once (${audioPlaybackSec}s elapsed). Scrubbing, pausing, and speed changes are disabled to mirror timed CD-IELTS rules.`}
-                  {listeningPhase === 'section_check' &&
-                    `You have ${phaseCountdownSec} seconds to review your answers for Part ${listeningSection} before advancing.`}
-                  {listeningPhase === 'end_of_test_buffer' &&
-                    `Final 2-minute answer check (${formatTimer(phaseCountdownSec)} remaining). Review your answers before they lock.`}
-                  {listeningPhase === 'completed' &&
-                    `All 4 Listening parts and the final check period have finished. Responses are locked for grading.`}
-                </p>
-
-                {/* Pre-Read Action Button (Skip Silence & Start Immediately) */}
-                {listeningPhase === 'pre_read' && (
-                  <div className="pt-2 flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={handleSkipPreReadAndStartAudio}
-                      className={`px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider rounded-md flex items-center gap-2 cursor-pointer transition ${theme.accentBtn}`}
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Start Recording Now</span>
-                    </button>
-                    <span className="text-xs opacity-75 font-mono tabular-nums">
-                      Starts automatically in {phaseCountdownSec}s
-                    </span>
-                  </div>
-                )}
-
-                {/* Candidate Error / Unavailable Audio Notification Banner */}
-                {listeningAudioError && listeningAudioError.sectionNum === listeningSection && (
-                  <div className="p-4 border-2 border-amber-500 bg-amber-50 text-amber-950 font-mono text-xs space-y-3">
-                    <div className="flex items-center gap-2 font-bold text-amber-900">
-                      <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                      <span>
-                        {listeningAudioError.isUnavailable
-                          ? `[ SECTION ${listeningSection} AUDIO UNAVAILABLE ]`
-                          : `[ SECTION ${listeningSection} AUDIO PLAYBACK ERROR ]`}
-                      </span>
-                    </div>
-                    <p className="font-sans text-xs leading-relaxed text-amber-900">
-                      {listeningAudioError.message}
-                    </p>
-                    <div className="flex items-center gap-2 pt-1">
-                      {listeningAudioError.canRetry && (
-                        <button
-                          onClick={() => {
-                            const count = audioRetryCountRef.current[listeningSection] || 0;
-                            audioRetryCountRef.current[listeningSection] = count + 1;
-                            setListeningAudioError(null);
-                            startListeningPlayback(listeningSection);
-                          }}
-                          className="px-3 py-1.5 bg-[#002F6C] text-white font-mono font-bold text-xs uppercase hover:bg-[#001F4D] cursor-pointer flex items-center gap-1.5"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>RETRY PLAYBACK ({2 - (audioRetryCountRef.current[listeningSection] || 0)} RETRIES LEFT)</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          setListeningAudioError(null);
-                          setListeningPhase('section_check');
-                          setPhaseCountdownSec(60);
-                          onShowToast(`Proceeding to Section ${listeningSection} questions without audio.`);
-                        }}
-                        className="px-3 py-1.5 bg-slate-200 text-slate-800 font-mono font-bold text-xs uppercase hover:bg-slate-300 border border-slate-400 cursor-pointer"
-                      >
-                        <span>CONTINUE TO QUESTIONS</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Live Broadcast Audio Feed Display */}
-                {listeningPhase === 'playing' && (!listeningAudioError || listeningAudioError.sectionNum !== listeningSection) && (
-                  <div className="p-3 bg-blue-50 border-2 border-blue-400 space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-blue-900">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse" />
-                        <span>🔴 AUDIO BROADCAST STREAMING (NEURAL SPEECH)</span>
-                      </div>
-                      <span className="font-mono text-xs">{audioPlaybackSec}s Elapsed</span>
-                    </div>
-
-                    {currentSpokenLine && (
-                      <p className="text-xs font-mono font-medium text-blue-950 bg-white/70 p-2 border border-blue-200">
-                        {currentSpokenLine}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Section Review Buffer Action Button */}
-                {listeningPhase === 'section_check' && (
-                  <div className="pt-2 flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={handleAdvanceSection}
-                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-emerald-900 flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
-                    >
-                      <span>ADVANCE TO {listeningSection < 4 ? `SECTION ${listeningSection + 1}` : 'END-OF-TEST CHECK'}</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                    <span className="text-xs text-slate-600 font-mono">
-                      Auto-advances in {phaseCountdownSec}s
-                    </span>
-                  </div>
-                )}
-
-                {/* End-of-Test / Completed Buffer Action Button */}
-                {(listeningPhase === 'end_of_test_buffer' || listeningPhase === 'completed') && (
-                  <div className="pt-2 flex items-center gap-3">
-                    <button
-                      onClick={handleProceedToReading}
-                      className="px-4 py-2 bg-[#002F6C] hover:bg-[#001F4D] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#001F4D] flex items-center gap-2 cursor-pointer shadow-sm"
-                    >
-                      <span>PROCEED TO READING MODULE (60 MINS)</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Centered & Fully Responsive Headset Gain Controls (Zero Scrubbing / No Seek Bar / No Pause Button) */}
-                <div className="pt-3 border-t border-gray-400/60 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs">
-                  <div className="flex items-center gap-2 font-bold w-full sm:w-auto justify-between sm:justify-start">
-                    <span>🎧 Headset Gain: {isListeningMuted ? 'MUTED' : `${Math.round(listeningVolume * 100)}%`}</span>
-                    <span className="text-[10px] text-gray-500 font-normal sm:hidden">[Single-Play Lock]</span>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 w-full sm:w-auto sm:flex-1 max-w-sm justify-center">
-                    <button
-                      onClick={() => {
-                        const nextMuted = !isListeningMuted;
-                        setIsListeningMuted(nextMuted);
-                        audioService.setVolume(nextMuted ? 0 : listeningVolume);
-                        soundManager.playBeep(600, 0.02);
-                      }}
-                      className={`p-1.5 border ${theme.border} hover:opacity-80 cursor-pointer shrink-0`}
-                      title="Toggle Headset Mute"
-                    >
-                      {isListeningMuted ? <VolumeX className="w-4 h-4 text-rose-600" /> : <Volume2 className="w-4 h-4 text-sky-600" />}
-                    </button>
-
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={isListeningMuted ? 0 : listeningVolume}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setListeningVolume(val);
-                        audioService.setVolume(val);
-                        if (val === 0) setIsListeningMuted(true);
-                        else setIsListeningMuted(false);
-                      }}
-                      className="flex-1 w-full accent-sky-600 cursor-pointer h-2"
-                      aria-label="Listening Headset Volume"
-                    />
-
-                    <span className="font-bold w-9 text-right shrink-0">
-                      {Math.round(listeningVolume * 100)}%
-                    </span>
-                  </div>
-
-                  <span className="text-[11px] opacity-75 hidden sm:inline shrink-0">
-                    IELTS-Style Practice Engine (Neural Speech)
-                  </span>
-                </div>
-              </div>
-
+          {activeSkill === 'listening' && showListeningScript && (
+            <div className="space-y-3">
               {(() => {
                 const secDetail = getExamListeningSection(currentSet, listeningSection);
                 return (
                   <div className="space-y-3">
-                    <h3 className="font-bold text-base border-b border-gray-300 pb-1">
-                      Section {listeningSection} Context & Reference:
-                    </h3>
+                    <div className={`flex items-center justify-between border-b ${theme.border} pb-2 font-mono`}>
+                      <h3 className="font-bold text-xs uppercase">
+                        Section {listeningSection} Reference Context
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowListeningScript(false)}
+                        className="text-[11px] underline cursor-pointer"
+                      >
+                        Close
+                      </button>
+                    </div>
                     {secDetail.isAvailable && secDetail.script ? (
-                      <div className="space-y-3 font-sans text-sm sm:text-base leading-relaxed">
+                      <div className="space-y-3 font-sans text-sm leading-relaxed select-text">
                         {secDetail.script.split('\n\n').map((para, idx) => (
-                          <p key={idx} className="p-3 border border-gray-300 bg-white/5">
+                          <p key={idx} className={`p-3 border rounded ${theme.border}`}>
                             {renderParagraphWithHighlights(para)}
                           </p>
                         ))}
                       </div>
                     ) : (
-                      <div className="p-4 border-2 border-amber-300 bg-amber-50 text-amber-900 font-mono text-xs space-y-2">
-                        <div className="flex items-center gap-2 font-bold text-amber-900">
-                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                          <span>[ SECTION {listeningSection} CONTENT NOTICE ]</span>
-                        </div>
-                        <p className="font-sans text-sm leading-relaxed">
-                          {secDetail.missingReason || `Realistic listening recording and dialogue for Section ${listeningSection} are not available in this practice set.`}
-                        </p>
-                        <p className="text-[11px] text-amber-800">
-                          Per Phase 1 integrity rules, Section 1 dialogue is not reused as a substitute. You may inspect any available questions or advance to the next section.
+                      <div className="p-3 border border-amber-300 bg-amber-50 text-amber-900 font-mono text-xs space-y-1.5 rounded">
+                        <div className="font-bold">Section {listeningSection} Context Notice</div>
+                        <p className="font-sans text-xs leading-relaxed">
+                          {secDetail.missingReason || `Listening dialogue script for Section ${listeningSection} is not available in this practice set.`}
                         </p>
                       </div>
                     )}
@@ -2326,7 +2246,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 <div className="flex items-center gap-2 font-mono">
                   <button
                     onClick={() => setActiveWritingTask(1)}
-                    className={`px-3 py-1 text-xs font-mono font-bold border rounded-md cursor-pointer ${
+                    className={`px-3 py-1 text-xs font-mono font-bold border rounded cursor-pointer ${
                       activeWritingTask === 1 ? theme.activeTile : `${theme.cardBg} ${theme.border}`
                     }`}
                   >
@@ -2334,7 +2254,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                   </button>
                   <button
                     onClick={() => setActiveWritingTask(2)}
-                    className={`px-3 py-1 text-xs font-mono font-bold border rounded-md cursor-pointer ${
+                    className={`px-3 py-1 text-xs font-mono font-bold border rounded cursor-pointer ${
                       activeWritingTask === 2 ? theme.activeTile : `${theme.cardBg} ${theme.border}`
                     }`}
                   >
@@ -2343,7 +2263,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 </div>
               </div>
 
-              <div className={`p-4 border rounded-lg ${theme.border} ${theme.cardBg} space-y-2 font-mono`}>
+              <div className={`p-4 border rounded ${theme.border} ${theme.cardBg} space-y-2 font-mono`}>
                 <div className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
                   Writing Prompt · Task {activeWritingTask}
                 </div>
@@ -2361,54 +2281,49 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
             </div>
           )}
         </div>
+        )}
 
-        {/* Draggable & Keyboard-Accessible Vertical Splitter Handle */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize left and right exam panes"
-          aria-valuemin={25}
-          aria-valuemax={75}
-          aria-valuenow={Math.round(leftPanePercent)}
-          tabIndex={0}
-          onMouseDown={handleSplitterMouseDown}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft') {
-              e.preventDefault();
-              setLeftPanePercent((p) => Math.max(25, p - 5));
-            } else if (e.key === 'ArrowRight') {
-              e.preventDefault();
-              setLeftPanePercent((p) => Math.min(75, p + 5));
-            }
-          }}
-          className={`hidden md:flex w-2 hover:w-3 bg-[#D3DDDA] focus:bg-[#0F4C45] focus:outline-none cursor-col-resize items-center justify-center transition-all ${
-            isDraggingSplitter ? 'bg-[#0F4C45] w-3' : ''
-          }`}
-          title="Drag or press Left/Right arrow keys to resize panes"
-        >
-          <div className="w-0.5 h-8 bg-[#0F4C45]/60 rounded-full" />
-        </div>
+        {/* Draggable & Keyboard-Accessible Vertical Splitter Handle (Reading & Writing) */}
+        {activeSkill !== 'listening' && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize left and right exam panes"
+            aria-valuemin={25}
+            aria-valuemax={75}
+            aria-valuenow={Math.round(leftPanePercent)}
+            tabIndex={0}
+            onMouseDown={handleSplitterMouseDown}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                setLeftPanePercent((p) => Math.max(25, p - 5));
+              } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                setLeftPanePercent((p) => Math.min(75, p + 5));
+              }
+            }}
+            className={`hidden md:flex w-2 hover:w-2.5 bg-[#D3DDDA] focus:bg-[#0F4C45] focus:outline-none cursor-col-resize items-center justify-center transition-colors shrink-0 ${
+              isDraggingSplitter ? 'bg-[#0F4C45] w-2.5' : ''
+            }`}
+            title="Drag or press Left/Right arrow keys to resize panes"
+          >
+            <div className="w-0.5 h-10 bg-[#0F4C45]/60 rounded-full" />
+          </div>
+        )}
 
-        {/* Right Column: Question Panel OR Writing Editor Area */}
+        {/* Right Column (or Centered Sheet in Listening): Question Panel OR Writing Editor Area */}
         <div
           ref={rightPaneScrollRef}
-          style={{ width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - leftPanePercent}%` : '100%' }}
-          className={`flex flex-1 min-h-0 md:flex-none md:h-full p-5 sm:p-6 overflow-y-auto flex-col justify-between bg-inherit`}
+          className={`${
+            activeSkill === 'listening'
+              ? 'flex flex-1 h-full'
+              : mobilePane === 'right'
+              ? 'flex w-full md:w-[var(--cd-right-width)] h-full'
+              : 'hidden md:flex md:w-[var(--cd-right-width)] h-full'
+          } p-4 sm:p-6 overflow-y-auto flex-col justify-between bg-inherit`}
         >
-          {activeSkill === 'reading' && (
-            <div className={`md:hidden mb-4 pb-2 border-b ${theme.border} flex items-center justify-between`}>
-              <button
-                onClick={() => handleSwitchMobilePane('left')}
-                className={`min-h-[44px] px-3.5 py-2 font-mono font-bold text-xs uppercase flex items-center gap-2 rounded-md cursor-pointer ${theme.accentBtn}`}
-                aria-label="Switch to Reading Passage"
-              >
-                <span>← View Passage</span>
-              </button>
-              <span className="text-xs font-mono font-bold opacity-80">
-                {activeReadingBadge}
-              </span>
-            </div>
-          )}
+          <div className={activeSkill === 'listening' ? 'max-w-4xl w-full mx-auto flex-1 flex flex-col justify-between' : 'flex-1 flex flex-col justify-between'}>
           {activeSkill === 'writing' ? (
             <div className="flex-1 flex flex-col space-y-3 font-mono">
               <div className={`flex items-center justify-between border-b ${theme.border} pb-2`}>
@@ -2633,6 +2548,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               </div>
             </div>
           )}
+          </div>
         </div>
 
         {/* ================= 3. MARGIN NOTES & HIGHLIGHTER SIDE PANEL (Alt+V) ================= */}

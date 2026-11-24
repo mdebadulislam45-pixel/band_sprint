@@ -128,13 +128,27 @@ function saveUserHiddenPref(hidden: boolean): void {
   }
 }
 
+const ACTIVE_EXAM_ROUTES = new Set([
+  '/practice/listening',
+  '/practice/reading',
+  '/practice/writing',
+  '/practice/speaking'
+]);
+
+function isGlobalActiveExamFlagSet(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean((window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__);
+}
+
 export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   onNavigate,
   currentPath = '/'
 }) => {
   const [companion, setCompanion] = useState<BarnabyCompanionState>(() => loadBarnabyState(currentPath));
   const [isOpen, setIsOpen] = useState(false);
-  const [isHiddenByExam, setIsHiddenByExam] = useState(false);
+  const [isHiddenByExamEvent, setIsHiddenByExamEvent] = useState<boolean>(() => isGlobalActiveExamFlagSet());
+  const isActiveExamRoute = ACTIVE_EXAM_ROUTES.has(currentPath);
+  const isHiddenByExam = isHiddenByExamEvent || isActiveExamRoute;
   const [isUserHidden, setIsUserHidden] = useState<boolean>(() => loadUserHiddenPref());
   const [isPageHidden, setIsPageHidden] = useState<boolean>(() =>
     typeof document !== 'undefined' ? document.hidden : false
@@ -397,7 +411,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   // Exam auto-hide + external drawer open events (preserving SP-3 & SP-4B contracts)
   useEffect(() => {
     const hide = () => {
-      setIsHiddenByExam(true);
+      setIsHiddenByExamEvent(true);
       setIsOpen(false);
       setWhisper(null);
       clearLocomotionTimers();
@@ -406,9 +420,10 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       setSpeakingMsgId(null);
     };
     const show = () => {
-      setIsHiddenByExam(false);
+      setIsHiddenByExamEvent(false);
     };
     const openDrawer = (event: Event) => {
+      if (isHiddenByExamRef.current) return;
       const custom = event as CustomEvent<{ focusInput?: boolean }>;
       setIsUserHidden(false);
       saveUserHiddenPref(false);
@@ -418,6 +433,10 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
         window.setTimeout(() => inputRef.current?.focus(), 140);
       }
     };
+    // Sync immediately on mount in case an exam room mounted before lazy FloatingBarnaby loaded
+    if (isGlobalActiveExamFlagSet()) {
+      hide();
+    }
     window.addEventListener('barnaby-float-hide', hide);
     window.addEventListener('barnaby-float-show', show);
     window.addEventListener('barnaby-float-open', openDrawer);
@@ -427,6 +446,17 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       window.removeEventListener('barnaby-float-open', openDrawer);
     };
   }, [clearLocomotionTimers]);
+
+  // Immediately pause animations, close drawer, and silence TTS when entering any active IELTS exam route
+  useEffect(() => {
+    if (!isHiddenByExam) return;
+    setIsOpen(false);
+    setWhisper(null);
+    clearLocomotionTimers();
+    stopSpeech();
+    setIsSpeaking(false);
+    setSpeakingMsgId(null);
+  }, [isHiddenByExam, clearLocomotionTimers]);
 
   // Responsive viewport resize + obstacle evasion
   useEffect(() => {

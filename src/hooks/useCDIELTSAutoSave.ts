@@ -57,6 +57,29 @@ export function useCDIELTSAutoSave(
     }
   }, [onAutoSaveSuccess]);
 
+  // Debounced reactive save whenever answers, flags, highlights, notes, or essays change
+  useEffect(() => {
+    if (!enabled) return;
+    const debounceTimer = window.setTimeout(() => {
+      saveToStorage();
+    }, 350);
+    return () => {
+      window.clearTimeout(debounceTimer);
+    };
+  }, [
+    enabled,
+    saveToStorage,
+    data.selectedSetIdx,
+    data.activeSkill,
+    data.userAnswers,
+    data.flaggedQuestions,
+    data.task1Essay,
+    data.task2Essay,
+    data.highlights,
+    data.underlines,
+    data.notes
+  ]);
+
   // 30-Second recurring interval timer
   useEffect(() => {
     if (!enabled) return;

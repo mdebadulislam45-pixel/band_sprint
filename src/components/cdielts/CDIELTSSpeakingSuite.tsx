@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Mic,
   Volume2,
@@ -37,6 +37,7 @@ interface CDIELTSSpeakingSuiteProps {
   onExit: () => void;
   onShowToast: (msg: string) => void;
   candidateName?: string;
+  onOpenPracticeLabs?: () => void;
 }
 
 type SpeakingStage = 'intro' | 'part1' | 'part2_prep' | 'part2_speak' | 'part3' | 'result';
@@ -296,7 +297,8 @@ export function shouldPersistCDIELTSSpeakingToFirestore(
 export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   onExit,
   onShowToast,
-  candidateName = 'Candidate'
+  candidateName = 'Candidate',
+  onOpenPracticeLabs
 }) => {
   // Theme & Contrast state
   const [colorScheme, setColorScheme] = useState<CDIELTSColorScheme>('standard');
@@ -329,6 +331,30 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   const recognitionRef = useRef<any>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [capturedAudioBytes, setCapturedAudioBytes] = useState<number>(0);
+  const [capturedAudioStage, setCapturedAudioStage] = useState<SpeakingStage | null>(null);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const formatClock = (totalSeconds: number): string => {
+    const safe = Math.max(0, Math.floor(totalSeconds));
+    const mins = Math.floor(safe / 60);
+    const secs = safe % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const clearStageAudio = useCallback(() => {
+    setAudioUrl((prev) => {
+      if (prev) {
+        try {
+          URL.revokeObjectURL(prev);
+        } catch {}
+      }
+      return null;
+    });
+    setCapturedAudioBytes(0);
+    setCapturedAudioStage(null);
+    setMicError(null);
+  }, []);
 
   const part1Questions = [
     'Good afternoon. Can you tell me your full name, please?',
@@ -356,10 +382,12 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   // Hide floating Barnaby companion during timed Speaking exam & clean up audio on unmount
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      (window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__ = true;
       window.dispatchEvent(new Event('barnaby-float-hide'));
     }
     return () => {
       if (typeof window !== 'undefined') {
+        (window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__ = false;
         window.dispatchEvent(new Event('barnaby-float-show'));
       }
       stopSpeech();
@@ -376,50 +404,46 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
     };
   }, []);
 
-  // Part 2 60-Second Prep Timer
+  // Part 2 60-Second Prep Timer (stable 1s interval without per-tick teardown)
   useEffect(() => {
-    let interval: any = null;
-    if (stage === 'part2_prep' && isPrepTimerRunning && prepSecondsLeft > 0) {
-      interval = setInterval(() => {
-        setPrepSecondsLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setIsPrepTimerRunning(false);
-            soundManager.playBeep(600, 0.3);
-            setTimeout(() => {
-              onShowToast('Preparation time has ended. Please begin speaking.');
-              setStage('part2_speak');
-            }, 0);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    if (stage !== 'part2_prep' || !isPrepTimerRunning) return;
+    const interval = setInterval(() => {
+      setPrepSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setIsPrepTimerRunning(false);
+          soundManager.playBeep(600, 0.3);
+          setTimeout(() => {
+            onShowToast('Preparation time has ended. Please begin speaking.');
+            setStage('part2_speak');
+          }, 0);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
     return () => clearInterval(interval);
-  }, [stage, isPrepTimerRunning, prepSecondsLeft, onShowToast]);
+  }, [stage, isPrepTimerRunning, onShowToast]);
 
-  // Part 2 120-Second Speaking Timer
+  // Part 2 120-Second Speaking Timer (stable 1s interval; stops automatically on stage exit)
   useEffect(() => {
-    let interval: any = null;
-    if (stage === 'part2_speak' && isRecording && speakSecondsLeft > 0) {
-      interval = setInterval(() => {
-        setSpeakSecondsLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setTimeout(() => {
-              handleStopRecording();
-              onShowToast('2-minute long turn completed. Moving to Part 3 discussion.');
-              setStage('part3');
-            }, 0);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    if (stage !== 'part2_speak' || !isRecording) return;
+    const interval = setInterval(() => {
+      setSpeakSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setTimeout(() => {
+            handleStopRecording();
+            onShowToast('2-minute long turn completed. Moving to Part 3 discussion.');
+            setStage('part3');
+          }, 0);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
     return () => clearInterval(interval);
-  }, [stage, isRecording, speakSecondsLeft, onShowToast]);
+  }, [stage, isRecording, onShowToast]);
 
   const speakPrompt = (text: string) => {
     stopSpeech();
@@ -445,33 +469,29 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
   const handleStartRecording = async () => {
     stopSpeech();
     setIsExaminerSpeaking(false);
-    soundManager.playSuccess();
+    setMicError(null);
     recordedChunksRef.current = [];
+    const activeCaptureStage = stage;
 
-    // Start Web Speech API live transcription if supported by browser
-    if (typeof window !== 'undefined') {
-      const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRec) {
-        try {
-          const rec = new SpeechRec();
-          rec.continuous = true;
-          rec.interimResults = true;
-          rec.lang = 'en-GB';
-          rec.onresult = (event: any) => {
-            let finalChunk = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              if (event.results[i].isFinal) {
-                finalChunk += event.results[i][0].transcript + ' ';
-              }
-            }
-            if (finalChunk.trim()) {
-              setSpokenTranscript((prev) => (prev + ' ' + finalChunk).trim());
-            }
-          };
-          rec.start();
-          recognitionRef.current = rec;
-        } catch {}
-      }
+    if (audioUrl) {
+      try {
+        URL.revokeObjectURL(audioUrl);
+      } catch {}
+      setAudioUrl(null);
+      setCapturedAudioBytes(0);
+      setCapturedAudioStage(null);
+    }
+
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== 'function' ||
+      typeof MediaRecorder === 'undefined'
+    ) {
+      setIsRecording(false);
+      setMicError('Microphone recording is not supported in this browser. You may type your spoken response in the transcript box below.');
+      onShowToast('Microphone recording unavailable in this browser.');
+      return;
     }
 
     try {
@@ -480,22 +500,73 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
       };
 
-      recorder.onstop = () => {
-        const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
+      recorder.onerror = () => {
+        setIsRecording(false);
+        setMicError('Audio recorder encountered an error. Click Start Recording to retry.');
         stream.getTracks().forEach((t) => t.stop());
       };
 
-      recorder.start();
+      recorder.onstop = () => {
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+        if (blob.size > 0) {
+          const url = URL.createObjectURL(blob);
+          setAudioUrl(url);
+          setCapturedAudioBytes(blob.size);
+          setCapturedAudioStage(activeCaptureStage);
+        } else {
+          setMicError('No audio data was captured. Please check your microphone input and try recording again.');
+        }
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      // Start Web Speech API live transcription only after mic access succeeds
+      if (typeof window !== 'undefined') {
+        const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRec) {
+          try {
+            const rec = new SpeechRec();
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.lang = 'en-GB';
+            rec.onresult = (event: any) => {
+              let finalChunk = '';
+              for (let i = event.resultIndex; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                  finalChunk += event.results[i][0].transcript + ' ';
+                }
+              }
+              if (finalChunk.trim()) {
+                setSpokenTranscript((prev) => (prev + ' ' + finalChunk).trim());
+              }
+            };
+            rec.start();
+            recognitionRef.current = rec;
+          } catch {}
+        }
+      }
+
+      recorder.start(250);
+      soundManager.playSuccess();
       setIsRecording(true);
-      setSpeakSecondsLeft(120);
-    } catch {
-      setIsRecording(true);
-      setSpeakSecondsLeft(120);
+      if (activeCaptureStage === 'part2_speak' && speakSecondsLeft <= 0) {
+        setSpeakSecondsLeft(120);
+      }
+    } catch (err: any) {
+      setIsRecording(false);
+      const errName = err?.name || 'MicrophoneError';
+      const msg =
+        errName === 'NotAllowedError' || errName === 'PermissionDeniedError'
+          ? 'Microphone permission was denied. Allow microphone access in your browser settings and click Retry Recording, or type your response below.'
+          : errName === 'NotFoundError' || errName === 'DevicesNotFoundError'
+          ? 'No microphone device was detected. Connect a microphone and click Retry Recording, or type your response below.'
+          : `Unable to start microphone recording (${errName}). Click Retry Recording or type your response below.`;
+      setMicError(msg);
+      soundManager.playBeep(340, 0.12);
+      onShowToast('Microphone unavailable — check permissions or use the transcript input.');
     }
   };
 
@@ -516,6 +587,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
   const handleCompleteInterview = async () => {
     handleStopRecording();
+    setIsPrepTimerRunning(false);
     stopSpeech();
     setIsExaminerSpeaking(false);
     setStage('result');
@@ -677,27 +749,34 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
 
   return (
     <div className={`min-h-screen ${theme.bg} ${fontSizeClass} flex flex-col font-sans select-none transition-colors duration-150`}>
-      {/* CD-IELTS Top Exam Bar */}
-      <header className={`px-4 sm:px-6 py-3 border-b ${theme.border} ${theme.headerBg} flex flex-wrap items-center justify-between gap-2 font-mono`}>
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="px-2.5 py-1 bg-[#F4A62A] text-[#0E1F1E] rounded-md font-bold text-xs uppercase tracking-wider shrink-0">
+      {/* CD-IELTS Top Exam Bar (Restrained Single Row) */}
+      <header className={`min-h-12 px-3 sm:px-5 py-1.5 border-b ${theme.border} ${theme.headerBg} flex items-center justify-between gap-2 font-mono shrink-0`}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            onClick={handleRequestExit}
+            className="px-2.5 py-1 border border-current/25 bg-white/10 hover:bg-white/20 rounded text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Exit</span>
+          </button>
+          <span className="px-2 py-0.5 bg-[#F4A62A] text-[#0E1F1E] rounded font-bold text-[11px] uppercase tracking-wider shrink-0 whitespace-nowrap">
             CD-IELTS SPEAKING
           </span>
-          <span className="hidden sm:inline text-xs opacity-90 truncate">
-            Candidate: <strong>{candidateName}</strong> · Timed Oral Simulation
+          <span className="hidden lg:inline text-xs opacity-90 truncate">
+            {candidateName} · Timed Oral Assessment
           </span>
         </div>
 
-        {/* Accessibility & Options */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Zoom Selector */}
-          <div className="hidden sm:flex items-center gap-1 border border-current/25 rounded-md px-2 py-1 text-xs">
-            <span className="opacity-75">Size:</span>
+        {/* Accessibility, Practice Labs & Options */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="hidden md:flex items-center gap-0.5 border border-current/25 rounded px-1.5 py-0.5 text-[11px]">
             {(['100%', '125%', '150%'] as CDIELTSZoomLevel[]).map((lvl) => (
               <button
                 key={lvl}
+                type="button"
                 onClick={() => setZoomLevel(lvl)}
-                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition ${
+                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition whitespace-nowrap ${
                   zoomLevel === lvl ? 'bg-[#F4A62A] text-[#0E1F1E]' : 'hover:bg-white/10 opacity-80'
                 }`}
               >
@@ -706,26 +785,31 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
             ))}
           </div>
 
-          {/* Color Scheme Selector */}
           <select
             aria-label="Speaking Display Contrast"
             value={colorScheme}
             onChange={(e) => setColorScheme(e.target.value as CDIELTSColorScheme)}
-            className="border border-current/25 bg-black/25 text-current rounded-md text-xs px-2 py-1 outline-none cursor-pointer font-bold"
+            className="hidden sm:block border border-current/25 bg-black/25 text-current rounded text-[11px] px-2 py-1 outline-none cursor-pointer font-bold max-w-[130px] truncate"
           >
-            <option value="standard" className="bg-white text-[#0E1F1E]">Standard (BandSprint)</option>
-            <option value="black-on-yellow" className="bg-[#FFF100] text-black">Black on Yellow</option>
-            <option value="yellow-on-black" className="bg-black text-[#FFF100]">Yellow on Black</option>
-            <option value="white-on-black" className="bg-black text-white">White on Black</option>
+            <option value="standard" className="bg-white text-[#0E1F1E]">Standard</option>
+            <option value="black-on-yellow" className="bg-[#FFF100] text-black">Black / Yellow</option>
+            <option value="yellow-on-black" className="bg-black text-[#FFF100]">Yellow / Black</option>
+            <option value="white-on-black" className="bg-black text-white">White / Black</option>
           </select>
 
-          <button
-            onClick={handleRequestExit}
-            className="px-3 py-1.5 border border-current/25 rounded-md hover:bg-white/10 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-            <span>Exit Room</span>
-          </button>
+          {onOpenPracticeLabs && (
+            <button
+              type="button"
+              onClick={() => {
+                stopSpeech();
+                handleStopRecording();
+                onOpenPracticeLabs();
+              }}
+              className="px-2.5 py-1 border border-current/25 bg-white/10 hover:bg-white/20 rounded text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+            >
+              Practice Labs
+            </button>
+          )}
         </div>
       </header>
 
@@ -768,21 +852,17 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
       <div className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center">
         {/* ================= INTRO STAGE ================= */}
         {stage === 'intro' && (
-          <div className={`p-6 sm:p-8 rounded-2xl border ${theme.border} ${theme.cardBg} space-y-6 text-center animate-fade-in max-w-4xl mx-auto w-full shadow-sm`}>
-            <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${isStandard ? 'bg-[#0F4C45]/10 text-[#0F4C45]' : theme.contrastBadge}`}>
-              <Mic className="w-7 h-7" />
-            </div>
-
-            <div className="space-y-2">
-              <div className={`text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 ${isStandard ? 'text-[#0F4C45]' : theme.subtext}`}>
+          <div className={`p-5 sm:p-7 rounded-lg border ${theme.border} ${theme.cardBg} space-y-5 text-center animate-fade-in max-w-4xl mx-auto w-full`}>
+            <div className="space-y-1.5">
+              <div className={`text-[11px] font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 ${isStandard ? 'text-[#0F4C45]' : theme.subtext}`}>
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>BandSprint Speaking Practice Simulation</span>
+                <span>BandSprint Computer-Delivered Speaking Room</span>
               </div>
-              <h1 className={`text-2xl sm:text-3xl font-bold tracking-tight font-display ${theme.text}`}>
-                1:1 IELTS Speaking Interview
+              <h1 className={`text-xl sm:text-2xl font-bold tracking-tight font-display ${theme.text}`}>
+                IELTS Speaking Interview (Parts 1, 2 &amp; 3)
               </h1>
-              <p className={`text-xs sm:text-sm max-w-xl mx-auto ${theme.subtext}`}>
-                Practice all three speaking parts with a formal British examiner voice (distinct from Barnaby&apos;s mentor voice), structured timers, and rubric-aligned feedback.
+              <p className={`text-xs sm:text-sm max-w-2xl mx-auto ${theme.subtext}`}>
+                Complete all three speaking stages with timed prompts, microphone recording, playback review, and rubric-aligned transcript analysis.
               </p>
             </div>
 
@@ -956,25 +1036,31 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   </p>
                 </div>
 
-                {/* Candidate Recording Button & Live Speech Feedback */}
-                <div className={`p-4 rounded-xl border space-y-3 ${theme.border} ${isStandard ? 'bg-white' : theme.bg}`}>
+                {/* Candidate Recording Button, Microphone Status & Live Transcript */}
+                <div className={`p-4 rounded-lg border space-y-3 ${theme.border} ${isStandard ? 'bg-white' : theme.bg}`}>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-xs font-mono font-semibold flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-rose-600 animate-pulse' : 'bg-[#0F4C45]/40'}`} />
-                      {isRecording ? 'Microphone Active · Recording Response' : 'Ready to Answer'}
+                      {isRecording && <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />}
+                      <span>
+                        Mic Status: {isRecording ? 'Recording Live' : micError ? 'Permission / Device Issue' : audioUrl && capturedAudioStage === 'part1' ? `Audio Captured (${Math.max(1, Math.round(capturedAudioBytes / 1024))} KB)` : 'Ready'}
+                      </span>
                     </span>
                     {!isRecording ? (
                       <button
+                        type="button"
+                        data-testid="speaking-record-btn"
                         onClick={handleStartRecording}
-                        className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                        className="px-4 py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
                       >
                         <Mic className="w-3.5 h-3.5" />
-                        <span>Start Recording</span>
+                        <span>{micError ? 'Retry Recording' : 'Start Recording'}</span>
                       </button>
                     ) : (
                       <button
+                        type="button"
+                        data-testid="speaking-stop-btn"
                         onClick={handleStopRecording}
-                        className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition ${
+                        className={`px-4 py-1.5 rounded font-bold text-xs flex items-center gap-1.5 cursor-pointer transition ${
                           isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
                         }`}
                       >
@@ -983,11 +1069,27 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                     )}
                   </div>
 
-                  {spokenTranscript && (
-                    <div className={`p-3 rounded-lg border text-xs italic leading-relaxed ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.cardBg}`}>
-                      "{spokenTranscript}"
+                  {micError && (
+                    <div role="alert" data-testid="speaking-mic-error" className="p-2.5 rounded border border-rose-300 bg-rose-50 text-rose-900 text-xs flex items-start justify-between gap-2">
+                      <span>{micError}</span>
+                      <button type="button" onClick={() => setMicError(null)} className="font-mono text-[11px] underline shrink-0 cursor-pointer">
+                        Dismiss
+                      </button>
                     </div>
                   )}
+
+                  {audioUrl && capturedAudioStage === 'part1' && (
+                    <audio data-testid="speaking-part1-audio" src={audioUrl} controls className="w-full h-8" />
+                  )}
+
+                  <textarea
+                    aria-label="Part 1 Spoken Transcript"
+                    value={spokenTranscript}
+                    onChange={(e) => setSpokenTranscript(e.target.value)}
+                    placeholder="Live speech transcript appears here while recording (or type/edit response notes)..."
+                    rows={2}
+                    className={`w-full p-2.5 rounded border text-xs outline-none focus:ring-2 focus:ring-[#0F4C45] ${theme.inputBg} ${theme.text}`}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between pt-2 flex-wrap gap-2">
@@ -1015,8 +1117,11 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                     <button
                       onClick={() => {
                         handleStopRecording();
+                        clearStageAudio();
                         stopSpeech();
                         setIsExaminerSpeaking(false);
+                        setPrepSecondsLeft(60);
+                        setIsPrepTimerRunning(false);
                         setStage('part2_prep');
                         soundManager.playSuccess();
                       }}
@@ -1041,13 +1146,16 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               <span className={`text-xs font-mono font-bold uppercase ${isStandard ? 'text-[#B45309]' : ''}`}>
                 PART 2 · CANDIDATE CUE CARD & 1-MINUTE PREPARATION
               </span>
-              <div className={`flex items-center gap-2 font-mono font-bold text-sm px-3 py-1 rounded-lg border ${
-                isStandard
-                  ? 'text-[#0E1F1E] bg-[#F4A62A]/20 border-[#F4A62A]/60'
-                  : `${theme.border} ${theme.bg}`
-              }`}>
+              <div
+                data-testid="speaking-prep-timer"
+                className={`flex items-center gap-2 font-mono font-bold text-sm px-3 py-1 rounded-lg border ${
+                  isStandard
+                    ? 'text-[#0E1F1E] bg-[#F4A62A]/20 border-[#F4A62A]/60'
+                    : `${theme.border} ${theme.bg}`
+                }`}
+              >
                 <Clock className="w-4 h-4" />
-                <span>00:{prepSecondsLeft.toString().padStart(2, '0')}</span>
+                <span className="tabular-nums">{formatClock(prepSecondsLeft)}</span>
               </div>
             </div>
 
@@ -1115,7 +1223,10 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   <button
                     onClick={() => {
                       stopSpeech();
+                      setIsPrepTimerRunning(false);
                       setIsExaminerSpeaking(false);
+                      clearStageAudio();
+                      setSpeakSecondsLeft(120);
                       setStage('part2_speak');
                       soundManager.playBeep(520, 0.05);
                     }}
@@ -1140,6 +1251,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                 PART 2 · CANDIDATE LONG TURN (2 MINUTES)
               </span>
               <div
+                data-testid="speaking-longturn-timer"
                 className={`flex items-center gap-2 font-mono font-bold text-sm px-3 py-1 rounded-lg border ${
                   speakSecondsLeft < 30
                     ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse'
@@ -1149,10 +1261,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                 }`}
               >
                 <Clock className="w-4 h-4" />
-                <span>
-                  {Math.floor(speakSecondsLeft / 60)}:
-                  {(speakSecondsLeft % 60).toString().padStart(2, '0')}
-                </span>
+                <span className="tabular-nums">{formatClock(speakSecondsLeft)}</span>
               </div>
             </div>
 
@@ -1204,7 +1313,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                         className="px-6 py-2.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs shadow-sm transition inline-flex items-center gap-2 cursor-pointer"
                       >
                         <Mic className="w-4 h-4" />
-                        <span>Start Recording</span>
+                        <span>{micError ? 'Retry Recording' : 'Start Recording'}</span>
                       </button>
                     ) : (
                       <button
@@ -1218,9 +1327,18 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                     )}
                   </div>
 
-                  {audioUrl && (
+                  {micError && (
+                    <div role="alert" data-testid="speaking-mic-error" className="p-2.5 rounded border border-rose-300 bg-rose-50 text-rose-900 text-xs text-left flex items-start justify-between gap-2">
+                      <span>{micError}</span>
+                      <button type="button" onClick={() => setMicError(null)} className="font-mono text-[11px] underline shrink-0 cursor-pointer">
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+
+                  {audioUrl && capturedAudioStage === 'part2_speak' && (
                     <div className="pt-1">
-                      <audio src={audioUrl} controls className="mx-auto h-8" />
+                      <audio data-testid="speaking-part2-audio" src={audioUrl} controls className="mx-auto h-8" />
                     </div>
                   )}
 
@@ -1267,6 +1385,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   <button
                     onClick={() => {
                       handleStopRecording();
+                      clearStageAudio();
                       setStage('part3');
                       soundManager.playSuccess();
                       speakPrompt(part3Questions[0]);
@@ -1325,25 +1444,31 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                   </p>
                 </div>
 
-                {/* Candidate Recording Button */}
-                <div className={`p-4 rounded-xl border space-y-3 ${theme.border} ${isStandard ? 'bg-white' : theme.bg}`}>
+                {/* Candidate Recording Button, Microphone Status & Live Transcript */}
+                <div className={`p-4 rounded-lg border space-y-3 ${theme.border} ${isStandard ? 'bg-white' : theme.bg}`}>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-semibold flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-rose-600 animate-pulse' : 'bg-[#0F4C45]/40'}`} />
-                      {isRecording ? 'Microphone Active · Recording Response' : 'Ready to Answer'}
+                    <span data-testid="speaking-part3-mic-status" className="text-xs font-mono font-semibold flex items-center gap-2">
+                      {isRecording && <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />}
+                      <span>
+                        Mic Status: {isRecording ? 'Recording Live' : micError ? 'Permission / Device Issue' : audioUrl && capturedAudioStage === 'part3' ? `Audio Captured (${Math.max(1, Math.round(capturedAudioBytes / 1024))} KB)` : 'Ready'}
+                      </span>
                     </span>
                     {!isRecording ? (
                       <button
+                        type="button"
+                        data-testid="speaking-part3-record-btn"
                         onClick={handleStartRecording}
-                        className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                        className="px-4 py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
                       >
                         <Mic className="w-3.5 h-3.5" />
-                        <span>Start Recording</span>
+                        <span>{micError ? 'Retry Recording' : 'Start Recording'}</span>
                       </button>
                     ) : (
                       <button
+                        type="button"
+                        data-testid="speaking-part3-stop-btn"
                         onClick={handleStopRecording}
-                        className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition ${
+                        className={`px-4 py-1.5 rounded font-bold text-xs flex items-center gap-1.5 cursor-pointer transition ${
                           isStandard ? 'bg-[#0F4C45] hover:bg-[#0B3833] text-white' : theme.accentBtn
                         }`}
                       >
@@ -1352,11 +1477,28 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
                     )}
                   </div>
 
-                  {spokenTranscript && (
-                    <div className={`p-3 rounded-lg border text-xs italic leading-relaxed ${theme.border} ${isStandard ? 'bg-[#F5F7F6]' : theme.cardBg}`}>
-                      "{spokenTranscript}"
+                  {micError && (
+                    <div role="alert" data-testid="speaking-mic-error" className="p-2.5 rounded border border-rose-300 bg-rose-50 text-rose-900 text-xs flex items-start justify-between gap-2">
+                      <span>{micError}</span>
+                      <button type="button" onClick={() => setMicError(null)} className="font-mono text-[11px] underline shrink-0 cursor-pointer">
+                        Dismiss
+                      </button>
                     </div>
                   )}
+
+                  {audioUrl && capturedAudioStage === 'part3' && (
+                    <audio data-testid="speaking-part3-audio" src={audioUrl} controls className="w-full h-8" />
+                  )}
+
+                  <textarea
+                    aria-label="Part 3 Spoken Transcript"
+                    data-testid="speaking-part3-transcript"
+                    value={spokenTranscript}
+                    onChange={(e) => setSpokenTranscript(e.target.value)}
+                    placeholder="Live speech transcript appears here while recording..."
+                    rows={2}
+                    className={`w-full p-2.5 rounded border text-xs outline-none focus:ring-2 focus:ring-[#0F4C45] ${theme.inputBg} ${theme.text}`}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between pt-2 flex-wrap gap-3">

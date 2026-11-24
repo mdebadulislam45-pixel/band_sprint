@@ -87,11 +87,12 @@ interface ListeningPersistedState {
 
 interface ListeningLabProps {
   onShowToast: (msg: string) => void;
+  onBack?: () => void;
 }
 
-export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToast }) => {
-  // Primary IELTS Listening Mode: Realistic 40-question mock exam vs Section Practice
-  const [viewMode, setViewMode] = useState<'authentic_mock' | 'section_practice'>('authentic_mock');
+export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToast, onBack }) => {
+  // Primary IELTS Listening Mode: Distraction-free CD-IELTS Workstation, Realistic Mock, or Section Practice
+  const [viewMode, setViewMode] = useState<'cdielts_workstation' | 'authentic_mock' | 'section_practice'>('cdielts_workstation');
   const [showAiPilotPanel, setShowAiPilotPanel] = useState<boolean>(false);
   const [activeListeningPilotSet, setActiveListeningPilotSet] = useState<MockExamSet | null>(null);
 
@@ -879,13 +880,48 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     );
   }
 
+  if (viewMode === 'cdielts_workstation') {
+    return (
+      <div className="fixed inset-0 z-40 bg-[#F5F7F6] overflow-hidden">
+        <CDIELTSExamMode
+          initialSkill="listening"
+          standaloneSkill={true}
+          secondaryModeLabel="Section Drills"
+          onOpenSecondaryMode={() => {
+            audioService.stop();
+            stopSpeech();
+            audioManager.killAllAudio();
+            setViewMode('section_practice');
+          }}
+          onOpenAiPilots={() => {
+            audioService.stop();
+            stopSpeech();
+            audioManager.killAllAudio();
+            setViewMode('section_practice');
+            setShowAiPilotPanel(true);
+          }}
+          onShowToast={onShowToast}
+          onExit={() => {
+            audioService.stop();
+            stopSpeech();
+            audioManager.killAllAudio();
+            if (onBack) {
+              onBack();
+            } else {
+              setViewMode('section_practice');
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   if (viewMode === 'authentic_mock') {
     return (
       <div className="space-y-4">
-        {/* Switch to Section Practice mode button bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200 shadow-2xs">
+        {/* Switch between CD-IELTS Exam Workstation & Section Practice */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3 rounded-lg border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse"></span>
             <span className="text-xs font-bold text-slate-800 font-mono uppercase tracking-wider">
               Computer-Delivered IELTS Listening Test · 40 Questions (30m Audio + 2m Check)
             </span>
@@ -895,10 +931,23 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
             <button
               type="button"
               onClick={() => {
+                audioService.stop();
+                stopSpeech();
+                setViewMode('cdielts_workstation');
+              }}
+              className="px-3 py-1.5 min-h-[40px] rounded-md bg-[#0F4C45] hover:bg-[#145E55] text-white font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>CD-IELTS Exam Screen</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setShowAiPilotPanel((prev) => !prev);
                 soundManager.playBeep(620, 0.04);
               }}
-              className={`px-3 py-1.5 min-h-[44px] rounded-xl font-bold text-xs transition border flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[40px] rounded-md font-bold text-xs transition border flex items-center gap-1.5 cursor-pointer ${
                 showAiPilotPanel
                   ? 'bg-emerald-700 text-white border-emerald-700'
                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300'
@@ -913,9 +962,9 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                 setViewMode('section_practice');
                 soundManager.playBeep(600, 0.04);
               }}
-              className="px-3 py-1.5 min-h-[44px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition border border-slate-200 flex items-center gap-1.5"
+              className="px-3 py-1.5 min-h-[40px] rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition border border-slate-200 flex items-center gap-1.5 cursor-pointer"
             >
-              <span>Section Practice Mode (Single Part)</span>
+              <span>Section Practice Mode</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -946,12 +995,12 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
 
   return (
     <div className="space-y-5 animate-fade-in pb-16">
-      {/* Return to Full Mock Test Banner */}
-      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm border border-slate-800">
+      {/* Return to CD-IELTS Exam Workstation Banner */}
+      <div className="p-3.5 rounded-lg bg-[#0F4C45] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-[#0B3B36]">
         <div className="flex items-center gap-2.5 text-xs">
-          <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+          <Sparkles className="w-4 h-4 text-[#F4A62A] shrink-0" />
           <span>
-            You are in <strong>Section Practice Mode</strong>. For authentic examination conditions, take the full 40-question mock test.
+            You are in <strong>Listening Section Drills</strong>. Switch back to the full-screen computer-delivered IELTS Listening examination anytime.
           </span>
         </div>
 
@@ -962,20 +1011,22 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               setShowAiPilotPanel((prev) => !prev);
               soundManager.playBeep(620, 0.04);
             }}
-            className="px-3.5 py-1.5 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-1.5 min-h-[40px] rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold text-xs shrink-0 transition flex items-center gap-1.5 border border-white/20 cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>{showAiPilotPanel ? 'Hide AI Pilots' : 'AI Listening Pilots'}</span>
           </button>
 
           <button
+            type="button"
             onClick={() => {
-              setViewMode('authentic_mock');
+              setViewMode('cdielts_workstation');
               soundManager.playBeep(660, 0.05);
             }}
-            className="px-3.5 py-1.5 min-h-[44px] rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shrink-0 shadow-2xs transition flex items-center gap-1.5"
+            className="px-3.5 py-1.5 min-h-[40px] rounded-md bg-[#F4A62A] hover:bg-[#E0951E] text-[#11201E] font-bold text-xs shrink-0 transition flex items-center gap-1.5 cursor-pointer"
           >
-            <span>← Launch Realistic 40-Question Mock Test</span>
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to CD-IELTS Listening Exam</span>
           </button>
         </div>
       </div>

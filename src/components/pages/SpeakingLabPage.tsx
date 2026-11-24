@@ -50,6 +50,7 @@ import { getActiveUser } from '../../utils/userStorage';
 import { evaluateSingleSpeakingTurn } from '../../services/SpeakingEvaluationService';
 import { InstantSpeakingFeedback, SpeakingAnswerRecord } from '../../types/speakingTypes';
 import { CandidateAiPilotPanel } from '../common/CandidateAiPilotPanel';
+import { CDIELTSSpeakingSuite } from '../cdielts/CDIELTSSpeakingSuite';
 
 interface SpeakingLabPageProps {
   onBack: () => void;
@@ -202,6 +203,9 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
   const [isEvaluatingCustom, setIsEvaluatingCustom] = useState<boolean>(false);
   const [isPlayingUpgradeAudio, setIsPlayingUpgradeAudio] = useState<boolean>(false);
   const [savedUpgradeIds, setSavedUpgradeIds] = useState<Record<string, boolean>>({});
+
+  // Primary full-screen CD-IELTS Speaking Examination vs Auxiliary Practice Labs
+  const [showPracticeLabs, setShowPracticeLabs] = useState<boolean>(false);
 
   // AI Speaking Pilot State (launched only from APPROVED drafts)
   const [activePilotSet, setActivePilotSet] = useState<any | null>(null);
@@ -534,18 +538,40 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
 
   const activeRegionConfig = BRITISH_REGIONAL_ACCENT_METADATA[regionalAccent];
 
+  if (!showPracticeLabs) {
+    return (
+      <div className="fixed inset-0 z-40 bg-[#F5F7F6] overflow-y-auto">
+        <CDIELTSSpeakingSuite
+          onExit={onBack}
+          onShowToast={onShowToast}
+          onOpenPracticeLabs={() => setShowPracticeLabs(true)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-5xl mx-auto space-y-4 animate-fade-in pb-24 md:pb-12">
       {/* Top Bar with Back Button & Sticky Module Switcher */}
       <div className="sticky top-0 z-30 bg-[#F7F9F8]/95 dark:bg-[#0B1514]/95 backdrop-blur-md p-2 rounded-xl border border-[#D3DDDA] dark:border-[#1E3330] flex items-center justify-between gap-2.5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-[42px] min-w-[42px] px-3.5 py-2 rounded-lg bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45] text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="hidden sm:inline">Practice</span>
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowPracticeLabs(false)}
+            className="min-h-[40px] px-3 py-1.5 rounded-md bg-[#0F4C45] hover:bg-[#145E55] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>CD-IELTS Speaking Exam</span>
+          </button>
+          <button
+            type="button"
+            onClick={onBack}
+            className="min-h-[40px] min-w-[40px] px-3 py-1.5 rounded-md bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45] text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span className="hidden sm:inline">Practice Hub</span>
+            <span className="sm:hidden">Exit</span>
+          </button>
+        </div>
 
         <div className="flex items-center gap-1 p-1 bg-[#EEF3F1] dark:bg-[#11201E] rounded-lg border border-[#D3DDDA] dark:border-[#1E3330] overflow-x-auto scrollbar-none">
           <button

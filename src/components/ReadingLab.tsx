@@ -17,6 +17,7 @@ import type { MockExamSet } from '../data/mockExams';
 
 interface ReadingLabProps {
   onShowToast: (msg: string) => void;
+  onBack?: () => void;
 }
 
 type HighlightColor = 'amber' | 'emerald' | 'rose';
@@ -658,7 +659,8 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast }) => {
+export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) => {
+  const [readingViewMode, setReadingViewMode] = useState<'cdielts_workstation' | 'vocab_lab'>('cdielts_workstation');
   const [selectedPassageId, setSelectedPassageId] = useState<string>(READING_LAB_PASSAGES[0].id);
   const activePassage =
     READING_LAB_PASSAGES.find((p) => p.id === selectedPassageId) || READING_LAB_PASSAGES[0];
@@ -1044,10 +1046,11 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast }) => {
 
   if (activeReadingPilotSet) {
     return (
-      <div className="fixed inset-0 z-40 bg-slate-100 dark:bg-slate-950 overflow-hidden">
+      <div className="fixed inset-0 z-40 bg-[#F5F7F6] overflow-hidden">
         <CDIELTSExamMode
           customPilotSet={activeReadingPilotSet}
           initialSkill="reading"
+          standaloneSkill={true}
           onShowToast={onShowToast}
           onExit={() => {
             setActiveReadingPilotSet(null);
@@ -1058,14 +1061,39 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast }) => {
     );
   }
 
+  if (readingViewMode === 'cdielts_workstation') {
+    return (
+      <div className="fixed inset-0 z-40 bg-[#F5F7F6] overflow-hidden">
+        <CDIELTSExamMode
+          initialSkill="reading"
+          standaloneSkill={true}
+          secondaryModeLabel="CEFR Vocab Lab"
+          onOpenSecondaryMode={() => setReadingViewMode('vocab_lab')}
+          onOpenAiPilots={() => {
+            setReadingViewMode('vocab_lab');
+            setShowAiPilotPanel(true);
+          }}
+          onShowToast={onShowToast}
+          onExit={() => {
+            if (onBack) {
+              onBack();
+            } else {
+              setReadingViewMode('vocab_lab');
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Header, Passage Switcher & CD-IELTS 3-Color Highlighter Controls */}
-      <div className="bg-[#FAF8F5] dark:bg-slate-900 rounded-3xl border border-[#E6E1D6] dark:border-slate-800 p-6 shadow-xs space-y-5">
+      <div className="bg-[#FAF8F5] dark:bg-slate-900 rounded-xl border border-[#E6E1D6] dark:border-slate-800 p-5 shadow-xs space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#1E3A8A]/10 dark:bg-blue-950/60 border border-[#1E3A8A]/20 text-[#1E3A8A] dark:text-blue-300 text-xs font-bold">
-              <Sparkles className="w-3.5 h-3.5 text-[#B45309]" /> Practice CD-IELTS Academic Reading Studio
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#0F4C45]/10 border border-[#0F4C45]/20 text-[#0F4C45] dark:text-emerald-300 text-xs font-bold">
+              <Sparkles className="w-3.5 h-3.5 text-[#B45309]" /> CEFR B2–C2 Reading Vocabulary Lab
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-[#0F172A] dark:text-white mt-1.5 font-serif tracking-tight">
               Reading Lab & In-Situ CEFR Vocabulary Scanner
@@ -1079,10 +1107,21 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast }) => {
             <button
               type="button"
               onClick={() => {
+                setReadingViewMode('cdielts_workstation');
+                soundManager.playBeep(660, 0.04);
+              }}
+              className="px-3.5 py-2 min-h-[40px] rounded-md bg-[#0F4C45] hover:bg-[#145E55] text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <span>← CD-IELTS Reading Exam</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setShowAiPilotPanel((prev) => !prev);
                 soundManager.playBeep(620, 0.04);
               }}
-              className={`px-3.5 py-2 min-h-[44px] rounded-xl font-bold text-xs flex items-center gap-1.5 transition border cursor-pointer ${
+              className={`px-3.5 py-2 min-h-[40px] rounded-md font-bold text-xs flex items-center gap-1.5 transition border cursor-pointer ${
                 showAiPilotPanel
                   ? 'bg-emerald-700 text-white border-emerald-700'
                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300'

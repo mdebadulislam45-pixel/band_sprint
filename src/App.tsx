@@ -488,9 +488,9 @@ function AppContent() {
       case '/practice':
         return <PracticePage onNavigate={navigate} onShowToast={showToast} />;
       case '/practice/listening':
-        return <ListeningLab onShowToast={showToast} />;
+        return <ListeningLab onShowToast={showToast} onBack={goBack} />;
       case '/practice/reading':
-        return <ReadingLab onShowToast={showToast} />;
+        return <ReadingLab onShowToast={showToast} onBack={goBack} />;
       case '/practice/writing':
         return (
           <WritingLabPage
@@ -745,12 +745,14 @@ function AppContent() {
         </main>
       </div>
 
-      {/* 2. Mobile Bottom Navigation (5 Main Destinations Only) */}
-      <BottomNav
-        activeHub={hub}
-        onNavigate={navigate}
-        mistakeCount={mistakeCount}
-      />
+      {/* 2. Mobile Bottom Navigation (Hidden during active full-screen IELTS exams) */}
+      {!['/practice/listening', '/practice/reading', '/practice/writing', '/practice/speaking'].includes(currentPath) && (
+        <BottomNav
+          activeHub={hub}
+          onNavigate={navigate}
+          mistakeCount={mistakeCount}
+        />
+      )}
 
       {/* Conditionally Mounted & Lazy-Loaded Modals */}
       {isSearchOpen && (
