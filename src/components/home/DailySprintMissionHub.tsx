@@ -4,8 +4,8 @@ import { soundManager } from '../../utils/audioEffects';
 import { dispatchBarnabyEvent } from '../../services/barnabyRoamEngine';
 import { DailySprintChallengeModal } from '../daily/DailySprintChallengeModal';
 import {
-  recordMissionComplete,
-  recordAllMissionsBonus,
+  getCompletedMissionsToday,
+  toggleMissionProgress,
   recordDailyChallengeComplete,
   XP_PER_MISSION,
   XP_ALL_MISSIONS_BONUS
@@ -22,6 +22,7 @@ interface Mission {
   title: string;
   subtitle: string;
   duration: string;
+  minutes: number;
   route: string;
   focusTag: string;
 }
@@ -33,6 +34,7 @@ const DEFAULT_MISSIONS: Mission[] = [
     title: 'Section 2 Audio Simulation',
     subtitle: 'Multiple choice & map directional cues in a campus context',
     duration: '10 min',
+    minutes: 10,
     route: '/practice/listening',
     focusTag: 'Distractor accuracy'
   },
@@ -42,6 +44,7 @@ const DEFAULT_MISSIONS: Mission[] = [
     title: 'Task 2 Thesis & Cohesion Drill',
     subtitle: 'Build a 4-paragraph essay plan with natural contrastive linkers',
     duration: '15 min',
+    minutes: 15,
     route: '/practice/writing',
     focusTag: 'Coherence & Cohesion'
   },
@@ -51,63 +54,58 @@ const DEFAULT_MISSIONS: Mission[] = [
     title: 'Part 2 Cue Card & Fluency Run',
     subtitle: 'Practise structured 2-minute delivery with British prompts',
     duration: '8 min',
+    minutes: 8,
     route: '/practice/speaking',
     focusTag: 'Fluency & Pacing'
   }
 ];
 
+const DEFAULT_MISSION_IDS = DEFAULT_MISSIONS.map((m) => m.id);
+
 export const DailySprintMissionHub: React.FC<DailySprintMissionHubProps> = ({
   onNavigate,
   onShowToast
 }) => {
-  const todayKey = new Date().toISOString().split('T')[0];
-  const storageKey = `ielts_sprint_missions_${todayKey}`;
-
   const [completedIds, setCompletedIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
-    try {
-      const stored = localStorage.getItem(storageKey);
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
+    return getCompletedMissionsToday();
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(completedIds));
-    } catch {
-      // storage unavailable
-    }
-  }, [completedIds, storageKey]);
+    const syncCompleted = () => setCompletedIds(getCompletedMissionsToday());
+    window.addEventListener('bandsprint_tasks_updated', syncCompleted);
+    window.addEventListener('bandsprint_streak_updated', syncCompleted);
+    return () => {
+      window.removeEventListener('bandsprint_tasks_updated', syncCompleted);
+      window.removeEventListener('bandsprint_streak_updated', syncCompleted);
+    };
+  }, []);
 
   const [isChallengeOpen, setIsChallengeOpen] = useState(false);
 
-  const toggleMission = (id: string, e: React.MouseEvent) => {
+  const toggleMission = (mission: Mission, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (completedIds.includes(id)) {
-      setCompletedIds((prev) => prev.filter((item) => item !== id));
+    const result = toggleMissionProgress(mission.id, mission.minutes, DEFAULT_MISSION_IDS);
+    setCompletedIds(result.completedIds);
+
+    if (!result.isNowCompleted) {
       soundManager.playBeep(440, 0.04);
+      return;
+    }
+
+    soundManager.playSuccess();
+    if (result.allCompletedNow) {
+      onShowToast(
+        `All 3 daily tasks completed (+${XP_PER_MISSION * 3 + XP_ALL_MISSIONS_BONUS} XP, +${mission.minutes} min logged).`
+      );
+      dispatchBarnabyEvent('achievement', {
+        message: 'All three daily study tasks are complete. Your goal minutes and weekly XP are updated.'
+      });
     } else {
-      const next = [...completedIds, id];
-      setCompletedIds(next);
-      soundManager.playSuccess();
-      recordMissionComplete(id);
-      if (next.length === DEFAULT_MISSIONS.length) {
-        recordAllMissionsBonus();
-        onShowToast(
-          `All 3 daily tasks completed! +${XP_PER_MISSION * 3 + XP_ALL_MISSIONS_BONUS} XP earned.`
-        );
-        dispatchBarnabyEvent('achievement', {
-          message: 'All 3 daily study tasks complete! Brilliant consistency — better than yesterday!'
-        });
-      } else {
-        onShowToast(`Task completed! +${XP_PER_MISSION} XP recorded.`);
-        dispatchBarnabyEvent('task_completed', {
-          message: 'Nice work completing a study task! Keep that steady rhythm going.'
-        });
-      }
-      window.dispatchEvent(new CustomEvent('bandsprint_streak_updated'));
+      onShowToast(`Task completed (+${XP_PER_MISSION} XP, +${mission.minutes} min logged).`);
+      dispatchBarnabyEvent('task_completed', {
+        message: `Task logged (+${mission.minutes} min, +${XP_PER_MISSION} XP). Keep this steady pace.`
+      });
     }
   };
 
@@ -164,7 +162,7 @@ export const DailySprintMissionHub: React.FC<DailySprintMissionHubProps> = ({
               <div className="flex items-start gap-3.5 min-w-0">
                 <button
                   type="button"
-                  onClick={(e) => toggleMission(mission.id, e)}
+                  onClick={(e) => toggleMission(mission, e)}
                   className={`mt-0.5 w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition cursor-pointer ${
                     isDone
                       ? 'bg-[#0F4C45] dark:bg-[#1F8A70] text-white'

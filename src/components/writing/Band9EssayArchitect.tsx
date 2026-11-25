@@ -30,6 +30,7 @@ import {
   formatNullableBand,
   validateClientWritingEvaluation
 } from '../../utils/scoringIntegrity';
+import { setBarnabyAnalyzing } from '../../utils/getBarnabyState';
 
 export type ArchitectAiEvalStatus =
   | 'not_evaluated'
@@ -485,6 +486,7 @@ export const Band9EssayArchitect: React.FC = () => {
     setAiScores({ ...EMPTY_ARCHITECT_SCORES });
     setAiEvalMessage(null);
     setAiVerdict(null);
+    setBarnabyAnalyzing(true, 'Grading Writing essay against IELTS Band Descriptors...');
 
     try {
       const token = getStoredSessionToken();
@@ -528,6 +530,8 @@ export const Band9EssayArchitect: React.FC = () => {
         'Unable to reach the live AI Writing evaluation service. Please retry — no fallback IELTS band was assigned.'
       );
       soundManager.playBeep(340, 0.09);
+    } finally {
+      setBarnabyAnalyzing(false);
     }
   };
 

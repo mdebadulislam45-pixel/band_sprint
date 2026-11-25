@@ -92,8 +92,8 @@ import {
 import { isListeningAnswerCorrect } from '../../utils/listeningAnswerEvaluator';
 import { deriveActiveReadingHeading, extractActiveReadingPassage } from '../../utils/mockExamScoring';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
-import { CDIELTSSVGMap, CDIELTSMatchingHeadingsPicker } from './CDIELTSInteractiveVisuals';
 import { CDIELTSListeningSheet } from './CDIELTSListeningSheet';
+import { CDIELTSReadingSheet } from './CDIELTSReadingSheet';
 
 interface NoteItem {
   id: string;
@@ -177,7 +177,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   // Writing Module State
   const [task1Essay, setTask1Essay] = useState<string>(() => cachedState?.task1Essay || '');
   const [task2Essay, setTask2Essay] = useState<string>(() => cachedState?.task2Essay || '');
-  const [activeWritingTask, setActiveWritingTask] = useState<1 | 2>(2);
+  const [activeWritingTask, setActiveWritingTask] = useState<1 | 2>(1);
   const [lastAutoSavedTime, setLastAutoSavedTime] = useState<string>('Just now');
 
   // Exam Countdown Timer State (skill-aware: exam-specific Listening duration, 60m [3600s] for Reading/Writing)
@@ -232,10 +232,13 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   const [hasShown5mWarning, setHasShown5mWarning] = useState(false);
   const [warningModalText, setWarningModalText] = useState<string | null>(null);
 
-  // Strict Listening Audio State Machine (IndexedDB persisted)
+  // Strict Listening & Reading View State
   const [listeningSection, setListeningSection] = useState<1 | 2 | 3 | 4>(1);
   const [viewedListeningPart, setViewedListeningPart] = useState<1 | 2 | 3 | 4>(1);
   const [listeningScrollTrigger, setListeningScrollTrigger] = useState<{ questionId: number; nonce: number } | null>(null);
+  const [viewedReadingPart, setViewedReadingPart] = useState<1 | 2 | 3>(1);
+  const [readingScrollTrigger, setReadingScrollTrigger] = useState<{ questionId: number; nonce: number } | null>(null);
+  const [showReadingStudyKey, setShowReadingStudyKey] = useState<boolean>(false);
   const [listeningVolume, setListeningVolume] = useState<number>(0.85);
   const [isListeningMuted, setIsListeningMuted] = useState<boolean>(false);
   const [listeningPhase, setListeningPhase] = useState<ListeningAudioPhase>('pre_read');
@@ -720,6 +723,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     setIsAudioPlaying(false);
     setActiveSkill('reading');
     setActiveQuestionIdx(0);
+    setViewedReadingPart(1);
     setMobilePane('left');
     const readingDur = getCDIELTSSkillDurationSec('reading');
     setTimeRemainingSec(readingDur);
@@ -764,6 +768,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     }
     setActiveSkill(skill);
     setActiveQuestionIdx(0);
+    if (skill === 'reading') {
+      setViewedReadingPart(1);
+    }
     setMobilePane('left');
     if (skill === 'listening') {
       const synced = calculateSynchronizedListeningRemainingSec({
@@ -1105,9 +1112,23 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     onShowToast('Note saved to Margin Notes');
   };
 
+  // Reset scroll to top of passage & sheet when switching Reading Parts
+  useEffect(() => {
+    if (activeSkill === 'reading') {
+      if (leftPaneScrollRef.current) leftPaneScrollRef.current.scrollTop = 0;
+      if (rightPaneScrollRef.current) rightPaneScrollRef.current.scrollTop = 0;
+    }
+  }, [activeSkill, viewedReadingPart]);
+
   // Official CD-IELTS Keyboard Navigation:
   // Alt+N (Next), Alt+P (Previous), Alt+R (Toggle Review Flag), Alt+V (Toggle Margin Notes & Highlighter Panel)
   useEffect(() => {
+    const getReadingPartForIdx = (idx: number): 1 | 2 | 3 => {
+      const q = skillQuestions[idx];
+      if (q?.passage === 1 || q?.passage === 2 || q?.passage === 3) return q.passage;
+      return idx < 13 ? 1 : idx < 26 ? 2 : 3;
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && showListeningOptionsMenu) {
         setShowListeningOptionsMenu(false);
@@ -1117,12 +1138,17 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         e.preventDefault();
         setActiveQuestionIdx((prev) => {
           const nextIdx = Math.max(0, prev - 1);
+          const targetQ = skillQuestions[nextIdx];
           if (activeSkill === 'listening') {
             const nextPart = (Math.floor(nextIdx / 10) + 1) as 1 | 2 | 3 | 4;
             setViewedListeningPart(nextPart);
-            const targetQ = skillQuestions[nextIdx];
             if (targetQ) {
               setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+            }
+          } else if (activeSkill === 'reading') {
+            setViewedReadingPart(getReadingPartForIdx(nextIdx));
+            if (targetQ) {
+              setReadingScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
             }
           }
           return nextIdx;
@@ -1132,12 +1158,17 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         e.preventDefault();
         setActiveQuestionIdx((prev) => {
           const nextIdx = Math.min(skillQuestions.length - 1, prev + 1);
+          const targetQ = skillQuestions[nextIdx];
           if (activeSkill === 'listening') {
             const nextPart = (Math.floor(nextIdx / 10) + 1) as 1 | 2 | 3 | 4;
             setViewedListeningPart(nextPart);
-            const targetQ = skillQuestions[nextIdx];
             if (targetQ) {
               setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+            }
+          } else if (activeSkill === 'reading') {
+            setViewedReadingPart(getReadingPartForIdx(nextIdx));
+            if (targetQ) {
+              setReadingScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
             }
           }
           return nextIdx;
@@ -1156,7 +1187,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeSkill, skillQuestions, activeQuestionId, toggleFlag, showListeningOptionsMenu]);
 
-  // Close Listening Options dropdown when clicking outside
+  // Close Options dropdown when clicking outside
   useEffect(() => {
     if (!showListeningOptionsMenu) return;
     const handleOutsideClick = (e: MouseEvent) => {
@@ -1479,6 +1510,8 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           setActiveQuestionIdx(0);
           setListeningSection(1);
           setViewedListeningPart(1);
+          setViewedReadingPart(1);
+          setShowReadingStudyKey(false);
           setListeningPhase('pre_read');
           setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
           setAudioPlaybackSec(0);
@@ -1493,7 +1526,48 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   }
 
   const { badge: activeReadingBadge, title: activeReadingTitle } = deriveActiveReadingHeading(currentSet, activeQuestionObj);
-  const { activePassageText } = extractActiveReadingPassage(currentSet, activeQuestionObj);
+  const { activePassageText, allPassageBlocks } = extractActiveReadingPassage(currentSet, activeQuestionObj);
+
+  const isGTReading = currentSet.format === 'General Training';
+  const readingQuestionsList = currentSet.questions.filter((q) => q.section === 'reading');
+  const getReadingPartOfEntry = (q: QuestionItem, idx: number): 1 | 2 | 3 => {
+    if (q.passage === 1 || q.passage === 2 || q.passage === 3) return q.passage;
+    return idx < 13 ? 1 : idx < 26 ? 2 : 3;
+  };
+  const readingPartGroups = ([1, 2, 3] as const)
+    .map((partNum) => {
+      const entries = readingQuestionsList
+        .map((q, globalIdx) => ({ q, globalIdx }))
+        .filter(({ q, globalIdx }) => getReadingPartOfEntry(q, globalIdx) === partNum);
+      return {
+        partNum,
+        entries,
+        startIdx: entries[0]?.globalIdx ?? 0,
+        startNum: (entries[0]?.globalIdx ?? 0) + 1,
+        endNum: (entries[entries.length - 1]?.globalIdx ?? 0) + 1,
+        answered: entries.filter(({ q }) => Boolean(userAnswers[q.id]?.trim())).length
+      };
+    })
+    .filter((g) => g.entries.length > 0);
+
+  const viewedReadingGroup =
+    readingPartGroups.find((g) => g.partNum === viewedReadingPart) || readingPartGroups[0];
+  const rawViewedReadingBlock =
+    (allPassageBlocks[viewedReadingPart - 1] || activePassageText || currentSet.readingPassage || '').trim();
+  const rawReadingBlocksSplit = rawViewedReadingBlock
+    .split('\n\n')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const firstReadingHeaderMatch = rawReadingBlocksSplit[0]?.match(
+    /^(?:#{1,3}\s*)?(?:PASSAGE|SECTION)\s*[123]\s*[:\-–]?\s*(.*)$/i
+  );
+  const viewedReadingTitle =
+    firstReadingHeaderMatch && firstReadingHeaderMatch[1]?.trim()
+      ? firstReadingHeaderMatch[1].trim()
+      : activeReadingTitle;
+  const viewedReadingParagraphs = firstReadingHeaderMatch
+    ? rawReadingBlocksSplit.slice(1)
+    : rawReadingBlocksSplit;
 
   // Barnaby's target-band guidance for the section the student is sitting now.
   const barnabySectionGuide =
@@ -1575,15 +1649,14 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
       )}
 
-      {/* ================= 1. TOP WORKSTATION HEADER ================= */}
-      {activeSkill === 'listening' ? (
-        <header
-          className={`w-full shrink-0 z-20 select-none border-b ${
-            colorScheme === 'standard'
-              ? 'bg-white text-[#111827] border-[#CBD5E1]'
-              : `${theme.headerBg} ${theme.borderStrong}`
-          }`}
-        >
+      {/* ================= 1. TOP WORKSTATION HEADER (UNIFIED INSPERA EXAM INTERFACE) ================= */}
+      <header
+        className={`w-full shrink-0 z-20 select-none border-b ${
+          colorScheme === 'standard'
+            ? 'bg-white text-[#111827] border-[#CBD5E1]'
+            : `${theme.headerBg} ${theme.borderStrong}`
+        }`}
+      >
           {customPilotSet && (
             <div className="w-full px-4 py-1 bg-[#1E293B] text-white flex items-center justify-between gap-2 text-xs">
               <span className="truncate font-medium">
@@ -1660,50 +1733,51 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               </div>
             </div>
 
-            {/* Right: Audio Volume + Notes + Help + Options Menu + Submit */}
+            {/* Right: Audio Volume (Listening only) + Notes + Help + Options Menu + Submit */}
             <div className="flex items-center gap-2 shrink-0 relative">
-              {/* Official Top-Bar Headset Volume Control */}
-              <div
-                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded border ${
-                  colorScheme === 'standard'
-                    ? 'border-[#CBD5E1] bg-[#F8FAFC]'
-                    : 'border-white/25 bg-black/20'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextMuted = !isListeningMuted;
-                    setIsListeningMuted(nextMuted);
-                    audioService.setVolume(nextMuted ? 0 : listeningVolume);
-                    soundManager.playBeep(600, 0.02);
-                  }}
-                  className="cursor-pointer opacity-80 hover:opacity-100"
-                  aria-label="Toggle Headset Mute"
-                  title="Mute / Unmute Headset"
+              {activeSkill === 'listening' && (
+                <div
+                  className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded border ${
+                    colorScheme === 'standard'
+                      ? 'border-[#CBD5E1] bg-[#F8FAFC]'
+                      : 'border-white/25 bg-black/20'
+                  }`}
                 >
-                  {isListeningMuted ? (
-                    <VolumeX className="w-3.5 h-3.5 text-rose-600" />
-                  ) : (
-                    <Volume2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={isListeningMuted ? 0 : listeningVolume}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setListeningVolume(val);
-                    audioService.setVolume(val);
-                    setIsListeningMuted(val === 0);
-                  }}
-                  className="w-16 md:w-20 accent-[#0066CC] cursor-pointer h-1.5"
-                  aria-label="Listening Headset Volume"
-                />
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMuted = !isListeningMuted;
+                      setIsListeningMuted(nextMuted);
+                      audioService.setVolume(nextMuted ? 0 : listeningVolume);
+                      soundManager.playBeep(600, 0.02);
+                    }}
+                    className="cursor-pointer opacity-80 hover:opacity-100"
+                    aria-label="Toggle Headset Mute"
+                    title="Mute / Unmute Headset"
+                  >
+                    {isListeningMuted ? (
+                      <VolumeX className="w-3.5 h-3.5 text-rose-600" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={isListeningMuted ? 0 : listeningVolume}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setListeningVolume(val);
+                      audioService.setVolume(val);
+                      setIsListeningMuted(val === 0);
+                    }}
+                    className="w-16 md:w-20 accent-[#0066CC] cursor-pointer h-1.5"
+                    aria-label="Listening Headset Volume"
+                  />
+                </div>
+              )}
 
               <button
                 type="button"
@@ -1790,11 +1864,11 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
 
                     {/* Contrast */}
                     <div className="space-y-1.5">
-                      <label className="block font-semibold text-[#475569]" htmlFor="listening-contrast-select">
+                      <label className="block font-semibold text-[#475569]" htmlFor="exam-contrast-select">
                         Colour Contrast
                       </label>
                       <select
-                        id="listening-contrast-select"
+                        id="exam-contrast-select"
                         value={colorScheme}
                         onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
                         className="w-full px-2.5 py-1.5 border border-[#CBD5E1] rounded bg-white text-[#111827] text-xs outline-none cursor-pointer"
@@ -1810,34 +1884,66 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     <div className="pt-2 border-t border-[#E2E8F0] space-y-2">
                       <div className="font-semibold text-[#475569]">Practice Resources</div>
                       <div className="grid grid-cols-1 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowListeningOptionsMenu(false);
-                            handleRunSoundCheck();
-                          }}
-                          disabled={isAudioPlaying}
-                          className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer disabled:opacity-50"
-                        >
-                          <span className="flex items-center gap-2">
-                            <Headphones className="w-3.5 h-3.5 text-[#0066CC]" />
-                            <span>{isSoundCheckPlaying ? 'Testing Audio...' : hasTestedHeadset ? 'Sound Check Verified' : 'Headset Sound Check'}</span>
-                          </span>
-                        </button>
+                        {activeSkill === 'listening' ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowListeningOptionsMenu(false);
+                                handleRunSoundCheck();
+                              }}
+                              disabled={isAudioPlaying}
+                              className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer disabled:opacity-50"
+                            >
+                              <span className="flex items-center gap-2">
+                                <Headphones className="w-3.5 h-3.5 text-[#0066CC]" />
+                                <span>{isSoundCheckPlaying ? 'Testing Audio...' : hasTestedHeadset ? 'Sound Check Verified' : 'Headset Sound Check'}</span>
+                              </span>
+                            </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowListeningOptionsMenu(false);
-                            setActivePracticeModal('transcript');
-                          }}
-                          className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer"
-                        >
-                          <span className="flex items-center gap-2">
-                            <FileText className="w-3.5 h-3.5 text-[#0F4C45]" />
-                            <span>Audio Transcript (Part {viewedListeningPart})</span>
-                          </span>
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowListeningOptionsMenu(false);
+                                setActivePracticeModal('transcript');
+                              }}
+                              className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer"
+                            >
+                              <span className="flex items-center gap-2">
+                                <FileText className="w-3.5 h-3.5 text-[#0F4C45]" />
+                                <span>Audio Transcript (Part {viewedListeningPart})</span>
+                              </span>
+                            </button>
+                          </>
+                        ) : activeSkill === 'reading' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowListeningOptionsMenu(false);
+                              setActivePracticeModal('reading_guide');
+                            }}
+                            className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <BookOpen className="w-3.5 h-3.5 text-[#0F4C45]" />
+                              <span>Passage Guide &amp; Study Key (Part {viewedReadingPart})</span>
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowListeningOptionsMenu(false);
+                              setActivePracticeModal('writing_model');
+                            }}
+                            className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <FileText className="w-3.5 h-3.5 text-[#0F4C45]" />
+                              <span>Model Response &amp; Guide (Part {activeWritingTask})</span>
+                            </span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -1865,15 +1971,28 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                             Switch to {secondaryModeLabel}
                           </button>
                         )}
+
+                        {onOpenAiPilots && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowListeningOptionsMenu(false);
+                              onOpenAiPilots();
+                            }}
+                            className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium cursor-pointer"
+                          >
+                            AI Pilot Practice Sets
+                          </button>
+                        )}
                       </div>
 
                       {!customPilotSet && (
                         <div className="pt-1 space-y-1">
-                          <label className="block font-semibold text-[#475569]" htmlFor="listening-practice-set-select">
+                          <label className="block font-semibold text-[#475569]" htmlFor="exam-practice-set-select">
                             Practice Test Set
                           </label>
                           <select
-                            id="listening-practice-set-select"
+                            id="exam-practice-set-select"
                             value={selectedSetIdx}
                             onChange={(e) => {
                               activePlaybackTokenRef.current += 1;
@@ -1887,14 +2006,30 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                               setCompletedListeningParts({});
                               setListeningSection(1);
                               setViewedListeningPart(1);
+                              setViewedReadingPart(1);
+                              setShowReadingStudyKey(false);
                               setListeningPhase('pre_read');
                               setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
                               setAudioPlaybackSec(0);
-                              const targetExamId = MOCK_EXAM_SETS[idx]?.id;
-                              const targetDurations = getExamSectionAudioDurations(targetExamId);
-                              const initListSec = getCDIELTSSkillDurationSec('listening', targetDurations);
-                              setTimeRemainingSec(initListSec);
-                              endTimeRef.current = Date.now() + initListSec * 1000;
+                              if (leftPaneScrollRef.current) leftPaneScrollRef.current.scrollTop = 0;
+                              if (rightPaneScrollRef.current) rightPaneScrollRef.current.scrollTop = 0;
+                              passageScrollPosRef.current = 0;
+                              if (activeSkill === 'listening') {
+                                const targetExamId = MOCK_EXAM_SETS[idx]?.id;
+                                const targetDurations = getExamSectionAudioDurations(targetExamId);
+                                const initListSec = getCDIELTSSkillDurationSec('listening', targetDurations);
+                                setTimeRemainingSec(initListSec);
+                                endTimeRef.current = Date.now() + initListSec * 1000;
+                              } else if (activeSkill === 'reading') {
+                                const readDur = getCDIELTSSkillDurationSec('reading');
+                                setTimeRemainingSec(readDur);
+                                endTimeRef.current = Date.now() + readDur * 1000;
+                              } else {
+                                const writeDur = getCDIELTSSkillDurationSec('writing');
+                                setActiveWritingTask(1);
+                                setTimeRemainingSec(writeDur);
+                                endTimeRef.current = Date.now() + writeDur * 1000;
+                              }
                               setShowListeningOptionsMenu(false);
                               soundManager.playBeep(550, 0.04);
                               onShowToast(`Loaded ${MOCK_EXAM_SETS[idx]?.title}`);
@@ -1925,221 +2060,6 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
             </div>
           </div>
         </header>
-      ) : (
-      <header className={`w-full ${theme.headerBg} border-b ${theme.borderStrong || 'border-[#0B3833]'} shrink-0 flex flex-col font-mono select-none z-20`}>
-        {customPilotSet && (
-          <div className="w-full px-3 sm:px-4 py-1 bg-emerald-950 text-emerald-100 border-b border-emerald-600/60 flex items-center justify-between gap-2 text-xs font-mono font-bold">
-            <div className="flex items-center gap-2 truncate">
-              <span className="uppercase tracking-wider text-emerald-300 whitespace-nowrap">
-                AI PILOT — APPROVED PRACTICE
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="truncate">{customPilotSet.title}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                stopSpeech();
-                audioService.stop();
-                onExit();
-              }}
-              className="px-2.5 py-0.5 bg-emerald-900 hover:bg-emerald-800 text-white border border-emerald-500 rounded text-[11px] font-bold cursor-pointer shrink-0 whitespace-nowrap"
-            >
-              Exit AI Pilot
-            </button>
-          </div>
-        )}
-
-        {/* Primary Examination Top Bar — Single Row on Desktop (>=lg), Clean 2-Line Flex on Narrow Mobile */}
-        <div className="w-full min-h-12 px-2.5 sm:px-4 py-1.5 flex items-center justify-between gap-2">
-          {/* Left: Exit + Module Status + Candidate ID */}
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              type="button"
-              onClick={() => setShowExitConfirmModal(true)}
-              className="px-2.5 py-1 border border-white/25 bg-white/10 hover:bg-white/20 text-current font-mono font-bold text-xs rounded cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1"
-              title="Exit Exam Session"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Exit</span>
-            </button>
-
-            <div className="h-4 w-px bg-white/20 hidden sm:block shrink-0" />
-
-            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wide text-[#F4A62A] truncate">
-                {activeSkill === 'reading'
-                  ? activeReadingBadge
-                  : `Writing · Task ${activeWritingTask}`}
-              </span>
-              <span className="sm:hidden text-[11px] font-bold uppercase tracking-wide text-[#F4A62A] truncate">
-                {activeSkill === 'reading'
-                  ? `R·Q${activeQuestionIdx + 1}`
-                  : `W·T${activeWritingTask}`}
-              </span>
-              <span className="hidden xl:inline text-[11px] opacity-80 truncate">
-                · {candidateName} ({candidateId})
-              </span>
-            </div>
-          </div>
-
-          {/* Center: Prominent Countdown Timer + Set Selector */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <div
-              data-testid="exam-countdown-timer"
-              className={`flex items-center gap-1.5 font-mono font-bold text-xs sm:text-sm px-2.5 py-1 border rounded whitespace-nowrap ${
-                timeRemainingSec <= 300
-                  ? 'bg-rose-950 text-rose-200 border-rose-400 animate-pulse'
-                  : timeRemainingSec <= 600
-                  ? 'bg-amber-950 text-[#F4A62A] border-[#F4A62A]/70'
-                  : 'bg-black/30 text-white border-white/25'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5 text-[#F4A62A] shrink-0" />
-              <span className="tabular-nums tracking-wide">
-                {isAudioNetworkStalled
-                  ? `Buffering ${formatTimer(timeRemainingSec)}`
-                  : isTimeHidden
-                  ? '••:••'
-                  : formatTimer(timeRemainingSec)}
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsTimeHidden(!isTimeHidden)}
-                className="ml-0.5 opacity-75 hover:opacity-100 cursor-pointer"
-                title={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
-                aria-label={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
-              >
-                <span className="text-[10px] underline hidden md:inline">{isTimeHidden ? 'Show' : 'Hide'}</span>
-              </button>
-            </div>
-
-            {!customPilotSet && (
-              <select
-                aria-label="Select IELTS Practice Set"
-                value={selectedSetIdx}
-                onChange={(e) => {
-                  activePlaybackTokenRef.current += 1;
-                  setListeningAudioError(null);
-                  const idx = parseInt(e.target.value, 10);
-                  setSelectedSetIdx(idx);
-                  setActiveQuestionIdx(0);
-                  stopSpeech();
-                  audioService.stop();
-                  setIsAudioPlaying(false);
-                  setCompletedListeningParts({});
-                  setListeningSection(1);
-                  setViewedListeningPart(1);
-                  setListeningPhase('pre_read');
-                  setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
-                  setAudioPlaybackSec(0);
-                  soundManager.playBeep(550, 0.04);
-                  onShowToast(`Loaded ${MOCK_EXAM_SETS[idx]?.title}`);
-                }}
-                className="bg-black/30 text-white text-[11px] font-mono font-bold px-2 py-1 border border-white/25 rounded outline-none cursor-pointer hidden lg:block max-w-[165px] truncate"
-                title="Select IELTS Practice Set"
-              >
-                {MOCK_EXAM_SETS.map((s, idx) => (
-                  <option key={s.id} value={idx} className="bg-white text-[#0E1F1E]">
-                    {s.title}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Right: Accessibility Display Controls, Notes, Help, Optional Mode Switch, Finish */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Font Resizer (Desktop) */}
-            <div className="hidden md:flex items-center border border-white/25 font-mono text-[11px] font-bold rounded overflow-hidden bg-black/20">
-              {(['100%', '125%', '150%'] as ZoomLevel[]).map((lvl, idx) => (
-                <button
-                  key={lvl}
-                  type="button"
-                  onClick={() => setZoomLevel(lvl)}
-                  className={`px-2 py-1 cursor-pointer transition whitespace-nowrap ${idx > 0 ? 'border-l border-white/20' : ''} ${
-                    zoomLevel === lvl ? 'bg-[#F4A62A] text-[#0E1F1E] font-black' : 'hover:bg-white/10 opacity-85'
-                  }`}
-                  title={`Text size ${lvl}`}
-                >
-                  {lvl === '100%' ? 'A' : lvl === '125%' ? 'A+' : 'A++'}
-                </button>
-              ))}
-            </div>
-
-            {/* Contrast Switcher */}
-            <select
-              aria-label="Display Contrast Mode"
-              value={colorScheme}
-              onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
-              className="hidden sm:block bg-black/30 text-current text-[11px] font-mono font-bold px-2 py-1 border border-white/25 rounded outline-none cursor-pointer max-w-[125px] truncate"
-              title="Switch Color Contrast Mode"
-            >
-              <option value="standard" className="bg-white text-[#0E1F1E]">Standard</option>
-              <option value="black-on-yellow" className="bg-[#FFF100] text-black">Black / Yellow</option>
-              <option value="yellow-on-black" className="bg-black text-[#FFF100]">Yellow / Black</option>
-              <option value="white-on-black" className="bg-black text-white">White / Black</option>
-            </select>
-
-            {/* Notes Drawer Toggle (Alt+V) */}
-            <button
-              type="button"
-              onClick={() => setShowNotesDrawer((prev) => !prev)}
-              className={`hidden sm:flex px-2 py-1 border text-[11px] font-mono font-bold items-center gap-1 cursor-pointer rounded transition whitespace-nowrap ${
-                showNotesDrawer ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A]' : 'border-white/25 hover:bg-white/10'
-              }`}
-              title="Toggle Margin Notes & Highlights (Alt+V)"
-            >
-              <StickyNote className="w-3.5 h-3.5" />
-              <span className="hidden lg:inline">Notes ({notes.length})</span>
-            </button>
-
-            {/* Instructions / Help Modal */}
-            <button
-              type="button"
-              onClick={() => setShowHelpModal(true)}
-              className="hidden lg:inline-flex px-2 py-1 hover:bg-white/10 border border-white/25 cursor-pointer rounded font-mono text-[11px] font-bold whitespace-nowrap"
-              title="Exam Instructions & Shortcuts"
-            >
-              Help
-            </button>
-
-            {/* Optional Secondary Lab / AI Pilots Switch (Standalone Skill Practice) */}
-            {onOpenSecondaryMode && secondaryModeLabel && (
-              <button
-                type="button"
-                onClick={onOpenSecondaryMode}
-                className="hidden xl:inline-flex px-2.5 py-1 hover:bg-white/15 bg-white/10 border border-white/25 cursor-pointer rounded font-mono text-[11px] font-bold whitespace-nowrap"
-                title={secondaryModeLabel}
-              >
-                {secondaryModeLabel}
-              </button>
-            )}
-
-            {onOpenAiPilots && (
-              <button
-                type="button"
-                onClick={onOpenAiPilots}
-                className="hidden 2xl:inline-flex px-2.5 py-1 hover:bg-white/15 bg-white/10 border border-white/25 cursor-pointer rounded font-mono text-[11px] font-bold whitespace-nowrap"
-                title="Open AI Pilot Sets"
-              >
-                AI Pilots
-              </button>
-            )}
-
-            {/* Primary Finish & Submit CTA */}
-            <button
-              type="button"
-              data-testid="exam-finish-btn"
-              onClick={() => setShowReviewModal(true)}
-              className="px-3 py-1 bg-[#F4A62A] hover:bg-[#D0891F] text-[#0E1F1E] font-mono font-bold text-xs rounded cursor-pointer transition whitespace-nowrap shrink-0"
-            >
-              Finish Test
-            </button>
-          </div>
-        </div>
-      </header>
-      )}
 
       {/* Barnaby guide panel — target-band help for the section in progress */}
       {showBarnabyGuide && (
@@ -2395,32 +2315,94 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
       )}
 
+      {/* ================= 2B-READING. OFFICIAL READING PART SUB-BANNER (PURE INSPERA EXAM MODE) ================= */}
+      {activeSkill === 'reading' && viewedReadingGroup && (
+        <div
+          data-testid="reading-part-bar"
+          className={`w-full px-3 sm:px-5 py-1.5 border-b shrink-0 font-sans text-xs ${
+            colorScheme === 'standard'
+              ? 'bg-[#F1F5F9] text-[#334155] border-[#CBD5E1]'
+              : `${theme.cardBg} ${theme.border}`
+          }`}
+        >
+          <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-medium">
+              <span className="font-bold">
+                {isGTReading ? `Section ${viewedReadingPart}` : `Part ${viewedReadingPart}`}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="opacity-85 tabular-nums">
+                Read the text and answer questions {viewedReadingGroup.startNum}–{viewedReadingGroup.endNum}.
+              </span>
+            </div>
+            <span className="hidden sm:inline text-[11px] opacity-70">
+              Select text to Highlight or Add Note
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ================= 2B-WRITING. WRITING PART SUB-BANNER (PURE INSPERA EXAM MODE) ================= */}
+      {activeSkill === 'writing' && (
+        <div
+          data-testid="writing-part-bar"
+          className={`w-full px-3 sm:px-5 py-1.5 border-b shrink-0 font-sans text-xs ${
+            colorScheme === 'standard'
+              ? 'bg-[#F1F5F9] text-[#334155] border-[#CBD5E1]'
+              : `${theme.cardBg} ${theme.border}`
+          }`}
+        >
+          <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-medium">
+              <span className="font-bold">Part {activeWritingTask}</span>
+              <span aria-hidden="true">·</span>
+              <span className="opacity-85">
+                {activeWritingTask === 1
+                  ? 'You should spend about 20 minutes on this task. Write at least 150 words.'
+                  : 'You should spend about 40 minutes on this task. Write at least 250 words.'}
+              </span>
+            </div>
+            <span className="hidden sm:inline text-[11px] opacity-70 tabular-nums">
+              Saved {lastAutoSavedTime}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ================= 2C. MOBILE SEGMENTED PANE SWITCHER (READING & WRITING ON <768px) ================= */}
       {activeSkill !== 'listening' && (
-        <div className={`md:hidden w-full flex border-b ${theme.border} ${theme.cardBg} shrink-0 font-mono text-xs`}>
+        <div
+          className={`md:hidden w-full flex border-b shrink-0 text-xs font-sans ${
+            colorScheme === 'standard'
+              ? 'bg-white border-[#CBD5E1]'
+              : `${theme.border} ${theme.cardBg}`
+          }`}
+        >
           <button
             type="button"
             onClick={() => setMobilePane('left')}
             className={`flex-1 min-h-[42px] py-2 font-bold border-b-2 transition cursor-pointer flex items-center justify-center gap-1.5 ${
               mobilePane === 'left'
-                ? 'border-[#0F4C45] text-[#0F4C45] bg-[#0F4C45]/5'
+                ? 'border-[#0066CC] text-[#0066CC] bg-[#EBF3FE]'
                 : 'border-transparent opacity-70'
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>{activeSkill === 'reading' ? 'Reading Passage' : 'Writing Prompt'}</span>
+            <span>{activeSkill === 'reading' ? 'Reading Passage' : `Part ${activeWritingTask} Prompt`}</span>
           </button>
           <button
             type="button"
             onClick={() => setMobilePane('right')}
             className={`flex-1 min-h-[42px] py-2 font-bold border-b-2 transition cursor-pointer flex items-center justify-center gap-1.5 ${
               mobilePane === 'right'
-                ? 'border-[#0F4C45] text-[#0F4C45] bg-[#0F4C45]/5'
+                ? 'border-[#0066CC] text-[#0066CC] bg-[#EBF3FE]'
                 : 'border-transparent opacity-70'
             }`}
           >
             <span className="tabular-nums">
-              {activeSkill === 'reading' ? `Questions (${answeredCount}/${totalQuestions})` : 'Essay Sheet'}
+              {activeSkill === 'reading'
+                ? `Questions (${answeredCount}/${totalQuestions})`
+                : `Response (${activeWritingTask === 1 ? task1WordCount : task2WordCount}w)`}
             </span>
           </button>
         </div>
@@ -2443,146 +2425,111 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
             mobilePane === 'left'
               ? 'flex w-full md:w-[var(--cd-left-width)] h-full'
               : 'hidden md:flex md:w-[var(--cd-left-width)] h-full'
-          } p-4 sm:p-6 overflow-y-auto flex-col space-y-4 border-b md:border-b-0 md:border-r ${theme.border} ${colorScheme === 'standard' ? 'bg-white' : theme.cardBg}`}
+          } overflow-y-auto flex-col border-b md:border-b-0 md:border-r p-4 sm:p-5 ${
+            colorScheme === 'standard'
+              ? 'bg-[#EAEEF2] text-[#111827] border-[#CBD5E1]'
+              : `${theme.bg} ${theme.border}`
+          }`}
           onMouseUp={handleTextSelection}
           onTouchEnd={handleTextSelection}
         >
           {activeSkill === 'reading' && (
-            <div className="space-y-4">
-              <div className={`border-b ${theme.border} pb-2.5 flex flex-wrap items-center justify-between gap-2 font-mono`}>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                    Reading Practice Set {selectedSetIdx + 1} of {MOCK_EXAM_SETS.length}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActivePracticeModal('reading_guide')}
-                    className="px-2 py-0.5 text-[11px] font-mono font-bold rounded border cursor-pointer bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 flex items-center gap-1"
-                    title="View Passage Guide & Vocabulary"
-                  >
-                    <BookOpen className="w-3 h-3" />
-                    <span>Guide</span>
-                  </button>
+            <article
+              className={`max-w-[760px] w-full mx-auto border shadow-2xs p-5 sm:p-7 space-y-5 font-sans ${
+                colorScheme === 'standard'
+                  ? 'bg-white text-[#111827] border-[#CBD5E1]'
+                  : `${theme.cardBg} ${theme.border}`
+              }`}
+            >
+              <header
+                className={`border-b pb-3 space-y-1 ${
+                  colorScheme === 'standard' ? 'border-[#E2E8F0]' : theme.border
+                }`}
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
+                  {activeReadingBadge}
                 </div>
-                <div className="flex items-center gap-1 font-mono text-xs">
-                  {MOCK_EXAM_SETS.map((set, pIdx) => (
-                    <button
-                      key={set.id}
-                      onClick={() => {
-                        activePlaybackTokenRef.current += 1;
-                        setSelectedSetIdx(pIdx);
-                        setActiveQuestionIdx(0);
-                        if (leftPaneScrollRef.current) leftPaneScrollRef.current.scrollTop = 0;
-                        passageScrollPosRef.current = 0;
-                        soundManager.playBeep(540, 0.03);
-                        onShowToast(`Viewing ${MOCK_EXAM_SETS[pIdx]?.title || `Practice Set ${pIdx + 1}`}`);
-                      }}
-                      className={`px-3 py-1.5 min-h-[38px] border rounded-md cursor-pointer font-bold transition ${
-                        selectedSetIdx === pIdx
-                          ? theme.activeTile
-                          : `${theme.cardBg} ${theme.border} hover:opacity-85`
-                      }`}
-                    >
-                      Set {pIdx + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                <h1 className="text-lg sm:text-xl font-bold leading-snug tracking-tight">
+                  {viewedReadingTitle}
+                </h1>
+              </header>
 
-              <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono opacity-85 p-2.5 rounded-md border ${theme.border} ${theme.cardBg}`}>
-                <span>{activeReadingBadge} · {activeReadingTitle}</span>
-                <span>{(activePassageText || currentSet.readingPassage || '').trim().split(/\s+/).filter(Boolean).length} words</span>
+              <div
+                className={`space-y-4 leading-relaxed select-text ${
+                  zoomLevel === '150%'
+                    ? 'text-lg'
+                    : zoomLevel === '125%'
+                    ? 'text-[17px]'
+                    : 'text-[15px]'
+                }`}
+              >
+                {viewedReadingParagraphs.map((paragraph, pIdx) => {
+                  const tagMatch = paragraph.match(/^(\[[A-Z]\])\s+([\s\S]+)$/);
+                  return (
+                    <p key={pIdx} className="leading-[1.72]">
+                      {tagMatch ? (
+                        <>
+                          <span className="font-bold mr-2">{tagMatch[1]}</span>
+                          {renderParagraphWithHighlights(tagMatch[2])}
+                        </>
+                      ) : (
+                        renderParagraphWithHighlights(paragraph)
+                      )}
+                    </p>
+                  );
+                })}
               </div>
-
-              <h1 className={`text-xl sm:text-2xl font-bold leading-tight font-display ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                {activeReadingTitle}
-              </h1>
-
-              <div className="space-y-4 leading-relaxed font-sans select-text">
-                {(activePassageText || currentSet.readingPassage || '').split('\n\n').map((paragraph, pIdx) => (
-                  <p key={pIdx} className="leading-relaxed">
-                    {renderParagraphWithHighlights(paragraph)}
-                  </p>
-                ))}
-              </div>
-
-              <div className={`pt-4 border-t ${theme.border} flex flex-wrap items-center justify-between gap-3 font-mono`}>
-                <span className="text-xs opacity-75">
-                  Select any text to highlight, underline, or add a margin note (Alt+V)
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleSwitchMobilePane('right')}
-                    className={`md:hidden px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider rounded-md flex items-center gap-2 cursor-pointer min-h-[44px] ${theme.accentBtn}`}
-                  >
-                    <span>Go to Questions ({answeredCount}/{totalQuestions})</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={handleProceedToWriting}
-                    className={`hidden sm:flex px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider rounded-md items-center gap-2 cursor-pointer ${theme.accentBtn}`}
-                  >
-                    <span>Proceed to Writing (60 min)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
+            </article>
           )}
 
           {activeSkill === 'writing' && (
-            <div className="space-y-4">
-              <div className={`border-b ${theme.border} pb-2.5 flex items-center justify-between font-mono`}>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                    Academic Writing · Task {activeWritingTask}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActivePracticeModal('writing_model')}
-                    className="px-2 py-0.5 text-[11px] font-mono font-bold rounded border cursor-pointer bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 flex items-center gap-1"
-                    title="View Model Essay & Examiner Guide"
-                  >
-                    <Sparkles className="w-3 h-3 text-amber-500" />
-                    <span>Model Essay</span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 font-mono">
-                  <button
-                    onClick={() => setActiveWritingTask(1)}
-                    className={`px-3 py-1 text-xs font-mono font-bold border rounded cursor-pointer ${
-                      activeWritingTask === 1 ? theme.activeTile : `${theme.cardBg} ${theme.border}`
-                    }`}
-                  >
-                    Task 1 (Min 150w)
-                  </button>
-                  <button
-                    onClick={() => setActiveWritingTask(2)}
-                    className={`px-3 py-1 text-xs font-mono font-bold border rounded cursor-pointer ${
-                      activeWritingTask === 2 ? theme.activeTile : `${theme.cardBg} ${theme.border}`
-                    }`}
-                  >
-                    Task 2 (Min 250w)
-                  </button>
-                </div>
+            <article
+              className={`max-w-[760px] w-full mx-auto border shadow-2xs p-5 sm:p-7 space-y-5 font-sans ${
+                colorScheme === 'standard'
+                  ? 'bg-white text-[#111827] border-[#CBD5E1]'
+                  : `${theme.cardBg} ${theme.border}`
+              }`}
+            >
+              <header
+                className={`border-b pb-3 space-y-1 ${
+                  colorScheme === 'standard' ? 'border-[#E2E8F0]' : theme.border
+                }`}
+              >
+                <h1 className="text-base sm:text-lg font-bold tracking-tight">
+                  Part {activeWritingTask}
+                </h1>
+                <p className="text-xs sm:text-sm opacity-80">
+                  You should spend about {activeWritingTask === 1 ? '20' : '40'} minutes on this task.
+                </p>
+              </header>
+
+              <div
+                className={`p-4 sm:p-5 border leading-relaxed select-text space-y-3 ${
+                  colorScheme === 'standard'
+                    ? 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]'
+                    : `${theme.bg} ${theme.border}`
+                } ${
+                  zoomLevel === '150%'
+                    ? 'text-lg'
+                    : zoomLevel === '125%'
+                    ? 'text-[17px]'
+                    : 'text-[15px]'
+                }`}
+              >
+                <p className="font-medium leading-[1.7]">
+                  {renderParagraphWithHighlights(
+                    activeWritingTask === 1
+                      ? currentSet.task1Prompt ||
+                          'Summarise the main features of the information provided and make comparisons where relevant.'
+                      : currentSet.writingPrompt
+                  )}
+                </p>
               </div>
 
-              <div className={`p-4 border rounded ${theme.border} ${theme.cardBg} space-y-2 font-mono`}>
-                <div className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                  Writing Prompt · Task {activeWritingTask}
-                </div>
-                <p className="font-semibold leading-relaxed text-sm sm:text-base font-sans">
-                  {activeWritingTask === 1
-                    ? currentSet.task1Prompt || 'Summarise the main features of the statistical chart and make comparisons where relevant. Write at least 150 words.'
-                    : currentSet.writingPrompt}
-                </p>
-                <p className={`text-xs opacity-75 pt-2 border-t ${theme.border}`}>
-                  {activeWritingTask === 1
-                    ? 'Recommended time: 20 minutes. Minimum length: 150 words.'
-                    : 'Recommended time: 40 minutes. Minimum length: 250 words.'}
-                </p>
-              </div>
-            </div>
+              <p className="text-xs sm:text-sm font-semibold">
+                Write at least {activeWritingTask === 1 ? '150' : '250'} words.
+              </p>
+            </article>
           )}
         </div>
         )}
@@ -2607,45 +2554,43 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 setLeftPanePercent((p) => Math.min(75, p + 5));
               }
             }}
-            className={`hidden md:flex w-2 hover:w-2.5 bg-[#D3DDDA] focus:bg-[#0F4C45] focus:outline-none cursor-col-resize items-center justify-center transition-colors shrink-0 ${
-              isDraggingSplitter ? 'bg-[#0F4C45] w-2.5' : ''
+            className={`hidden md:flex w-2 hover:w-2.5 cursor-col-resize items-center justify-center transition-colors shrink-0 focus:outline-none ${
+              isDraggingSplitter
+                ? 'bg-[#0066CC] w-2.5'
+                : 'bg-[#CBD5E1] hover:bg-[#94A3B8] focus:bg-[#0066CC]'
             }`}
             title="Drag or press Left/Right arrow keys to resize panes"
           >
-            <div className="w-0.5 h-10 bg-[#0F4C45]/60 rounded-full" />
+            <div className="w-0.5 h-10 rounded-full bg-[#475569]/60" />
           </div>
         )}
 
-        {/* Right Column (or Full-Width Official Sheet in Listening): Question Panel OR Writing Editor Area */}
+        {/* Right Column (or Full-Width Question Sheet in Listening): Question Panel OR Writing Editor Area */}
         <div
           ref={rightPaneScrollRef}
           className={`${
             activeSkill === 'listening'
               ? 'flex flex-1 h-full overflow-y-auto'
               : mobilePane === 'right'
-              ? 'flex w-full md:w-[var(--cd-right-width)] h-full p-4 sm:p-6 overflow-y-auto'
-              : 'hidden md:flex md:w-[var(--cd-right-width)] h-full p-4 sm:p-6 overflow-y-auto'
-          } flex-col justify-between bg-inherit`}
+              ? `flex w-full md:w-[var(--cd-right-width)] h-full overflow-y-auto ${
+                  activeSkill === 'reading' ? 'p-0' : 'p-4 sm:p-5'
+                }`
+              : `hidden md:flex md:w-[var(--cd-right-width)] h-full overflow-y-auto ${
+                  activeSkill === 'reading' ? 'p-0' : 'p-4 sm:p-5'
+                }`
+          } flex-col justify-between ${
+            activeSkill === 'writing'
+              ? colorScheme === 'standard'
+                ? 'bg-[#EAEEF2] text-[#111827]'
+                : theme.bg
+              : 'bg-inherit'
+          }`}
         >
-          <div className={activeSkill === 'listening' ? 'w-full flex-1 flex flex-col' : 'flex-1 flex flex-col justify-between'}>
+          <div className="w-full flex-1 flex flex-col">
           {activeSkill === 'writing' ? (
-            <div className="flex-1 flex flex-col space-y-3 font-mono">
-              <div className={`flex items-center justify-between border-b ${theme.border} pb-2`}>
-                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                  Candidate Essay Response · Task {activeWritingTask}
-                </span>
-                <span
-                  className={`text-xs font-mono font-bold px-3 py-1 border rounded-md tabular-nums ${
-                    (activeWritingTask === 1 ? task1WordCount < 150 : task2WordCount < 250)
-                      ? 'border-amber-600 text-amber-800 bg-amber-50'
-                      : 'border-emerald-600 text-emerald-800 bg-emerald-50'
-                  }`}
-                >
-                  Words: {activeWritingTask === 1 ? task1WordCount : task2WordCount} / {activeWritingTask === 1 ? 150 : 250} min
-                </span>
-              </div>
-
+            <div className="flex-1 flex flex-col max-w-[760px] w-full mx-auto font-sans">
               <textarea
+                data-testid="mock-writing-textarea"
                 tabIndex={1}
                 value={activeWritingTask === 1 ? task1Essay : task2Essay}
                 onChange={(e) =>
@@ -2656,13 +2601,29 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
-                placeholder={`Type your Writing Task ${activeWritingTask} practice response here... (Auto-saved every 30s)`}
-                className={`flex-1 min-h-[380px] w-full p-4 border rounded-lg ${theme.border} ${theme.inputBg} focus:border-[#0F4C45] font-sans text-sm sm:text-base leading-relaxed outline-none resize-none select-text`}
+                autoComplete="off"
+                placeholder=""
+                aria-label={`Writing Part ${activeWritingTask} response`}
+                className={`flex-1 min-h-[380px] w-full p-5 sm:p-6 border shadow-2xs leading-relaxed outline-none resize-none select-text focus:border-[#0066CC] ${
+                  colorScheme === 'standard'
+                    ? 'bg-white text-[#111827] border-[#CBD5E1]'
+                    : `${theme.inputBg} ${theme.border}`
+                } ${
+                  zoomLevel === '150%'
+                    ? 'text-lg'
+                    : zoomLevel === '125%'
+                    ? 'text-[17px]'
+                    : 'text-[15px]'
+                }`}
               />
 
-              <div className={`flex flex-wrap items-center justify-between pt-1 text-xs opacity-80 font-mono border-t ${theme.border}`}>
-                <span>Spellcheck disabled for timed practice</span>
-                <span>4-criterion diagnostic evaluation on submit</span>
+              <div className="pt-2 flex items-center justify-between text-xs font-sans">
+                <span className="font-medium tabular-nums">
+                  Words: {activeWritingTask === 1 ? task1WordCount : task2WordCount}
+                </span>
+                <span className="opacity-70 tabular-nums">
+                  Minimum {activeWritingTask === 1 ? 150 : 250} words
+                </span>
               </div>
             </div>
           ) : activeSkill === 'listening' ? (
@@ -2694,191 +2655,26 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               scrollTrigger={listeningScrollTrigger}
             />
           ) : (
-            <div className="flex-1 flex flex-col justify-between space-y-6 font-mono">
-              <div className="space-y-4">
-                <div className={`flex items-center justify-between border-b ${theme.border} pb-2 font-mono`}>
-                  <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                    Question {activeQuestionIdx + 1} of {skillQuestions.length} · {activeQuestionObj?.type}
-                  </span>
-
-                  {/* Flag for Review Checkbox (Alt+R) */}
-                  <label
-                    className={`flex items-center gap-2 text-xs font-mono font-bold cursor-pointer px-2.5 py-1 border rounded-md ${theme.border} ${theme.cardBg}`}
-                    title="Flag question for review (Shortcut: Alt+R)"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={flaggedQuestions.has(activeQuestionId)}
-                      onChange={() => toggleFlag(activeQuestionId)}
-                      className="accent-[#D97706] w-4 h-4 cursor-pointer"
-                    />
-                    <span>Flag (Alt+R)</span>
-                  </label>
-                </div>
-
-                {/* Current Active Question Display */}
-                {activeQuestionObj && (
-                  <div className="space-y-4 font-mono">
-                    <div className={`p-4 border rounded-lg ${theme.border} ${theme.cardBg} space-y-2`}>
-                      <div className={`flex items-center justify-between text-xs font-mono font-bold ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                        <span>Question {activeQuestionObj.id}</span>
-                        <span className="opacity-75 uppercase">{activeQuestionObj.type}</span>
-                      </div>
-                      <div className="font-semibold text-sm sm:text-base leading-snug font-sans">
-                        {activeQuestionObj.prompt}
-                      </div>
-                    </div>
-
-                    {/* Interactive Practice Visual Aids: Campus Map Labeling or Matching Headings */}
-                    {(activeQuestionObj.type.toLowerCase().includes('map') ||
-                      activeQuestionObj.prompt.toLowerCase().includes('located') ||
-                      activeQuestionObj.prompt.toLowerCase().includes('layout') ||
-                      activeQuestionObj.prompt.toLowerCase().includes('pin')) && (
-                      <CDIELTSSVGMap
-                        currentAnswer={userAnswers[activeQuestionId] || ''}
-                        onSelectPin={(pin) => {
-                          setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: pin }));
-                          soundManager.playBeep(560, 0.03);
-                        }}
-                        disabled={isListeningLocked}
-                      />
-                    )}
-
-                    {(activeQuestionObj.type.toLowerCase().includes('heading') ||
-                      activeQuestionObj.prompt.toLowerCase().includes('heading')) && (
-                      <CDIELTSMatchingHeadingsPicker
-                        currentAnswer={userAnswers[activeQuestionId] || ''}
-                        onSelectHeading={(roman) => {
-                          setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: roman }));
-                          soundManager.playBeep(560, 0.03);
-                        }}
-                        disabled={isListeningLocked}
-                      />
-                    )}
-
-                    {/* Question Input Paradigms (Tab / Shift+Tab Sequential Focus) */}
-                    {activeQuestionObj.options && activeQuestionObj.options.length > 0 ? (
-                      <div className="space-y-2 pt-1 font-mono">
-                        {activeQuestionObj.options.map((opt, optIdx) => {
-                          const optionLetter = opt.split('.')[0]?.trim() || opt;
-                          const isSelected =
-                            userAnswers[activeQuestionId] === opt ||
-                            userAnswers[activeQuestionId] === optionLetter;
-                          const isDisabled = isListeningLocked;
-
-                          return (
-                            <label
-                              key={opt}
-                              onClick={() => {
-                                if (isDisabled) return;
-                                setUserAnswers((prev) => ({
-                                  ...prev,
-                                  [activeQuestionId]: optionLetter
-                                }));
-                                soundManager.playBeep(540, 0.03);
-                              }}
-                              className={`flex items-center gap-3 p-3.5 border rounded-lg font-mono transition ${
-                                isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                              } ${
-                                isSelected
-                                  ? `${theme.activeTile} font-bold`
-                                  : `${theme.cardBg} ${theme.border} hover:opacity-90 font-medium`
-                              }`}
-                            >
-                              <input
-                                tabIndex={optIdx + 1}
-                                type="radio"
-                                disabled={isDisabled}
-                                name={`q_${activeQuestionId}`}
-                                checked={isSelected}
-                                onChange={() => {}}
-                                className="w-4 h-4 accent-[#0F4C45] cursor-pointer shrink-0"
-                              />
-                              <span className="font-mono font-bold text-xs px-1.5 py-0.5 border border-current rounded shrink-0">
-                                {optionLetter}
-                              </span>
-                              <span className="text-xs sm:text-sm font-sans">{opt.replace(/^[A-Z]\.\s*/, '')}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      /* Short Answer / Fill in the Blanks (Sequential Tab Focus) */
-                      <div className="space-y-2 pt-2 font-mono">
-                        <label className="block text-xs font-mono font-bold uppercase opacity-80">
-                          Type Answer (Tab / Shift+Tab for next question):
-                        </label>
-                        <input
-                          tabIndex={1}
-                          type="text"
-                          disabled={isListeningLocked}
-                          value={userAnswers[activeQuestionId] || ''}
-                          onChange={(e) =>
-                            setUserAnswers((prev) => ({
-                              ...prev,
-                              [activeQuestionId]: e.target.value
-                            }))
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === 'Tab') {
-                              e.preventDefault();
-                              if (e.shiftKey) {
-                                setActiveQuestionIdx((q) => Math.max(0, q - 1));
-                              } else {
-                                setActiveQuestionIdx((q) => Math.min(skillQuestions.length - 1, q + 1));
-                              }
-                              soundManager.playBeep(500, 0.02);
-                            }
-                          }}
-                          placeholder={
-                            isListeningLocked
-                              ? 'Listening answers locked after 2-minute check period'
-                              : 'Type your answer here...'
-                          }
-                          className={`w-full p-3 border-2 rounded-lg ${theme.border} ${theme.inputBg} focus:border-[#0F4C45] font-mono font-bold text-sm outline-none disabled:opacity-60`}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Prev / Next Buttons flanking question */}
-              <div className={`pt-4 border-t ${theme.border} flex items-center justify-between gap-3 font-mono`}>
-                <button
-                  disabled={activeQuestionIdx <= 0}
-                  onClick={() => {
-                    setActiveQuestionIdx((q) => Math.max(0, q - 1));
-                    soundManager.playBeep(480, 0.03);
-                  }}
-                  className={`px-4 py-2 border rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.cardBg} ${theme.border}`}
-                  title="Previous Question (Alt+P)"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Previous</span>
-                </button>
-
-                <button
-                  onClick={() => setShowReviewModal(true)}
-                  className={`px-3.5 py-2 border rounded-md text-xs font-mono font-bold uppercase cursor-pointer ${theme.cardBg} ${theme.border}`}
-                >
-                  Review &amp; Submit ({answeredCount}/{totalQuestions})
-                </button>
-
-                <button
-                  disabled={activeQuestionIdx >= skillQuestions.length - 1}
-                  onClick={() => {
-                    setActiveQuestionIdx((q) => Math.min(skillQuestions.length - 1, q + 1));
-                    soundManager.playBeep(520, 0.03);
-                  }}
-                  className={`px-4 py-2 rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.accentBtn}`}
-                  title="Next Question (Alt+N)"
-                >
-                  <span>Next</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            <CDIELTSReadingSheet
+              readingPart={viewedReadingPart}
+              allReadingQuestions={skillQuestions}
+              examFormat={currentSet.format === 'General Training' ? 'General Training' : 'Academic'}
+              userAnswers={userAnswers}
+              flaggedQuestions={flaggedQuestions}
+              activeQuestionId={activeQuestionId}
+              colorScheme={colorScheme}
+              zoomLevel={zoomLevel}
+              onAnswerChange={(qId, value) => {
+                setUserAnswers((prev) => ({ ...prev, [qId]: value }));
+                soundManager.playBeep(540, 0.02);
+              }}
+              onToggleFlag={toggleFlag}
+              onFocusQuestion={(_qId, globalIdx) => {
+                setActiveQuestionIdx(globalIdx);
+              }}
+              renderHighlightedText={renderParagraphWithHighlights}
+              scrollTrigger={readingScrollTrigger}
+            />
           )}
           </div>
         </div>
@@ -3005,40 +2801,33 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         )}
       </div>
 
-      {/* ================= 4. BOTTOM QUESTION NAVIGATION DOCK ================= */}
-      {activeSkill === 'listening' ? (
-        <footer
-          className={`w-full border-t px-3 sm:px-5 py-2 shrink-0 select-none z-10 font-sans ${
-            colorScheme === 'standard'
-              ? 'bg-[#F8FAFC] text-[#111827] border-[#CBD5E1]'
-              : `${theme.bg} ${theme.border}`
-          }`}
-        >
-          <div className="max-w-[1280px] mx-auto flex flex-wrap items-center justify-between gap-2">
-            {/* Parts 1–4 with Active Part Expanded Numbered Squares (1–40) */}
-            <div className="flex items-center gap-2 overflow-x-auto py-0.5 flex-1 min-w-0">
-              {([1, 2, 3, 4] as const).map((partNum) => {
-                const startIdx = (partNum - 1) * 10;
-                const partQs = skillQuestions.slice(startIdx, startIdx + 10);
-                if (partQs.length === 0) return null;
-                const partAnswered = partQs.filter((q) => Boolean(userAnswers[q.id]?.trim())).length;
-                const isViewedPart = viewedListeningPart === partNum;
-
-                return (
-                  <div key={partNum} className="flex items-center gap-1 shrink-0">
+      {/* ================= 4. BOTTOM QUESTION NAVIGATION DOCK (UNIFIED INSPERA BAR) ================= */}
+      <footer
+        className={`w-full border-t px-3 sm:px-5 py-2 shrink-0 select-none z-10 font-sans ${
+          colorScheme === 'standard'
+            ? 'bg-[#F8FAFC] text-[#111827] border-[#CBD5E1]'
+            : `${theme.bg} ${theme.border}`
+        }`}
+      >
+        <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2">
+          {/* Parts Bar with Active Part Expanded Numbered Squares (Listening/Reading) or Part 1 / Part 2 Tabs (Writing) */}
+          <div className="flex items-center gap-2 overflow-x-auto py-0.5 flex-1 min-w-0">
+            {activeSkill === 'writing' ? (
+              <div className="flex items-center gap-2">
+                {([1, 2] as const).map((partNum) => {
+                  const isActive = activeWritingTask === partNum;
+                  const words = partNum === 1 ? task1WordCount : task2WordCount;
+                  return (
                     <button
+                      key={partNum}
                       type="button"
                       onClick={() => {
-                        setViewedListeningPart(partNum);
-                        if (startIdx < skillQuestions.length) {
-                          const targetQ = skillQuestions[startIdx];
-                          setActiveQuestionIdx(startIdx);
-                          setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
-                        }
+                        setActiveWritingTask(partNum);
+                        if (leftPaneScrollRef.current) leftPaneScrollRef.current.scrollTop = 0;
                         soundManager.playBeep(520, 0.02);
                       }}
-                      className={`px-2.5 py-1 text-xs font-bold rounded border cursor-pointer whitespace-nowrap transition ${
-                        isViewedPart
+                      className={`px-3 py-1.5 text-xs font-bold rounded border cursor-pointer whitespace-nowrap transition flex items-center gap-2 ${
+                        isActive
                           ? colorScheme === 'standard'
                             ? 'bg-[#1E293B] text-white border-[#1E293B]'
                             : theme.activeTile
@@ -3048,244 +2837,308 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                       }`}
                     >
                       <span>Part {partNum}</span>
-                      {!isViewedPart && (
-                        <span className="ml-1.5 text-[11px] font-normal opacity-75 tabular-nums">
-                          {partAnswered}/{partQs.length}
-                        </span>
-                      )}
+                      <span className="text-[11px] font-normal opacity-80 tabular-nums">
+                        {words} {words === 1 ? 'word' : 'words'}
+                      </span>
                     </button>
+                  );
+                })}
+              </div>
+            ) : activeSkill === 'listening'
+              ? ([1, 2, 3, 4] as const).map((partNum) => {
+                  const startIdx = (partNum - 1) * 10;
+                  const partQs = skillQuestions.slice(startIdx, startIdx + 10);
+                    if (partQs.length === 0) return null;
+                    const partAnswered = partQs.filter((q) => Boolean(userAnswers[q.id]?.trim())).length;
+                    const isViewedPart = viewedListeningPart === partNum;
 
-                    {isViewedPart && (
-                      <div className="flex items-center gap-1 pl-1">
-                        {partQs.map((q, localIdx) => {
-                          const globalIdx = startIdx + localIdx;
-                          const displayNum = globalIdx + 1;
-                          const isAnswered = Boolean(userAnswers[q.id]?.trim());
-                          const isFlagged = flaggedQuestions.has(q.id);
-                          const isCurrent = activeQuestionIdx === globalIdx;
+                    return (
+                      <div key={partNum} className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewedListeningPart(partNum);
+                            if (startIdx < skillQuestions.length) {
+                              const targetQ = skillQuestions[startIdx];
+                              setActiveQuestionIdx(startIdx);
+                              setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                            }
+                            soundManager.playBeep(520, 0.02);
+                          }}
+                          className={`px-2.5 py-1 text-xs font-bold rounded border cursor-pointer whitespace-nowrap transition ${
+                            isViewedPart
+                              ? colorScheme === 'standard'
+                                ? 'bg-[#1E293B] text-white border-[#1E293B]'
+                                : theme.activeTile
+                              : colorScheme === 'standard'
+                              ? 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                              : `${theme.cardBg} ${theme.border}`
+                          }`}
+                        >
+                          <span>Part {partNum}</span>
+                          {!isViewedPart && (
+                            <span className="ml-1.5 text-[11px] font-normal opacity-75 tabular-nums">
+                              {partAnswered}/{partQs.length}
+                            </span>
+                          )}
+                        </button>
 
-                          return (
-                            <button
-                              key={q.id}
-                              type="button"
-                              onClick={() => {
-                                setActiveQuestionIdx(globalIdx);
-                                setListeningScrollTrigger({ questionId: q.id, nonce: Date.now() });
-                                soundManager.playBeep(520, 0.02);
-                              }}
-                              title={`Question ${displayNum} (${isAnswered ? 'Answered' : 'Unanswered'}${isFlagged ? ', Flagged' : ''})`}
-                              aria-current={isCurrent ? 'step' : undefined}
-                              className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-xs font-bold tabular-nums cursor-pointer transition shrink-0 ${
-                                isFlagged
-                                  ? 'rounded-full border-2 border-[#D97706] bg-amber-50 text-[#92400E]'
-                                  : isAnswered
-                                  ? colorScheme === 'standard'
-                                    ? 'rounded-[3px] bg-[#1E293B] text-white border border-[#1E293B]'
-                                    : `rounded-[3px] ${theme.activeTile}`
-                                  : colorScheme === 'standard'
-                                  ? 'rounded-[3px] bg-white text-[#1E293B] border border-[#94A3B8] hover:border-[#0066CC]'
-                                  : `rounded-[3px] ${theme.cardBg} border ${theme.border}`
-                              } ${isCurrent ? 'ring-2 ring-[#0066CC] ring-offset-1 z-10' : ''}`}
-                            >
-                              {displayNum}
-                            </button>
-                          );
-                        })}
+                        {isViewedPart && (
+                          <div className="flex items-center gap-1 pl-1">
+                            {partQs.map((q, localIdx) => {
+                              const globalIdx = startIdx + localIdx;
+                              const displayNum = globalIdx + 1;
+                              const isAnswered = Boolean(userAnswers[q.id]?.trim());
+                              const isFlagged = flaggedQuestions.has(q.id);
+                              const isCurrent = activeQuestionIdx === globalIdx;
+
+                              return (
+                                <button
+                                  key={q.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveQuestionIdx(globalIdx);
+                                    setListeningScrollTrigger({ questionId: q.id, nonce: Date.now() });
+                                    soundManager.playBeep(520, 0.02);
+                                  }}
+                                  title={`Question ${displayNum} (${isAnswered ? 'Answered' : 'Unanswered'}${isFlagged ? ', Flagged' : ''})`}
+                                  aria-current={isCurrent ? 'step' : undefined}
+                                  className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-xs font-bold tabular-nums cursor-pointer transition shrink-0 ${
+                                    isFlagged
+                                      ? 'rounded-full border-2 border-[#D97706] bg-amber-50 text-[#92400E]'
+                                      : isAnswered
+                                      ? colorScheme === 'standard'
+                                        ? 'rounded-[3px] bg-[#1E293B] text-white border border-[#1E293B]'
+                                        : `rounded-[3px] ${theme.activeTile}`
+                                      : colorScheme === 'standard'
+                                      ? 'rounded-[3px] bg-white text-[#1E293B] border border-[#94A3B8] hover:border-[#0066CC]'
+                                      : `rounded-[3px] ${theme.cardBg} border ${theme.border}`
+                                  } ${isCurrent ? 'ring-2 ring-[#0066CC] ring-offset-1 z-10' : ''}`}
+                                >
+                                  {displayNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })
+                : readingPartGroups.map((group) => {
+                    const isViewedPart = viewedReadingPart === group.partNum;
+
+                    return (
+                      <div key={group.partNum} className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewedReadingPart(group.partNum);
+                            const firstEntry = group.entries[0];
+                            if (firstEntry) {
+                              setActiveQuestionIdx(firstEntry.globalIdx);
+                              setReadingScrollTrigger({ questionId: firstEntry.q.id, nonce: Date.now() });
+                            }
+                            soundManager.playBeep(520, 0.02);
+                          }}
+                          className={`px-2.5 py-1 text-xs font-bold rounded border cursor-pointer whitespace-nowrap transition ${
+                            isViewedPart
+                              ? colorScheme === 'standard'
+                                ? 'bg-[#1E293B] text-white border-[#1E293B]'
+                                : theme.activeTile
+                              : colorScheme === 'standard'
+                              ? 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                              : `${theme.cardBg} ${theme.border}`
+                          }`}
+                        >
+                          <span>Part {group.partNum}</span>
+                          {!isViewedPart && (
+                            <span className="ml-1.5 text-[11px] font-normal opacity-75 tabular-nums">
+                              {group.answered}/{group.entries.length}
+                            </span>
+                          )}
+                        </button>
+
+                        {isViewedPart && (
+                          <div className="flex items-center gap-1 pl-1">
+                            {group.entries.map(({ q, globalIdx }) => {
+                              const displayNum = globalIdx + 1;
+                              const isAnswered = Boolean(userAnswers[q.id]?.trim());
+                              const isFlagged = flaggedQuestions.has(q.id);
+                              const isCurrent = activeQuestionIdx === globalIdx;
+
+                              return (
+                                <button
+                                  key={q.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveQuestionIdx(globalIdx);
+                                    setReadingScrollTrigger({ questionId: q.id, nonce: Date.now() });
+                                    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                                      setMobilePane('right');
+                                    }
+                                    soundManager.playBeep(520, 0.02);
+                                  }}
+                                  title={`Question ${displayNum} (${isAnswered ? 'Answered' : 'Unanswered'}${isFlagged ? ', Flagged' : ''})`}
+                                  aria-current={isCurrent ? 'step' : undefined}
+                                  className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-xs font-bold tabular-nums cursor-pointer transition shrink-0 ${
+                                    isFlagged
+                                      ? 'rounded-full border-2 border-[#D97706] bg-amber-50 text-[#92400E]'
+                                      : isAnswered
+                                      ? colorScheme === 'standard'
+                                        ? 'rounded-[3px] bg-[#1E293B] text-white border border-[#1E293B]'
+                                        : `rounded-[3px] ${theme.activeTile}`
+                                      : colorScheme === 'standard'
+                                      ? 'rounded-[3px] bg-white text-[#1E293B] border border-[#94A3B8] hover:border-[#0066CC]'
+                                      : `rounded-[3px] ${theme.cardBg} border ${theme.border}`
+                                  } ${isCurrent ? 'ring-2 ring-[#0066CC] ring-offset-1 z-10' : ''}`}
+                                >
+                                  {displayNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
             </div>
 
             {/* Bottom-Right Review Count + Classic Prev / Next Arrow Buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowReviewModal(true)}
-                className={`hidden sm:inline-flex px-2.5 py-1.5 text-xs font-medium rounded border cursor-pointer tabular-nums ${
-                  colorScheme === 'standard'
-                    ? 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
-                    : `${theme.cardBg} ${theme.border}`
-                }`}
-              >
-                {answeredCount}/{totalQuestions} Answered
-              </button>
+              {activeSkill === 'writing' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewModal(true)}
+                    className={`hidden sm:inline-flex px-2.5 py-1.5 text-xs font-medium rounded border cursor-pointer tabular-nums ${
+                      colorScheme === 'standard'
+                        ? 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                        : `${theme.cardBg} ${theme.border}`
+                    }`}
+                  >
+                    Part {activeWritingTask} of 2
+                  </button>
 
-              <button
-                type="button"
-                disabled={activeQuestionIdx <= 0}
-                onClick={() => {
-                  const prevIdx = Math.max(0, activeQuestionIdx - 1);
-                  const prevPart = (Math.floor(prevIdx / 10) + 1) as 1 | 2 | 3 | 4;
-                  const targetQ = skillQuestions[prevIdx];
-                  setViewedListeningPart(prevPart);
-                  setActiveQuestionIdx(prevIdx);
-                  if (targetQ) {
-                    setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
-                  }
-                  soundManager.playBeep(480, 0.02);
-                }}
-                aria-label="Previous question"
-                title="Previous Question (Alt+P)"
-                className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
-                  colorScheme === 'standard'
-                    ? 'bg-white text-[#1E293B] border-[#94A3B8] hover:bg-[#F1F5F9]'
-                    : `${theme.cardBg} ${theme.border}`
-                }`}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
+                  <button
+                    type="button"
+                    disabled={activeWritingTask === 1}
+                    onClick={() => {
+                      setActiveWritingTask(1);
+                      soundManager.playBeep(480, 0.02);
+                    }}
+                    aria-label="Previous part"
+                    title="Previous Part (Part 1)"
+                    className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
+                      colorScheme === 'standard'
+                        ? 'bg-white text-[#1E293B] border-[#94A3B8] hover:bg-[#F1F5F9]'
+                        : `${theme.cardBg} ${theme.border}`
+                    }`}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
 
-              <button
-                type="button"
-                disabled={activeQuestionIdx >= skillQuestions.length - 1}
-                onClick={() => {
-                  const nextIdx = Math.min(skillQuestions.length - 1, activeQuestionIdx + 1);
-                  const nextPart = (Math.floor(nextIdx / 10) + 1) as 1 | 2 | 3 | 4;
-                  const targetQ = skillQuestions[nextIdx];
-                  setViewedListeningPart(nextPart);
-                  setActiveQuestionIdx(nextIdx);
-                  if (targetQ) {
-                    setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
-                  }
-                  soundManager.playBeep(520, 0.02);
-                }}
-                aria-label="Next question"
-                title="Next Question (Alt+N)"
-                className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
-                  colorScheme === 'standard'
-                    ? 'bg-[#1E293B] text-white border-[#1E293B] hover:bg-[#0F172A]'
-                    : theme.accentBtn
-                }`}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+                  <button
+                    type="button"
+                    disabled={activeWritingTask === 2}
+                    onClick={() => {
+                      setActiveWritingTask(2);
+                      soundManager.playBeep(520, 0.02);
+                    }}
+                    aria-label="Next part"
+                    title="Next Part (Part 2)"
+                    className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
+                      colorScheme === 'standard'
+                        ? 'bg-[#1E293B] text-white border-[#1E293B] hover:bg-[#0F172A]'
+                        : theme.accentBtn
+                    }`}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewModal(true)}
+                    className={`hidden sm:inline-flex px-2.5 py-1.5 text-xs font-medium rounded border cursor-pointer tabular-nums ${
+                      colorScheme === 'standard'
+                        ? 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                        : `${theme.cardBg} ${theme.border}`
+                    }`}
+                  >
+                    {answeredCount}/{totalQuestions} Answered
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={activeQuestionIdx <= 0}
+                    onClick={() => {
+                      const prevIdx = Math.max(0, activeQuestionIdx - 1);
+                      const targetQ = skillQuestions[prevIdx];
+                      setActiveQuestionIdx(prevIdx);
+                      if (activeSkill === 'listening') {
+                        const prevPart = (Math.floor(prevIdx / 10) + 1) as 1 | 2 | 3 | 4;
+                        setViewedListeningPart(prevPart);
+                        if (targetQ) {
+                          setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                        }
+                      } else {
+                        const prevPart = getReadingPartOfEntry(targetQ, prevIdx);
+                        setViewedReadingPart(prevPart);
+                        if (targetQ) {
+                          setReadingScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                        }
+                      }
+                      soundManager.playBeep(480, 0.02);
+                    }}
+                    aria-label="Previous question"
+                    title="Previous Question (Alt+P)"
+                    className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
+                      colorScheme === 'standard'
+                        ? 'bg-white text-[#1E293B] border-[#94A3B8] hover:bg-[#F1F5F9]'
+                        : `${theme.cardBg} ${theme.border}`
+                    }`}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={activeQuestionIdx >= skillQuestions.length - 1}
+                    onClick={() => {
+                      const nextIdx = Math.min(skillQuestions.length - 1, activeQuestionIdx + 1);
+                      const targetQ = skillQuestions[nextIdx];
+                      setActiveQuestionIdx(nextIdx);
+                      if (activeSkill === 'listening') {
+                        const nextPart = (Math.floor(nextIdx / 10) + 1) as 1 | 2 | 3 | 4;
+                        setViewedListeningPart(nextPart);
+                        if (targetQ) {
+                          setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                        }
+                      } else {
+                        const nextPart = getReadingPartOfEntry(targetQ, nextIdx);
+                        setViewedReadingPart(nextPart);
+                        if (targetQ) {
+                          setReadingScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                        }
+                      }
+                      soundManager.playBeep(520, 0.02);
+                    }}
+                    aria-label="Next question"
+                    title="Next Question (Alt+N)"
+                    className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
+                      colorScheme === 'standard'
+                        ? 'bg-[#1E293B] text-white border-[#1E293B] hover:bg-[#0F172A]'
+                        : theme.accentBtn
+                    }`}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </footer>
-      ) : (
-      <footer className={`w-full border-t ${theme.border} px-3 sm:px-4 py-2.5 shrink-0 ${colorScheme === 'standard' ? 'bg-[#E9EFEC]' : theme.bg} select-none z-10 font-mono`}>
-        {/* Dock Header: Response Metrics & Review Status */}
-        <div className="flex items-center justify-between gap-2 mb-2 text-xs font-mono font-bold">
-          {/* Status Metrics Legend */}
-          <div className="flex items-center gap-3 sm:gap-4 flex-wrap text-[11px] sm:text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className={`w-3.5 h-3.5 rounded-sm inline-block ${theme.activeTile}`} />
-              <span>Answered ({answeredCount})</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className={`w-3.5 h-3.5 rounded-sm border inline-block ${theme.cardBg} ${theme.border}`} />
-              <span>Unanswered ({totalQuestions - answeredCount})</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className={`w-3.5 h-3.5 rounded-sm inline-block ${theme.flaggedTile}`} />
-              <span>Flagged ({flaggedQuestions.size})</span>
-            </span>
-          </div>
-
-          {/* Review Summary Trigger (Separated from Question Tiles Rail) */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowReviewModal(true)}
-              className={`px-3 py-1 border rounded-md text-[11px] sm:text-xs font-mono font-bold cursor-pointer uppercase ${theme.cardBg} ${theme.border}`}
-            >
-              Review Summary ({answeredCount}/{totalQuestions})
-            </button>
-            <button
-              onClick={() => setShowPalette(!showPalette)}
-              className={`text-[11px] font-mono px-2.5 py-1 border rounded-md cursor-pointer hidden min-[420px]:inline ${theme.cardBg} ${theme.border}`}
-            >
-              {showPalette ? 'Hide Palette' : 'Show Palette'}
-            </button>
-          </div>
-        </div>
-
-        {/* Clean, Horizontally Scrollable Question Tiles Rail (Fixed Height, No Stacking/Crowding) */}
-        {showPalette && (
-          <div className={`w-full overflow-x-auto whitespace-nowrap scrollbar-thin py-2 px-1.5 flex items-center gap-1.5 border rounded-lg ${theme.border} ${theme.cardBg} touch-pan-x`}>
-            {activeSkill === 'writing' ? (
-              <div className="flex items-center gap-2 px-1">
-                <button
-                  onClick={() => {
-                    setActiveWritingTask(1);
-                    soundManager.playBeep(520, 0.02);
-                  }}
-                  className={`px-4 py-2 font-mono text-xs font-bold border rounded-md cursor-pointer flex items-center gap-2 ${
-                    activeWritingTask === 1
-                      ? theme.activeTile
-                      : `${theme.cardBg} ${theme.border}`
-                  }`}
-                >
-                  <span>Task 1 (150w)</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${task1WordCount >= 150 ? 'bg-emerald-600 text-white' : 'bg-black/15'}`}>
-                    {task1WordCount}w
-                  </span>
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveWritingTask(2);
-                    soundManager.playBeep(520, 0.02);
-                  }}
-                  className={`px-4 py-2 font-mono text-xs font-bold border rounded-md cursor-pointer flex items-center gap-2 ${
-                    activeWritingTask === 2
-                      ? theme.activeTile
-                      : `${theme.cardBg} ${theme.border}`
-                  }`}
-                >
-                  <span>Task 2 (250w)</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${task2WordCount >= 250 ? 'bg-emerald-600 text-white' : 'bg-black/15'}`}>
-                    {task2WordCount}w
-                  </span>
-                </button>
-              </div>
-            ) : (
-              skillQuestions.map((q, idx) => {
-                const isAnswered = Boolean(userAnswers[q.id]?.trim());
-                const isFlagged = flaggedQuestions.has(q.id);
-                const isActive = activeQuestionIdx === idx;
-
-                let tileStyle = `${theme.cardBg} border ${theme.border} hover:border-[#0F4C45]`;
-                if (isAnswered) tileStyle = `${theme.activeTile} font-bold`;
-                if (isFlagged) tileStyle = `${theme.flaggedTile} font-black`;
-
-                const isSectionDivider = idx > 0 && idx % 10 === 0;
-
-                return (
-                  <React.Fragment key={q.id}>
-                    {/* Subtle Part/Section Boundary Marker */}
-                    {isSectionDivider && (
-                      <div
-                        className={`px-2 py-1 font-mono text-[10px] font-bold tracking-wider shrink-0 border rounded select-none ${theme.border} opacity-80`}
-                      >
-                        Part {Math.floor(idx / 10) + 1}
-                      </div>
-                    )}
-                    <button
-                      onClick={() => {
-                        setActiveQuestionIdx(idx);
-                        if (window.innerWidth < 768) handleSwitchMobilePane('right');
-                        soundManager.playBeep(520, 0.02);
-                      }}
-                      className={`w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center font-mono text-xs sm:text-sm font-bold transition cursor-pointer rounded-md relative tabular-nums ${tileStyle} ${
-                        isActive ? 'ring-2 ring-[#F4A62A] ring-offset-1 font-black z-10' : ''
-                      }`}
-                      title={`Question ${idx + 1} (${isAnswered ? 'Answered' : 'Unanswered'}${isFlagged ? ', Flagged' : ''})`}
-                      aria-current={isActive ? 'step' : undefined}
-                    >
-                      {isFlagged && (
-                        <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-[#D97706]" title="Flagged" />
-                      )}
-                      {idx + 1}
-                    </button>
-                  </React.Fragment>
-                );
-              })
-            )}
-          </div>
-        )}
-      </footer>
-      )}
 
       {/* ================= 5. HELP, REVIEW & ROUTE GUARD MODALS ================= */}
       {showHelpModal && (
@@ -3295,7 +3148,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               <h2 className="text-base sm:text-lg font-bold text-[#0F172A]">
                 {activeSkill === 'listening'
                   ? 'IELTS on Computer — Listening Help & Shortcuts'
-                  : 'BandSprint Exam Instructions & Shortcuts'}
+                  : activeSkill === 'reading'
+                  ? 'IELTS on Computer — Reading Help & Shortcuts'
+                  : 'IELTS on Computer — Writing Instructions & Shortcuts'}
               </h2>
               <button onClick={() => setShowHelpModal(false)} className="p-1 hover:bg-slate-100 rounded cursor-pointer">
                 <X className="w-5 h-5" />
@@ -3310,11 +3165,14 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               <p>• <strong>Alt + V</strong>: Open or close the Margin Notes and Highlighter side panel.</p>
               <p>• <strong>Tab / Shift + Tab</strong>: Move focus sequentially across completion blanks.</p>
 
-              <p className="font-bold">2. Listening Audio Rules:</p>
-              <p>Audio tracks play once with no scrubbing, matching timed computer-delivered practice rules (35s pre-read buffer, 60s section check, and 2-minute final check).</p>
+              <p className="font-bold">2. Listening Audio Rules (Single-Play Rule):</p>
+              <p>Audio tracks follow the Single-Play Rule with no scrubbing, matching timed computer-delivered practice rules (35s pre-read buffer, 60s section check, and 2-minute final check).</p>
 
               <p className="font-bold">3. Highlighting &amp; Margin Notes:</p>
-              <p>Select any text in the reading passage to open the Highlight, Underline, and Note toolbar.</p>
+              <p>Select any text in the reading passage or writing prompt to open the Highlight, Underline, and Note toolbar.</p>
+
+              <p className="font-bold">4. Writing Timing &amp; Word Count:</p>
+              <p>You have 60 minutes in total across Part 1 (minimum 150 words) and Part 2 (minimum 250 words). Spellcheck is disabled, and you may switch between Part 1 and Part 2 at any time using the bottom bar.</p>
             </div>
 
             <div className="pt-2 flex justify-end">
@@ -3471,30 +3329,129 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               )}
 
               {activePracticeModal === 'reading_guide' && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg text-xs font-mono text-teal-900">
-                    <span className="font-bold">Reading Strategy Tip:</span> Skim the passage first for key signposts and scan for specific names, dates, and terms.
+                <div className="space-y-4">
+                  <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg text-xs text-teal-900">
+                    <span className="font-bold">Practice Resource:</span> Passage guides and answer explanations are available in practice mode via Options. In the real IELTS on Computer exam, only the passage and question sheet are displayed.
                   </div>
-                  <div className="space-y-2 font-mono text-xs">
-                    <div className="font-bold uppercase text-[#0F4C45]">Passage Summary &amp; Vocabulary:</div>
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg font-sans text-xs sm:text-sm leading-relaxed space-y-2">
-                      <p><strong>Title:</strong> {currentSet.readingTitle}</p>
-                      <p><strong>Passage Length:</strong> {currentSet.readingPassage.split(/\s+/).length} words</p>
-                      <p><strong>Key Focus:</strong> Identify paragraph main ideas and pay close attention to True/False/Not Given statement nuances.</p>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {([1, 2, 3] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setViewedReadingPart(p)}
+                        className={`px-3 py-1 rounded border text-xs font-semibold cursor-pointer ${
+                          viewedReadingPart === p
+                            ? 'bg-[#1E293B] text-white border-[#1E293B]'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        Part {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm leading-relaxed space-y-2">
+                    <p><strong>Title:</strong> {viewedReadingTitle}</p>
+                    <p>
+                      <strong>Part {viewedReadingPart} Length:</strong>{' '}
+                      {rawViewedReadingBlock.split(/\s+/).filter(Boolean).length} words (
+                      Questions {viewedReadingGroup?.startNum ?? 1}–{viewedReadingGroup?.endNum ?? 13})
+                    </p>
+                    <p>
+                      <strong>Exam Strategy:</strong> Skim paragraph topic sentences first, highlight proper nouns or dates directly in the left passage, and verify whether statements are contradicted (<em>FALSE</em>) or unmentioned (<em>NOT GIVEN</em>).
+                    </p>
+                  </div>
+
+                  {viewedReadingGroup && (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowReadingStudyKey((v) => !v)}
+                        className="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-800 cursor-pointer"
+                      >
+                        {showReadingStudyKey
+                          ? `Hide Part ${viewedReadingPart} Answer Key & Explanations`
+                          : `Show Part ${viewedReadingPart} Answer Key & Explanations (${viewedReadingGroup.entries.length} questions)`}
+                      </button>
+
+                      {showReadingStudyKey && (
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {viewedReadingGroup.entries.map(({ q, globalIdx }) => (
+                            <div
+                              key={q.id}
+                              className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-slate-900">
+                                  Q{globalIdx + 1} · {q.type}
+                                </span>
+                                <span className="font-bold text-emerald-700">
+                                  Answer: {q.correctAnswer}
+                                </span>
+                              </div>
+                              {q.explanation && (
+                                <p className="text-slate-600 leading-relaxed">{q.explanation}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
               {activePracticeModal === 'writing_model' && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-mono text-emerald-900">
-                    <span className="font-bold">Examiner Breakdown:</span> Model essays demonstrate Band 8+ structures, precise lexical resource, and grammatical variety.
+                <div className="space-y-4">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900">
+                    <span className="font-bold">Practice Resource:</span> Model responses and structural checklists are tucked inside Options for practice mode. In the real IELTS on Computer Writing test, only the prompt and plain-text editor are shown.
                   </div>
-                  <div className="space-y-2 font-mono text-xs">
-                    <div className="font-bold uppercase text-[#0F4C45]">Model Essay &amp; Structure:</div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {([1, 2] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setActiveWritingTask(p)}
+                        className={`px-3 py-1 rounded border text-xs font-semibold cursor-pointer ${
+                          activeWritingTask === p
+                            ? 'bg-[#1E293B] text-white border-[#1E293B]'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        Part {p} ({p === 1 ? '150+ words' : '250+ words'})
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5">
+                    <div className="font-bold uppercase text-[#0F172A]">
+                      Part {activeWritingTask} Band 7–8+ Structure Checklist
+                    </div>
+                    {activeWritingTask === 1 ? (
+                      <ul className="list-disc pl-4 space-y-1 text-slate-700">
+                        <li>Paraphrase the prompt concisely in your opening sentence.</li>
+                        <li>Include a clear overview summarising the main trends or overall purpose.</li>
+                        <li>Group key comparisons logically with accurate data/tone (aim for 165–190 words).</li>
+                      </ul>
+                    ) : (
+                      <ul className="list-disc pl-4 space-y-1 text-slate-700">
+                        <li>State a clear position in your introduction and address every part of the prompt.</li>
+                        <li>Develop 2 focused body paragraphs with specific explanations and examples.</li>
+                        <li>Conclude by synthesising your position without introducing new arguments (aim for 270–310 words).</li>
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="font-bold uppercase text-[#0F172A]">
+                      Part {activeWritingTask} Sample Response:
+                    </div>
                     <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg whitespace-pre-wrap font-sans text-xs sm:text-sm leading-relaxed">
-                      {currentSet.modelEssay || currentSet.task1Model || 'Model essay is available upon test submission.'}
+                      {activeWritingTask === 1
+                        ? currentSet.task1Model || 'Part 1 sample response is available upon submission.'
+                        : currentSet.modelEssay || 'Part 2 sample response is available upon submission.'}
                     </div>
                   </div>
                 </div>

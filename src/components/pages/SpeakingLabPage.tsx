@@ -540,7 +540,7 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
 
   if (!showPracticeLabs) {
     return (
-      <div className="fixed inset-0 z-40 bg-[#F5F7F6] overflow-y-auto">
+      <div className="fixed inset-0 z-40 bg-[#EAEEF2] overflow-hidden">
         <CDIELTSSpeakingSuite
           onExit={onBack}
           onShowToast={onShowToast}

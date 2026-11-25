@@ -128,11 +128,15 @@ function saveUserHiddenPref(hidden: boolean): void {
   }
 }
 
-const ACTIVE_EXAM_ROUTES = new Set([
+const SUPPRESSED_FLOATING_ROUTES = new Set([
+  '/',
+  '/home',
+  '/dashboard',
   '/practice/listening',
   '/practice/reading',
   '/practice/writing',
-  '/practice/speaking'
+  '/practice/speaking',
+  '/practice/mock-tests'
 ]);
 
 function isGlobalActiveExamFlagSet(): boolean {
@@ -147,7 +151,8 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   const [companion, setCompanion] = useState<BarnabyCompanionState>(() => loadBarnabyState(currentPath));
   const [isOpen, setIsOpen] = useState(false);
   const [isHiddenByExamEvent, setIsHiddenByExamEvent] = useState<boolean>(() => isGlobalActiveExamFlagSet());
-  const isActiveExamRoute = ACTIVE_EXAM_ROUTES.has(currentPath);
+  const normalizedRoute = (currentPath || '/').replace(/\/+$/, '') || '/';
+  const isActiveExamRoute = SUPPRESSED_FLOATING_ROUTES.has(normalizedRoute);
   const isHiddenByExam = isHiddenByExamEvent || isActiveExamRoute;
   const [isUserHidden, setIsUserHidden] = useState<boolean>(() => loadUserHiddenPref());
   const [isPageHidden, setIsPageHidden] = useState<boolean>(() =>

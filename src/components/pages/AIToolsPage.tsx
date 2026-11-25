@@ -43,6 +43,7 @@ import { getPreferredVoiceGender } from '../../config/voiceConfig';
 import { SpeechRecognitionService } from '../../services/SpeechRecognitionService';
 import { getMistakes, addMistake, saveMistakes } from '../../utils/vaultStorage';
 import { getCurrentUser } from '../../utils/userStorage';
+import { setBarnabyAnalyzing } from '../../utils/getBarnabyState';
 import { questionEngine } from '../../services/QuestionEngine';
 import { SHADOWING_ITEMS } from '../../data/shadowingSentences';
 import {
@@ -280,6 +281,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
     const spkHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) spkHeaders['Authorization'] = `Bearer ${token}`;
 
+    setBarnabyAnalyzing(true, 'Grading Speaking response against IELTS descriptors...');
     fetch('/api/evaluate-speaking-turn', {
       method: 'POST',
       headers: spkHeaders,
@@ -315,6 +317,9 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
         });
         setSpeakingStep('result');
         onShowToast('AI evaluation unavailable — please retry.');
+      })
+      .finally(() => {
+        setBarnabyAnalyzing(false);
       });
   };
 
@@ -353,6 +358,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       return;
     }
     setIsEvaluatingWriting(true);
+    setBarnabyAnalyzing(true, 'Grading Writing essay against IELTS Band Descriptors...');
     soundManager.playBeep(560, 0.04);
 
     try {
@@ -391,6 +397,7 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       onShowToast('Writing evaluation unavailable — please retry.');
     } finally {
       setIsEvaluatingWriting(false);
+      setBarnabyAnalyzing(false);
     }
   };
 

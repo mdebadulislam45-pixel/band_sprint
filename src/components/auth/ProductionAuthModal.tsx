@@ -196,7 +196,11 @@ export const ProductionAuthModal: React.FC<ProductionAuthModalProps> = ({
   const finalizeAndClose = (user: UserProfile, toastMessage?: string) => {
     const personalizedUser = applySurveyToUser(user);
     saveUser(personalizedUser);
-    if (personalizedUser.id && personalizedUser.id !== 'default_candidate') {
+    if (
+      personalizedUser.id &&
+      personalizedUser.id !== 'default_candidate' &&
+      firebaseSyncService.getCurrentFirebaseUser()?.uid === personalizedUser.id
+    ) {
       const currentSetup = loadExamSetup();
       firebaseSyncService
         .saveStudyStateToFirestore(personalizedUser.id, 'examSetup', {

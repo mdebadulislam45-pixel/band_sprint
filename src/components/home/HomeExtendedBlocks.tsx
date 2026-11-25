@@ -17,7 +17,14 @@ import { DiagnosticResult, DiagnosticSkill } from '../../services/diagnosticResu
 import { getMistakes } from '../../utils/vaultStorage';
 import { speakBritish } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
-import { getStreakState, getWeeklyXp, localDateKey, WEEKLY_XP_GOAL, type StreakState } from '../../services/streakService';
+import {
+  getStreakState,
+  getTodayMinutes,
+  getWeeklyXp,
+  localDateKey,
+  WEEKLY_XP_GOAL,
+  type StreakState
+} from '../../services/streakService';
 import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
 
 interface HomeExtendedBlocksProps {
@@ -45,7 +52,13 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
   useEffect(() => {
     const refreshStreak = () => setStreakState(getStreakState());
     window.addEventListener('bandsprint_streak_updated', refreshStreak);
-    return () => window.removeEventListener('bandsprint_streak_updated', refreshStreak);
+    window.addEventListener('bandsprint_tasks_updated', refreshStreak);
+    window.addEventListener('storage', refreshStreak);
+    return () => {
+      window.removeEventListener('bandsprint_streak_updated', refreshStreak);
+      window.removeEventListener('bandsprint_tasks_updated', refreshStreak);
+      window.removeEventListener('storage', refreshStreak);
+    };
   }, []);
 
   const streakDays = Math.max(streakState.currentStreak, user?.progress?.streakDays || 0);
@@ -157,16 +170,14 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
     return items;
   }, [examHistory, diagnostic]);
 
-  // Today's study minutes estimate
-  const dailyGoalMinutes = diagnostic?.dailyMinutes || 30;
+  // Today's study minutes (atomically synced from Today's Study Tasks + completed exams)
+  const dailyGoalMinutes = diagnostic?.dailyMinutes || user?.progress?.dailyMinutes || 30;
   const todayMinutesStudied = useMemo(() => {
     const nowStr = new Date().toDateString();
-    const todayKey = localDateKey(new Date());
     const todayRecs = examHistory.filter((rec) => new Date(rec.timestamp).toDateString() === nowStr);
-    const xpToday = streakState.xpByDate?.[todayKey] || 0;
     const fromHistory = todayRecs.length * 15;
-    const fromXp = Math.round(xpToday / 5) * 3;
-    return Math.max(fromHistory, fromXp);
+    const fromTasksAndActivities = getTodayMinutes(streakState);
+    return fromHistory + fromTasksAndActivities;
   }, [examHistory, streakState]);
 
   const goalPercent = Math.min(100, Math.round((todayMinutesStudied / dailyGoalMinutes) * 100));
@@ -382,23 +393,39 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
           ))}
         </div>
 
-        {/* Today's Study Goal */}
-        <div className="pt-3 border-t border-[#EEF3F1] dark:border-[#1F8A70]/25 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-[#0E1F1E] dark:text-[#EEF3F1]">Today’s Goal</span>
-            <span className="font-mono font-semibold text-[#0F4C45] dark:text-[#1F8A70] tabular-nums">
-              {todayMinutesStudied} / {dailyGoalMinutes} min
-            </span>
+        {/* Today's Study Goal & Weekly XP Progress Bars */}
+        <div className="pt-3 border-t border-[#EEF3F1] dark:border-[#1F8A70]/25 space-y-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-[#0E1F1E] dark:text-[#EEF3F1]">Today’s Goal</span>
+              <span
+                data-testid="today-goal-minutes"
+                className="font-mono font-semibold text-[#0F4C45] dark:text-[#1F8A70] tabular-nums"
+              >
+                {todayMinutesStudied} / {dailyGoalMinutes} min
+              </span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-[#EEF3F1] dark:bg-[#0B1514] overflow-hidden">
+              <div
+                className="h-full bg-[#1F8A70] rounded-full transition-all duration-300"
+                style={{ width: `${goalPercent}%` }}
+              />
+            </div>
           </div>
-          <div className="w-full h-2 rounded-full bg-[#EEF3F1] dark:bg-[#0B1514] overflow-hidden">
-            <div
-              className="h-full bg-[#1F8A70] rounded-full transition-all duration-300"
-              style={{ width: `${goalPercent}%` }}
-            />
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-[#566664] dark:text-slate-400 font-mono tabular-nums">
-            <span>Weekly XP: {weeklyXp} / {WEEKLY_XP_GOAL}</span>
-            <span>{weeklyXpPercent}%</span>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] text-[#566664] dark:text-slate-400 font-mono tabular-nums">
+              <span data-testid="weekly-xp-counter">
+                Weekly XP: {weeklyXp} / {WEEKLY_XP_GOAL}
+              </span>
+              <span>{weeklyXpPercent}%</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-[#EEF3F1] dark:bg-[#0B1514] overflow-hidden">
+              <div
+                className="h-full bg-[#F59E0B] rounded-full transition-all duration-300"
+                style={{ width: `${weeklyXpPercent}%` }}
+              />
+            </div>
           </div>
         </div>
       </section>

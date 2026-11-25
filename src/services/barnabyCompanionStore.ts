@@ -670,8 +670,8 @@ export function loadBarnabyState(currentPage = '/'): BarnabyCompanionState {
           treatsFed: Number(parsed.treatsFed) || 0,
           quizzesSolved: Number(parsed.quizzesSolved) || 0,
           mood: (parsed.mood as BarnabyMood) || 'happy',
-          activityText: parsed.activityText || 'Hovering near your study desk',
-          freeRoam: parsed.freeRoam !== false,
+          activityText: parsed.activityText || 'Docked beside your BandSprint desk',
+          freeRoam: parsed.freeRoam === true,
           lastInteractionAt: Number(parsed.lastInteractionAt) || Date.now()
         };
       }
@@ -685,8 +685,8 @@ export function loadBarnabyState(currentPage = '/'): BarnabyCompanionState {
     treatsFed: 0,
     quizzesSolved: 0,
     mood: 'happy',
-    activityText: 'Exploring your BandSprint desk',
-    freeRoam: true,
+    activityText: 'Ready at your BandSprint desk',
+    freeRoam: false,
     lastInteractionAt: Date.now()
   };
 }

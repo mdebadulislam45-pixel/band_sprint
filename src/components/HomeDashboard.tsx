@@ -16,9 +16,13 @@ import { loadOnboardingSurvey, WEAK_SKILL_META } from '../services/onboardingSur
 import { DailySprintMissionHub } from './home/DailySprintMissionHub';
 import { AIWeaknessDetector } from './home/AIWeaknessDetector';
 import { HomeExtendedBlocks } from './home/HomeExtendedBlocks';
+import { BarnabyCompanion } from './BarnabyCompanion';
 import { AnimatedNumber, FadeInSection, StaggerGroup, StaggerItem } from './common/MotionPrimitives';
 import { QuickSmartDrillModal } from './daily/QuickSmartDrillModal';
 import { aggregateExamHistory, validateOptionalHalfBand } from '../utils/historyAggregation';
+import { computeDaysInactive } from '../utils/getBarnabyState';
+import { getCompletedMissionsToday, getStreakState } from '../services/streakService';
+import { getMistakes } from '../utils/vaultStorage';
 
 interface HomeDashboardProps {
   user?: UserProfile | null;
@@ -38,20 +42,29 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   const sanitizedFirstName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
   const [diagnostic, setDiagnostic] = useState(() => loadDiagnosticResult());
   const [survey, setSurvey] = useState(() => loadOnboardingSurvey());
+  const [streakState, setStreakState] = useState(() => getStreakState());
+  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>(() => getCompletedMissionsToday());
   const [isSmartDrillOpen, setIsSmartDrillOpen] = useState(false);
 
   useEffect(() => {
     const refresh = () => {
       setDiagnostic(loadDiagnosticResult());
       setSurvey(loadOnboardingSurvey());
+      const nextStreak = getStreakState();
+      setStreakState(nextStreak);
+      setCompletedTaskIds(getCompletedMissionsToday(nextStreak));
     };
     window.addEventListener('bandsprint_cloud_sync_updated', refresh);
     window.addEventListener('bandsprint_diagnostic_saved', refresh);
     window.addEventListener('bandsprint_onboarding_survey_saved', refresh);
+    window.addEventListener('bandsprint_streak_updated', refresh);
+    window.addEventListener('bandsprint_tasks_updated', refresh);
     return () => {
       window.removeEventListener('bandsprint_cloud_sync_updated', refresh);
       window.removeEventListener('bandsprint_diagnostic_saved', refresh);
       window.removeEventListener('bandsprint_onboarding_survey_saved', refresh);
+      window.removeEventListener('bandsprint_streak_updated', refresh);
+      window.removeEventListener('bandsprint_tasks_updated', refresh);
     };
   }, []);
 
@@ -101,6 +114,46 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
     if (!key) return null;
     return WEAK_SKILL_META[key]?.label || null;
   }, [diagnostic, surveyWeakest]);
+
+  const topWeakness = useMemo(() => {
+    try {
+      const unresolved = getMistakes().filter((m) => !m.mastered);
+      if (unresolved.length > 0) {
+        const counts = new Map<string, number>();
+        for (const item of unresolved) {
+          const label = (item.questionType || item.module || '').trim();
+          if (!label) continue;
+          counts.set(label, (counts.get(label) || 0) + 1);
+        }
+        let bestLabel: string | null = null;
+        let bestCount = 0;
+        counts.forEach((count, label) => {
+          if (count > bestCount) {
+            bestCount = count;
+            bestLabel = label;
+          }
+        });
+        if (bestLabel) return bestLabel;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return weakestLabel;
+  }, [weakestLabel, completedTaskIds.length]);
+
+  const daysInactive = useMemo(() => {
+    const history = user?.progress?.examHistory || [];
+    const latestExamTs = history.reduce<number | null>(
+      (maxTs, item) =>
+        typeof item.timestamp === 'number' && (maxTs === null || item.timestamp > maxTs)
+          ? item.timestamp
+          : maxTs,
+      null
+    );
+    return computeDaysInactive(streakState.lastActiveDate, latestExamTs);
+  }, [streakState.lastActiveDate, user?.progress?.examHistory]);
+
+  const allDailyTasksCompleted = completedTaskIds.length >= 3;
 
   // Primary action decision: Diagnostic first (contextualized to survey goals), or Priority Weak Skill / Resume / Study Plan
   const primaryHeroAction = useMemo(() => {
@@ -270,10 +323,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
         </div>
       </section>
 
-      {/* Barnaby now roams freely above the Dashboard via the independent FloatingBarnaby layer */}
-
       {/* =====================================================================
-          2. MAIN 12-COLUMN WORKSPACE (IELTSly.ai Action Center + Sidebar)
+          2. MAIN 12-COLUMN WORKSPACE (BandSprint Action Center + Right Column)
       ===================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left 8 Columns: Today's Study Sprint + Unified 4-Skill Matrix */}
@@ -293,8 +344,20 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
           />
         </FadeInSection>
 
-        {/* Right 4 Columns: Weekly Rhythm & Goal + Study Plan + Mistake Vault + Word of Day */}
+        {/* Right 4 Columns: Barnaby Companion + Weekly Momentum + Study Plan + Mistake Vault + Word of Day */}
         <FadeInSection immediate delay={0.14} y={10} className="lg:col-span-4 space-y-6">
+          <BarnabyCompanion
+            userName={sanitizedFirstName}
+            currentEstimate={currentBandEstimate ? currentBandEstimate.value : null}
+            targetBand={targetBand}
+            daysInactive={daysInactive}
+            allDailyTasksCompleted={allDailyTasksCompleted}
+            topWeakness={topWeakness}
+            currentPath="/"
+            examMode={intendedFormat}
+            onNavigate={onNavigate}
+          />
+
           <HomeExtendedBlocks
             section="sidebar"
             user={user}

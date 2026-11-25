@@ -13,7 +13,7 @@ import {
   setPersistence,
   browserLocalPersistence
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, type Firestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Use explicit VITE_FIREBASE_AUTH_DOMAIN if configured; otherwise use the provisioned Firebase authDomain
@@ -43,8 +43,19 @@ const resolvedConfig = {
 // Initialize Firebase App
 export const app = initializeApp(resolvedConfig);
 
-// Initialize Cloud Firestore using the configured database ID
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Initialize Cloud Firestore using the configured database ID with auto-detected long polling
+// to avoid WebChannel "client is offline" stalls in preview iframes and restricted networks.
+let dbInstance: Firestore;
+try {
+  dbInstance = initializeFirestore(
+    app,
+    { experimentalAutoDetectLongPolling: true },
+    firebaseConfig.firestoreDatabaseId
+  );
+} catch {
+  dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+}
+export const db = dbInstance;
 
 // Initialize Firebase Authentication & set local persistence
 export const auth = getAuth(app);

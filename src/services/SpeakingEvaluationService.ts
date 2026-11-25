@@ -26,6 +26,7 @@ import {
   roundOfficialIELTSBand
 } from '../utils/scoringIntegrity';
 import { getStoredSessionToken } from './authService';
+import { setBarnabyAnalyzing } from '../utils/getBarnabyState';
 
 export interface SpeakingInputGateResult {
   isValidAttempt: boolean;
@@ -787,6 +788,7 @@ export async function evaluateSingleSpeakingTurn(
     actionableTips: [reasonEn]
   });
 
+  setBarnabyAnalyzing(true, 'Grading Speaking response against IELTS descriptors...');
   try {
     const token = getStoredSessionToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -923,6 +925,8 @@ export async function evaluateSingleSpeakingTurn(
       'AI স্পিকিং মূল্যায়ন সার্ভারের সাথে সংযোগ করা যায়নি। কোনো আনুমানিক ভুয়া ব্যান্ড স্কোর তৈরি করা হয়নি — অনুগ্রহ করে পুনরায় চেষ্টা করুন।',
       { canRetry: true }
     );
+  } finally {
+    setBarnabyAnalyzing(false);
   }
 }
 

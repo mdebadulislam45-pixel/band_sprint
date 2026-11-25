@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Home,
   Target,
@@ -8,6 +8,7 @@ import {
   Sun,
   Moon,
   LogOut,
+  Compass,
   LucideIcon
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -40,6 +41,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   onSignOut
 }) => {
   const { resolvedTheme, toggleTheme } = useTheme();
+  const [sidebarBadgeFailed, setSidebarBadgeFailed] = useState(false);
 
   const navItems: NavDestination[] = [
     { id: 'home', label: 'Home', icon: Home, path: '/' },
@@ -128,11 +130,26 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
 
       {/* Editorial Note & Appearance Controls */}
       <div className="space-y-3 pt-4 border-t border-[#D3DDDA] dark:border-[#1F8A70]/35">
-        <div className="rounded-xl bg-white dark:bg-[#0B1514] p-3.5 border border-[#D3DDDA] dark:border-[#1F8A70]/30">
-          <div className="text-[10px] font-mono font-semibold text-[#566664] dark:text-slate-400 tracking-wide">
-            Study Tip
+        <div className="rounded-xl bg-white dark:bg-[#0B1514] p-3.5 border border-[#134E41]/15 dark:border-[#1F8A70]/30">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-white border border-[#134E41]/25 ring-1 ring-[#F59E0B]/60 flex items-center justify-center overflow-hidden shrink-0">
+              {!sidebarBadgeFailed ? (
+                <img
+                  src="/assets/barnaby/studying.png"
+                  alt="Barnaby study tip badge"
+                  referrerPolicy="no-referrer"
+                  onError={() => setSidebarBadgeFailed(true)}
+                  className="w-full h-full object-contain p-0.5"
+                />
+              ) : (
+                <Compass className="w-3.5 h-3.5 text-[#F59E0B]" aria-hidden="true" />
+              )}
+            </div>
+            <div className="text-[11px] font-semibold text-[#134E41] dark:text-[#EEF3F1] tracking-wide">
+              Study Tip
+            </div>
           </div>
-          <p className="font-display text-xs font-medium text-[#0E1F1E] dark:text-[#EEF3F1] leading-relaxed italic mt-1">
+          <p className="font-display text-xs font-medium text-[#0E1F1E] dark:text-[#EEF3F1] leading-relaxed italic mt-2">
             “Precision in vocabulary and clarity of thought outscore memorized complexity every time.”
           </p>
         </div>

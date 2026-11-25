@@ -631,21 +631,23 @@ class FirebaseSyncService {
           }
         });
 
-        // Push local-only study states to Firestore on first sign-in
-        if (!remoteKinds.has('diagnostic')) {
-          const localDiag = loadDiagnosticResult();
-          if (localDiag) {
-            this.saveStudyStateToFirestore(userId, 'diagnostic', localDiag).catch(() => {});
+        // Push local-only study states to Firestore once server snapshot has arrived
+        if (!snapshot.metadata.fromCache) {
+          if (!remoteKinds.has('diagnostic')) {
+            const localDiag = loadDiagnosticResult();
+            if (localDiag) {
+              this.saveStudyStateToFirestore(userId, 'diagnostic', localDiag).catch(() => {});
+            }
           }
-        }
-        if (!remoteKinds.has('examSetup')) {
-          const localSetup = loadExamSetup();
-          this.saveStudyStateToFirestore(userId, 'examSetup', localSetup).catch(() => {});
-        }
-        if (!remoteKinds.has('spellingProgress')) {
-          const localSp = loadSpellingProgress();
-          if (localSp.attemptedCount > 0 || localSp.masteredWords.length > 0) {
-            this.saveStudyStateToFirestore(userId, 'spellingProgress', localSp).catch(() => {});
+          if (!remoteKinds.has('examSetup')) {
+            const localSetup = loadExamSetup();
+            this.saveStudyStateToFirestore(userId, 'examSetup', localSetup).catch(() => {});
+          }
+          if (!remoteKinds.has('spellingProgress')) {
+            const localSp = loadSpellingProgress();
+            if (localSp.attemptedCount > 0 || localSp.masteredWords.length > 0) {
+              this.saveStudyStateToFirestore(userId, 'spellingProgress', localSp).catch(() => {});
+            }
           }
         }
 
@@ -709,29 +711,19 @@ class FirebaseSyncService {
     }
 
     try {
-      const existingSnap = await getDoc(docRef);
-      if (existingSnap.exists()) {
-        await setDoc(
-          docRef,
-          {
-            id: kind,
-            userId,
-            kind,
-            payload,
-            updatedAt: nowIso
-          },
-          { merge: true }
-        );
-      } else {
-        await setDoc(docRef, {
+      // Use direct merge write instead of pre-flight getDoc so writes queue
+      // reliably even while Firestore is connecting or temporarily offline.
+      await setDoc(
+        docRef,
+        {
           id: kind,
           userId,
           kind,
           payload,
-          createdAt: nowIso,
           updatedAt: nowIso
-        });
-      }
+        },
+        { merge: true }
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -741,6 +733,9 @@ class FirebaseSyncService {
    * Hydrate historical test submissions into user.progress.examHistory on sign-in
    */
   public async hydrateSubmissionsHistory(userId: string): Promise<void> {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return;
+    }
     const colRef = collection(db, 'users', userId, 'submissions');
     const q = query(colRef, where('userId', '==', userId));
     const path = `users/${userId}/submissions`;
@@ -784,6 +779,10 @@ class FirebaseSyncService {
         }
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+      if (msg.includes('client is offline') || msg.includes('unavailable')) {
+        return;
+      }
       handleFirestoreError(error, OperationType.LIST, path);
     }
   }
@@ -878,15 +877,7 @@ class FirebaseSyncService {
     };
 
     try {
-      const existingSnap = await getDoc(docRef);
-      if (existingSnap.exists()) {
-        await setDoc(docRef, baseFields, { merge: true });
-      } else {
-        await setDoc(docRef, {
-          ...baseFields,
-          createdAt: new Date(mistake.timestamp || Date.now()).toISOString()
-        });
-      }
+      await setDoc(docRef, baseFields, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }

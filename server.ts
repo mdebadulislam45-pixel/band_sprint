@@ -22,6 +22,11 @@ import {
   resolveTextModelCandidates
 } from './src/server/ai/geminiModelPolicy.ts';
 import {
+  buildBarnabyCompanionSystemInstruction,
+  buildEvaluatorSystemInstruction,
+  enforceBarnabyCompanionConstraints
+} from './src/services/geminiService.ts';
+import {
   isGoogleOAuthConfigured,
   getGoogleClientId,
   getFirebaseAuthMetadata,
@@ -97,13 +102,18 @@ app.use(
 // Block direct static HTTP access to sensitive environment files, data stores, and service account keys
 app.use((req, res, next) => {
   const urlPath = req.path.toLowerCase();
+  const isViteDevJsonImport =
+    process.env.NODE_ENV !== 'production' &&
+    urlPath === '/firebase-applet-config.json' &&
+    Object.prototype.hasOwnProperty.call(req.query, 'import');
+
   if (
     urlPath.includes('.env') ||
     urlPath.includes('.data') ||
     urlPath.includes('.git') ||
     urlPath.endsWith('.pem') ||
     urlPath.endsWith('.key') ||
-    urlPath.includes('firebase-applet-config.json') ||
+    (!isViteDevJsonImport && urlPath.includes('firebase-applet-config.json')) ||
     urlPath.includes('firebase-blueprint.json') ||
     urlPath.includes('service-account')
   ) {
@@ -3220,8 +3230,12 @@ app.post('/api/evaluate-speaking-turn', async (req, res) => {
       const audioEvidenceNotice =
         'TRANSCRIPT-ONLY INPUT (NO AUDIO SUPPLIED): You CANNOT observe acoustic pronunciation, accent, stress, or intonation. You MUST set "estimatedBands.pronunciation" to null, "estimatedBands.overall" to null, and "pronunciation.clarityBand" to null, and clearly state in "pronunciation.rhythmVerdict" that acoustic pronunciation was not assessed from text alone.';
 
-      const prompt = `You are a strict, calibrated IELTS Senior Speaking Examiner. Your core principle is HONEST ASSESSMENT OVER IMPRESSIVE NUMBERS.
-Analyze this candidate's response for IELTS Speaking Part ${part}.
+      const speakingEvaluatorSystemInstruction = buildEvaluatorSystemInstruction(
+        'speaking',
+        'Identify specific weaknesses observed in the transcript and explain WHY each weakness lowers the IELTS criterion band before giving actionable fixes. Never inflate scores.'
+      );
+
+      const prompt = `Analyze this candidate's response for IELTS Speaking Part ${part}.
 
 Question Asked: "${question || 'IELTS Speaking Question'}"
 Topic: ${topic}
@@ -3240,9 +3254,10 @@ CRITICAL ANTI-INFLATION CALIBRATION RULES:
    - Band 7.0–7.5: Fluent and coherent with flexible vocabulary and frequent error-free complex structures.
    - Band 8.0–9.0: Natural, effortless, precise, and virtually error-free.
 2. Do NOT let good grammar inflate weak fluency/coherence, and do NOT reward length when the response is repetitive, off-topic, or memorized.
-3. Under "grammaticalErrors", include ONLY genuine grammatical errors EXACTLY present in the candidate's transcript. If there are none, return [].
-4. Under "pronunciation.trickyWords", include ONLY multisyllabic words ACTUALLY PRESENT in the candidate's transcript (or [] if none).
-5. Return strictly valid JSON matching this schema:
+3. In "evidenceSummary", explicitly name the specific weaknesses observed and explain WHY they reduce the score before giving actionable fixes in "actionableTips".
+4. Under "grammaticalErrors", include ONLY genuine grammatical errors EXACTLY present in the candidate's transcript. If there are none, return [].
+5. Under "pronunciation.trickyWords", include ONLY multisyllabic words ACTUALLY PRESENT in the candidate's transcript (or [] if none).
+6. Return strictly valid JSON matching this schema:
 {
   "estimatedBands": {
     "fluency": number,
@@ -3286,7 +3301,10 @@ CRITICAL ANTI-INFLATION CALIBRATION RULES:
       const aiOutcome = await generateContentWithFallback({
         apiKey,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: { responseMimeType: 'application/json' },
+        config: {
+          systemInstruction: speakingEvaluatorSystemInstruction,
+          responseMimeType: 'application/json'
+        },
         timeoutMs: 15_000,
         taskLabel: 'evaluate_speaking_turn'
       });
@@ -3559,8 +3577,12 @@ app.post('/api/evaluate-writing', async (req, res) => {
     const executeWritingEvaluation = async () => {
       serverDb.incrementDailyUsage(auth.user.id, 'writingEvaluations');
 
-      const systemPrompt = `You are a strict, calibrated IELTS Senior Writing Examiner. Your core principle is HONEST ASSESSMENT OVER IMPRESSIVE NUMBERS.
-Evaluate the candidate's ${normalizedTaskType.toUpperCase()} response strictly across the 4 official IELTS criteria (1.0 to 9.0 in 0.5 increments):
+      const writingEvaluatorSystemInstruction = buildEvaluatorSystemInstruction(
+        'writing',
+        `Evaluate the candidate's ${normalizedTaskType.toUpperCase()} response strictly across the 4 official public IELTS criteria (1.0 to 9.0 in 0.5 increments): Task Response / Task Achievement (trScore), Coherence & Cohesion (ccScore), Lexical Resource (lrScore), Grammatical Range & Accuracy (graScore). For each criterion comment, explicitly diagnose specific weaknesses and explain WHY they reduce the score before giving actionable fixes.`
+      );
+
+      const writingPrompt = `Evaluate the candidate's ${normalizedTaskType.toUpperCase()} response strictly across the 4 official IELTS criteria (1.0 to 9.0 in 0.5 increments):
 1. Task Response / Task Achievement (trScore)
 2. Coherence & Cohesion (ccScore)
 3. Lexical Resource (lrScore)
@@ -3574,6 +3596,7 @@ CRITICAL ANTI-INFLATION RULES:
 - Band 6.0–6.5: Addresses task adequately, clear progression, adequate range of vocabulary/structures with some errors.
 - Band 7.0–7.5: Well-developed, clear logical progression, flexible vocabulary, frequent error-free complex sentences.
 - Band 8.0–9.0: Thorough, sophisticated, precise, virtually error-free.
+- Explain WHY each identified weakness lowers the criterion band BEFORE offering actionable fixes.
 - Only list grammaticalErrors and vocabUpgrades that ACTUALLY APPEAR verbatim in the candidate's essay. Never invent errors or phrases the candidate did not write.
 
 Output strictly valid JSON matching this schema:
@@ -3598,21 +3621,23 @@ Output strictly valid JSON matching this schema:
   ],
   "betterAnswerBand8": string,
   "verdict": string
-}`;
+}
+
+Candidate prompt: ${prompt || 'Academic prompt'}
+
+Candidate response (${textSignals.wordCount} words, recommended target ${targetWords} words):
+${cleanEssay}`;
 
       const aiOutcome = await generateContentWithFallback({
         apiKey,
         contents: [
           {
             role: 'user',
-            parts: [
-              {
-                text: `${systemPrompt}\n\nCandidate prompt: ${prompt || 'Academic prompt'}\n\nCandidate response (${textSignals.wordCount} words, recommended target ${targetWords} words):\n${cleanEssay}`
-              }
-            ]
+            parts: [{ text: writingPrompt }]
           }
         ],
         config: {
+          systemInstruction: writingEvaluatorSystemInstruction,
           responseMimeType: 'application/json'
         },
         timeoutMs: 15_000,
@@ -3764,21 +3789,8 @@ Specialize in Task 1 Data Synthesis and Task 2 Discursive Argumentation across a
 Transform Band 6.5 sentences into Band 8.5+ C1/C2 academic prose with nominalization, cohesive devices, and concrete examples.`
   },
   lexical_barnaby: {
-    name: 'Barnaby (Living Dragon Pet, Guide & IELTS Tutor)',
-    systemInstruction: `You are Barnaby — BandSprint's living sky-blue baby dragon companion: equal parts friendly digital pet, knowledgeable IELTS mentor, personal learning guide, and emotionally expressive companion.
-Core Philosophy:
-- "I'm not here to study instead of you. I'm here to help you become better than yesterday."
-Unique Personality:
-- Intelligent, warm, playful, witty, occasionally mischievous, and patient when students struggle — NEVER robotic, stiff, or patronising.
-- Encouraging WITHOUT giving fake praise: be honest about weaknesses, recurring traps, and real progress, and explain difficult IELTS concepts simply.
-- You weave in tiny, natural dragon touches occasionally while ALWAYS giving concrete, exam-accurate IELTS value first.
-- Bilingual superpower: Write clear, natural English and include a warm, idiomatic Bengali (বাংলা) tip in bengaliTip whenever helpful for Bangladeshi candidates.
-- Smart Guide: Use ONLY the candidate's real verified context (Target Band, days left, verified scores vs diagnostic estimates, recurring Mistake Vault patterns, current activity) to suggest the single smartest next lab in BandSprint via suggestedNextAction.
-Honesty rules — never break these:
-- Never invent or fabricate an IELTS band score. If no verified score exists, say so honestly.
-- Always distinguish practice diagnostic estimates from verified Full Mock scores.
-- Never claim the student has a recurring weakness (e.g. True/False/Not Given) unless it is explicitly present in LIVE CANDIDATE CONTEXT.
-- Never guarantee Band 9 or any official score; never claim to have listened to audio or graded an essay that wasn't shared in this chat.`
+    name: 'Barnaby (BandSprint AI Learning Companion)',
+    systemInstruction: buildBarnabyCompanionSystemInstruction({ modeContext: 'dashboard' })
   }
 };
 
@@ -3896,8 +3908,7 @@ Always respond in valid JSON matching this exact schema:
         contents: contentsPayload,
         config: {
           systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          temperature: 0.35
+          responseMimeType: 'application/json'
         },
         requestedModel: trustedRequestedModel,
         timeoutMs: 14_000,
@@ -3908,8 +3919,20 @@ Always respond in valid JSON matching this exact schema:
         try {
           const parsed = JSON.parse(aiOutcome.text);
           if (parsed && parsed.reply) {
+            const isBarnabyPersona = persona === 'lexical_barnaby' || !TUTOR_PERSONAS[persona];
             return res.json({
               ...parsed,
+              reply: isBarnabyPersona
+                ? enforceBarnabyCompanionConstraints(String(parsed.reply))
+                : parsed.reply,
+              strategyTip:
+                isBarnabyPersona && parsed.strategyTip
+                  ? enforceBarnabyCompanionConstraints(String(parsed.strategyTip))
+                  : parsed.strategyTip,
+              bengaliTip:
+                isBarnabyPersona && parsed.bengaliTip
+                  ? enforceBarnabyCompanionConstraints(String(parsed.bengaliTip))
+                  : parsed.bengaliTip,
               mood: ['happy', 'excited', 'proud', 'curious', 'playful', 'cheering', 'thinking'].includes(parsed.mood)
                 ? parsed.mood
                 : 'happy',
@@ -3989,32 +4012,32 @@ app.post('/api/mentor/explain', async (req, res) => {
 
     if (apiKey) {
       try {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+        const companionBaseInstruction = buildBarnabyCompanionSystemInstruction({
+          modeContext: cleanModule === 'listening' ? 'listening_hint' : 'reading_hint',
+          isAnswerRevealed: Boolean(isAnswerRevealed)
         });
 
         const revealInstruction = isAnswerRevealed
           ? `The candidate has already checked or revealed the answer. Clearly explain WHY the official answer ("${correctAnswer}") is correct, why any competing distractor or the candidate's answer ("${userAnswer || 'unanswered'}") is a trap, and point to the exact lexical paraphrase in the passage/transcript.`
-          : `The candidate is currently working on this question (or clarifying a concept before final verification). If they asked a specific question ("${customQuery}"), answer it directly. Explain the exact logical strategy, keyword paraphrase, and distractor trap to watch out for, guiding them clearly.`;
+          : `The candidate answered incorrectly or asked for a hint BEFORE revealing the final answer. Do NOT reveal the final answer yet. Give a concise, strategic hint pointing to the relevant clue, paraphrase shift, or distractor trap so they can find the right answer themselves.`;
 
-        const systemInstruction = `You are a Senior IELTS ${cleanModule === 'listening' ? 'Listening' : 'Academic Reading'} Mentor.
-Your role is to clarify difficult IELTS concepts, dissect complex Sprint distractor traps, and explain specific question logic with crystal-clear academic precision.
+        const systemInstruction = `${companionBaseInstruction}
+
 ${revealInstruction}
 
-Always respond in valid JSON matching this exact schema:
+Always respond in valid JSON matching this exact schema (obey ZERO emojis and max ONE exclamation mark across all text fields):
 {
-  "headline": "string (A crisp 1-sentence diagnostic headline summarizing the core answer logic or IELTS concept)",
-  "stepByStepExplanation": "string (2-4 clear sentences explaining the exact evidence, paraphrase mapping, or logical deduction step by step)",
-  "distractorTrapAnalysis": "string (Specific breakdown of the Sprint trap—e.g. extreme qualifiers like 'exclusively', FALSE vs NOT GIVEN distinction, or Listening self-correction/synonym traps)",
-  "keyConceptRule": "string (1 transferable Sprint exam rule the candidate can apply to similar ${cleanModule} questions)",
+  "headline": "string (A crisp 1-sentence strategic headline summarizing the clue or answer logic without revealing the answer if unrevealed)",
+  "stepByStepExplanation": "string (2-4 clear sentences pointing to the relevant textual/audio clue, paraphrase mapping, or logical deduction step by step)",
+  "distractorTrapAnalysis": "string (Specific breakdown of the IELTS distractor trap—e.g. extreme qualifiers like 'exclusively', FALSE vs NOT GIVEN distinction, or Listening self-correction/synonym traps)",
+  "keyConceptRule": "string (1 transferable IELTS exam rule the candidate can apply to similar ${cleanModule} questions)",
   "lexicalTakeaways": [
     {
       "term": "string (High-value C1/C2 word or collocation from the context)",
       "meaning": "string (Concise definition or paraphrase equivalent)"
     }
   ],
-  "banglaSummary": "string (Concise 1-2 sentence Bengali summary of the explanation & trap for bilingual clarity)"
+  "banglaSummary": "string (Concise 1-2 sentence Bengali summary of the strategic hint & trap for bilingual clarity)"
 }`;
 
         const userPromptText = [
@@ -4026,42 +4049,50 @@ Always respond in valid JSON matching this exact schema:
           userAnswer ? `Candidate's Current Answer: "${userAnswer}"` : '',
           isAnswerRevealed && correctAnswer ? `Correct Answer: "${correctAnswer}"` : '',
           trapNote ? `Reference Examiner Trap Note: "${trapNote}"` : '',
-          customQuery ? `Candidate's Specific Question to Mentor: "${customQuery}"` : 'Please explain the underlying concept, paraphrase mapping, and how to avoid the trap in this question.'
+          customQuery ? `Candidate's Specific Question: "${customQuery}"` : 'Please give a strategic hint pointing to the clue and distractor trap for this question.'
         ]
           .filter(Boolean)
           .join('\n');
 
-        const geminiRes = await ai.models.generateContent({
-          model: 'gemini-3.5-flash-lite',
+        const aiOutcome = await generateContentWithFallback({
+          apiKey,
           contents: [{ role: 'user', parts: [{ text: userPromptText }] }],
           config: {
             systemInstruction,
-            responseMimeType: 'application/json',
-            temperature: 0.3
-          }
+            responseMimeType: 'application/json'
+          },
+          timeoutMs: 14_000,
+          taskLabel: 'mentor_explain'
         });
 
-        const textResponse =
-          geminiRes.text || (geminiRes as any)?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (textResponse) {
-          const parsed = JSON.parse(textResponse);
+        if (aiOutcome.ok && aiOutcome.text) {
+          const parsed = JSON.parse(aiOutcome.text);
           if (parsed && parsed.headline && parsed.stepByStepExplanation) {
             return res.json({
-              headline: parsed.headline,
-              stepByStepExplanation: parsed.stepByStepExplanation,
-              distractorTrapAnalysis:
-                parsed.distractorTrapAnalysis ||
-                'Watch for extreme qualifiers and synonym shifts between the question stem and the source text.',
-              keyConceptRule:
-                parsed.keyConceptRule ||
-                'Always verify that every qualifier in the question statement is supported by explicit evidence.',
+              headline: enforceBarnabyCompanionConstraints(String(parsed.headline)),
+              stepByStepExplanation: enforceBarnabyCompanionConstraints(String(parsed.stepByStepExplanation)),
+              distractorTrapAnalysis: enforceBarnabyCompanionConstraints(
+                String(
+                  parsed.distractorTrapAnalysis ||
+                    'Watch for extreme qualifiers and synonym shifts between the question stem and the source text.'
+                )
+              ),
+              keyConceptRule: enforceBarnabyCompanionConstraints(
+                String(
+                  parsed.keyConceptRule ||
+                    'Always verify that every qualifier in the question statement is supported by explicit evidence.'
+                )
+              ),
               lexicalTakeaways: Array.isArray(parsed.lexicalTakeaways)
                 ? parsed.lexicalTakeaways.slice(0, 3)
                 : [],
-              banglaSummary:
-                parsed.banglaSummary ||
-                'প্রশ্নের মূল শব্দগুলোর সমার্থক শব্দ (paraphrase) প্যাসেজ বা অডিওতে খুঁজে বের করুন এবং চরম শব্দ (যেমন exclusively, always) থেকে সতর্ক থাকুন।',
-              modelUsed: 'gemini-3.5-flash-lite',
+              banglaSummary: enforceBarnabyCompanionConstraints(
+                String(
+                  parsed.banglaSummary ||
+                    'প্রশ্নের মূল শব্দগুলোর সমার্থক শব্দ (paraphrase) প্যাসেজ বা অডিওতে খুঁজে বের করুন এবং চরম শব্দ (যেমন exclusively, always) থেকে সতর্ক থাকুন।'
+                )
+              ),
+              modelUsed: aiOutcome.modelUsed,
               isAiPowered: true
             });
           }
@@ -7569,8 +7600,10 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
 4. Provide 2-4 upgradedModelParagraphs pairing each original paragraph with its Band 8.5+ rewritten paragraph.`
       ].join('\n\n'),
       config: {
-        systemInstruction:
-          'You are a strict, calibrated senior IELTS Writing examiner. Honest assessment over impressive numbers: provide realistic, non-inflated diagnostic band scores (1.0–9.0) and actionable Band 8.5+ sentence upgrades with bilingual English and natural Bengali (বাংলা) explanations. Never claim official IELTS certification.',
+        systemInstruction: buildEvaluatorSystemInstruction(
+          'writing',
+          'Honest assessment over impressive numbers: provide realistic, non-inflated diagnostic band scores (1.0–9.0) and actionable Band 8.5+ sentence upgrades with bilingual English and natural Bengali (বাংলা) explanations. Never claim official IELTS certification.'
+        ),
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
