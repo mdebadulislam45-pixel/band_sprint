@@ -222,6 +222,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showListeningScript, setShowListeningScript] = useState(false);
+  const [activePracticeModal, setActivePracticeModal] = useState<'transcript' | 'reading_guide' | 'writing_model' | null>(null);
 
   // Warning Modals (10-minute and 5-minute mandatory alerts)
   const [hasShown10mWarning, setHasShown10mWarning] = useState(false);
@@ -2022,6 +2023,15 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               >
                 {showListeningScript ? 'Hide Context' : 'Context'}
               </button>
+              <button
+                type="button"
+                onClick={() => setActivePracticeModal('transcript')}
+                className="px-2 py-1 rounded border text-[11px] font-bold cursor-pointer whitespace-nowrap bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 flex items-center gap-1"
+                title="View Audio Transcript & Explanations"
+              >
+                <FileText className="w-3 h-3" />
+                <span>Transcript</span>
+              </button>
             </div>
           </div>
 
@@ -2128,9 +2138,20 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           {activeSkill === 'reading' && (
             <div className="space-y-4">
               <div className={`border-b ${theme.border} pb-2.5 flex flex-wrap items-center justify-between gap-2 font-mono`}>
-                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                  Reading Practice Set {selectedSetIdx + 1} of {MOCK_EXAM_SETS.length}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                    Reading Practice Set {selectedSetIdx + 1} of {MOCK_EXAM_SETS.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActivePracticeModal('reading_guide')}
+                    className="px-2 py-0.5 text-[11px] font-mono font-bold rounded border cursor-pointer bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 flex items-center gap-1"
+                    title="View Passage Guide & Vocabulary"
+                  >
+                    <BookOpen className="w-3 h-3" />
+                    <span>Guide</span>
+                  </button>
+                </div>
                 <div className="flex items-center gap-1 font-mono text-xs">
                   {MOCK_EXAM_SETS.map((set, pIdx) => (
                     <button
@@ -2240,9 +2261,20 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           {activeSkill === 'writing' && (
             <div className="space-y-4">
               <div className={`border-b ${theme.border} pb-2.5 flex items-center justify-between font-mono`}>
-                <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
-                  Academic Writing · Task {activeWritingTask}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-mono font-bold uppercase ${colorScheme === 'standard' ? 'text-[#0F4C45]' : ''}`}>
+                    Academic Writing · Task {activeWritingTask}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActivePracticeModal('writing_model')}
+                    className="px-2 py-0.5 text-[11px] font-mono font-bold rounded border cursor-pointer bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 flex items-center gap-1"
+                    title="View Model Essay & Examiner Guide"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    <span>Model Essay</span>
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 font-mono">
                   <button
                     onClick={() => setActiveWritingTask(1)}
@@ -2361,6 +2393,164 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 <span>4-criterion diagnostic evaluation on submit</span>
               </div>
             </div>
+          ) : activeSkill === 'listening' ? (
+            <div className="flex-1 flex flex-col space-y-4 font-mono overflow-y-auto pr-2">
+              <div className={`p-3 rounded-lg border ${theme.border} ${theme.cardBg} flex items-center justify-between gap-2`}>
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-[#0F4C45]">
+                    Listening Part {listeningSection} of 4 (Questions {(listeningSection - 1) * 10 + 1}–{listeningSection * 10})
+                  </div>
+                  <div className="text-xs text-slate-600 font-sans mt-0.5">
+                    Preview all questions during pre-read and answer as you listen. Audio plays once.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3, 4].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => {
+                        setListeningSection(s as 1 | 2 | 3 | 4);
+                        soundManager.playBeep(520, 0.02);
+                      }}
+                      className={`px-2.5 py-1 text-xs font-bold rounded border cursor-pointer ${
+                        listeningSection === s ? theme.activeTile : `${theme.cardBg} ${theme.border}`
+                      }`}
+                    >
+                      Part {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6 pb-6">
+                {skillQuestions.slice((listeningSection - 1) * 10, listeningSection * 10).map((q, qIndex) => {
+                  const absoluteQNum = (listeningSection - 1) * 10 + qIndex + 1;
+                  const isFlagged = flaggedQuestions.has(q.id);
+                  const isDisabled = isListeningLocked;
+
+                  return (
+                    <div key={q.id} className={`p-4 rounded-xl border ${theme.border} ${theme.cardBg} space-y-3 shadow-sm`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-mono font-bold uppercase text-[#0F4C45]">
+                          Question {absoluteQNum}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <label
+                            className="flex items-center gap-1.5 text-xs font-mono font-bold cursor-pointer px-2 py-0.5 border rounded"
+                            title="Flag question for review"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isFlagged}
+                              onChange={() => toggleFlag(q.id)}
+                              className="accent-[#D97706] w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span>Flag</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="font-semibold text-sm sm:text-base font-sans leading-snug">
+                        {q.prompt}
+                      </div>
+
+                      {q.options && q.options.length > 0 ? (
+                        <div className="space-y-2 pt-1">
+                          {q.options.map((opt) => {
+                            const optionLetter = opt.split('.')[0]?.trim() || opt;
+                            const isSelected =
+                              userAnswers[q.id] === opt ||
+                              userAnswers[q.id] === optionLetter;
+
+                            return (
+                              <label
+                                key={opt}
+                                onClick={() => {
+                                  if (isDisabled) return;
+                                  setUserAnswers((prev) => ({
+                                    ...prev,
+                                    [q.id]: optionLetter
+                                  }));
+                                  soundManager.playBeep(540, 0.03);
+                                }}
+                                className={`flex items-center gap-3 p-3 border rounded-lg font-mono transition ${
+                                  isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                                } ${
+                                  isSelected
+                                    ? `${theme.activeTile} font-bold`
+                                    : `${theme.cardBg} ${theme.border} hover:opacity-90 font-medium`
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  disabled={isDisabled}
+                                  name={`q_${q.id}`}
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  className="w-4 h-4 accent-[#0F4C45] cursor-pointer shrink-0"
+                                />
+                                <span className="font-mono font-bold text-xs px-1.5 py-0.5 border border-current rounded shrink-0">
+                                  {optionLetter}
+                                </span>
+                                <span className="text-xs sm:text-sm font-sans">{opt.replace(/^[A-Z]\.\s*/, '')}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 pt-1">
+                          <input
+                            type="text"
+                            disabled={isDisabled}
+                            value={userAnswers[q.id] || ''}
+                            onChange={(e) =>
+                              setUserAnswers((prev) => ({
+                                ...prev,
+                                [q.id]: e.target.value
+                              }))
+                            }
+                            placeholder={isDisabled ? 'Answers locked' : 'Type answer here...'}
+                            className={`w-full p-3 border-2 rounded-lg ${theme.border} ${theme.inputBg} focus:border-[#0F4C45] font-mono font-bold text-sm outline-none disabled:opacity-60`}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Part Navigation Footer */}
+              <div className={`pt-3 border-t ${theme.border} flex items-center justify-between gap-2`}>
+                <button
+                  disabled={listeningSection <= 1}
+                  onClick={() => {
+                    setListeningSection((s) => Math.max(1, s - 1) as 1 | 2 | 3 | 4);
+                    soundManager.playBeep(480, 0.03);
+                  }}
+                  className={`px-4 py-2 border rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.cardBg} ${theme.border}`}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Previous Part</span>
+                </button>
+
+                <span className="text-xs font-mono font-bold">
+                  Listening Part {listeningSection} of 4
+                </span>
+
+                <button
+                  disabled={listeningSection >= 4}
+                  onClick={() => {
+                    setListeningSection((s) => Math.min(4, s + 1) as 1 | 2 | 3 | 4);
+                    soundManager.playBeep(520, 0.03);
+                  }}
+                  className={`px-4 py-2 rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.accentBtn}`}
+                >
+                  <span>Next Part</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="flex-1 flex flex-col justify-between space-y-6 font-mono">
               <div className="space-y-4">
@@ -2408,7 +2598,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                           setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: pin }));
                           soundManager.playBeep(560, 0.03);
                         }}
-                        disabled={activeSkill === 'listening' && isListeningLocked}
+                        disabled={isListeningLocked}
                       />
                     )}
 
@@ -2420,7 +2610,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                           setUserAnswers((prev) => ({ ...prev, [activeQuestionId]: roman }));
                           soundManager.playBeep(560, 0.03);
                         }}
-                        disabled={activeSkill === 'listening' && isListeningLocked}
+                        disabled={isListeningLocked}
                       />
                     )}
 
@@ -2432,7 +2622,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                           const isSelected =
                             userAnswers[activeQuestionId] === opt ||
                             userAnswers[activeQuestionId] === optionLetter;
-                          const isDisabled = activeSkill === 'listening' && isListeningLocked;
+                          const isDisabled = isListeningLocked;
 
                           return (
                             <label
@@ -2479,7 +2669,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                         <input
                           tabIndex={1}
                           type="text"
-                          disabled={activeSkill === 'listening' && isListeningLocked}
+                          disabled={isListeningLocked}
                           value={userAnswers[activeQuestionId] || ''}
                           onChange={(e) =>
                             setUserAnswers((prev) => ({
@@ -2499,7 +2689,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                             }
                           }}
                           placeholder={
-                            activeSkill === 'listening' && isListeningLocked
+                            isListeningLocked
                               ? 'Listening answers locked after 2-minute check period'
                               : 'Type your answer here...'
                           }
@@ -2921,6 +3111,82 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       )}
 
       {/* 10-Minute & 5-Minute Warning Flash Alert Modal */}
+      {/* Practice Mode Resource Modal (Transcripts, Reading Guides & Model Essays) */}
+      {activePracticeModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white text-slate-900 p-6 border-2 border-slate-900 rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto space-y-4 shadow-2xl font-sans">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 font-mono">
+              <div className="flex items-center gap-2 font-bold text-sm uppercase text-[#0F4C45]">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <span>
+                  {activePracticeModal === 'transcript' && `Listening Part ${listeningSection} — Audio Transcript & Vocabulary`}
+                  {activePracticeModal === 'reading_guide' && `Reading Practice Set ${selectedSetIdx + 1} — Passage Guide & Answer Explanations`}
+                  {activePracticeModal === 'writing_model' && `Academic Writing — Model Essay & Band Criteria Guide`}
+                </span>
+              </div>
+              <button onClick={() => setActivePracticeModal(null)} className="p-1 hover:bg-slate-100 rounded cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs sm:text-sm text-slate-700 leading-relaxed">
+              {activePracticeModal === 'transcript' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-mono text-amber-900">
+                    <span className="font-bold">Practice Aid Note:</span> This transcript is provided for post-listening review and practice mode assistance. In the real CD-IELTS test, audio is played once without transcripts.
+                  </div>
+                  <div className="space-y-2 font-mono text-xs">
+                    <div className="font-bold uppercase text-[#0F4C45]">Section {listeningSection} Script:</div>
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg whitespace-pre-wrap font-sans text-xs sm:text-sm leading-relaxed">
+                      {getExamListeningSection(currentSet, listeningSection).script || currentSet.listeningScript || 'Transcript not available for this section.'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activePracticeModal === 'reading_guide' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg text-xs font-mono text-teal-900">
+                    <span className="font-bold">Reading Strategy Tip:</span> Skim the passage first for key signposts and scan for specific names, dates, and terms.
+                  </div>
+                  <div className="space-y-2 font-mono text-xs">
+                    <div className="font-bold uppercase text-[#0F4C45]">Passage Summary &amp; Vocabulary:</div>
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg font-sans text-xs sm:text-sm leading-relaxed space-y-2">
+                      <p><strong>Title:</strong> {currentSet.readingTitle}</p>
+                      <p><strong>Passage Length:</strong> {currentSet.readingPassage.split(/\s+/).length} words</p>
+                      <p><strong>Key Focus:</strong> Identify paragraph main ideas and pay close attention to True/False/Not Given statement nuances.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activePracticeModal === 'writing_model' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-mono text-emerald-900">
+                    <span className="font-bold">Examiner Breakdown:</span> Model essays demonstrate Band 8+ structures, precise lexical resource, and grammatical variety.
+                  </div>
+                  <div className="space-y-2 font-mono text-xs">
+                    <div className="font-bold uppercase text-[#0F4C45]">Model Essay &amp; Structure:</div>
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg whitespace-pre-wrap font-sans text-xs sm:text-sm leading-relaxed">
+                      {currentSet.modelEssay || currentSet.task1Model || 'Model essay is available upon test submission.'}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setActivePracticeModal(null)}
+                className="px-4 py-2 bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-xs rounded-lg cursor-pointer font-mono"
+              >
+                Close Practice Guide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {warningModalText && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
           <div className="bg-amber-400 text-black p-6 border-4 border-black max-w-md w-full space-y-4 shadow-2xl">
