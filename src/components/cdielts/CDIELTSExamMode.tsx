@@ -25,7 +25,8 @@ import {
   Radio,
   Sliders,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Settings
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 import { getCurrentUser, recordExamAttempt } from '../../utils/userStorage';
@@ -92,6 +93,7 @@ import { isListeningAnswerCorrect } from '../../utils/listeningAnswerEvaluator';
 import { deriveActiveReadingHeading, extractActiveReadingPassage } from '../../utils/mockExamScoring';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { CDIELTSSVGMap, CDIELTSMatchingHeadingsPicker } from './CDIELTSInteractiveVisuals';
+import { CDIELTSListeningSheet } from './CDIELTSListeningSheet';
 
 interface NoteItem {
   id: string;
@@ -221,8 +223,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
-  const [showListeningScript, setShowListeningScript] = useState(false);
   const [activePracticeModal, setActivePracticeModal] = useState<'transcript' | 'reading_guide' | 'writing_model' | null>(null);
+  const [showListeningOptionsMenu, setShowListeningOptionsMenu] = useState(false);
+  const listeningOptionsRef = useRef<HTMLDivElement | null>(null);
 
   // Warning Modals (10-minute and 5-minute mandatory alerts)
   const [hasShown10mWarning, setHasShown10mWarning] = useState(false);
@@ -231,6 +234,8 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
 
   // Strict Listening Audio State Machine (IndexedDB persisted)
   const [listeningSection, setListeningSection] = useState<1 | 2 | 3 | 4>(1);
+  const [viewedListeningPart, setViewedListeningPart] = useState<1 | 2 | 3 | 4>(1);
+  const [listeningScrollTrigger, setListeningScrollTrigger] = useState<{ questionId: number; nonce: number } | null>(null);
   const [listeningVolume, setListeningVolume] = useState<number>(0.85);
   const [isListeningMuted, setIsListeningMuted] = useState<boolean>(false);
   const [listeningPhase, setListeningPhase] = useState<ListeningAudioPhase>('pre_read');
@@ -267,6 +272,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       }
       const validPart = ([1, 2, 3, 4].includes(saved.partIndex) ? saved.partIndex : 1) as 1 | 2 | 3 | 4;
       setListeningSection(validPart);
+      setViewedListeningPart(validPart);
       // If a previous session left phase in 'playing' (where no audio element is actively playing on fresh mount)
       // or 'completed', reset to 'pre_read' so the candidate is never stuck in a silent broadcast or locked test.
       let hydratedPhase: ListeningAudioPhase = 'pre_read';
@@ -694,6 +700,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     if (res.action === 'none') return;
     listeningTimerStateRef.current = res.nextState;
     setListeningSection(res.nextState.section);
+    setViewedListeningPart(res.nextState.section);
     setListeningPhase(res.nextState.phase);
     setPhaseCountdownSec(res.nextState.phaseCountdownSec);
     setAudioPlaybackSec(0);
@@ -859,6 +866,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       const next = stepRes.nextState;
       listeningTimerStateRef.current = next;
 
+      if (next.section !== currentState.section) {
+        setViewedListeningPart(next.section);
+      }
       setListeningSection(next.section);
       setListeningPhase(next.phase);
       setPhaseCountdownSec(next.phaseCountdownSec);
@@ -1058,7 +1068,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       } else if (part.isHighlight) {
         className = 'bg-[#FFEB3B] text-black rounded-none px-1 py-0.5 font-medium cursor-pointer';
       } else if (part.isUnderline) {
-        className = 'underline decoration-2 decoration-[#002F6C] text-[#0F172A] font-semibold cursor-pointer';
+        className = 'underline decoration-2 decoration-[#0066CC] text-current font-semibold cursor-pointer';
       }
 
       if (className) {
@@ -1099,13 +1109,39 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
   // Alt+N (Next), Alt+P (Previous), Alt+R (Toggle Review Flag), Alt+V (Toggle Margin Notes & Highlighter Panel)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showListeningOptionsMenu) {
+        setShowListeningOptionsMenu(false);
+        return;
+      }
       if (e.altKey && (e.key === 'p' || e.key === 'P')) {
         e.preventDefault();
-        setActiveQuestionIdx((prev) => Math.max(0, prev - 1));
+        setActiveQuestionIdx((prev) => {
+          const nextIdx = Math.max(0, prev - 1);
+          if (activeSkill === 'listening') {
+            const nextPart = (Math.floor(nextIdx / 10) + 1) as 1 | 2 | 3 | 4;
+            setViewedListeningPart(nextPart);
+            const targetQ = skillQuestions[nextIdx];
+            if (targetQ) {
+              setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+            }
+          }
+          return nextIdx;
+        });
         soundManager.playBeep(480, 0.03);
       } else if (e.altKey && (e.key === 'n' || e.key === 'N')) {
         e.preventDefault();
-        setActiveQuestionIdx((prev) => Math.min(skillQuestions.length - 1, prev + 1));
+        setActiveQuestionIdx((prev) => {
+          const nextIdx = Math.min(skillQuestions.length - 1, prev + 1);
+          if (activeSkill === 'listening') {
+            const nextPart = (Math.floor(nextIdx / 10) + 1) as 1 | 2 | 3 | 4;
+            setViewedListeningPart(nextPart);
+            const targetQ = skillQuestions[nextIdx];
+            if (targetQ) {
+              setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+            }
+          }
+          return nextIdx;
+        });
         soundManager.playBeep(520, 0.03);
       } else if (e.altKey && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault();
@@ -1118,7 +1154,19 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [skillQuestions.length, activeQuestionId, toggleFlag]);
+  }, [activeSkill, skillQuestions, activeQuestionId, toggleFlag, showListeningOptionsMenu]);
+
+  // Close Listening Options dropdown when clicking outside
+  useEffect(() => {
+    if (!showListeningOptionsMenu) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (listeningOptionsRef.current && !listeningOptionsRef.current.contains(e.target as Node)) {
+        setShowListeningOptionsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showListeningOptionsMenu]);
 
   // Split-Screen Drag Handlers
   const handleSplitterMouseDown = useCallback((e: React.MouseEvent) => {
@@ -1428,7 +1476,9 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           setIsTimerRunning(true);
           setUserAnswers({});
           setFlaggedQuestions(new Set());
+          setActiveQuestionIdx(0);
           setListeningSection(1);
+          setViewedListeningPart(1);
           setListeningPhase('pre_read');
           setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
           setAudioPlaybackSec(0);
@@ -1525,7 +1575,357 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
       )}
 
-      {/* ================= 1. BANDSPRINT CD-IELTS EXAM HEADER (RESTRAINED SINGLE-BAR WORKSTATION) ================= */}
+      {/* ================= 1. TOP WORKSTATION HEADER ================= */}
+      {activeSkill === 'listening' ? (
+        <header
+          className={`w-full shrink-0 z-20 select-none border-b ${
+            colorScheme === 'standard'
+              ? 'bg-white text-[#111827] border-[#CBD5E1]'
+              : `${theme.headerBg} ${theme.borderStrong}`
+          }`}
+        >
+          {customPilotSet && (
+            <div className="w-full px-4 py-1 bg-[#1E293B] text-white flex items-center justify-between gap-2 text-xs">
+              <span className="truncate font-medium">
+                Approved Practice · {customPilotSet.title}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  stopSpeech();
+                  audioService.stop();
+                  onExit();
+                }}
+                className="px-2.5 py-0.5 bg-white/10 hover:bg-white/20 text-white border border-white/25 rounded text-[11px] font-medium cursor-pointer shrink-0 whitespace-nowrap"
+              >
+                Exit
+              </button>
+            </div>
+          )}
+
+          <div className="w-full h-12 px-3 sm:px-5 flex items-center justify-between gap-3">
+            {/* Left: Exit + Candidate Identifier */}
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setShowExitConfirmModal(true)}
+                className={`px-2.5 py-1 text-xs font-medium rounded border cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                  colorScheme === 'standard'
+                    ? 'border-[#CBD5E1] bg-white hover:bg-[#F1F5F9] text-[#334155]'
+                    : 'border-white/25 bg-white/10 hover:bg-white/20 text-current'
+                }`}
+                title="Exit Exam Session"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Exit</span>
+              </button>
+              <div className="min-w-0 truncate text-xs sm:text-sm font-semibold">
+                <span>{candidateName}</span>
+                <span className="hidden md:inline font-normal opacity-65 ml-2 tabular-nums">
+                  ID {candidateId}
+                </span>
+              </div>
+            </div>
+
+            {/* Center: Official Clock & Remaining Time */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div
+                data-testid="exam-countdown-timer"
+                className={`flex items-center gap-2 px-3 py-1 rounded border text-xs sm:text-sm font-semibold tabular-nums whitespace-nowrap ${
+                  timeRemainingSec <= 300
+                    ? 'bg-rose-50 text-rose-700 border-rose-400'
+                    : timeRemainingSec <= 600
+                    ? 'bg-amber-50 text-amber-800 border-amber-400'
+                    : colorScheme === 'standard'
+                    ? 'bg-[#F8FAFC] text-[#0F172A] border-[#CBD5E1]'
+                    : 'bg-black/30 text-current border-white/30'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5 shrink-0 opacity-75" />
+                <span>
+                  {isAudioNetworkStalled
+                    ? `Buffering ${formatTimer(timeRemainingSec)}`
+                    : isTimeHidden
+                    ? '••:••'
+                    : formatTimer(timeRemainingSec)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsTimeHidden(!isTimeHidden)}
+                  className="text-[11px] font-medium underline opacity-75 hover:opacity-100 cursor-pointer ml-1"
+                  aria-label={isTimeHidden ? 'Show countdown timer' : 'Hide countdown timer'}
+                >
+                  {isTimeHidden ? 'Show' : 'Hide'}
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Audio Volume + Notes + Help + Options Menu + Submit */}
+            <div className="flex items-center gap-2 shrink-0 relative">
+              {/* Official Top-Bar Headset Volume Control */}
+              <div
+                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded border ${
+                  colorScheme === 'standard'
+                    ? 'border-[#CBD5E1] bg-[#F8FAFC]'
+                    : 'border-white/25 bg-black/20'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextMuted = !isListeningMuted;
+                    setIsListeningMuted(nextMuted);
+                    audioService.setVolume(nextMuted ? 0 : listeningVolume);
+                    soundManager.playBeep(600, 0.02);
+                  }}
+                  className="cursor-pointer opacity-80 hover:opacity-100"
+                  aria-label="Toggle Headset Mute"
+                  title="Mute / Unmute Headset"
+                >
+                  {isListeningMuted ? (
+                    <VolumeX className="w-3.5 h-3.5 text-rose-600" />
+                  ) : (
+                    <Volume2 className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={isListeningMuted ? 0 : listeningVolume}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setListeningVolume(val);
+                    audioService.setVolume(val);
+                    setIsListeningMuted(val === 0);
+                  }}
+                  className="w-16 md:w-20 accent-[#0066CC] cursor-pointer h-1.5"
+                  aria-label="Listening Headset Volume"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowNotesDrawer((prev) => !prev)}
+                className={`hidden md:inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border cursor-pointer whitespace-nowrap ${
+                  showNotesDrawer
+                    ? 'bg-[#0066CC] text-white border-[#0066CC]'
+                    : colorScheme === 'standard'
+                    ? 'border-[#CBD5E1] bg-white hover:bg-[#F1F5F9] text-[#334155]'
+                    : 'border-white/25 hover:bg-white/10'
+                }`}
+                title="Margin Notes (Alt+V)"
+              >
+                <StickyNote className="w-3.5 h-3.5" />
+                <span>Notes</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(true)}
+                className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border cursor-pointer whitespace-nowrap ${
+                  colorScheme === 'standard'
+                    ? 'border-[#CBD5E1] bg-white hover:bg-[#F1F5F9] text-[#334155]'
+                    : 'border-white/25 hover:bg-white/10'
+                }`}
+                title="Exam Instructions"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>Help</span>
+              </button>
+
+              {/* Options Dropdown (Accessibility + Practice Aids tucked cleanly out of exam screen) */}
+              <div className="relative" ref={listeningOptionsRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowListeningOptionsMenu((v) => !v)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border cursor-pointer whitespace-nowrap ${
+                    showListeningOptionsMenu
+                      ? 'bg-[#1E293B] text-white border-[#1E293B]'
+                      : colorScheme === 'standard'
+                      ? 'border-[#CBD5E1] bg-white hover:bg-[#F1F5F9] text-[#334155]'
+                      : 'border-white/25 hover:bg-white/10'
+                  }`}
+                  aria-expanded={showListeningOptionsMenu}
+                  title="Display Options & Practice Aids"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Options</span>
+                </button>
+
+                {showListeningOptionsMenu && (
+                  <div className="absolute right-0 mt-1.5 w-72 bg-white text-[#111827] border border-[#CBD5E1] rounded-lg shadow-xl p-3.5 space-y-3.5 z-50 text-xs font-sans">
+                    <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+                      <span className="font-bold text-xs text-[#0F172A]">Display &amp; Practice Options</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowListeningOptionsMenu(false)}
+                        className="p-0.5 hover:bg-slate-100 rounded cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Text Size */}
+                    <div className="space-y-1.5">
+                      <div className="font-semibold text-[#475569]">Text Size</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['100%', '125%', '150%'] as ZoomLevel[]).map((lvl) => (
+                          <button
+                            key={lvl}
+                            type="button"
+                            onClick={() => setZoomLevel(lvl)}
+                            className={`py-1.5 rounded border text-xs font-medium cursor-pointer ${
+                              zoomLevel === lvl
+                                ? 'bg-[#0066CC] text-white border-[#0066CC]'
+                                : 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-slate-50'
+                            }`}
+                          >
+                            {lvl === '100%' ? 'Standard' : lvl === '125%' ? 'Large' : 'XL'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Contrast */}
+                    <div className="space-y-1.5">
+                      <label className="block font-semibold text-[#475569]" htmlFor="listening-contrast-select">
+                        Colour Contrast
+                      </label>
+                      <select
+                        id="listening-contrast-select"
+                        value={colorScheme}
+                        onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
+                        className="w-full px-2.5 py-1.5 border border-[#CBD5E1] rounded bg-white text-[#111827] text-xs outline-none cursor-pointer"
+                      >
+                        <option value="standard">Black on white (Standard)</option>
+                        <option value="black-on-yellow">Black on yellow</option>
+                        <option value="yellow-on-black">Yellow on black</option>
+                        <option value="white-on-black">White on black</option>
+                      </select>
+                    </div>
+
+                    {/* Practice Aids */}
+                    <div className="pt-2 border-t border-[#E2E8F0] space-y-2">
+                      <div className="font-semibold text-[#475569]">Practice Resources</div>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowListeningOptionsMenu(false);
+                            handleRunSoundCheck();
+                          }}
+                          disabled={isAudioPlaying}
+                          className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer disabled:opacity-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Headphones className="w-3.5 h-3.5 text-[#0066CC]" />
+                            <span>{isSoundCheckPlaying ? 'Testing Audio...' : hasTestedHeadset ? 'Sound Check Verified' : 'Headset Sound Check'}</span>
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowListeningOptionsMenu(false);
+                            setActivePracticeModal('transcript');
+                          }}
+                          className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <FileText className="w-3.5 h-3.5 text-[#0F4C45]" />
+                            <span>Audio Transcript (Part {viewedListeningPart})</span>
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowListeningOptionsMenu(false);
+                            setShowNotesDrawer((prev) => !prev);
+                          }}
+                          className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <StickyNote className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Margin Notes ({notes.length})</span>
+                          </span>
+                        </button>
+
+                        {onOpenSecondaryMode && secondaryModeLabel && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowListeningOptionsMenu(false);
+                              onOpenSecondaryMode();
+                            }}
+                            className="w-full px-3 py-1.5 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-left font-medium cursor-pointer"
+                          >
+                            Switch to {secondaryModeLabel}
+                          </button>
+                        )}
+                      </div>
+
+                      {!customPilotSet && (
+                        <div className="pt-1 space-y-1">
+                          <label className="block font-semibold text-[#475569]" htmlFor="listening-practice-set-select">
+                            Practice Test Set
+                          </label>
+                          <select
+                            id="listening-practice-set-select"
+                            value={selectedSetIdx}
+                            onChange={(e) => {
+                              activePlaybackTokenRef.current += 1;
+                              setListeningAudioError(null);
+                              const idx = parseInt(e.target.value, 10);
+                              setSelectedSetIdx(idx);
+                              setActiveQuestionIdx(0);
+                              stopSpeech();
+                              audioService.stop();
+                              setIsAudioPlaying(false);
+                              setCompletedListeningParts({});
+                              setListeningSection(1);
+                              setViewedListeningPart(1);
+                              setListeningPhase('pre_read');
+                              setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
+                              setAudioPlaybackSec(0);
+                              const targetExamId = MOCK_EXAM_SETS[idx]?.id;
+                              const targetDurations = getExamSectionAudioDurations(targetExamId);
+                              const initListSec = getCDIELTSSkillDurationSec('listening', targetDurations);
+                              setTimeRemainingSec(initListSec);
+                              endTimeRef.current = Date.now() + initListSec * 1000;
+                              setShowListeningOptionsMenu(false);
+                              soundManager.playBeep(550, 0.04);
+                              onShowToast(`Loaded ${MOCK_EXAM_SETS[idx]?.title}`);
+                            }}
+                            className="w-full px-2.5 py-1.5 border border-[#CBD5E1] rounded bg-white text-[#111827] text-xs outline-none cursor-pointer"
+                          >
+                            {MOCK_EXAM_SETS.map((s, idx) => (
+                              <option key={s.id} value={idx}>
+                                {s.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                data-testid="exam-finish-btn"
+                onClick={() => setShowReviewModal(true)}
+                className="px-3.5 py-1 bg-[#1E293B] hover:bg-[#0F172A] text-white font-semibold text-xs rounded cursor-pointer transition whitespace-nowrap shrink-0"
+              >
+                Finish Test
+              </button>
+            </div>
+          </div>
+        </header>
+      ) : (
       <header className={`w-full ${theme.headerBg} border-b ${theme.borderStrong || 'border-[#0B3833]'} shrink-0 flex flex-col font-mono select-none z-20`}>
         {customPilotSet && (
           <div className="w-full px-3 sm:px-4 py-1 bg-emerald-950 text-emerald-100 border-b border-emerald-600/60 flex items-center justify-between gap-2 text-xs font-mono font-bold">
@@ -1568,16 +1968,12 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
 
             <div className="flex items-center gap-2 min-w-0 overflow-hidden">
               <span className="hidden sm:inline text-xs font-bold uppercase tracking-wide text-[#F4A62A] truncate">
-                {activeSkill === 'listening'
-                  ? `Listening · Part ${listeningSection}/4`
-                  : activeSkill === 'reading'
+                {activeSkill === 'reading'
                   ? activeReadingBadge
                   : `Writing · Task ${activeWritingTask}`}
               </span>
               <span className="sm:hidden text-[11px] font-bold uppercase tracking-wide text-[#F4A62A] truncate">
-                {activeSkill === 'listening'
-                  ? `L·P${listeningSection}`
-                  : activeSkill === 'reading'
+                {activeSkill === 'reading'
                   ? `R·Q${activeQuestionIdx + 1}`
                   : `W·T${activeWritingTask}`}
               </span>
@@ -1633,16 +2029,10 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                   setIsAudioPlaying(false);
                   setCompletedListeningParts({});
                   setListeningSection(1);
+                  setViewedListeningPart(1);
                   setListeningPhase('pre_read');
                   setPhaseCountdownSec(CDIELTS_PRE_READ_SECONDS);
                   setAudioPlaybackSec(0);
-                  if (activeSkill === 'listening') {
-                    const targetExamId = MOCK_EXAM_SETS[idx]?.id;
-                    const targetDurations = getExamSectionAudioDurations(targetExamId);
-                    const initListSec = getCDIELTSSkillDurationSec('listening', targetDurations);
-                    setTimeRemainingSec(initListSec);
-                    endTimeRef.current = Date.now() + initListSec * 1000;
-                  }
                   soundManager.playBeep(550, 0.04);
                   onShowToast(`Loaded ${MOCK_EXAM_SETS[idx]?.title}`);
                 }}
@@ -1749,6 +2139,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           </div>
         </div>
       </header>
+      )}
 
       {/* Barnaby guide panel — target-band help for the section in progress */}
       {showBarnabyGuide && (
@@ -1890,157 +2281,87 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         </div>
       )}
 
-      {/* ================= 2B. COMPACT LISTENING SINGLE-PLAY AUDIO BAR (WHEN ACTIVE SKILL IS LISTENING) ================= */}
+      {/* ================= 2B. OFFICIAL LISTENING AUDIO STATUS STRIP (PURE EXAM MODE) ================= */}
       {activeSkill === 'listening' && (
         <div
           data-testid="listening-audio-bar"
-          className={`w-full px-3 sm:px-5 py-2 border-b ${theme.border} ${colorScheme === 'standard' ? 'bg-[#EEF3F1]' : theme.cardBg} shrink-0 font-mono text-xs`}
+          className={`w-full px-3 sm:px-5 py-1.5 border-b shrink-0 font-sans text-xs ${
+            colorScheme === 'standard'
+              ? 'bg-[#F1F5F9] text-[#334155] border-[#CBD5E1]'
+              : `${theme.cardBg} ${theme.border}`
+          }`}
         >
-          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2.5">
-            {/* Part 1–4 Switcher */}
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4].map((s) => {
-                const isCompleted = Boolean(completedListeningParts[s]);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => {
-                      if (isCompleted) {
-                        onShowToast(`Section ${s} audio has already played once (Single-Play Rule). Viewing questions only.`);
-                      } else if (s !== listeningSection) {
-                        activePlaybackTokenRef.current += 1;
-                        stopSpeech();
-                        audioService.stop();
-                        setIsAudioPlaying(false);
-                        setListeningAudioError(null);
-                        setListeningPhase('pre_read');
-                        setPhaseCountdownSec(35);
-                      }
-                      setListeningSection(s as 1 | 2 | 3 | 4);
-                      const firstPartIdx = (s - 1) * 10;
-                      if (firstPartIdx < skillQuestions.length) {
-                        setActiveQuestionIdx(firstPartIdx);
-                      }
-                    }}
-                    className={`px-2.5 py-1 border rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap transition ${
-                      listeningSection === s ? theme.activeTile : `${theme.cardBg} ${theme.border} hover:opacity-90`
-                    }`}
-                  >
-                    <span>Part {s}</span>
-                    {isCompleted && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
-                  </button>
-                );
-              })}
+          <div className="max-w-[920px] mx-auto flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-medium">
+              <span className="font-bold">Audio Stream · Part {listeningSection}</span>
+              <span aria-hidden="true">·</span>
+              <span className="opacity-80 tabular-nums">
+                Questions {(listeningSection - 1) * 10 + 1}–{listeningSection * 10}
+              </span>
             </div>
 
-            {/* Playback Phase + Single-Play Primary Action */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`px-2 py-1 rounded border text-[11px] font-bold tabular-nums whitespace-nowrap ${theme.cardBg} ${theme.border}`}>
-                {listeningPhase === 'pre_read' && `Pre-Read · ${formatTimer(phaseCountdownSec)}`}
-                {listeningPhase === 'playing' && `Single-Play Active · ${audioPlaybackSec}s`}
-                {listeningPhase === 'section_check' && `Check Answers · ${formatTimer(phaseCountdownSec)}`}
-                {listeningPhase === 'end_of_test_buffer' && `Final Check · ${formatTimer(phaseCountdownSec)}`}
-                {listeningPhase === 'completed' && 'Audio Finished (Locked)'}
-              </span>
-
+            <div className="flex items-center gap-2.5">
               {listeningPhase === 'pre_read' && (
-                <button
-                  type="button"
-                  data-testid="listening-start-audio-btn"
-                  onClick={handleSkipPreReadAndStartAudio}
-                  className={`px-3 py-1 rounded font-bold text-[11px] uppercase flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${theme.accentBtn}`}
-                >
-                  <Play className="w-3 h-3 fill-current" />
-                  <span>Start Audio</span>
-                </button>
+                <>
+                  <span className="tabular-nums font-medium">
+                    Audio starts in {formatTimer(phaseCountdownSec)}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="listening-start-audio-btn"
+                    onClick={handleSkipPreReadAndStartAudio}
+                    className="px-2.5 py-1 rounded bg-[#0066CC] hover:bg-[#0052A3] text-white font-semibold text-[11px] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  >
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>Start Audio</span>
+                  </button>
+                </>
+              )}
+
+              {listeningPhase === 'playing' && (
+                <div className="flex items-center gap-2 font-semibold text-[#0066CC]">
+                  <Radio className="w-3.5 h-3.5 animate-pulse" />
+                  <span className="tabular-nums">
+                    Audio playing — Part {listeningSection} ({formatTimer(audioPlaybackSec)})
+                  </span>
+                </div>
               )}
 
               {listeningPhase === 'section_check' && (
-                <button
-                  type="button"
-                  onClick={handleAdvanceSection}
-                  className="px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] uppercase flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                >
-                  <span>{listeningSection < 4 ? `Next: Part ${listeningSection + 1}` : 'Final Check'}</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                <>
+                  <span className="tabular-nums font-medium">
+                    Check your answers ({formatTimer(phaseCountdownSec)})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAdvanceSection}
+                    className="px-2.5 py-1 rounded bg-[#1E293B] hover:bg-[#0F172A] text-white font-semibold text-[11px] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  >
+                    <span>{listeningSection < 4 ? `Next: Part ${listeningSection + 1}` : 'Final Check'}</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </>
               )}
 
-              <button
-                type="button"
-                onClick={handleRunSoundCheck}
-                disabled={isAudioPlaying}
-                className={`px-2.5 py-1 rounded border text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 whitespace-nowrap ${theme.cardBg} ${theme.border}`}
-                title="Verify headset audio output"
-              >
-                <Headphones className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{isSoundCheckPlaying ? 'Testing...' : hasTestedHeadset ? 'Sound OK' : 'Sound Check'}</span>
-              </button>
-            </div>
+              {listeningPhase === 'end_of_test_buffer' && (
+                <span className="tabular-nums font-semibold text-amber-700">
+                  End of test — Final check ({formatTimer(phaseCountdownSec)})
+                </span>
+              )}
 
-            {/* Compact Headset Volume + Optional Script Context Toggle */}
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  const nextMuted = !isListeningMuted;
-                  setIsListeningMuted(nextMuted);
-                  audioService.setVolume(nextMuted ? 0 : listeningVolume);
-                  soundManager.playBeep(600, 0.02);
-                }}
-                className={`p-1 rounded border cursor-pointer ${theme.cardBg} ${theme.border}`}
-                aria-label="Toggle Headset Mute"
-                title="Toggle Headset Mute"
-              >
-                {isListeningMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-600" /> : <Volume2 className="w-3.5 h-3.5 text-[#0F4C45]" />}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={isListeningMuted ? 0 : listeningVolume}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setListeningVolume(val);
-                  audioService.setVolume(val);
-                  setIsListeningMuted(val === 0);
-                }}
-                className="w-20 sm:w-24 accent-[#0F4C45] cursor-pointer h-1.5"
-                aria-label="Listening Headset Volume"
-              />
-              <span className="text-[11px] font-bold tabular-nums w-8 text-right">
-                {Math.round((isListeningMuted ? 0 : listeningVolume) * 100)}%
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowListeningScript((v) => !v)}
-                className={`px-2 py-1 rounded border text-[11px] font-bold cursor-pointer whitespace-nowrap ${
-                  showListeningScript ? theme.activeTile : `${theme.cardBg} ${theme.border}`
-                }`}
-                title="Show or hide section reference context"
-              >
-                {showListeningScript ? 'Hide Context' : 'Context'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActivePracticeModal('transcript')}
-                className="px-2 py-1 rounded border text-[11px] font-bold cursor-pointer whitespace-nowrap bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 flex items-center gap-1"
-                title="View Audio Transcript & Explanations"
-              >
-                <FileText className="w-3 h-3" />
-                <span>Transcript</span>
-              </button>
+              {listeningPhase === 'completed' && (
+                <span className="font-semibold opacity-75">
+                  Audio finished — Answers locked
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Inline Audio Error or Live Spoken Status */}
           {listeningAudioError && listeningAudioError.sectionNum === listeningSection && (
-            <div className="max-w-6xl mx-auto mt-2 px-3 py-2 rounded border border-amber-500 bg-amber-50 text-amber-950 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="max-w-[920px] mx-auto mt-2 px-3 py-2 rounded border border-amber-500 bg-amber-50 text-amber-950 flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                <span className="font-sans">{listeningAudioError.message}</span>
+                <span>{listeningAudioError.message}</span>
               </div>
               <div className="flex items-center gap-2">
                 {listeningAudioError.canRetry && (
@@ -2052,7 +2373,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                       setListeningAudioError(null);
                       startListeningPlayback(listeningSection);
                     }}
-                    className="px-2.5 py-1 rounded bg-[#0F4C45] text-white font-bold text-[11px] cursor-pointer"
+                    className="px-2.5 py-1 rounded bg-[#1E293B] text-white font-semibold text-[11px] cursor-pointer"
                   >
                     Retry Audio
                   </button>
@@ -2064,18 +2385,11 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                     setListeningPhase('section_check');
                     setPhaseCountdownSec(60);
                   }}
-                  className="px-2.5 py-1 rounded bg-white border border-amber-400 text-amber-950 font-bold text-[11px] cursor-pointer"
+                  className="px-2.5 py-1 rounded bg-white border border-amber-400 text-amber-950 font-semibold text-[11px] cursor-pointer"
                 >
                   Continue
                 </button>
               </div>
-            </div>
-          )}
-
-          {listeningPhase === 'playing' && currentSpokenLine && (!listeningAudioError || listeningAudioError.sectionNum !== listeningSection) && (
-            <div className="max-w-6xl mx-auto mt-1.5 px-2.5 py-1 rounded border border-[#0F4C45]/25 bg-white text-[#0E1F1E] text-[11px] flex items-center justify-between gap-2">
-              <span className="truncate font-sans">{currentSpokenLine}</span>
-              <span className="text-[10px] font-mono uppercase text-[#0F4C45] shrink-0">Single-Play Lock</span>
             </div>
           )}
         </div>
@@ -2121,14 +2435,12 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
         }}
         className="flex-1 w-full flex flex-col md:flex-row overflow-hidden relative min-h-0"
       >
-        {/* Left Column: Reading Passage / Writing Prompt / Optional Listening Context */}
-        {(activeSkill !== 'listening' || showListeningScript) && (
+        {/* Left Column: Reading Passage / Writing Prompt (Not shown in Listening real exam layout) */}
+        {activeSkill !== 'listening' && (
         <div
           ref={leftPaneScrollRef}
           className={`${
-            activeSkill === 'listening'
-              ? 'flex w-full md:w-[38%] h-[38%] md:h-full'
-              : mobilePane === 'left'
+            mobilePane === 'left'
               ? 'flex w-full md:w-[var(--cd-left-width)] h-full'
               : 'hidden md:flex md:w-[var(--cd-left-width)] h-full'
           } p-4 sm:p-6 overflow-y-auto flex-col space-y-4 border-b md:border-b-0 md:border-r ${theme.border} ${colorScheme === 'standard' ? 'bg-white' : theme.cardBg}`}
@@ -2218,46 +2530,6 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
             </div>
           )}
 
-          {activeSkill === 'listening' && showListeningScript && (
-            <div className="space-y-3">
-              {(() => {
-                const secDetail = getExamListeningSection(currentSet, listeningSection);
-                return (
-                  <div className="space-y-3">
-                    <div className={`flex items-center justify-between border-b ${theme.border} pb-2 font-mono`}>
-                      <h3 className="font-bold text-xs uppercase">
-                        Section {listeningSection} Reference Context
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={() => setShowListeningScript(false)}
-                        className="text-[11px] underline cursor-pointer"
-                      >
-                        Close
-                      </button>
-                    </div>
-                    {secDetail.isAvailable && secDetail.script ? (
-                      <div className="space-y-3 font-sans text-sm leading-relaxed select-text">
-                        {secDetail.script.split('\n\n').map((para, idx) => (
-                          <p key={idx} className={`p-3 border rounded ${theme.border}`}>
-                            {renderParagraphWithHighlights(para)}
-                          </p>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-3 border border-amber-300 bg-amber-50 text-amber-900 font-mono text-xs space-y-1.5 rounded">
-                        <div className="font-bold">Section {listeningSection} Context Notice</div>
-                        <p className="font-sans text-xs leading-relaxed">
-                          {secDetail.missingReason || `Listening dialogue script for Section ${listeningSection} is not available in this practice set.`}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
           {activeSkill === 'writing' && (
             <div className="space-y-4">
               <div className={`border-b ${theme.border} pb-2.5 flex items-center justify-between font-mono`}>
@@ -2344,18 +2616,18 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           </div>
         )}
 
-        {/* Right Column (or Centered Sheet in Listening): Question Panel OR Writing Editor Area */}
+        {/* Right Column (or Full-Width Official Sheet in Listening): Question Panel OR Writing Editor Area */}
         <div
           ref={rightPaneScrollRef}
           className={`${
             activeSkill === 'listening'
-              ? 'flex flex-1 h-full'
+              ? 'flex flex-1 h-full overflow-y-auto'
               : mobilePane === 'right'
-              ? 'flex w-full md:w-[var(--cd-right-width)] h-full'
-              : 'hidden md:flex md:w-[var(--cd-right-width)] h-full'
-          } p-4 sm:p-6 overflow-y-auto flex-col justify-between bg-inherit`}
+              ? 'flex w-full md:w-[var(--cd-right-width)] h-full p-4 sm:p-6 overflow-y-auto'
+              : 'hidden md:flex md:w-[var(--cd-right-width)] h-full p-4 sm:p-6 overflow-y-auto'
+          } flex-col justify-between bg-inherit`}
         >
-          <div className={activeSkill === 'listening' ? 'max-w-4xl w-full mx-auto flex-1 flex flex-col justify-between' : 'flex-1 flex flex-col justify-between'}>
+          <div className={activeSkill === 'listening' ? 'w-full flex-1 flex flex-col' : 'flex-1 flex flex-col justify-between'}>
           {activeSkill === 'writing' ? (
             <div className="flex-1 flex flex-col space-y-3 font-mono">
               <div className={`flex items-center justify-between border-b ${theme.border} pb-2`}>
@@ -2394,163 +2666,33 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               </div>
             </div>
           ) : activeSkill === 'listening' ? (
-            <div className="flex-1 flex flex-col space-y-4 font-mono overflow-y-auto pr-2">
-              <div className={`p-3 rounded-lg border ${theme.border} ${theme.cardBg} flex items-center justify-between gap-2`}>
-                <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-[#0F4C45]">
-                    Listening Part {listeningSection} of 4 (Questions {(listeningSection - 1) * 10 + 1}–{listeningSection * 10})
-                  </div>
-                  <div className="text-xs text-slate-600 font-sans mt-0.5">
-                    Preview all questions during pre-read and answer as you listen. Audio plays once.
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4].map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => {
-                        setListeningSection(s as 1 | 2 | 3 | 4);
-                        soundManager.playBeep(520, 0.02);
-                      }}
-                      className={`px-2.5 py-1 text-xs font-bold rounded border cursor-pointer ${
-                        listeningSection === s ? theme.activeTile : `${theme.cardBg} ${theme.border}`
-                      }`}
-                    >
-                      Part {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-6 pb-6">
-                {skillQuestions.slice((listeningSection - 1) * 10, listeningSection * 10).map((q, qIndex) => {
-                  const absoluteQNum = (listeningSection - 1) * 10 + qIndex + 1;
-                  const isFlagged = flaggedQuestions.has(q.id);
-                  const isDisabled = isListeningLocked;
-
-                  return (
-                    <div key={q.id} className={`p-4 rounded-xl border ${theme.border} ${theme.cardBg} space-y-3 shadow-sm`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-mono font-bold uppercase text-[#0F4C45]">
-                          Question {absoluteQNum}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <label
-                            className="flex items-center gap-1.5 text-xs font-mono font-bold cursor-pointer px-2 py-0.5 border rounded"
-                            title="Flag question for review"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isFlagged}
-                              onChange={() => toggleFlag(q.id)}
-                              className="accent-[#D97706] w-3.5 h-3.5 cursor-pointer"
-                            />
-                            <span>Flag</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="font-semibold text-sm sm:text-base font-sans leading-snug">
-                        {q.prompt}
-                      </div>
-
-                      {q.options && q.options.length > 0 ? (
-                        <div className="space-y-2 pt-1">
-                          {q.options.map((opt) => {
-                            const optionLetter = opt.split('.')[0]?.trim() || opt;
-                            const isSelected =
-                              userAnswers[q.id] === opt ||
-                              userAnswers[q.id] === optionLetter;
-
-                            return (
-                              <label
-                                key={opt}
-                                onClick={() => {
-                                  if (isDisabled) return;
-                                  setUserAnswers((prev) => ({
-                                    ...prev,
-                                    [q.id]: optionLetter
-                                  }));
-                                  soundManager.playBeep(540, 0.03);
-                                }}
-                                className={`flex items-center gap-3 p-3 border rounded-lg font-mono transition ${
-                                  isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                                } ${
-                                  isSelected
-                                    ? `${theme.activeTile} font-bold`
-                                    : `${theme.cardBg} ${theme.border} hover:opacity-90 font-medium`
-                                }`}
-                              >
-                                <input
-                                  type="radio"
-                                  disabled={isDisabled}
-                                  name={`q_${q.id}`}
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  className="w-4 h-4 accent-[#0F4C45] cursor-pointer shrink-0"
-                                />
-                                <span className="font-mono font-bold text-xs px-1.5 py-0.5 border border-current rounded shrink-0">
-                                  {optionLetter}
-                                </span>
-                                <span className="text-xs sm:text-sm font-sans">{opt.replace(/^[A-Z]\.\s*/, '')}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="space-y-1.5 pt-1">
-                          <input
-                            type="text"
-                            disabled={isDisabled}
-                            value={userAnswers[q.id] || ''}
-                            onChange={(e) =>
-                              setUserAnswers((prev) => ({
-                                ...prev,
-                                [q.id]: e.target.value
-                              }))
-                            }
-                            placeholder={isDisabled ? 'Answers locked' : 'Type answer here...'}
-                            className={`w-full p-3 border-2 rounded-lg ${theme.border} ${theme.inputBg} focus:border-[#0F4C45] font-mono font-bold text-sm outline-none disabled:opacity-60`}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Part Navigation Footer */}
-              <div className={`pt-3 border-t ${theme.border} flex items-center justify-between gap-2`}>
-                <button
-                  disabled={listeningSection <= 1}
-                  onClick={() => {
-                    setListeningSection((s) => Math.max(1, s - 1) as 1 | 2 | 3 | 4);
-                    soundManager.playBeep(480, 0.03);
-                  }}
-                  className={`px-4 py-2 border rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.cardBg} ${theme.border}`}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Previous Part</span>
-                </button>
-
-                <span className="text-xs font-mono font-bold">
-                  Listening Part {listeningSection} of 4
-                </span>
-
-                <button
-                  disabled={listeningSection >= 4}
-                  onClick={() => {
-                    setListeningSection((s) => Math.min(4, s + 1) as 1 | 2 | 3 | 4);
-                    soundManager.playBeep(520, 0.03);
-                  }}
-                  className={`px-4 py-2 rounded-md text-xs font-mono font-bold disabled:opacity-30 flex items-center gap-1 cursor-pointer ${theme.accentBtn}`}
-                >
-                  <span>Next Part</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            <CDIELTSListeningSheet
+              listeningSection={viewedListeningPart}
+              allListeningQuestions={skillQuestions}
+              userAnswers={userAnswers}
+              flaggedQuestions={flaggedQuestions}
+              activeQuestionId={activeQuestionId}
+              isLocked={isListeningLocked}
+              colorScheme={colorScheme}
+              zoomLevel={zoomLevel}
+              onAnswerChange={(qId, value) => {
+                setUserAnswers((prev) => ({ ...prev, [qId]: value }));
+                soundManager.playBeep(540, 0.02);
+              }}
+              onToggleFlag={toggleFlag}
+              onFocusQuestion={(_qId, globalIdx) => {
+                setActiveQuestionIdx(globalIdx);
+              }}
+              onSwitchPart={(p) => {
+                setViewedListeningPart(p);
+                const firstPartIdx = (p - 1) * 10;
+                if (firstPartIdx < skillQuestions.length) {
+                  setActiveQuestionIdx(firstPartIdx);
+                }
+              }}
+              renderHighlightedText={renderParagraphWithHighlights}
+              scrollTrigger={listeningScrollTrigger}
+            />
           ) : (
             <div className="flex-1 flex flex-col justify-between space-y-6 font-mono">
               <div className="space-y-4">
@@ -2864,6 +3006,165 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
       </div>
 
       {/* ================= 4. BOTTOM QUESTION NAVIGATION DOCK ================= */}
+      {activeSkill === 'listening' ? (
+        <footer
+          className={`w-full border-t px-3 sm:px-5 py-2 shrink-0 select-none z-10 font-sans ${
+            colorScheme === 'standard'
+              ? 'bg-[#F8FAFC] text-[#111827] border-[#CBD5E1]'
+              : `${theme.bg} ${theme.border}`
+          }`}
+        >
+          <div className="max-w-[1280px] mx-auto flex flex-wrap items-center justify-between gap-2">
+            {/* Parts 1–4 with Active Part Expanded Numbered Squares (1–40) */}
+            <div className="flex items-center gap-2 overflow-x-auto py-0.5 flex-1 min-w-0">
+              {([1, 2, 3, 4] as const).map((partNum) => {
+                const startIdx = (partNum - 1) * 10;
+                const partQs = skillQuestions.slice(startIdx, startIdx + 10);
+                if (partQs.length === 0) return null;
+                const partAnswered = partQs.filter((q) => Boolean(userAnswers[q.id]?.trim())).length;
+                const isViewedPart = viewedListeningPart === partNum;
+
+                return (
+                  <div key={partNum} className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewedListeningPart(partNum);
+                        if (startIdx < skillQuestions.length) {
+                          const targetQ = skillQuestions[startIdx];
+                          setActiveQuestionIdx(startIdx);
+                          setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                        }
+                        soundManager.playBeep(520, 0.02);
+                      }}
+                      className={`px-2.5 py-1 text-xs font-bold rounded border cursor-pointer whitespace-nowrap transition ${
+                        isViewedPart
+                          ? colorScheme === 'standard'
+                            ? 'bg-[#1E293B] text-white border-[#1E293B]'
+                            : theme.activeTile
+                          : colorScheme === 'standard'
+                          ? 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                          : `${theme.cardBg} ${theme.border}`
+                      }`}
+                    >
+                      <span>Part {partNum}</span>
+                      {!isViewedPart && (
+                        <span className="ml-1.5 text-[11px] font-normal opacity-75 tabular-nums">
+                          {partAnswered}/{partQs.length}
+                        </span>
+                      )}
+                    </button>
+
+                    {isViewedPart && (
+                      <div className="flex items-center gap-1 pl-1">
+                        {partQs.map((q, localIdx) => {
+                          const globalIdx = startIdx + localIdx;
+                          const displayNum = globalIdx + 1;
+                          const isAnswered = Boolean(userAnswers[q.id]?.trim());
+                          const isFlagged = flaggedQuestions.has(q.id);
+                          const isCurrent = activeQuestionIdx === globalIdx;
+
+                          return (
+                            <button
+                              key={q.id}
+                              type="button"
+                              onClick={() => {
+                                setActiveQuestionIdx(globalIdx);
+                                setListeningScrollTrigger({ questionId: q.id, nonce: Date.now() });
+                                soundManager.playBeep(520, 0.02);
+                              }}
+                              title={`Question ${displayNum} (${isAnswered ? 'Answered' : 'Unanswered'}${isFlagged ? ', Flagged' : ''})`}
+                              aria-current={isCurrent ? 'step' : undefined}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-xs font-bold tabular-nums cursor-pointer transition shrink-0 ${
+                                isFlagged
+                                  ? 'rounded-full border-2 border-[#D97706] bg-amber-50 text-[#92400E]'
+                                  : isAnswered
+                                  ? colorScheme === 'standard'
+                                    ? 'rounded-[3px] bg-[#1E293B] text-white border border-[#1E293B]'
+                                    : `rounded-[3px] ${theme.activeTile}`
+                                  : colorScheme === 'standard'
+                                  ? 'rounded-[3px] bg-white text-[#1E293B] border border-[#94A3B8] hover:border-[#0066CC]'
+                                  : `rounded-[3px] ${theme.cardBg} border ${theme.border}`
+                              } ${isCurrent ? 'ring-2 ring-[#0066CC] ring-offset-1 z-10' : ''}`}
+                            >
+                              {displayNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bottom-Right Review Count + Classic Prev / Next Arrow Buttons */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowReviewModal(true)}
+                className={`hidden sm:inline-flex px-2.5 py-1.5 text-xs font-medium rounded border cursor-pointer tabular-nums ${
+                  colorScheme === 'standard'
+                    ? 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                    : `${theme.cardBg} ${theme.border}`
+                }`}
+              >
+                {answeredCount}/{totalQuestions} Answered
+              </button>
+
+              <button
+                type="button"
+                disabled={activeQuestionIdx <= 0}
+                onClick={() => {
+                  const prevIdx = Math.max(0, activeQuestionIdx - 1);
+                  const prevPart = (Math.floor(prevIdx / 10) + 1) as 1 | 2 | 3 | 4;
+                  const targetQ = skillQuestions[prevIdx];
+                  setViewedListeningPart(prevPart);
+                  setActiveQuestionIdx(prevIdx);
+                  if (targetQ) {
+                    setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                  }
+                  soundManager.playBeep(480, 0.02);
+                }}
+                aria-label="Previous question"
+                title="Previous Question (Alt+P)"
+                className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
+                  colorScheme === 'standard'
+                    ? 'bg-white text-[#1E293B] border-[#94A3B8] hover:bg-[#F1F5F9]'
+                    : `${theme.cardBg} ${theme.border}`
+                }`}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                disabled={activeQuestionIdx >= skillQuestions.length - 1}
+                onClick={() => {
+                  const nextIdx = Math.min(skillQuestions.length - 1, activeQuestionIdx + 1);
+                  const nextPart = (Math.floor(nextIdx / 10) + 1) as 1 | 2 | 3 | 4;
+                  const targetQ = skillQuestions[nextIdx];
+                  setViewedListeningPart(nextPart);
+                  setActiveQuestionIdx(nextIdx);
+                  if (targetQ) {
+                    setListeningScrollTrigger({ questionId: targetQ.id, nonce: Date.now() });
+                  }
+                  soundManager.playBeep(520, 0.02);
+                }}
+                aria-label="Next question"
+                title="Next Question (Alt+N)"
+                className={`w-8 h-8 flex items-center justify-center rounded border cursor-pointer disabled:opacity-35 ${
+                  colorScheme === 'standard'
+                    ? 'bg-[#1E293B] text-white border-[#1E293B] hover:bg-[#0F172A]'
+                    : theme.accentBtn
+                }`}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </footer>
+      ) : (
       <footer className={`w-full border-t ${theme.border} px-3 sm:px-4 py-2.5 shrink-0 ${colorScheme === 'standard' ? 'bg-[#E9EFEC]' : theme.bg} select-none z-10 font-mono`}>
         {/* Dock Header: Response Metrics & Review Status */}
         <div className="flex items-center justify-between gap-2 mb-2 text-xs font-mono font-bold">
@@ -2984,13 +3285,18 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
           </div>
         )}
       </footer>
+      )}
 
       {/* ================= 5. HELP, REVIEW & ROUTE GUARD MODALS ================= */}
       {showHelpModal && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-white text-[#0E1F1E] p-6 border border-[#D3DDDA] rounded-2xl max-w-xl w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#D3DDDA] pb-2.5">
-              <h2 className="text-base sm:text-lg font-bold uppercase font-mono text-[#0F4C45]">BandSprint Exam Instructions &amp; Shortcuts</h2>
+              <h2 className="text-base sm:text-lg font-bold text-[#0F172A]">
+                {activeSkill === 'listening'
+                  ? 'IELTS on Computer — Listening Help & Shortcuts'
+                  : 'BandSprint Exam Instructions & Shortcuts'}
+              </h2>
               <button onClick={() => setShowHelpModal(false)} className="p-1 hover:bg-slate-100 rounded cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
@@ -3084,8 +3390,12 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
                 <div>Answered Questions: {answeredCount} of {totalQuestions}</div>
                 <div>Unanswered Questions: {totalQuestions - answeredCount}</div>
                 <div>Flagged for Review: {flaggedQuestions.size}</div>
-                <div>Writing Task 1 Words: {task1WordCount} (Min 150)</div>
-                <div>Writing Task 2 Words: {task2WordCount} (Min 250)</div>
+                {(activeSkill === 'writing' || !standaloneSkill) && (
+                  <>
+                    <div>Writing Task 1 Words: {task1WordCount} (Min 150)</div>
+                    <div>Writing Task 2 Words: {task2WordCount} (Min 250)</div>
+                  </>
+                )}
               </div>
               <p className="text-rose-700 font-bold pt-1">
                 Once submitted, your answers will be locked and graded immediately using the 4-criterion Practice evaluation engine.
@@ -3119,7 +3429,7 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
               <div className="flex items-center gap-2 font-bold text-sm uppercase text-[#0F4C45]">
                 <Sparkles className="w-5 h-5 text-amber-500" />
                 <span>
-                  {activePracticeModal === 'transcript' && `Listening Part ${listeningSection} — Audio Transcript & Vocabulary`}
+                  {activePracticeModal === 'transcript' && `Listening Part ${viewedListeningPart} — Audio Transcript`}
                   {activePracticeModal === 'reading_guide' && `Reading Practice Set ${selectedSetIdx + 1} — Passage Guide & Answer Explanations`}
                   {activePracticeModal === 'writing_model' && `Academic Writing — Model Essay & Band Criteria Guide`}
                 </span>
@@ -3132,13 +3442,29 @@ export const CDIELTSExamMode: React.FC<CDIELTSExamModeProps> = ({
             <div className="space-y-4 text-xs sm:text-sm text-slate-700 leading-relaxed">
               {activePracticeModal === 'transcript' && (
                 <div className="space-y-3">
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-mono text-amber-900">
-                    <span className="font-bold">Practice Aid Note:</span> This transcript is provided for post-listening review and practice mode assistance. In the real CD-IELTS test, audio is played once without transcripts.
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+                    <span className="font-bold">Practice Resource:</span> Audio transcripts are available in practice mode for post-listening review. In the real IELTS on Computer exam, audio plays once with no transcript.
                   </div>
-                  <div className="space-y-2 font-mono text-xs">
-                    <div className="font-bold uppercase text-[#0F4C45]">Section {listeningSection} Script:</div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {([1, 2, 3, 4] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setViewedListeningPart(p)}
+                        className={`px-3 py-1 rounded border text-xs font-semibold cursor-pointer ${
+                          viewedListeningPart === p
+                            ? 'bg-[#1E293B] text-white border-[#1E293B]'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        Part {p}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="font-bold uppercase text-[#0F172A]">Part {viewedListeningPart} Transcript:</div>
                     <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg whitespace-pre-wrap font-sans text-xs sm:text-sm leading-relaxed">
-                      {getExamListeningSection(currentSet, listeningSection).script || currentSet.listeningScript || 'Transcript not available for this section.'}
+                      {getExamListeningSection(currentSet, viewedListeningPart).script || currentSet.listeningScript || 'Transcript not available for this section.'}
                     </div>
                   </div>
                 </div>
