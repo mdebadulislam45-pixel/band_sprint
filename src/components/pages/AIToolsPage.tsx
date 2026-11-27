@@ -42,7 +42,11 @@ import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { getPreferredVoiceGender } from '../../config/voiceConfig';
 import { SpeechRecognitionService } from '../../services/SpeechRecognitionService';
 import { getMistakes, addMistake, saveMistakes } from '../../utils/vaultStorage';
-import { getCurrentUser } from '../../utils/userStorage';
+import {
+  getCurrentUser,
+  setTopWeakness,
+  detectLowestWritingCriterion
+} from '../../utils/userStorage';
 import { setBarnabyAnalyzing } from '../../utils/getBarnabyState';
 import { questionEngine } from '../../services/QuestionEngine';
 import { SHADOWING_ITEMS } from '../../data/shadowingSentences';
@@ -58,6 +62,7 @@ import { Icon3D, Icon3DVariant } from '../common/Icon3D';
 import { GeminiLiveAndTranscribeHub } from '../ai/GeminiLiveAndTranscribeHub';
 import { AIRewriter } from '../ai/AIRewriter';
 import { LiveAvatarSpeakingPartner } from '../speaking/LiveAvatarSpeakingPartner';
+import { BarnabyRig } from '../BarnabyRig';
 
 const Sprint3DStudio = React.lazy(() =>
   import('../three/Sprint3DStudio').then((m) => ({ default: m.Sprint3DStudio }))
@@ -386,6 +391,20 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
         return;
       }
       setWritingResult(data);
+      const lowestCriterion =
+        (typeof data?.lowestCriterion === 'string' && data.lowestCriterion.trim()) ||
+        detectLowestWritingCriterion(
+          {
+            ta: data?.trScore ?? data?.criteria?.taskAchievementOrResponse?.score ?? data?.estimatedBands?.taskAchievement,
+            cc: data?.ccScore ?? data?.criteria?.coherenceAndCohesion?.score ?? data?.estimatedBands?.coherenceCohesion,
+            lr: data?.lrScore ?? data?.criteria?.lexicalResource?.score ?? data?.estimatedBands?.lexicalResource,
+            gra: data?.graScore ?? data?.criteria?.grammaticalRangeAndAccuracy?.score ?? data?.estimatedBands?.grammaticalRange
+          },
+          writingTaskType === 'task2' ? 2 : 1
+        );
+      if (lowestCriterion) {
+        setTopWeakness(lowestCriterion, 'writing');
+      }
       soundManager.playSuccess();
       onShowToast('Writing evaluation completed!');
     } catch {
@@ -854,18 +873,19 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
       {activeView !== 'speaking-examiner' && (
         <div className="p-4 sm:p-5 rounded-2xl bg-[#0F4C45] dark:bg-[#0D3833] text-white border border-[#1F8A70]/35 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 min-w-0">
-            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-[#FDF6E7] flex items-center justify-center shrink-0 border-2 border-[#F4A62A]/70">
-              <img
-                src="/barnaby-dragon-avatar.webp"
-                alt="Barnaby study companion"
-                draggable={false}
-                className={`w-full h-full rounded-xl object-cover transition-transform duration-300 ${
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-[#F8FAF9] dark:bg-slate-900 flex items-center justify-center shrink-0 border border-[#134E41]/20 p-0.5">
+              <BarnabyRig
+                expression={
                   barnabyMood === 'speaking'
-                    ? 'scale-105 ring-2 ring-[#F4A62A]'
+                    ? 'happy'
                     : barnabyMood === 'surprise'
-                    ? 'scale-110'
-                    : ''
-                }`}
+                    ? 'surprised'
+                    : 'focused'
+                }
+                mode={barnabyMood === 'speaking' ? 'companion' : 'ambient'}
+                isSpeaking={barnabyMood === 'speaking'}
+                className="w-full h-full"
+                ariaLabel="Barnaby study companion"
               />
               <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#4DB6A4] border-2 border-[#0F4C45]" />
             </div>
@@ -1508,6 +1528,65 @@ export const AIToolsPage: React.FC<AIToolsPageProps> = ({
                           : '—'}
                       </span>
                     </div>
+
+                    {writingResult.barnabyVerdict && (
+                      <div className="p-3.5 rounded-xl bg-white dark:bg-[#101B32] border border-[#134E41]/15 flex items-start gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-[#F8FAF9] dark:bg-slate-900 border border-[#134E41]/20 flex items-center justify-center shrink-0 overflow-hidden p-0.5">
+                          <BarnabyRig
+                            expression={
+                              typeof (writingResult.overallBand ?? writingResult.estimatedBands?.overall) === 'number' &&
+                              (writingResult.overallBand ?? writingResult.estimatedBands?.overall) >=
+                                (getCurrentUser()?.progress?.targetBand ?? 7.5)
+                                ? 'celebrating'
+                                : 'encouraging'
+                            }
+                            mode={
+                              typeof (writingResult.overallBand ?? writingResult.estimatedBands?.overall) === 'number' &&
+                              (writingResult.overallBand ?? writingResult.estimatedBands?.overall) >=
+                                (getCurrentUser()?.progress?.targetBand ?? 7.5)
+                                ? 'celebration'
+                                : 'tutor'
+                            }
+                            className="w-full h-full"
+                            ariaLabel="Barnaby Writing verdict"
+                          />
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-[#134E41] dark:text-emerald-300">
+                            Barnaby Verdict · Highest-Leverage Fix
+                          </div>
+                          <p className="text-xs text-[#0E1F1E] dark:text-slate-100 leading-relaxed">
+                            {writingResult.barnabyVerdict}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {Array.isArray(writingResult.sentenceUpgrades) && writingResult.sentenceUpgrades.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#134E41] dark:text-emerald-300 block">
+                          Verbatim Sentence Upgrades (Band 8.5+)
+                        </span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                          {writingResult.sentenceUpgrades.slice(0, 5).map((upg: any, idx: number) => (
+                            <div
+                              key={`ai-tools-upg-${idx}`}
+                              className="p-3 rounded-xl bg-white dark:bg-[#101B32] border border-[#134E41]/15 space-y-1.5"
+                            >
+                              <span className="inline-block px-2 py-0.5 rounded bg-[#F59E0B]/15 text-[#B45309] dark:text-amber-300 text-[10px] font-semibold">
+                                {upg.flawTag || 'Precision & Cohesion'}
+                              </span>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 line-through">
+                                {upg.originalSentence}
+                              </p>
+                              <p className="text-xs font-medium text-[#0E1F1E] dark:text-slate-100 leading-relaxed">
+                                {upg.band85Rewrite}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                       <div className="p-3.5 rounded-xl bg-white dark:bg-[#101B32] border border-slate-200 space-y-2">

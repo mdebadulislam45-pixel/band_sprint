@@ -69,6 +69,11 @@ import {
 import { ListeningMapDiagram } from './listening/ListeningMapDiagram';
 import { CandidateAiPilotPanel } from './common/CandidateAiPilotPanel';
 import { CDIELTSExamMode } from './cdielts/CDIELTSExamMode';
+import { BarnabyHintCard, HintLoopPhase } from './common/BarnabyHintCard';
+import { requestBarnabyPracticeHint } from '../services/geminiService';
+import { setBarnabyAnalyzing } from '../utils/getBarnabyState';
+import { triggerBarnabyCelebration } from '../utils/barnabyStateEngine';
+import { recordHintRecoveryXp, XP_HINT_RECOVERY } from '../services/streakService';
 import type { MockExamSet } from '../data/mockExams';
 
 const LISTENING_STORAGE_KEY = 'ielts_sprint_listening_state_v3';
@@ -88,6 +93,26 @@ interface ListeningPersistedState {
 interface ListeningLabProps {
   onShowToast: (msg: string) => void;
   onBack?: () => void;
+}
+
+function getListeningBanglaTrapNote(q: IELTSQuestion, section: 1 | 2 | 3 | 4): string {
+  const qType = (q.questionType || '').toLowerCase();
+  const prompt = (q.prompt || '').toLowerCase();
+  const exp = (q.explanation || '').trim();
+
+  if (qType.includes('map') || prompt.includes('map') || prompt.includes('opposite') || prompt.includes('located')) {
+    return `ম্যাপ ও দিকনির্দেশনার ফাঁদ (Section ${section}): স্পিকার শুরুর ল্যান্ডমার্ক থেকে বাম/ডান বা উত্তর/দক্ষিণ বলে দিক পরিবর্তন করেন। প্রথমে বলা ভুল জায়গার নাম লিখে ফেলবেন না—চূড়ান্ত অবস্থানটি মিলিয়ে নিন।${exp ? ` (${exp})` : ''}`;
+  }
+  if (section === 1 || qType.includes('form') || prompt.includes('postcode') || prompt.includes('phone') || prompt.includes('surname')) {
+    return `Section 1 সেল্ফ-কারেকশন ও স্পেলিং ফাঁদ: স্পিকার প্রথমে একটি সংখ্যা, তারিখ বা বানান বলেই 'Sorry', 'Actually' বা 'Wait' বলে সংশোধন করেন। সর্বশেষ সংশোধিত তথ্য ও সঠিক একবচন/বহুবচন খেয়াল রাখুন।${exp ? ` (${exp})` : ''}`;
+  }
+  if (section === 2) {
+    return `Section 2 মনোলগ ডিস্ট্র্যাক্টর: গাইড প্রথমে পুরোনো তথ্য বা বন্ধ হয়ে যাওয়া সুবিধার কথা বলে পরে বর্তমান বা নতুন তথ্যটি দেন। সাইনপোস্ট শব্দ ('however', 'nowadays', 'instead') শুনে সঠিক উত্তর ধরুন।${exp ? ` (${exp})` : ''}`;
+  }
+  if (section === 3) {
+    return `Section 3 ডায়ালগ মতৈক্য ফাঁদ: দুই ছাত্র বা টিউটরের মধ্যে প্রথমজন একটি আইডিয়া প্রস্তাব করলেও দ্বিতীয়জন সেটি নাকচ করে দেন। দুজন যে অপশনে শেষ পর্যন্ত একমত হন সেটিই সঠিক উত্তর।${exp ? ` (${exp})` : ''}`;
+  }
+  return `Section 4 একাডেমিক সাইনপোস্ট ও প্যারাফ্রেজ: লেকচারে প্রশ্নের হুবহু শব্দের বদলে সমার্থক শব্দ (synonym) ব্যবহার করা হয়। শূন্যস্থানের আগে ও পরের গ্রামার (noun/adjective/plural) মিলিয়ে চূড়ান্ত শব্দটি লিখুন।${exp ? ` (${exp})` : ''}`;
 }
 
 export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToast, onBack }) => {
@@ -115,8 +140,26 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
 
   const [isEvaluated, setIsEvaluated] = useState(false);
   const [scoreSummary, setScoreSummary] = useState<{ correct: number; total: number; band: number } | null>(null);
+  const [explanationLang, setExplanationLang] = useState<'en' | 'bn'>('en');
+  const [pushedMissedToSprint, setPushedMissedToSprint] = useState(false);
   const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isLoadingListening, setIsLoadingListening] = useState(false);
+
+  // Interactive Hint-Before-Reveal Loop state (strictly active in untimed Section Practice Mode)
+  const [hintLoopByQId, setHintLoopByQId] = useState<
+    Record<
+      string,
+      {
+        phase: HintLoopPhase;
+        attempt1Answer: string;
+        attempt2Answer?: string;
+        hintHeadline?: string;
+        hintBody?: string;
+        distractorAnalysis?: string;
+        revealExplanation?: string;
+      }
+    >
+  >({});
 
   // Focus ref for text inputs
   const inputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +282,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
       stopSpeech();
       setIsEvaluated(false);
       setScoreSummary(null);
+      setPushedMissedToSprint(false);
 
       requestAnimationFrame(() => {
         setTimeout(() => {
@@ -722,12 +766,142 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
     [audioSyncCues, audioPlaybackState.isPlaying, handlePlayAudio]
   );
 
+  const evaluatePracticeAttempt = (qObj: IELTSQuestion, candidateVal: string) => {
+    if (viewMode !== 'section_practice' || isEvaluated) return;
+    const cleanVal = candidateVal.trim();
+    if (!cleanVal) return;
+
+    const existing = hintLoopByQId[qObj.id];
+    const isRight = isAnswerCorrect(qObj, cleanVal);
+    const correctDisplay = formatDisplayedCorrectAnswer(qObj);
+
+    if (!existing) {
+      if (!isRight) {
+        // Attempt 1 incorrect intercept -> Barnaby analyzing -> encouraging hint without revealing answer
+        setHintLoopByQId((prev) => ({
+          ...prev,
+          [qObj.id]: {
+            phase: 'analyzing',
+            attempt1Answer: cleanVal
+          }
+        }));
+        setBarnabyAnalyzing(true, 'Analyzing Listening audio distractor...');
+        soundManager.playBeep(420, 0.06);
+
+        const transcriptSnippet = currentDialogue
+          .slice(0, 10)
+          .map((d) => `${d.speaker}: ${d.text}`)
+          .join('\n');
+
+        requestBarnabyPracticeHint({
+          module: 'listening',
+          questionPrompt: qObj.prompt,
+          questionType: qObj.questionType,
+          topic: `Section ${activeSection}: ${activeScenarioTopic || qObj.topic || 'Listening Practice'}`,
+          evidenceContext: transcriptSnippet,
+          userAnswer: cleanVal,
+          correctAnswer: correctDisplay,
+          trapNote: qObj.explanation,
+          isAnswerRevealed: false,
+          attemptMode: 'hint_before_reveal'
+        })
+          .then((res) => {
+            setHintLoopByQId((prev) => {
+              const cur = prev[qObj.id];
+              if (!cur || cur.phase !== 'analyzing') return prev;
+              return {
+                ...prev,
+                [qObj.id]: {
+                  ...cur,
+                  phase: 'hint_attempt_1',
+                  hintHeadline: res.headline,
+                  hintBody: res.stepByStepExplanation,
+                  distractorAnalysis: res.distractorTrapAnalysis
+                }
+              };
+            });
+          })
+          .catch(() => {
+            setHintLoopByQId((prev) => {
+              const cur = prev[qObj.id];
+              if (!cur || cur.phase !== 'analyzing') return prev;
+              return {
+                ...prev,
+                [qObj.id]: {
+                  ...cur,
+                  phase: 'hint_attempt_1',
+                  hintHeadline: `Re-listen for a speaker self-correction or paraphrase around "${cleanVal}"`,
+                  hintBody:
+                    'Check whether the speaker corrected an earlier detail or used a synonym instead of repeating the exact wording from the question.',
+                  distractorAnalysis:
+                    'Listening distractors often appear right before markers like "actually", "sorry", or "instead".'
+                }
+              };
+            });
+          })
+          .finally(() => {
+            setBarnabyAnalyzing(false);
+          });
+      }
+      return;
+    }
+
+    if (existing.phase === 'hint_attempt_1' || existing.phase === 'analyzing') {
+      if (cleanVal.toLowerCase() === existing.attempt1Answer.toLowerCase()) {
+        return;
+      }
+      if (isRight) {
+        soundManager.playSuccess();
+        recordHintRecoveryXp(`listening_${qObj.id}`);
+        triggerBarnabyCelebration('Listening Attempt 2 recovered');
+        setHintLoopByQId((prev) => ({
+          ...prev,
+          [qObj.id]: {
+            ...existing,
+            phase: 'recovered_attempt_2',
+            attempt2Answer: cleanVal,
+            revealExplanation:
+              qObj.explanation || 'You caught the audio paraphrase on your second attempt.'
+          }
+        }));
+        onShowToast(`Attempt 2 correct — +${XP_HINT_RECOVERY} XP awarded.`);
+      } else {
+        soundManager.playBeep(340, 0.08);
+        addMistake({
+          module: 'listening',
+          title: `Listening Section ${activeSection}: ${qObj.prompt}`,
+          userAnswer: cleanVal,
+          correctAnswer: correctDisplay,
+          explanation: qObj.explanation || 'Review the audio transcript clue for the distractor trap.',
+          trapExplanationBn: getListeningBanglaTrapNote(qObj, activeSection)
+        });
+        setHintLoopByQId((prev) => ({
+          ...prev,
+          [qObj.id]: {
+            ...existing,
+            phase: 'revealed_attempt_2',
+            attempt2Answer: cleanVal,
+            revealExplanation:
+              qObj.explanation || 'Compare your response against the verified speaker detail in the transcript.'
+          }
+        }));
+      }
+    }
+  };
+
   // Answer handler
-  const handleSelectAnswer = (qId: string, val: string) => {
+  const handleSelectAnswer = (qId: string, val: string, triggerHintCheck = false) => {
     setUserAnswers((prev) => ({
       ...prev,
       [qId]: val
     }));
+
+    if (triggerHintCheck && viewMode === 'section_practice' && !isEvaluated) {
+      const qObj = questions.find((item) => item.id === qId);
+      if (qObj) {
+        evaluatePracticeAttempt(qObj, val);
+      }
+    }
   };
 
   // Evaluate candidate answers strictly against Practice raw-score conversion table
@@ -749,7 +923,8 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
           title: `Listening Section ${activeSection}: ${q.prompt}`,
           userAnswer: userRaw,
           correctAnswer: formatDisplayedCorrectAnswer(q),
-          explanation: q.explanation || 'Review Practice audio transcript clues carefully.'
+          explanation: q.explanation || 'Review Practice audio transcript clues carefully.',
+          trapExplanationBn: getListeningBanglaTrapNote(q, activeSection)
         });
       }
 
@@ -1513,7 +1688,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                       <button
                         key={`${currentQ.id}_opt_${optIdx}`}
                         type="button"
-                        onClick={() => handleSelectAnswer(currentQ.id, parsed.letter)}
+                        onClick={() => handleSelectAnswer(currentQ.id, parsed.letter, true)}
                         className={`w-full text-left p-4 rounded-2xl border-2 transition flex items-center justify-between gap-3 min-h-[52px] ${
                           isRightOption
                             ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
@@ -1561,15 +1736,32 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               ) : (
                 /* Form / Summary Completion Text Input */
                 <div className="space-y-3">
-                  <div className="relative">
+                  <div className="flex items-center gap-2">
                     <input
                       ref={inputRef}
                       type="text"
                       value={userAnswers[currentQ?.id] || ''}
-                      onChange={(e) => currentQ && handleSelectAnswer(currentQ.id, e.target.value)}
+                      onChange={(e) => currentQ && handleSelectAnswer(currentQ.id, e.target.value, false)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && currentQ && (userAnswers[currentQ.id] || '').trim()) {
+                          evaluatePracticeAttempt(currentQ, userAnswers[currentQ.id] || '');
+                        }
+                      }}
                       placeholder="Type your answer (e.g. BRAITHWAITE, 18TH, 780)..."
-                      className="w-full px-4 py-3.5 text-sm sm:text-base rounded-2xl border-2 border-slate-300 bg-white font-mono font-bold text-slate-900 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 focus:outline-hidden transition placeholder:text-slate-400 placeholder:font-sans placeholder:font-normal"
+                      className="flex-1 min-w-0 px-4 py-3.5 text-sm sm:text-base rounded-2xl border-2 border-slate-300 bg-white font-mono font-bold text-slate-900 focus:border-[#134E41] focus:ring-4 focus:ring-[#134E41]/15 focus:outline-hidden transition placeholder:text-slate-400 placeholder:font-sans placeholder:font-normal"
                     />
+                    {!isEvaluated && currentQ && (
+                      <button
+                        type="button"
+                        disabled={!(userAnswers[currentQ.id] || '').trim()}
+                        onClick={() => evaluatePracticeAttempt(currentQ, userAnswers[currentQ.id] || '')}
+                        className="min-h-[48px] px-4 py-2.5 rounded-2xl bg-[#134E41] hover:bg-[#0D3A30] disabled:opacity-45 text-white text-xs font-semibold whitespace-nowrap shrink-0 transition cursor-pointer"
+                      >
+                        {hintLoopByQId[currentQ.id]?.phase === 'hint_attempt_1'
+                          ? 'Check Attempt 2'
+                          : 'Check Answer'}
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
@@ -1582,24 +1774,68 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               )}
             </div>
 
-            {/* Post-evaluation Explanation Display */}
+            {/* Interactive Barnaby Hint-Before-Reveal Card (Untimed Section Practice Mode only) */}
+            {!isEvaluated && currentQ && hintLoopByQId[currentQ.id] && (
+              <BarnabyHintCard
+                phase={hintLoopByQId[currentQ.id].phase}
+                module="listening"
+                attempt1Answer={hintLoopByQId[currentQ.id].attempt1Answer}
+                attempt2Answer={hintLoopByQId[currentQ.id].attempt2Answer}
+                correctAnswerDisplay={formatDisplayedCorrectAnswer(currentQ)}
+                hintHeadline={hintLoopByQId[currentQ.id].hintHeadline}
+                hintBody={hintLoopByQId[currentQ.id].hintBody}
+                distractorAnalysis={hintLoopByQId[currentQ.id].distractorAnalysis}
+                revealExplanation={hintLoopByQId[currentQ.id].revealExplanation}
+                partialXpAwarded={XP_HINT_RECOVERY}
+              />
+            )}
+
+            {/* Post-evaluation Explanation Display (EN | বাংলা Distractor Breakdown) */}
             {isEvaluated && currentQ && (
               <div
-                className={`p-4 rounded-2xl border text-xs space-y-2 animate-fade-in ${
+                className={`p-4 rounded-2xl border text-xs space-y-2.5 animate-fade-in ${
                   isAnswerCorrect(currentQ, userAnswers[currentQ.id] || '')
                     ? 'bg-emerald-50/80 border-emerald-300'
                     : 'bg-rose-50/80 border-rose-300'
                 }`}
               >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-bold text-slate-700">Correct Answer:</span>
-                  <span className="font-mono font-black text-emerald-900 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-300">
-                    {formatDisplayedCorrectAnswer(currentQ)}
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-slate-700">Correct Answer:</span>
+                    <span className="font-mono font-black text-emerald-900 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-300">
+                      {formatDisplayedCorrectAnswer(currentQ)}
+                    </span>
+                  </div>
+                  <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] font-mono font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setExplanationLang('en')}
+                      className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
+                        explanationLang === 'en' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      EN
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExplanationLang('bn')}
+                      className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
+                        explanationLang === 'bn' ? 'bg-emerald-700 text-white' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      বাংলা
+                    </button>
+                  </div>
                 </div>
-                <p className="text-slate-700 leading-relaxed font-serif italic">
-                  <strong>Examiner Clue:</strong> {currentQ.explanation}
-                </p>
+                {explanationLang === 'bn' ? (
+                  <p className="text-slate-800 leading-relaxed font-bengali">
+                    <strong>বাংলা ডিস্ট্র্যাক্টর বিশ্লেষণ:</strong> {getListeningBanglaTrapNote(currentQ, activeSection)}
+                  </p>
+                ) : (
+                  <p className="text-slate-700 leading-relaxed font-serif italic">
+                    <strong>Examiner Clue:</strong> {currentQ.explanation}
+                  </p>
+                )}
               </div>
             )}
 
@@ -1661,11 +1897,59 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               </div>
 
               {scoreSummary && (
-                <div className="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 font-mono text-xs font-black flex items-center gap-1.5 self-start sm:self-auto">
-                  <Award className="w-4 h-4 text-emerald-600" />
-                  <span>
-                    Band {scoreSummary.band} ({scoreSummary.correct}/{scoreSummary.total})
-                  </span>
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                  <div className="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 font-mono text-xs font-black flex items-center gap-1.5 tabular-nums">
+                    <Award className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      Band {scoreSummary.band} ({scoreSummary.correct}/{scoreSummary.total})
+                    </span>
+                  </div>
+                  {scoreSummary.total - scoreSummary.correct > 0 && (
+                    <button
+                      type="button"
+                      disabled={pushedMissedToSprint}
+                      onClick={() => {
+                        const missed = questions.filter(
+                          (q) => !isAnswerCorrect(q, (userAnswers[q.id] || '').trim())
+                        );
+                        missed.forEach((q) => {
+                          const userRaw = (userAnswers[q.id] || '').trim();
+                          addMistake({
+                            module: 'listening',
+                            title: `Listening Section ${activeSection}: ${q.prompt}`,
+                            userAnswer: userRaw || '(Unanswered)',
+                            correctAnswer: formatDisplayedCorrectAnswer(q),
+                            explanation: q.explanation || 'Review Practice audio transcript clues carefully.',
+                            trapExplanationBn: getListeningBanglaTrapNote(q, activeSection)
+                          });
+                        });
+                        setPushedMissedToSprint(true);
+                        soundManager.playSuccess();
+                        onShowToast(
+                          `Sent ${missed.length} missed item${missed.length > 1 ? 's' : ''} to your Daily Sprint & Mistake Vault.`
+                        );
+                      }}
+                      className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                        pushedMissedToSprint
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800 cursor-default'
+                          : 'bg-slate-900 hover:bg-slate-800 border-slate-900 text-white'
+                      }`}
+                    >
+                      {pushedMissedToSprint ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Queued in Daily Sprint</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5" />
+                          <span>
+                            Send {scoreSummary.total - scoreSummary.correct} Missed to Daily Sprint
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

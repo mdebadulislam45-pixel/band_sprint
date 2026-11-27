@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -21,6 +21,9 @@ import {
   Sparkles
 } from 'lucide-react';
 import { BandSprintMark } from '../common/BandSprintMark';
+import { BarnabyCrest } from '../common/BarnabyCrest';
+import { BarnabyRig } from '../BarnabyRig';
+import { BARNABY_CORE_TAGLINE } from '../../types/barnaby';
 import { soundManager } from '../../utils/audioEffects';
 import { correctAnswersNeeded } from '../../services/examSetupService';
 import {
@@ -218,6 +221,14 @@ export const PreAuthOnboardingFunnel: React.FC<PreAuthOnboardingFunnelProps> = (
     existing?.dailyMinutes || 30
   );
   const [selectedMicroOption, setSelectedMicroOption] = useState<string | null>(null);
+  const [step6Error, setStep6Error] = useState<string>('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      containerRef.current.scrollTop = 0;
+    }
+  }, [isOpen, step]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -270,6 +281,12 @@ export const PreAuthOnboardingFunnel: React.FC<PreAuthOnboardingFunnelProps> = (
   if (!isOpen) return null;
 
   const goNext = () => {
+    if (step === 6 && !selectedMicroOption) {
+      soundManager.playBeep(320, 0.04);
+      setStep6Error('Please select one answer in the 20-second calibration above before generating your plan.');
+      return;
+    }
+    setStep6Error('');
     soundManager.playBeep(620, 0.03);
     setDirection(1);
     setStep((prev) => Math.min(TOTAL_STEPS, prev + 1));
@@ -333,6 +350,7 @@ export const PreAuthOnboardingFunnel: React.FC<PreAuthOnboardingFunnelProps> = (
 
   return (
     <div
+      ref={containerRef}
       className="fixed inset-0 z-50 bg-[#F7F9F8] text-[#0E1F1E] flex flex-col overflow-y-auto"
       role="dialog"
       aria-modal="true"
@@ -382,15 +400,25 @@ export const PreAuthOnboardingFunnel: React.FC<PreAuthOnboardingFunnelProps> = (
       <main className="flex-1 flex flex-col items-center justify-start sm:justify-center px-4 sm:px-6 py-6 sm:py-10">
         <div className="w-full max-w-2xl space-y-5">
           {/* Barnaby Compact Context Bar */}
-          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border border-[#D3DDDA]">
-            <img
-              src="/barnaby-dragon-avatar.webp"
-              alt="Barnaby"
-              className="w-10 h-10 rounded-full object-cover border border-[#0F4C45]/20 shrink-0 bg-[#EEF3F1]"
-            />
-            <p className="text-xs sm:text-sm text-[#0E1F1E] leading-snug font-medium">
-              {barnabyTip}
-            </p>
+          <div className="flex items-center gap-3.5 px-4 py-3 rounded-2xl bg-white border border-[#134E41]/15">
+            <div className="w-12 h-12 rounded-xl bg-transparent flex items-center justify-center shrink-0 overflow-hidden p-0.5">
+              <BarnabyRig
+                expression="welcoming"
+                mode="ambient"
+                interactive={false}
+                className="w-full h-full"
+                ariaLabel="Barnaby companion greeting"
+              />
+            </div>
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#134E41]">
+                <BarnabyCrest size={15} variant="inline" />
+                <span>Barnaby · {BARNABY_CORE_TAGLINE}</span>
+              </div>
+              <p className="text-xs sm:text-sm text-[#0E1F1E] leading-snug font-medium">
+                {barnabyTip}
+              </p>
+            </div>
           </div>
 
           {/* Step Slide Container */}
@@ -927,6 +955,7 @@ export const PreAuthOnboardingFunnel: React.FC<PreAuthOnboardingFunnelProps> = (
                             type="button"
                             onClick={() => {
                               setSelectedMicroOption(opt.id);
+                              setStep6Error('');
                               if (opt.isCorrect) {
                                 soundManager.playSuccess();
                               } else {
@@ -1060,6 +1089,12 @@ export const PreAuthOnboardingFunnel: React.FC<PreAuthOnboardingFunnelProps> = (
                     </button>
                   </div>
                 </>
+              )}
+
+              {step === 6 && step6Error && (
+                <p role="alert" className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3.5 py-2.5">
+                  {step6Error}
+                </p>
               )}
 
               {/* Bottom Step Navigation (Steps 1–6) */}

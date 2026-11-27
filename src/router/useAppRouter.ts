@@ -22,11 +22,12 @@ const ROUTE_MAP: Record<string, RouteInfo> = {
   '/practice/speaking': { path: '/practice/speaking', hub: 'practice', subpage: 'speaking', title: 'Speaking Lab', isHub: false },
   '/practice/mock-tests': { path: '/practice/mock-tests', hub: 'practice', subpage: 'mock-tests', title: 'Mock Tests & Exam Room', isHub: false },
   '/practice/question-bank': { path: '/practice/question-bank', hub: 'practice', subpage: 'question-bank', title: 'Question Bank', isHub: false },
-  '/practice/sprint': { path: '/practice/sprint', hub: 'practice', subpage: 'sprint', title: 'IELTS Practice Library', isHub: false },
+  '/practice/sprint': { path: '/practice/sprint', hub: 'practice', subpage: 'sprint', title: 'Pomodoro & Daily IELTS Sprint Hub', isHub: false },
   '/practice/ai-tools': { path: '/practice/ai-tools', hub: 'practice', subpage: 'ai-tools', title: 'AI Tools', isHub: false },
 
   // Learn Hub & Subpages
   '/learn': { path: '/learn', hub: 'learn', title: 'Learn Hub', isHub: true },
+  '/learn/daily-sprint': { path: '/learn/daily-sprint', hub: 'learn', subpage: 'daily-sprint', title: 'Pomodoro & Daily IELTS Sprint Hub', isHub: false },
   '/learn/vocabulary': { path: '/learn/vocabulary', hub: 'learn', subpage: 'vocabulary', title: 'Vocabulary Deck', isHub: false },
   '/learn/phrases': { path: '/learn/phrases', hub: 'learn', subpage: 'phrases', title: 'Useful Phrases', isHub: false },
   '/learn/idioms': { path: '/learn/idioms', hub: 'learn', subpage: 'idioms', title: 'Idiom Lab', isHub: false },
@@ -75,6 +76,9 @@ const LEGACY_PAGE_KEY_MAP: Record<string, string> = {
   'sprint': '/practice/sprint',
   'aitools': '/practice/ai-tools',
   'learn': '/learn',
+  'daily-sprint': '/learn/daily-sprint',
+  'pomodoro': '/learn/daily-sprint',
+  'mastery-exam': '/learn/daily-sprint',
   'vocab': '/learn/vocabulary',
   'vocabulary': '/learn/vocabulary',
   'phrases': '/learn/phrases',
@@ -97,39 +101,40 @@ const LEGACY_PAGE_KEY_MAP: Record<string, string> = {
   'history': '/progress/history',
   'saved': '/progress/saved',
   'mistakes': '/progress/saved',
+  'vault': '/progress/saved',
   'calendar': '/progress/calendar',
   'admin-analytics': '/progress/admin-analytics',
   'profile': '/profile',
+  'details': '/profile/details',
   'settings': '/profile/settings',
   'subscription': '/profile/subscription',
   'help': '/profile/help'
 };
 
+export function normalizeRoutePath(raw: string): string {
+  if (!raw) return '/';
+  const withoutQueryOrHash = raw.split('?')[0].split('#')[0].trim();
+  if (!withoutQueryOrHash || withoutQueryOrHash === '/') return '/';
+  const cleaned = withoutQueryOrHash.replace(/\/+$/, '');
+  return cleaned || '/';
+}
+
 export function resolvePath(target: string): string {
-  if (target.startsWith('/')) return target;
-  return LEGACY_PAGE_KEY_MAP[target] || '/';
+  if (!target) return '/';
+  const trimmed = target.trim();
+  if (trimmed.startsWith('/')) {
+    const normalized = normalizeRoutePath(trimmed);
+    if (ROUTE_MAP[normalized]) return normalized;
+    const strippedKey = normalized.slice(1);
+    if (LEGACY_PAGE_KEY_MAP[strippedKey]) return LEGACY_PAGE_KEY_MAP[strippedKey];
+    return normalized;
+  }
+  return LEGACY_PAGE_KEY_MAP[trimmed] || '/';
 }
 
 // ---------------------------------------------------------------------------
 // Route prefetching (performance)
 // ---------------------------------------------------------------------------
-// Every page in this app is ALREADY lazy-loaded via React.lazy in App.tsx —
-// this router only maps paths, it never imports a page, so there is nothing
-// left to lazy-load here. What the router CAN own is warming a chunk before
-// the student taps it, so navigation feels instant instead of fetching
-// on demand.
-//
-// The loaders below mirror App.tsx's React.lazy imports exactly (same module
-// specifiers, resolved from this file). Vite/Rollup dedupes identical dynamic
-// imports to the same chunks, so prefetching never duplicates code — it only
-// downloads a chunk that navigation would have fetched a moment later.
-//
-// NOTE: nothing calls prefetchRoute automatically. That is deliberate:
-// prefetching a hub page drags in its static imports (e.g. /practice pulls
-// the 373 KB exam-setup chunk, /progress pulls the speaking-avatar chunk),
-// which is real bandwidth on mobile data. Wire prefetchRoute to a user
-// signal instead — nav hover / focus, or a tap on a hub card — never on
-// page load. The connection gate below is a second line of defence.
 
 type RouteLoader = () => Promise<unknown>;
 
@@ -147,6 +152,8 @@ const ROUTE_PREFETCH_LOADERS: Record<string, RouteLoader> = {
   '/practice/writing': () => import('../components/pages/WritingLabPage'),
   '/practice/speaking': () => import('../components/pages/SpeakingLabPage'),
   '/practice/question-bank': () => import('../components/pages/QuestionBankPage'),
+  '/practice/sprint': () => import('../components/pages/DailySprintPage'),
+  '/learn/daily-sprint': () => import('../components/pages/DailySprintPage'),
   '/learn/diagnostic': () => import('../components/pages/DiagnosticTestPage'),
   '/learn/study-plan': () => import('../components/pages/StudyPlanPage'),
   '/learn/vocabulary': () => import('../components/VocabDeck'),
@@ -161,18 +168,11 @@ function prefetchAllowed(): boolean {
     connection?: { saveData?: boolean; effectiveType?: string };
   }).connection;
   if (!conn) return true;
-  // Never prefetch on data-saver mode or a 2G-class connection.
   if (conn.saveData) return false;
   if (conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g') return false;
   return true;
 }
 
-/**
- * Warm the JS chunk for a route (hub or heavy subpage) ahead of navigation.
- * Safe to call repeatedly and safe to call for an unknown route (no-op).
- * Fire-and-forget: a failed prefetch is ignored — navigation still works,
- * it just fetches the chunk on demand as it does today.
- */
 export function prefetchRoute(target: string): void {
   const path = resolvePath(target);
   const loader = ROUTE_PREFETCH_LOADERS[path];
@@ -180,8 +180,6 @@ export function prefetchRoute(target: string): void {
   if (!prefetchAllowed()) return;
   prefetchedRoutes.add(path);
   loader().catch(() => {
-    // Chunk may have been superseded by a redeploy; drop the mark so a
-    // later attempt can retry instead of assuming it is cached.
     prefetchedRoutes.delete(path);
   });
 }
@@ -189,14 +187,14 @@ export function prefetchRoute(target: string): void {
 export function useAppRouter() {
   const [currentPath, setCurrentPath] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return window.location.pathname || '/';
+      return normalizeRoutePath(window.location.pathname || '/');
     }
     return '/';
   });
 
   useEffect(() => {
     const handlePopState = () => {
-      setCurrentPath(window.location.pathname || '/');
+      setCurrentPath(normalizeRoutePath(window.location.pathname || '/'));
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -210,9 +208,9 @@ export function useAppRouter() {
       } else {
         window.history.pushState({}, '', path);
       }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     setCurrentPath(path);
-    window.scrollTo(0, 0);
   }, []);
 
   const goBack = useCallback(() => {
@@ -223,12 +221,13 @@ export function useAppRouter() {
     }
   }, [navigate]);
 
-  const routeInfo = ROUTE_MAP[currentPath];
-  const isNotFound = !routeInfo && !['/', '/home'].includes(currentPath);
+  const normalizedCurrent = normalizeRoutePath(currentPath);
+  const routeInfo = ROUTE_MAP[normalizedCurrent];
+  const isNotFound = !routeInfo && !['/', '/home'].includes(normalizedCurrent);
   const hub: MainDestination = routeInfo ? routeInfo.hub : 'home';
 
   return {
-    currentPath,
+    currentPath: normalizedCurrent,
     routeInfo,
     hub,
     isNotFound,

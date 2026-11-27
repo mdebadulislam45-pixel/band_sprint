@@ -882,3 +882,113 @@ export function importUserData(jsonStr: string): boolean {
     return false;
   }
 }
+
+export const TOP_WEAKNESS_STORAGE_KEY = 'bandsprint_top_weakness_v1';
+export const TOP_WEAKNESS_UPDATED_EVENT = 'bandsprint_weakness_updated';
+
+export interface StoredTopWeakness {
+  label: string;
+  source: 'writing' | 'speaking' | 'reading' | 'listening' | 'diagnostic';
+  updatedAt: number;
+  userId?: string | null;
+}
+
+/**
+ * Persists the learner's highest-priority weakness (e.g. "Coherence & Cohesion")
+ * so <BarnabyCompanion /> automatically surfaces a targeted drill on the dashboard.
+ */
+export function setTopWeakness(
+  label: string,
+  source: StoredTopWeakness['source'] = 'writing'
+): void {
+  const clean = (label || '').trim();
+  if (!clean) return;
+  try {
+    const active = getActiveUser();
+    const record: StoredTopWeakness = {
+      label: clean,
+      source,
+      updatedAt: Date.now(),
+      userId: active?.id ?? null,
+    };
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TOP_WEAKNESS_STORAGE_KEY, JSON.stringify(record));
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(TOP_WEAKNESS_UPDATED_EVENT, { detail: record }));
+    }
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function getTopWeakness(): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(TOP_WEAKNESS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredTopWeakness>;
+    const active = getActiveUser();
+    if (parsed.userId && active?.id && parsed.userId !== active.id) {
+      return null;
+    }
+    return typeof parsed.label === 'string' && parsed.label.trim() ? parsed.label.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function detectLowestWritingCriterion(
+  scores: {
+    ta?: number | null;
+    cc?: number | null;
+    lr?: number | null;
+    gra?: number | null;
+  },
+  taskType: 1 | 2 = 2
+): string | null {
+  const candidates: Array<{ label: string; score: number }> = [];
+  if (typeof scores.ta === 'number' && Number.isFinite(scores.ta)) {
+    candidates.push({
+      label: taskType === 1 ? 'Task 1 Task Achievement' : 'Task 2 Task Response',
+      score: scores.ta,
+    });
+  }
+  if (typeof scores.cc === 'number' && Number.isFinite(scores.cc)) {
+    candidates.push({ label: 'Coherence & Cohesion', score: scores.cc });
+  }
+  if (typeof scores.lr === 'number' && Number.isFinite(scores.lr)) {
+    candidates.push({ label: 'Lexical Resource', score: scores.lr });
+  }
+  if (typeof scores.gra === 'number' && Number.isFinite(scores.gra)) {
+    candidates.push({ label: 'Grammatical Range & Accuracy', score: scores.gra });
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.score - b.score);
+  return candidates[0].label;
+}
+
+export function detectLowestSpeakingCriterion(scores: {
+  fc?: number | null;
+  lr?: number | null;
+  gra?: number | null;
+  pr?: number | null;
+}): string | null {
+  const candidates: Array<{ label: string; score: number }> = [];
+  if (typeof scores.fc === 'number' && Number.isFinite(scores.fc)) {
+    candidates.push({ label: 'Speaking Fluency & Coherence', score: scores.fc });
+  }
+  if (typeof scores.lr === 'number' && Number.isFinite(scores.lr)) {
+    candidates.push({ label: 'Speaking Lexical Resource', score: scores.lr });
+  }
+  if (typeof scores.gra === 'number' && Number.isFinite(scores.gra)) {
+    candidates.push({ label: 'Speaking Grammatical Range', score: scores.gra });
+  }
+  if (typeof scores.pr === 'number' && Number.isFinite(scores.pr)) {
+    candidates.push({ label: 'Speaking Pronunciation', score: scores.pr });
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.score - b.score);
+  return candidates[0].label;
+}
+

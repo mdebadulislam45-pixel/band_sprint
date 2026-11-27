@@ -25,6 +25,8 @@ import {
 import { soundManager } from '../../utils/audioEffects';
 import { saveUser, getCurrentUser, createDefaultProgress, ACTIVE_USER_KEY } from '../../utils/userStorage';
 import { UserProfile } from '../../types';
+import { BarnabyCrest } from '../common/BarnabyCrest';
+import { BARNABY_CORE_TAGLINE } from '../../types/barnaby';
 
 interface OnboardingDiagnosticFunnelProps {
   isOpen: boolean;
@@ -187,8 +189,9 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
         </div>
 
         {/* Modal Header */}
-        <div className="px-5 sm:px-8 pt-5 pb-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80">
-          <div className="flex items-center gap-2">
+        <div className="px-5 sm:px-8 pt-5 pb-3 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 gap-3">
+          <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+            <BarnabyCrest size={20} variant="badge" />
             <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
               STEP {step} OF 7
             </span>
@@ -201,6 +204,9 @@ export const OnboardingDiagnosticFunnel: React.FC<OnboardingDiagnosticFunnelProp
               {step === 5 && 'Benchmark & Cost Analysis'}
               {step === 6 && 'Synthesizing Custom Sprint'}
               {step === 7 && 'Your Personalized Sprint Roadmap'}
+            </span>
+            <span className="hidden sm:inline text-[11px] text-slate-400 dark:text-slate-500 italic">
+              · {BARNABY_CORE_TAGLINE}
             </span>
           </div>
 

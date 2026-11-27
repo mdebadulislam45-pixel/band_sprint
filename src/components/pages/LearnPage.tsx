@@ -16,9 +16,14 @@ import {
   ArrowRight,
   LucideIcon
 } from 'lucide-react';
-import { soundManager } from '../../utils/audioEffects';
+import { audioManager } from '../../services/AudioManager';
 import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
 import { IELTS_SPELLING_TRAPS } from '../../data/ieltsSpellingData';
+import { BarnabyCompanion } from '../BarnabyCompanion';
+import { getCurrentUser, getTopWeakness } from '../../utils/userStorage';
+import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
+import { getMistakes } from '../../utils/vaultStorage';
+import { sanitizeCandidateName } from '../../utils/nameSanitizer';
 
 interface LearnItem {
   id: string;
@@ -37,8 +42,34 @@ interface LearnPageProps {
 
 export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate }) => {
   const diagnostic = loadDiagnosticResult();
+  const user = getCurrentUser();
+  const agg = aggregateExamHistory(user?.progress?.examHistory || []);
+  const currentEstimate =
+    agg.overall.latest ??
+    validateOptionalHalfBand(diagnostic?.scores?.overall, 1.0) ??
+    validateOptionalHalfBand(user?.progress?.currentBandEstimate, 1.0);
+  const targetBand = diagnostic?.targetBand || user?.progress?.targetBand || 7.5;
+  const topWeakness = getTopWeakness() || diagnostic?.weakest || user?.progress?.weakestSkill || null;
+  const examMode = diagnostic?.examType || user?.progress?.intendedFormat || 'Academic';
+  const userName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
+  const mistakeCount = (() => {
+    try {
+      return getMistakes().filter((m) => !m.mastered).length;
+    } catch {
+      return 0;
+    }
+  })();
 
   const lexicalItems: LearnItem[] = [
+    {
+      id: 'daily-sprint',
+      path: '/learn/daily-sprint',
+      title: 'Pomodoro & Daily Sprint Hub',
+      shortName: 'Daily Sprint',
+      description: 'Timed Pomodoro sprints across 5 daily targets (Vocab, Idioms, Phrases, 30–50 Spelling, Grammar) with Bangla meanings + Mastery Exam.',
+      icon: Target,
+      meta: 'বাংলা + Exam'
+    },
     {
       id: 'vocabulary',
       path: '/learn/vocabulary',
@@ -150,7 +181,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate }) => {
         key={item.id}
         type="button"
         onClick={() => {
-          soundManager.playBeep(600, 0.035);
+          audioManager.playUiClick('soft');
           onNavigate(item.path);
         }}
         className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45] dark:hover:border-[#F4A62A]/70 transition text-left flex flex-col justify-between space-y-4 group cursor-pointer min-h-[146px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F4C45]"
@@ -198,12 +229,27 @@ export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate }) => {
         </p>
       </section>
 
+      {/* Barnaby Library Strategist (Zero Overlap, Studying Pose) */}
+      <BarnabyCompanion
+        pose="studying"
+        screen="learn"
+        userName={userName}
+        currentEstimate={currentEstimate}
+        targetBand={targetBand}
+        topWeakness={topWeakness}
+        mistakeCount={mistakeCount}
+        currentPath="/learn"
+        examMode={examMode}
+        compactStrip
+        onNavigate={onNavigate}
+      />
+
       {/* Featured Start Strip: Diagnostic + Study Plan */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <button
           type="button"
           onClick={() => {
-            soundManager.playSuccess();
+            audioManager.playUiClick('check');
             onNavigate('/learn/diagnostic');
           }}
           className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#0F4C45]/40 dark:border-[#F4A62A]/40 hover:border-[#0F4C45] dark:hover:border-[#F4A62A] transition text-left flex flex-col justify-between gap-4 group cursor-pointer"
@@ -238,7 +284,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate }) => {
         <button
           type="button"
           onClick={() => {
-            soundManager.playBeep(600, 0.035);
+            audioManager.playUiClick('soft');
             onNavigate('/learn/study-plan');
           }}
           className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45] dark:hover:border-[#F4A62A] transition text-left flex flex-col justify-between gap-4 group cursor-pointer"

@@ -27,6 +27,25 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Auto-recover once if a stale tab hits a dynamic module fetch error after restart/deploy
+    const msg = String(error?.message || '');
+    const isDynamicImportError =
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('Importing a module script failed') ||
+      error?.name === 'ChunkLoadError';
+
+    if (isDynamicImportError && typeof window !== 'undefined') {
+      try {
+        const key = 'bandsprint_chunk_reload_at';
+        const lastReload = Number(sessionStorage.getItem(key) || '0');
+        if (!Number.isFinite(lastReload) || Date.now() - lastReload > 15000) {
+          sessionStorage.setItem(key, String(Date.now()));
+          window.location.reload();
+          return;
+        }
+      } catch {}
+    }
+
     // Diagnostics only — never sent anywhere.
     console.error('[BandSprint] Error boundary caught:', error, info.componentStack);
   }

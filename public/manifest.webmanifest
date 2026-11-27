@@ -2,7 +2,7 @@
   "id": "/",
   "name": "BandSprint — IELTS Preparation",
   "short_name": "BandSprint",
-  "description": "IELTS-style practice suite with CD-IELTS mock tests, Shadowing & Pronunciation Studio, Writing Band 8.5+ Diff Studio, and offline 683-word Spelling Lab.",
+  "description": "Smart IELTS preparation with Daily Sprint, Pomodoro focus mode, Bangla explanations, AI Speaking & Writing labs, and offline study packs.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -33,6 +33,34 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Daily IELTS Sprint",
+      "short_name": "Daily Sprint",
+      "description": "Launch today's smart Pomodoro timer, 5 Bangla targets, and spaced-repetition warm-up.",
+      "url": "/learn/daily-sprint",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Full Mock Tests",
+      "short_name": "Mock Tests",
+      "description": "Start a timed computer-delivered IELTS mock sitting.",
+      "url": "/practice/mock-tests",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ],
   "categories": [

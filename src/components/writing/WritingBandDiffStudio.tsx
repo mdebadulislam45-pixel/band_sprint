@@ -164,7 +164,42 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
     });
     setSavedIds((prev) => ({ ...prev, [ann.id]: true }));
     soundManager.playSuccess();
-    onShowToast(`Saved ${meta.code} sentence upgrade to your Mistake Vault (synced to cloud).`);
+    onShowToast(`Saved ${meta.code} upgrade to Mistake Vault & Daily Sprint queue.`);
+  };
+
+  const unsavedFlaggedCount = useMemo(
+    () => flaggedAnnotations.filter((ann) => !savedIds[ann.id]).length,
+    [flaggedAnnotations, savedIds]
+  );
+
+  const handleSaveAllFlaggedToSprint = () => {
+    const unsaved = flaggedAnnotations.filter((ann) => !savedIds[ann.id]);
+    if (unsaved.length === 0) {
+      onShowToast('All flagged rules are already queued in your Daily Sprint.');
+      return;
+    }
+    const nextSaved: Record<string, boolean> = { ...savedIds };
+    unsaved.forEach((ann) => {
+      if (ann.category === 'clean') return;
+      const meta = CRITERION_META[ann.category];
+      addMistake({
+        module: 'writing',
+        title: `${meta.code} · Task ${diagnosticResult.taskType}: ${ann.errorTitle || ann.identifiedIssue || 'Writing Upgrade'}`,
+        prompt: `${testTitle} (${examFormat} Writing Task ${diagnosticResult.taskType})`,
+        questionType: `${meta.label} — Band 8.5 Upgrade`,
+        userAnswer: ann.sentence,
+        userWrongAnswer: ann.sentence,
+        correctAnswer: ann.suggestedCorrection || ann.sentence,
+        explanation: ann.rationaleEn || 'Apply Band 8.5+ academic lexical and grammatical precision.',
+        trapExplanationEn: ann.rationaleEn,
+        trapExplanationBn: ann.rationaleBn,
+        sourceContext: `${testTitle} · Task ${diagnosticResult.taskType}`
+      });
+      nextSaved[ann.id] = true;
+    });
+    setSavedIds(nextSaved);
+    soundManager.playSuccess();
+    onShowToast(`Queued ${unsaved.length} weak rule${unsaved.length > 1 ? 's' : ''} into Daily Sprint & Mistake Vault.`);
   };
 
   const handleApplyFixWithTracking = (ann: SentenceAnnotation) => {
@@ -494,12 +529,38 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
           {/* SENTENCE-BY-SENTENCE ACTIONABLE DIFF CARDS */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-display text-sm font-bold text-[#0E1F1E] dark:text-white">
-                Inline Corrections &amp; Mistake Vault Actions ({filteredFlagged.length})
-              </h3>
-              <span className="text-[11px] font-mono text-[#566664] dark:text-slate-400">
-                Save individual sentences to your cloud-synced Mistake Vault or apply directly to your draft
-              </span>
+              <div>
+                <h3 className="font-display text-sm font-bold text-[#0E1F1E] dark:text-white">
+                  Inline Corrections &amp; Daily Sprint Queue ({filteredFlagged.length})
+                </h3>
+                <p className="text-[11px] font-mono text-[#566664] dark:text-slate-400">
+                  Save rules to your Mistake Vault + Daily Sprint Smart Queue or apply directly to your draft
+                </p>
+              </div>
+              {flaggedAnnotations.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSaveAllFlaggedToSprint}
+                  disabled={unsavedFlaggedCount === 0}
+                  className={`min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                    unsavedFlaggedCount === 0
+                      ? 'bg-[#EEF3F1] dark:bg-[#0F4C45]/30 text-[#0F4C45] dark:text-emerald-300 border-[#9EBEB8] dark:border-[#1F8A70]/40 cursor-default'
+                      : 'bg-[#0F4C45] hover:bg-[#0B3A35] text-white border-[#0F4C45]'
+                  }`}
+                >
+                  {unsavedFlaggedCount === 0 ? (
+                    <>
+                      <BookmarkCheck className="w-3.5 h-3.5" />
+                      <span>All Weak Rules in Daily Sprint</span>
+                    </>
+                  ) : (
+                    <>
+                      <BookmarkPlus className="w-3.5 h-3.5" />
+                      <span>Push All Weak Rules to Daily Sprint ({unsavedFlaggedCount})</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
             {filteredFlagged.length === 0 ? (
@@ -566,12 +627,12 @@ export const WritingBandDiffStudio: React.FC<WritingBandDiffStudioProps> = ({
                             {isSaved ? (
                               <>
                                 <BookmarkCheck className="w-3.5 h-3.5 text-[#1F8A70]" />
-                                <span>Saved to Vault</span>
+                                <span>Queued in Sprint</span>
                               </>
                             ) : (
                               <>
                                 <BookmarkPlus className="w-3.5 h-3.5 text-[#0F4C45] dark:text-[#F4A62A]" />
-                                <span>Save Sentence to Vault</span>
+                                <span>Save to Vault &amp; Sprint</span>
                               </>
                             )}
                           </button>

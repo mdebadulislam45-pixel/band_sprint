@@ -13,7 +13,7 @@ import {
   Settings2,
   ArrowRight
 } from 'lucide-react';
-import { soundManager } from '../../utils/audioEffects';
+import { audioManager } from '../../services/AudioManager';
 import { ExamSetup } from '../cdielts/ExamSetup';
 import {
   daysUntilExam,
@@ -129,7 +129,7 @@ export const PracticePage: React.FC<PracticePageProps> = ({ onNavigate }) => {
         key={item.id}
         type="button"
         onClick={() => {
-          soundManager.playBeep(600, 0.035);
+          audioManager.playUiClick('soft');
           onNavigate(item.path);
         }}
         className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45] dark:hover:border-[#F4A62A]/70 transition text-left flex flex-col justify-between space-y-4 group cursor-pointer min-h-[150px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F4C45]"
@@ -184,7 +184,7 @@ export const PracticePage: React.FC<PracticePageProps> = ({ onNavigate }) => {
             <button
               type="button"
               onClick={() => {
-                soundManager.playSuccess();
+                audioManager.playUiClick('check');
                 setIsSetupOpen(true);
               }}
               className="min-h-[46px] px-5 py-2.5 rounded-xl bg-[#F4A62A] hover:bg-[#d98f1d] text-[#0E1F1E] font-bold text-sm transition inline-flex items-center gap-2 cursor-pointer whitespace-nowrap"
@@ -196,7 +196,7 @@ export const PracticePage: React.FC<PracticePageProps> = ({ onNavigate }) => {
             <button
               type="button"
               onClick={() => {
-                soundManager.playBeep(600, 0.035);
+                audioManager.playUiClick('soft');
                 setIsSetupOpen(true);
               }}
               className="min-h-[46px] px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-semibold text-xs transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"

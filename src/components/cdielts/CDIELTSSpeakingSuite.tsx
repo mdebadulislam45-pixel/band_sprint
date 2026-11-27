@@ -31,6 +31,16 @@ import { getStoredSessionToken } from '../../services/authService';
 import { SpeakingAssessmentStatus } from '../../types/speakingTypes';
 import { roundOfficialIELTSBand } from '../../utils/scoringIntegrity';
 import { setBarnabyAnalyzing } from '../../utils/getBarnabyState';
+import { BarnabyRig } from '../BarnabyRig';
+import {
+  getCurrentUser,
+  setTopWeakness,
+  detectLowestSpeakingCriterion
+} from '../../utils/userStorage';
+import type {
+  SpeakingCriterionNotes,
+  SpeakingTopicVocabUpgrade
+} from '../../services/geminiService';
 import {
   CDIELTSColorScheme,
   CDIELTSZoomLevel,
@@ -62,6 +72,9 @@ export interface CDIELTSSpeakingEvaluation {
   grammarBand: number | null;
   pronunciationBand: number | null;
   examinerFeedback: string;
+  barnabySummary?: string;
+  criterionNotes?: SpeakingCriterionNotes;
+  topicVocabularyUpgrades?: SpeakingTopicVocabUpgrade[];
   disclaimer?: string;
   error?: string;
   canRetry?: boolean;
@@ -230,6 +243,68 @@ export function mapSpeakingTurnApiResponseToCDIELTS(
   const resolvedWordCount =
     typeof data.wordCount === 'number' && Number.isFinite(data.wordCount) ? data.wordCount : wordCount;
 
+  const rawNotes = data.criterionNotes && typeof data.criterionNotes === 'object' ? data.criterionNotes : {};
+  const criterionNotes: SpeakingCriterionNotes = {
+    fluency:
+      typeof rawNotes.fluency === 'string' && rawNotes.fluency.trim()
+        ? rawNotes.fluency.trim()
+        : `Fluency & Coherence assessed at Band ${fc.toFixed(1)}. Maintain steady pacing and link ideas naturally without stalling.`,
+    lexical:
+      typeof rawNotes.lexical === 'string' && rawNotes.lexical.trim()
+        ? rawNotes.lexical.trim()
+        : `Lexical Resource assessed at Band ${lr.toFixed(1)}. Replace general adjectives with topic-specific collocations.`,
+    grammar:
+      typeof rawNotes.grammar === 'string' && rawNotes.grammar.trim()
+        ? rawNotes.grammar.trim()
+        : `Grammatical Range & Accuracy assessed at Band ${gra.toFixed(1)}. Combine complex clauses with consistent tense control.`,
+    pronunciation:
+      pronunciationObservable && typeof rawNotes.pronunciation === 'string' && rawNotes.pronunciation.trim()
+        ? rawNotes.pronunciation.trim()
+        : pronunciationObservable && pr !== null
+        ? `Pronunciation & Delivery assessed at Band ${pr.toFixed(1)} from recorded audio.`
+        : 'Pronunciation & Delivery cannot be scored from text transcripts alone; record microphone audio for intonation and stress feedback.'
+  };
+
+  const parsedTopicUpgrades: SpeakingTopicVocabUpgrade[] = (() => {
+    const rawList = Array.isArray(data.topicVocabularyUpgrades)
+      ? data.topicVocabularyUpgrades
+      : Array.isArray(data.band8Answer?.highlightedCollocations)
+      ? data.band8Answer.highlightedCollocations.map((c: any) => ({
+          phrase: c?.phrase,
+          bandLevel: c?.bandLevel || 'Band 8.5+',
+          meaning: c?.meaning,
+          topicContext: 'Your spoken topic'
+        }))
+      : [];
+    return rawList
+      .filter((item: any) => item && typeof item.phrase === 'string' && item.phrase.trim())
+      .slice(0, 3)
+      .map((item: any) => ({
+        phrase: item.phrase.trim(),
+        bandLevel:
+          typeof item.bandLevel === 'string' && item.bandLevel.trim()
+            ? item.bandLevel.trim()
+            : 'Band 8.5+',
+        topicContext:
+          typeof item.topicContext === 'string' && item.topicContext.trim()
+            ? item.topicContext.trim()
+            : undefined,
+        meaning:
+          typeof item.meaning === 'string' && item.meaning.trim()
+            ? item.meaning.trim()
+            : 'Natural idiomatic expression suited to your speaking topic.',
+        exampleInContext:
+          typeof item.exampleInContext === 'string' && item.exampleInContext.trim()
+            ? item.exampleInContext.trim()
+            : undefined
+      }));
+  })();
+
+  const barnabySummary =
+    typeof data.barnabySummary === 'string' && data.barnabySummary.trim()
+      ? data.barnabySummary.trim()
+      : examinerFeedback;
+
   if (pronunciationObservable && pr !== null) {
     const rawOverall = parseOptionalBand(data.overallBand ?? data.estimatedBands?.overall);
     const computedOverall = rawOverall ?? roundOfficialIELTSBand((fc + lr + gra + pr) / 4);
@@ -246,6 +321,9 @@ export function mapSpeakingTurnApiResponseToCDIELTS(
       grammarBand: gra,
       pronunciationBand: pr,
       examinerFeedback,
+      barnabySummary,
+      criterionNotes,
+      topicVocabularyUpgrades: parsedTopicUpgrades,
       disclaimer: typeof data.disclaimer === 'string' ? data.disclaimer : undefined,
       canRetry: false,
       authRequired: false,
@@ -270,6 +348,9 @@ export function mapSpeakingTurnApiResponseToCDIELTS(
     grammarBand: gra,
     pronunciationBand: null,
     examinerFeedback,
+    barnabySummary,
+    criterionNotes,
+    topicVocabularyUpgrades: parsedTopicUpgrades,
     disclaimer:
       typeof data.disclaimer === 'string' && data.disclaimer.trim()
         ? data.disclaimer
@@ -564,12 +645,19 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
     return () => clearInterval(id);
   }, [stage]);
 
-  // Hide floating Barnaby companion during timed Speaking exam & clean up audio on unmount
+  // Strict Role Separation: Barnaby stays completely hidden (`isHiddenForExam = true`)
+  // during Parts 1, 2, and 3 test simulation while formal Cambridge examiner (Arthur/Clara) runs.
+  // Once the session ends (`stage === 'result'`), unmount the examiner and hand off to Barnaby.
+  const isHiddenForExam = stage !== 'result';
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      (window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__ = true;
-      window.dispatchEvent(new Event('barnaby-float-hide'));
+      (window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__ = isHiddenForExam;
+      window.dispatchEvent(new Event(isHiddenForExam ? 'barnaby-float-hide' : 'barnaby-float-show'));
     }
+  }, [isHiddenForExam]);
+
+  useEffect(() => {
     return () => {
       if (typeof window !== 'undefined') {
         (window as unknown as Record<string, unknown>).__BANDSPRINT_ACTIVE_EXAM__ = false;
@@ -850,6 +938,21 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
       const data = await res.json();
       const resultObj = mapSpeakingTurnApiResponseToCDIELTS(data, words);
       setEvaluation(resultObj);
+
+      if (
+        resultObj.assessmentStatus === 'evaluated' ||
+        resultObj.assessmentStatus === 'partial_transcript_only'
+      ) {
+        const lowestSpeaking = detectLowestSpeakingCriterion({
+          fc: resultObj.fluencyBand,
+          lr: resultObj.lexicalBand,
+          gra: resultObj.grammarBand,
+          pr: resultObj.pronunciationBand
+        });
+        if (lowestSpeaking) {
+          setTopWeakness(lowestSpeaking, 'speaking');
+        }
+      }
 
       if (shouldPersistCDIELTSSpeakingToFirestore(resultObj)) {
         firebaseSyncService
@@ -1290,7 +1393,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
         <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2">
           <div className="font-medium truncate">{stageBannerText}</div>
           <span className="hidden sm:inline text-[11px] opacity-75 shrink-0">
-            Examiner: {examinerDisplayName}
+            {isHiddenForExam ? `Examiner: ${examinerDisplayName}` : 'Post-Test Coaching: Barnaby'}
           </span>
         </div>
       </div>
@@ -2159,7 +2262,7 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
             </div>
           )}
 
-          {/* ================= RESULT STAGE: BAND SCORECARD ================= */}
+          {/* ================= RESULT STAGE: BARNABY POST-TEST HANDOFF & BAND SCORECARD ================= */}
           {stage === 'result' && (
             <div
               className={`max-w-3xl mx-auto border shadow-2xs p-6 sm:p-8 space-y-6 ${
@@ -2169,111 +2272,243 @@ export const CDIELTSSpeakingSuite: React.FC<CDIELTSSpeakingSuiteProps> = ({
               }`}
             >
               {isEvaluating ? (
-                <div className="py-12 text-center space-y-3">
-                  <Loader2 className="w-10 h-10 animate-spin mx-auto text-[#0066CC]" />
-                  <h3 className="text-lg font-bold">Evaluating Speaking Performance...</h3>
-                  <p className="text-xs opacity-75">
-                    Analyzing fluency, lexical resource, grammatical range, and pronunciation against BandSprint practice descriptors.
-                  </p>
+                <div className="py-10 text-center space-y-4">
+                  <div className="w-24 h-24 rounded-2xl mx-auto bg-transparent flex items-center justify-center p-1">
+                    <BarnabyRig
+                      expression="analytical"
+                      mode="tutor"
+                      animationState="focused"
+                      moodState="focused"
+                      className="w-full h-full"
+                      ariaLabel="Barnaby analyzing your Speaking transcript"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#134E41]">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Barnaby Analyzing Speaking Transcript</span>
+                    </div>
+                    <h3 className="text-lg font-bold">Evaluating Speaking Performance...</h3>
+                    <p className="text-xs opacity-75 max-w-md mx-auto leading-relaxed">
+                      The formal examiner session has ended. Reviewing your fluency, lexical resource, grammatical range, and delivery against BandSprint practice descriptors.
+                    </p>
+                  </div>
                 </div>
               ) : evaluation &&
                 (evaluation.assessmentStatus === 'evaluated' ||
                   evaluation.assessmentStatus === 'partial_transcript_only') ? (
-                <>
-                  <div className="text-center space-y-2">
-                    <div
-                      className={`w-12 h-12 rounded-xl mx-auto flex items-center justify-center ${
-                        evaluation.assessmentStatus === 'evaluated'
-                          ? isStandard
-                            ? 'bg-[#1E293B] text-white'
-                            : theme.contrastBadge
-                          : isStandard
-                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                          : theme.contrastBadge
-                      }`}
-                    >
-                      <Award className="w-6 h-6" />
-                    </div>
-                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
-                      {evaluation.assessmentStatus === 'evaluated'
-                        ? 'Speaking Assessment Complete'
-                        : 'Partial Speaking Assessment (Transcript-Only)'}
-                    </h2>
-                    <p className="text-xs opacity-75">
-                      BandSprint Practice Rubric Assessment · {evaluation.wordCount} Words Analyzed
-                    </p>
-                  </div>
-
-                  {evaluation.assessmentStatus === 'partial_transcript_only' && (
-                    <div
-                      className={`p-4 border text-xs space-y-1.5 ${
-                        isStandard
-                          ? 'bg-amber-50 border-amber-300 text-amber-950'
-                          : `${theme.bg} ${theme.border}`
-                      }`}
-                    >
-                      <div className="font-bold uppercase flex items-center gap-1.5">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        <span>Incomplete Speaking Evidence — Pronunciation Unassessed</span>
-                      </div>
-                      <p className="leading-relaxed">
-                        {evaluation.disclaimer ||
-                          'Pronunciation cannot be scored from text transcripts alone. No complete 4-criterion Overall Speaking Band was awarded or persisted as a complete exam score.'}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                    {[
-                      { title: 'Fluency & Coherence', band: evaluation.fluencyBand },
-                      { title: 'Lexical Resource', band: evaluation.lexicalBand },
-                      { title: 'Grammar Accuracy', band: evaluation.grammarBand },
-                      { title: 'Pronunciation', band: evaluation.pronunciationBand }
-                    ].map((c) => (
+                (() => {
+                  const targetBand = getCurrentUser()?.progress?.targetBand ?? 7.5;
+                  const metTarget =
+                    typeof evaluation.overallBand === 'number' &&
+                    evaluation.overallBand >= targetBand;
+                  return (
+                    <>
+                      {/* Barnaby Post-Test Handoff Banner (Formal Examiner Unmounted) */}
                       <div
-                        key={c.title}
-                        className={`p-3.5 border ${
+                        data-testid="speaking-barnaby-handoff"
+                        className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center gap-4 ${
+                          isStandard
+                            ? 'bg-[#F4F7F6] border-[#134E41]/15 text-[#0E1F1E]'
+                            : `${theme.bg} ${theme.border}`
+                        }`}
+                      >
+                        <div className="w-20 h-20 rounded-2xl bg-transparent flex items-center justify-center shrink-0 overflow-hidden p-0.5">
+                          <BarnabyRig
+                            expression={metTarget ? 'celebrating' : 'encouraging'}
+                            mode={metTarget ? 'celebration' : 'tutor'}
+                            animationState={metTarget ? 'celebratory' : 'idle'}
+                            moodState={metTarget ? 'celebratory' : 'encouraging'}
+                            className="w-full h-full"
+                            ariaLabel={`Barnaby ${metTarget ? 'celebrating' : 'encouraging'} after speaking test`}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#134E41]">
+                              Barnaby Post-Test Coaching · {evaluation.wordCount} Words Analyzed
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-lg bg-[#F59E0B]/15 text-[#B45309] text-[11px] font-semibold tabular-nums">
+                              {evaluation.assessmentStatus === 'evaluated' &&
+                              typeof evaluation.overallBand === 'number'
+                                ? `Overall Band ${evaluation.overallBand.toFixed(1)} · Target ${targetBand.toFixed(1)}`
+                                : typeof evaluation.partialThreeCriterionIndex === 'number'
+                                ? `3-Criterion Index ${evaluation.partialThreeCriterionIndex.toFixed(1)}`
+                                : 'Partial Transcript Review'}
+                            </span>
+                          </div>
+                          <h2 className="text-lg sm:text-xl font-bold tracking-tight">
+                            {evaluation.assessmentStatus === 'evaluated'
+                              ? 'Speaking Assessment Complete'
+                              : 'Partial Speaking Assessment (Transcript-Only)'}
+                          </h2>
+                          <p className="text-xs sm:text-sm leading-relaxed opacity-90">
+                            {evaluation.barnabySummary || evaluation.examinerFeedback}
+                          </p>
+                        </div>
+                      </div>
+
+                      {evaluation.assessmentStatus === 'partial_transcript_only' && (
+                        <div
+                          className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+                            isStandard
+                              ? 'bg-amber-50 border-amber-300 text-amber-950'
+                              : `${theme.bg} ${theme.border}`
+                          }`}
+                        >
+                          <div className="font-bold uppercase flex items-center gap-1.5">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>Incomplete Speaking Evidence — Pronunciation Unassessed</span>
+                          </div>
+                          <p className="leading-relaxed">
+                            {evaluation.disclaimer ||
+                              'Pronunciation cannot be scored from text transcripts alone. No complete 4-criterion Overall Speaking Band was awarded or persisted as a complete exam score.'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* 4-Criterion Score Cards + Structured Barnaby Coaching Notes */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {[
+                          {
+                            title: 'Fluency & Coherence',
+                            band: evaluation.fluencyBand,
+                            note: evaluation.criterionNotes?.fluency
+                          },
+                          {
+                            title: 'Lexical Resource',
+                            band: evaluation.lexicalBand,
+                            note: evaluation.criterionNotes?.lexical
+                          },
+                          {
+                            title: 'Grammatical Range',
+                            band: evaluation.grammarBand,
+                            note: evaluation.criterionNotes?.grammar
+                          },
+                          {
+                            title: 'Pronunciation & Delivery',
+                            band: evaluation.pronunciationBand,
+                            note: evaluation.criterionNotes?.pronunciation
+                          }
+                        ].map((c) => (
+                          <div
+                            key={c.title}
+                            className={`p-4 rounded-xl border space-y-2 ${
+                              isStandard
+                                ? 'bg-[#F8FAFC] border-[#CBD5E1]'
+                                : `${theme.bg} ${theme.border}`
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] uppercase font-bold tracking-wider opacity-75">
+                                {c.title}
+                              </span>
+                              {typeof c.band === 'number' ? (
+                                <span className="text-base font-bold tabular-nums text-[#134E41]">
+                                  Band {c.band.toFixed(1)}
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold text-amber-700">
+                                  Unassessed
+                                </span>
+                              )}
+                            </div>
+                            {c.note && (
+                              <p className="text-xs leading-relaxed opacity-85">{c.note}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 3 Concrete Band 8.5+ Topic-Specific Vocabulary & Idiom Upgrades */}
+                      {Array.isArray(evaluation.topicVocabularyUpgrades) &&
+                        evaluation.topicVocabularyUpgrades.length > 0 && (
+                          <div
+                            className={`p-5 rounded-2xl border space-y-3.5 ${
+                              isStandard
+                                ? 'bg-white border-[#134E41]/15'
+                                : `${theme.bg} ${theme.border}`
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#134E41]/10 pb-2.5">
+                              <div>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-[#134E41]">
+                                  Tailored to Your Spoken Topics
+                                </span>
+                                <h3 className="text-sm font-bold">
+                                  Band 8.5+ Vocabulary &amp; Idiom Upgrades
+                                </h3>
+                              </div>
+                              <span className="text-xs font-semibold tabular-nums opacity-70">
+                                {evaluation.topicVocabularyUpgrades.length} upgrades
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {evaluation.topicVocabularyUpgrades.slice(0, 3).map((item, idx) => (
+                                <div
+                                  key={`sp-upg-${idx}`}
+                                  className={`p-3.5 rounded-xl border space-y-1.5 ${
+                                    isStandard
+                                      ? 'bg-[#F4F7F6] border-[#134E41]/12'
+                                      : `${theme.cardBg} ${theme.border}`
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <span className="text-xs font-bold text-[#134E41]">
+                                      {item.phrase}
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-[#F59E0B]/15 text-[#B45309] text-[10px] font-semibold shrink-0">
+                                      {item.bandLevel}
+                                    </span>
+                                  </div>
+                                  {item.topicContext && (
+                                    <div className="text-[10px] font-semibold uppercase tracking-wide opacity-65">
+                                      {item.topicContext}
+                                    </div>
+                                  )}
+                                  <p className="text-[11px] leading-relaxed opacity-85">
+                                    {item.meaning}
+                                  </p>
+                                  {item.exampleInContext && (
+                                    <p className="text-[11px] italic leading-relaxed text-[#134E41] pt-1 border-t border-[#134E41]/10">
+                                      &ldquo;{item.exampleInContext}&rdquo;
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Official Summary Strip (Preserving Strict Honesty Labels) */}
+                      <div
+                        className={`p-4 rounded-xl border text-xs space-y-2 ${
                           isStandard
                             ? 'bg-[#F8FAFC] border-[#CBD5E1]'
                             : `${theme.bg} ${theme.border}`
                         }`}
                       >
-                        <div className="text-[10px] uppercase font-semibold opacity-70">{c.title}</div>
-                        {typeof c.band === 'number' ? (
-                          <div className="text-2xl font-bold tabular-nums my-1">
-                            Band {c.band.toFixed(1)}
-                          </div>
-                        ) : (
-                          <div className="text-sm font-bold text-amber-700 my-2">
-                            Unassessed
-                          </div>
-                        )}
+                        <div className="font-bold flex items-center gap-1.5 uppercase">
+                          <Sparkles className="w-4 h-4 text-[#134E41]" />
+                          {evaluation.assessmentStatus === 'evaluated' &&
+                          typeof evaluation.overallBand === 'number' ? (
+                            <span>Overall Speaking Band: {evaluation.overallBand.toFixed(1)}</span>
+                          ) : typeof evaluation.partialThreeCriterionIndex === 'number' ? (
+                            <span>
+                              3-Criterion Transcript Index:{' '}
+                              {evaluation.partialThreeCriterionIndex.toFixed(1)} (Overall Band
+                              Unassessed)
+                            </span>
+                          ) : (
+                            <span>Overall Speaking Band: Unassessed</span>
+                          )}
+                        </div>
+                        <p className="leading-relaxed">{evaluation.examinerFeedback}</p>
                       </div>
-                    ))}
-                  </div>
-
-                  <div
-                    className={`p-4 border text-xs space-y-2 ${
-                      isStandard
-                        ? 'bg-[#F8FAFC] border-[#CBD5E1]'
-                        : `${theme.bg} ${theme.border}`
-                    }`}
-                  >
-                    <div className="font-bold flex items-center gap-1.5 uppercase">
-                      <Sparkles className="w-4 h-4 text-[#0066CC]" />
-                      {evaluation.assessmentStatus === 'evaluated' && typeof evaluation.overallBand === 'number' ? (
-                        <span>Overall Speaking Band: {evaluation.overallBand.toFixed(1)}</span>
-                      ) : typeof evaluation.partialThreeCriterionIndex === 'number' ? (
-                        <span>
-                          3-Criterion Transcript Index: {evaluation.partialThreeCriterionIndex.toFixed(1)} (Overall Band Unassessed)
-                        </span>
-                      ) : (
-                        <span>Overall Speaking Band: Unassessed</span>
-                      )}
-                    </div>
-                    <p className="leading-relaxed">{evaluation.examinerFeedback}</p>
-                  </div>
-                </>
+                    </>
+                  );
+                })()
               ) : evaluation && evaluation.assessmentStatus === 'unavailable' ? (
                 <div className="text-center space-y-4 py-6">
                   <div

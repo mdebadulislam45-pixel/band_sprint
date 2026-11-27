@@ -1,4 +1,9 @@
 import { MistakeItem } from '../types';
+import {
+  pushMistakeToDailySprint,
+  removeVaultMistakeFromDailySprint,
+  syncUnresolvedVaultToDailySprint
+} from './dailySprintProgressStore';
 
 const VAULT_KEY = 'ielts_sprint_mistake_vault_v1';
 
@@ -108,6 +113,7 @@ export function addMistake(item: Omit<MistakeItem, 'id' | 'timestamp' | 'mastere
     existing.intervalDays = 0;
     existing.nextReviewAt = Date.now();
     saveMistakes(current);
+    pushMistakeToDailySprint(existing.id);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: existing }));
     }
@@ -138,6 +144,7 @@ export function addMistake(item: Omit<MistakeItem, 'id' | 'timestamp' | 'mastere
   };
 
   saveMistakes([newMistake, ...current]);
+  pushMistakeToDailySprint(newMistake.id);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: newMistake }));
   }
@@ -194,8 +201,13 @@ export function recordSM2Review(id: string, quality: 1 | 3 | 4 | 5): MistakeItem
   });
 
   saveMistakes(updated);
-  if (updatedItem && typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: updatedItem }));
+  if (updatedItem) {
+    if ((updatedItem as MistakeItem).mastered) {
+      removeVaultMistakeFromDailySprint((updatedItem as MistakeItem).id);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: updatedItem }));
+    }
   }
   return updatedItem;
 }
@@ -311,8 +323,15 @@ export function toggleMastery(id: string): void {
     return m;
   });
   saveMistakes(updated);
-  if (toggledItem && typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: toggledItem }));
+  if (toggledItem) {
+    if ((toggledItem as MistakeItem).mastered) {
+      removeVaultMistakeFromDailySprint((toggledItem as MistakeItem).id);
+    } else {
+      pushMistakeToDailySprint((toggledItem as MistakeItem).id);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: toggledItem }));
+    }
   }
 }
 
@@ -320,6 +339,7 @@ export function deleteMistake(id: string): void {
   if (!id) return;
   const current = getMistakes();
   saveMistakes(current.filter(m => m.id !== id));
+  removeVaultMistakeFromDailySprint(id);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('bandsprint_mistake_deleted', { detail: { id } }));
   }
@@ -327,6 +347,7 @@ export function deleteMistake(id: string): void {
 
 export function clearMistakes(): void {
   saveMistakes([]);
+  syncUnresolvedVaultToDailySprint([]);
 }
 
 export function getUnresolvedMistakesCount(): number {

@@ -14,7 +14,13 @@ export default defineConfig({
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom')
     },
-    dedupe: ['react', 'react-dom', 'react-dom/client']
+    dedupe: [
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime'
+    ]
   },
   optimizeDeps: {
     include: [
@@ -22,7 +28,9 @@ export default defineConfig({
       'react-dom',
       'react-dom/client',
       'react/jsx-runtime',
-      'react/jsx-dev-runtime'
+      'react/jsx-dev-runtime',
+      'framer-motion',
+      'lucide-react'
     ]
   },
   server: {

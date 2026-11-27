@@ -5,16 +5,17 @@ import {
   Search,
   ChevronRight,
   ChevronDown,
-  Flame,
   Sun,
   Moon,
   Download,
   LogOut,
   User as UserIcon,
-  Target
+  Target,
+  Flame,
+  BookmarkCheck
 } from 'lucide-react';
 import { UserProfile } from '../../types';
-import { soundManager } from '../../utils/audioEffects';
+import { audioManager } from '../../services/AudioManager';
 import { BandSprintMark } from '../common/BandSprintMark';
 import { sanitizeCandidateName } from '../../utils/nameSanitizer';
 import { useTheme } from '../../context/ThemeContext';
@@ -46,10 +47,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   canGoBack,
   backLabel,
   onOpenSearch,
+  onOpenVault,
   onOpenProfile,
   onSignOut,
   onOpenMobileMenu,
-  streakDays: propStreakDays = 1,
+  mistakeCount,
   user,
   examMode: propExamMode,
   onExamModeChange
@@ -107,29 +109,50 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     };
   }, [showAccountMenu]);
 
-  const streakDays = user?.progress?.streakDays || propStreakDays || 1;
   const sanitizedName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
   const isDark = resolvedTheme === 'dark';
 
   const getPageTitle = (page: string): string => {
-    const clean = page.replace(/\/+$/, '') || '/';
+    const clean = page.split('?')[0].split('#')[0].replace(/\/+$/, '') || '/';
     if (clean === '/' || clean === '/home') return 'Command Center';
     if (clean === '/practice') return 'Practice Hub';
     if (clean === '/practice/listening') return 'Listening Lab';
     if (clean === '/practice/reading') return 'Reading Lab';
     if (clean === '/practice/writing') return 'Writing Lab';
     if (clean === '/practice/speaking') return 'Speaking Lab';
-    if (clean === '/practice/mock-tests') return 'Mock Tests';
+    if (clean === '/practice/mock-tests') return 'Mock Tests & Exam Room';
     if (clean === '/practice/question-bank') return 'Question Bank';
-    if (clean === '/practice/sprint') return 'Practice Library';
-    if (clean === '/practice/ai-tools') return 'AI Studio';
+    if (clean === '/practice/sprint') return 'Pomodoro & Daily Sprint';
+    if (clean === '/practice/ai-tools') return 'AI Tools';
     if (clean === '/learn') return 'Learning Library';
+    if (clean === '/learn/daily-sprint') return 'Pomodoro & Daily Sprint';
     if (clean === '/learn/diagnostic') return 'Diagnostic Test';
     if (clean === '/learn/study-plan') return '30-Day Study Plan';
     if (clean === '/learn/spelling') return 'Spelling Lab';
     if (clean === '/learn/vocabulary') return 'Vocabulary Deck';
+    if (clean === '/learn/phrases') return 'Useful Phrases';
+    if (clean === '/learn/idioms') return 'Idiom Lab';
+    if (clean === '/learn/collocations') return 'Academic Collocations';
+    if (clean === '/learn/grammar') return 'Grammar Lab';
+    if (clean === '/learn/shadowing') return 'Shadowing & Pronunciation';
+    if (clean === '/learn/model-answers') return 'Band 9 Model Answers';
+    if (clean === '/learn/band-descriptors') return 'Band Descriptors';
+    if (clean === '/learn/bangla-guide') return 'Bangla IELTS Guide';
+    if (clean === '/learn/beginner-101') return 'Beginner 101';
+    if (clean === '/learn/slide-guide') return 'Visual Slide Guide';
+    if (clean === '/learn/task1-visualizer') return 'Task 1 Visualizer';
+    if (clean === '/learn/argument-matrix') return 'Task 2 Argument Matrix';
     if (clean === '/progress') return 'Progress Hub';
+    if (clean === '/progress/analytics') return 'Candidate Analytics';
+    if (clean === '/progress/history') return 'Practice History';
+    if (clean === '/progress/saved' || clean === '/progress/mistakes') return 'Mistake Vault';
+    if (clean === '/progress/calendar') return 'Sprint Calendar';
+    if (clean === '/progress/admin-analytics') return 'Operational Analytics';
     if (clean === '/profile') return 'Candidate Profile';
+    if (clean === '/profile/details') return 'Candidate Details';
+    if (clean === '/profile/settings') return 'App Settings';
+    if (clean === '/profile/subscription') return 'Subscription & Billing';
+    if (clean === '/profile/help') return 'Help & Support';
     return 'BandSprint';
   };
 
@@ -151,7 +174,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         <button
           type="button"
           onClick={() => {
-            soundManager.playBeep(520, 0.03);
+            audioManager.playUiClick('soft');
             if (onOpenMobileMenu) {
               onOpenMobileMenu();
             }
@@ -167,7 +190,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <button
             type="button"
             onClick={() => {
-              soundManager.playBeep(480, 0.04);
+              audioManager.playUiClick('soft');
               onBack();
             }}
             className="min-h-[44px] px-2.5 sm:px-3 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap"
@@ -183,7 +206,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         <button
           type="button"
           onClick={() => {
-            soundManager.playBeep(520, 0.04);
+            audioManager.playUiClick('soft');
             onNavigate('/');
           }}
           className="flex items-center gap-2 cursor-pointer group py-1 shrink-0 text-left focus-visible:outline-none whitespace-nowrap min-h-[44px]"
@@ -215,18 +238,47 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
       {/* ================= RIGHT: THEME TOGGLE, SEARCH & CONTROLS ================= */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative" ref={menuRef}>
-        <div
-          className="h-9 px-2.5 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] hidden sm:flex items-center gap-1.5 text-xs font-semibold shrink-0 whitespace-nowrap"
-          title={`Active Daily Practice Streak: ${streakDays} days`}
+        <button
+          type="button"
+          data-testid="header-daily-sprint-btn"
+          onClick={() => {
+            audioManager.playUiClick('tab');
+            onNavigate('/learn/daily-sprint');
+          }}
+          className={`min-h-[44px] px-2.5 rounded-xl border transition hidden sm:flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap text-xs font-semibold ${
+            currentPage === '/learn/daily-sprint' || currentPage === '/practice/sprint'
+              ? 'bg-[#F4A62A] text-[#0E1F1E] border-[#F4A62A] font-bold'
+              : 'bg-white dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] hover:border-[#0F4C45]'
+          }`}
+          title="Pomodoro & Daily IELTS Sprint Hub (বাংলা)"
         >
-          <Flame className="w-3.5 h-3.5 text-[#F4A62A] fill-[#F4A62A] shrink-0" />
-          <span className="font-mono tabular-nums">{streakDays}d</span>
-        </div>
+          <Flame className="w-4 h-4 text-[#D97706] dark:text-[#F4A62A]" />
+          <span className="hidden lg:inline">Daily Sprint</span>
+        </button>
+
+        <button
+          type="button"
+          data-testid="header-mistake-vault-btn"
+          onClick={() => {
+            audioManager.playUiClick('soft');
+            onOpenVault();
+          }}
+          className="relative min-w-[44px] min-h-[44px] px-2.5 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] hover:border-[#0F4C45] transition hidden sm:flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+          title="Open Mistake Vault"
+          aria-label="Open Mistake Vault"
+        >
+          <BookmarkCheck className="w-4 h-4 text-[#0F4C45] dark:text-[#4DB6A4]" />
+          {mistakeCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded-md bg-[#F4A62A]/20 text-[#9A5B00] dark:text-[#F4A62A] font-mono text-[10px] font-bold tabular-nums">
+              {mistakeCount}
+            </span>
+          )}
+        </button>
 
         <button
           type="button"
           onClick={() => {
-            soundManager.playBeep(600, 0.04);
+            audioManager.playUiClick('soft');
             onOpenSearch();
           }}
           className="min-w-[44px] min-h-[44px] px-2.5 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#566664] dark:text-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
@@ -241,7 +293,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           type="button"
           onClick={() => {
             toggleTheme();
-            soundManager.playBeep(isDark ? 740 : 580, 0.035);
+            audioManager.playUiClick('toggle');
           }}
           className="min-w-[44px] min-h-[44px] px-2.5 rounded-xl bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 text-[#0E1F1E] dark:text-[#EEF3F1] transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
           title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -261,7 +313,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <button
             type="button"
             onClick={() => {
-              soundManager.playBeep(680, 0.04);
+              audioManager.playUiClick('soft');
               setShowPwaModal(true);
             }}
             className="h-9 px-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-semibold text-xs hidden lg:flex items-center gap-1.5 transition cursor-pointer shrink-0 whitespace-nowrap"
@@ -276,7 +328,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <button
             type="button"
             onClick={() => {
-              soundManager.playBeep(640, 0.04);
+              audioManager.playUiClick('tab');
               if (user) {
                 setShowAccountMenu((v) => !v);
               } else {

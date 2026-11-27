@@ -36,6 +36,11 @@ import {
 } from '../../services/aiStudyPlanService';
 import { soundManager } from '../../utils/audioEffects';
 import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
+import {
+  DAILY_SPRINT_SYNCED_EVENT,
+  loadDailySprintProgress
+} from '../../utils/dailySprintProgressStore';
+import { computeSmartSprintBrief } from '../../utils/smartSprintEngine';
 
 interface StudyPlanPageProps {
   onBack: () => void;
@@ -86,14 +91,25 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
   const [customPlan, setCustomPlan] = useState<GeneratedCustomPlan | null>(() => getSavedStudyPlan());
   const [isGenerating, setIsGenerating] = useState(false);
   const [diagnostic, setDiagnostic] = useState(() => loadDiagnosticResult());
+  const [sprintProgress, setSprintProgress] = useState(() => loadDailySprintProgress());
+
+  const smartSprintBrief = useMemo(
+    () => computeSmartSprintBrief(null, sprintProgress),
+    [sprintProgress]
+  );
 
   useEffect(() => {
-    const refreshDiagnostic = () => setDiagnostic(loadDiagnosticResult());
+    const refreshDiagnostic = () => {
+      setDiagnostic(loadDiagnosticResult());
+      setSprintProgress(loadDailySprintProgress());
+    };
     window.addEventListener('bandsprint_cloud_sync_updated', refreshDiagnostic);
     window.addEventListener('bandsprint_diagnostic_saved', refreshDiagnostic);
+    window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, refreshDiagnostic);
     return () => {
       window.removeEventListener('bandsprint_cloud_sync_updated', refreshDiagnostic);
       window.removeEventListener('bandsprint_diagnostic_saved', refreshDiagnostic);
+      window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, refreshDiagnostic);
     };
   }, []);
 
@@ -289,6 +305,32 @@ export const StudyPlanPage: React.FC<StudyPlanPageProps> = ({
           )}
         </div>
       )}
+
+      {/* Smart Daily Sprint Sync Strip */}
+      <div
+        data-testid="study-plan-daily-sprint-bridge"
+        className="rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden"
+      >
+        <div className="space-y-1">
+          <div className="text-[11px] font-mono text-[#0F4C45] dark:text-[#6EE7B7] font-semibold uppercase tracking-wide">
+            Daily Sprint Sync · {sprintProgress.pomodoroFocusMinutesLogged}m Focus Today · {smartSprintBrief.todayReadinessPct}% Daily Targets · {smartSprintBrief.dueReviewCount} Due Review
+          </div>
+          <p className="text-xs sm:text-sm text-[#0E1F1E] dark:text-[#EEF3F1] font-medium">
+            {smartSprintBrief.coachHeadline}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            soundManager.playBeep(540, 0.04);
+            onNavigateToModule('/learn/daily-sprint');
+          }}
+          className="shrink-0 min-h-[42px] px-4 py-2 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+        >
+          <span>Open Daily Sprint</span>
+          <ArrowRight className="w-3.5 h-3.5 text-[#F4A62A]" />
+        </button>
+      </div>
 
       {/* Executive Hero Banner */}
       <div className="relative overflow-hidden bg-slate-900 text-white rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-xs">

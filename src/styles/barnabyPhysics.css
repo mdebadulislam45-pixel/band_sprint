@@ -1,0 +1,225 @@
+/* ============================================================================
+ * PROJECT BARNABY — Weightless Floating Physics & Constellation Spark Accents
+ * GPU-composited transform & opacity keyframes with automatic reduced-motion
+ * accessibility support.
+ * ============================================================================ */
+
+@keyframes barnaby-hover {
+  0%,
+  100% {
+    transform: translate3d(0, 0px, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -6px, 0) rotate(0.8deg);
+  }
+}
+
+@keyframes barnaby-celebrate {
+  0% {
+    transform: translate3d(0, 0px, 0) scale(1);
+  }
+  28% {
+    transform: translate3d(0, -14px, 0) scale(1.04);
+  }
+  62% {
+    transform: translate3d(0, -10px, 0) scale(1.025);
+  }
+  100% {
+    transform: translate3d(0, 0px, 0) scale(1);
+  }
+}
+
+@keyframes barnaby-constellation-spark {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translate3d(0, 0px, 0) scale(0.92) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(0, -3px, 0) scale(1.12) rotate(12deg);
+  }
+}
+
+.barnaby-hover-physics {
+  animation-name: barnaby-hover;
+  animation-duration: var(--barnaby-hover-duration, 4.2s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+.barnaby-celebrate-physics {
+  animation: barnaby-celebrate 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform;
+}
+
+.barnaby-spark-accent {
+  animation: barnaby-constellation-spark 1.8s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* ============================================================================
+ * VIDEO TRANSITION STATE MACHINE — CSS OPACITY CROSSFADE WRAPPER
+ * Smoothly blends walk.mp4 <-> stand.mp4 <-> hover.mp4 with zero frame jumps.
+ * ============================================================================ */
+.barnaby-video-crossfade {
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.barnaby-canvas-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity;
+  backface-visibility: hidden;
+}
+
+.barnaby-canvas-layer-active {
+  opacity: 1;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.barnaby-canvas-layer-fading {
+  opacity: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* State-machine phase modifiers */
+.barnaby-phase-idle {
+  opacity: 1;
+}
+
+.barnaby-phase-preloading {
+  opacity: 1;
+}
+
+.barnaby-phase-crossfading {
+  opacity: 1;
+}
+
+.barnaby-phase-settling {
+  opacity: 1;
+}
+
+.barnaby-lipsync-ring {
+  transition: transform 65ms linear, opacity 140ms ease-out;
+  will-change: transform, opacity;
+}
+
+/* ============================================================================
+ * REALISTIC CAT COMPANION LOCOMOTION & EXPRESSIVE ANIMATIONS
+ * ============================================================================ */
+@keyframes barnaby-living-breath {
+  0%, 100% {
+    transform: scale3d(1, 1, 1);
+  }
+  50% {
+    transform: scale3d(0.99, 1.018, 1);
+  }
+}
+
+@keyframes barnaby-walk-cadence {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate3d(0, -3.5px, 0) rotate(-0.8deg);
+  }
+  50% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  75% {
+    transform: translate3d(0, -3.5px, 0) rotate(0.8deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes barnaby-speaking-nod {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  20% {
+    transform: translate3d(0, 1.6px, 0) rotate(0.8deg);
+  }
+  55% {
+    transform: translate3d(0, -1.2px, 0) rotate(-0.5deg);
+  }
+  80% {
+    transform: translate3d(0, 0.9px, 0) rotate(0.4deg);
+  }
+}
+
+@keyframes barnaby-purr-flutter {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(0.4px, -0.4px, 0);
+  }
+  50% {
+    transform: translate3d(-0.4px, 0.3px, 0);
+  }
+  75% {
+    transform: translate3d(0.3px, -0.3px, 0);
+  }
+}
+
+@keyframes barnaby-squash-landing {
+  0% {
+    transform: scale3d(1.06, 0.92, 1);
+  }
+  45% {
+    transform: scale3d(0.98, 1.03, 1);
+  }
+  100% {
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+.barnaby-living-breath {
+  animation: barnaby-living-breath 3.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+.barnaby-walk-cadence {
+  animation: barnaby-walk-cadence 1.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.barnaby-speaking-nod {
+  animation: barnaby-speaking-nod 1.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+.barnaby-purr-flutter {
+  animation: barnaby-purr-flutter 0.08s ease-in-out infinite;
+  will-change: transform;
+}
+
+.barnaby-squash-landing {
+  animation: barnaby-squash-landing 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barnaby-hover-physics,
+  .barnaby-celebrate-physics,
+  .barnaby-spark-accent,
+  .barnaby-living-breath,
+  .barnaby-walk-cadence,
+  .barnaby-speaking-nod,
+  .barnaby-purr-flutter,
+  .barnaby-squash-landing {
+    animation: none !important;
+    transform: none !important;
+  }
+}

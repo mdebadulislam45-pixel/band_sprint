@@ -1,47 +1,81 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
-  Compass,
   Loader2,
   MessageSquare,
-  Send,
-  X,
 } from 'lucide-react';
 import {
   BARNABY_ANALYZING_EVENT,
-  BARNABY_POSE_ASSETS,
   BarnabyAnalyzingDetail,
   BarnabyPoseState,
-  getBarnabyGuidanceCopy,
-  getBarnabyState,
   getGlobalBarnabyAnalyzing,
 } from '../utils/getBarnabyState';
-import { askBarnabyCompanion } from '../services/geminiService';
+import {
+  BARNABY_CORE_TAGLINE,
+  BarnabyMode,
+  BarnabyVisibilitySetting,
+} from '../types/barnaby';
+import {
+  BARNABY_CELEBRATION_DURATION_MS,
+  BARNABY_CELEBRATION_EVENT,
+  BARNABY_VISIBILITY_EVENT,
+  getBarnabyExpressionConfig,
+  getBarnabyVisibility,
+  resolveBarnabyExpression,
+  resolveBarnabyMode,
+} from '../utils/barnabyStateEngine';
+import {
+  BarnabyActiveScreenContext,
+  BarnabyScreenId,
+  buildBarnabyScreenBriefing,
+  publishBarnabyScreenContext,
+} from '../services/barnabyBrain';
+import { BarnabyCrest } from './common/BarnabyCrest';
+import { BarnabyRig } from './BarnabyRig';
+import { BarnabyTutorDrawer } from './BarnabyTutorDrawer';
 import { soundManager } from '../utils/audioEffects';
 
 export interface BarnabyCompanionProps {
+  /** Optional explicit canonical pose override (e.g. 'studying' on Learn, 'analyzing' on Progress) */
+  pose?: BarnabyPoseState;
+  /** Active host screen for context-aware briefings */
+  screen?: BarnabyScreenId;
   /** Candidate display name */
   userName?: string;
   /** Verified or diagnostic overall band estimate, or null ("Not assessed") */
   currentEstimate: number | null;
   /** Target IELTS band (e.g. 7.5) */
   targetBand: number;
+  /** Target exam ISO date */
+  examDate?: string | null;
+  /** Days remaining until exam day */
+  daysRemaining?: number | null;
   /** Whole calendar days since last activity */
   daysInactive?: number;
   /** True when all Today's Study Tasks are checked off */
   allDailyTasksCompleted?: boolean;
   /** Logged priority weakness label (e.g. "True/False/Not Given", "Task 2 Coherence") */
   topWeakness?: string | null;
+  /** Latest band delta on Progress analytics */
+  bandDelta?: number | null;
+  /** Pending unresolved items in Mistake Vault */
+  mistakeCount?: number;
+  /** Live context override forwarded into BarnabyTutorDrawer */
+  screenContext?: Partial<BarnabyActiveScreenContext>;
   /** Optional explicit override while Gemini is grading Writing/Speaking/Diagnostic */
   isAnalyzing?: boolean;
   /** Explicit flag to hide during active Listening audio simulations or full Mock Exams */
   isActiveExam?: boolean;
   /** Current router path for exam integrity enforcement */
   currentPath?: string;
-  /** Optional navigation handler */
+  /** Navigation handler */
   onNavigate: (path: string) => void;
-  /** Optional exam mode for coaching context */
+  /** Exam mode for coaching context */
   examMode?: 'Academic' | 'General Training';
+  /** Wide horizontal card rhythm for top-of-page placement above the fold */
+  compactStrip?: boolean;
+  /** Omit inline BarnabyRig avatar when the persistent FloatingBarnaby is active on the screen */
+  hideRig?: boolean;
 }
 
 const TIMED_EXAM_PATHS = new Set([
@@ -49,6 +83,7 @@ const TIMED_EXAM_PATHS = new Set([
   '/practice/reading',
   '/practice/writing',
   '/practice/speaking',
+  '/practice/mock-tests',
 ]);
 
 function isGlobalExamRunning(): boolean {
@@ -57,34 +92,51 @@ function isGlobalExamRunning(): boolean {
 }
 
 export const BarnabyCompanion: React.FC<BarnabyCompanionProps> = ({
+  pose,
+  screen = 'home',
   userName = 'Candidate',
   currentEstimate,
   targetBand,
+  examDate = null,
+  daysRemaining = null,
   daysInactive = 0,
   allDailyTasksCompleted = false,
   topWeakness = null,
+  bandDelta = null,
+  mistakeCount = 0,
+  screenContext,
   isAnalyzing: propIsAnalyzing = false,
   isActiveExam = false,
   currentPath = '/',
   onNavigate,
   examMode = 'Academic',
+  compactStrip = false,
+  hideRig = false,
 }) => {
+  const [visibility, setVisibility] = useState<BarnabyVisibilitySetting>(() =>
+    getBarnabyVisibility()
+  );
   const [globalExamActive, setGlobalExamActive] = useState<boolean>(() => isGlobalExamRunning());
   const [analyzingState, setAnalyzingState] = useState<BarnabyAnalyzingDetail>(() =>
     getGlobalBarnabyAnalyzing()
   );
-  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
-  const [isCoachOpen, setIsCoachOpen] = useState(false);
-  const [question, setQuestion] = useState('');
-  const [coachReply, setCoachReply] = useState<{
-    reply: string;
-    strategyTip?: string;
-    suggestedNextAction?: { label: string; route: string };
-  } | null>(null);
-  const [isAsking, setIsAsking] = useState(false);
-  const [askError, setAskError] = useState<string | null>(null);
+  const [isTemporaryCelebration, setIsTemporaryCelebration] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const celebrationTimerRef = useRef<number | null>(null);
+  const drawerTimerRef = useRef<number | null>(null);
+  const prevTasksCompleteRef = useRef<boolean>(allDailyTasksCompleted);
 
-  // Exam Integrity Listener: hide immediately whenever a timed Listening simulation or Full Mock starts
+  // Visibility setting listener
+  useEffect(() => {
+    const onVisibilityChange = (e: Event) => {
+      const next = (e as CustomEvent<BarnabyVisibilitySetting>).detail;
+      if (next) setVisibility(next);
+    };
+    window.addEventListener(BARNABY_VISIBILITY_EVENT, onVisibilityChange);
+    return () => window.removeEventListener(BARNABY_VISIBILITY_EVENT, onVisibilityChange);
+  }, []);
+
+  // Exam Integrity Listener: hide immediately whenever a timed simulation or Mock Exam starts
   useEffect(() => {
     const onHide = () => setGlobalExamActive(true);
     const onShow = () => setGlobalExamActive(false);
@@ -96,7 +148,7 @@ export const BarnabyCompanion: React.FC<BarnabyCompanionProps> = ({
     };
   }, []);
 
-  // Analyzing State Listener: transition to `analyzing` whenever Gemini grades Writing/Speaking/Diagnostic
+  // Analyzing State Listener: transition to `analyzing` whenever Gemini grades
   useEffect(() => {
     const onAnalyzing = (e: Event) => {
       const detail = (e as CustomEvent<BarnabyAnalyzingDetail>).detail;
@@ -111,247 +163,437 @@ export const BarnabyCompanion: React.FC<BarnabyCompanionProps> = ({
     return () => window.removeEventListener(BARNABY_ANALYZING_EVENT, onAnalyzing);
   }, []);
 
+  // 4-second auto-reverting celebration listener
+  const startTimedCelebration = (durationMs = BARNABY_CELEBRATION_DURATION_MS) => {
+    setIsTemporaryCelebration(true);
+    if (celebrationTimerRef.current !== null) {
+      window.clearTimeout(celebrationTimerRef.current);
+    }
+    celebrationTimerRef.current = window.setTimeout(() => {
+      setIsTemporaryCelebration(false);
+      celebrationTimerRef.current = null;
+    }, durationMs);
+  };
+
+  useEffect(() => {
+    const onCelebrate = (e: Event) => {
+      const detail = (e as CustomEvent<{ durationMs?: number }>).detail;
+      startTimedCelebration(detail?.durationMs ?? BARNABY_CELEBRATION_DURATION_MS);
+    };
+    window.addEventListener(BARNABY_CELEBRATION_EVENT, onCelebrate);
+    return () => {
+      window.removeEventListener(BARNABY_CELEBRATION_EVENT, onCelebrate);
+      if (celebrationTimerRef.current !== null) {
+        window.clearTimeout(celebrationTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Trigger temporary celebration when Today's Study Tasks transition from incomplete -> complete
+  useEffect(() => {
+    if (!prevTasksCompleteRef.current && allDailyTasksCompleted) {
+      startTimedCelebration(BARNABY_CELEBRATION_DURATION_MS);
+    }
+    prevTasksCompleteRef.current = allDailyTasksCompleted;
+  }, [allDailyTasksCompleted]);
+
+  const normalizedPath = (currentPath || '/').replace(/\/+$/, '') || '/';
   const isEffectiveAnalyzing = propIsAnalyzing || analyzingState.isAnalyzing;
 
-  const state: BarnabyPoseState = useMemo(
-    () =>
-      getBarnabyState({
-        isAnalyzing: isEffectiveAnalyzing,
-        currentEstimate,
-        targetBand,
-        daysInactive,
-        allDailyTasksCompleted,
-        topWeakness,
-      }),
-    [
-      isEffectiveAnalyzing,
+  // Keep live Barnaby screen memory synchronized for Ask Barnaby drawer
+  useEffect(() => {
+    const screenTitleMap: Record<BarnabyScreenId, string> = {
+      home: 'Home Dashboard',
+      learn: 'Free Learning Library',
+      progress: 'Progress & Analytics',
+      practice: 'Practice Hub',
+    };
+    publishBarnabyScreenContext({
+      screen,
+      screenTitle: screenContext?.screenTitle || screenTitleMap[screen],
+      route: normalizedPath,
+      topWeakness: topWeakness ?? null,
       currentEstimate,
       targetBand,
-      daysInactive,
-      allDailyTasksCompleted,
-      topWeakness,
+      examMode,
+      examDate,
+      daysRemaining,
+      mistakeCount,
+      ...screenContext,
+    });
+  }, [
+    screen,
+    normalizedPath,
+    topWeakness,
+    currentEstimate,
+    targetBand,
+    examMode,
+    examDate,
+    daysRemaining,
+    mistakeCount,
+    screenContext,
+  ]);
+
+  const mode: BarnabyMode = useMemo(
+    () =>
+      resolveBarnabyMode({
+        isActiveExam,
+        globalExamActive,
+        currentPath: normalizedPath,
+        isCelebrating: isTemporaryCelebration,
+        isTutorHint: screen === 'practice',
+        isDrawerOpen,
+        timedPaths: TIMED_EXAM_PATHS,
+      }),
+    [
+      isActiveExam,
+      globalExamActive,
+      normalizedPath,
+      isTemporaryCelebration,
+      screen,
+      isDrawerOpen,
     ]
   );
 
-  const guidance = useMemo(
+  const briefing = useMemo(
     () =>
-      getBarnabyGuidanceCopy(state, {
-        isAnalyzing: isEffectiveAnalyzing,
-        currentEstimate,
-        targetBand,
-        daysInactive,
-        allDailyTasksCompleted,
-        topWeakness,
+      buildBarnabyScreenBriefing({
+        screen,
         userName,
+        currentEstimate,
+        targetBand,
+        examDate,
+        daysRemaining,
+        daysInactive,
+        allDailyTasksCompleted,
+        topWeakness,
+        isAnalyzing: isEffectiveAnalyzing,
         analyzingLabel: analyzingState.label,
+        mistakeCount,
+        bandDelta,
+        forcedPose: pose,
       }),
     [
-      state,
+      screen,
+      userName,
+      currentEstimate,
+      targetBand,
+      examDate,
+      daysRemaining,
+      daysInactive,
+      allDailyTasksCompleted,
+      topWeakness,
       isEffectiveAnalyzing,
+      analyzingState.label,
+      mistakeCount,
+      bandDelta,
+      pose,
+    ]
+  );
+
+  const emotionalCue =
+    briefing.situation === 'overwhelmed_or_tired'
+      ? ('overwhelmed_or_tired' as const)
+      : briefing.situation === 'repeated_mistakes'
+      ? ('repeated_mistakes' as const)
+      : briefing.situation === 'genuine_achievement'
+      ? ('genuine_achievement' as const)
+      : ('neutral' as const);
+
+  const expression = useMemo(
+    () =>
+      resolveBarnabyExpression({
+        mode,
+        pose: briefing.pose,
+        isAnalyzing: isEffectiveAnalyzing,
+        isDrawerOpen,
+        isTutorHint: mode === 'tutor',
+        currentEstimate,
+        targetBand,
+        daysInactive,
+        allDailyTasksCompleted,
+        topWeakness,
+        bandDelta,
+        emotionalCue,
+      }),
+    [
+      mode,
+      briefing.pose,
+      isEffectiveAnalyzing,
+      isDrawerOpen,
       currentEstimate,
       targetBand,
       daysInactive,
       allDailyTasksCompleted,
       topWeakness,
-      userName,
-      analyzingState.label,
+      bandDelta,
+      emotionalCue,
     ]
   );
 
-  // EXAM INTEGRITY RULE: Completely hide during active timed Listening simulations & full Mock Exams
-  const normalizedPath = (currentPath || '/').replace(/\/+$/, '') || '/';
-  if (isActiveExam || globalExamActive || TIMED_EXAM_PATHS.has(normalizedPath)) {
+  const exprConfig = getBarnabyExpressionConfig(expression);
+
+  // EXAM INTEGRITY & ACCESSIBILITY VISIBILITY RULE:
+  // Completely return null during timed exams ('focus') or when user chooses Hidden / Focus Only.
+  if (mode === 'focus' || visibility === 'hidden_focus_only') {
     return null;
   }
 
-  const assetSrc = BARNABY_POSE_ASSETS[state];
-  const showFallbackAvatar = Boolean(failedImages[state]);
+  const isUnassessed = currentEstimate === null;
 
-  const handleAskBarnaby = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = question.trim();
-    if (!trimmed || isAsking) return;
-
-    setIsAsking(true);
-    setAskError(null);
-    try {
-      const res = await askBarnabyCompanion({
-        message: trimmed,
-        context: {
-          module: 'dashboard',
-          userName,
-          targetBand,
-          examMode,
-          latestVerifiedOverallBand: currentEstimate,
-          weakestSkill: topWeakness || '',
-          currentPage: normalizedPath,
-        },
-      });
-      setCoachReply(res);
-      setQuestion('');
-    } catch (err) {
-      setAskError(
-        err instanceof Error ? err.message : 'Unable to reach Barnaby right now. Please try again.'
-      );
-    } finally {
-      setIsAsking(false);
+  const openTutorDrawer = () => {
+    soundManager.playBeep(560, 0.04);
+    if (drawerTimerRef.current !== null) {
+      window.clearTimeout(drawerTimerRef.current);
     }
+    drawerTimerRef.current = window.setTimeout(() => {
+      setIsDrawerOpen(true);
+    }, 120);
   };
 
-  return (
-    <section
-      data-testid="barnaby-companion-card"
-      data-barnaby-state={state}
-      aria-label="Barnaby AI Learning Companion"
-      className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#134E41]/15 dark:border-[#1F8A70]/35 space-y-4 transition-colors"
-    >
-      {/* Header: Barnaby Identity + Focus Badge */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-display text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1] truncate">
-            Barnaby
-          </span>
-          <span className="text-[11px] text-[#566664] dark:text-slate-400 truncate">
-            · Study Companion
-          </span>
-        </div>
+  useEffect(() => {
+    return () => {
+      if (drawerTimerRef.current !== null) {
+        window.clearTimeout(drawerTimerRef.current);
+      }
+    };
+  }, []);
 
-        <span
-          data-testid="barnaby-focus-badge"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F59E0B]/15 text-[#B45309] dark:text-[#FBBF24] text-[11px] font-semibold whitespace-nowrap shrink-0"
+  // MINIMAL BADGE VISIBILITY SETTING:
+  if (visibility === 'minimal_badge') {
+    return (
+      <>
+        <section
+          data-testid="barnaby-minimal-badge"
+          data-barnaby-mode={mode}
+          data-barnaby-state={briefing.pose}
+          data-barnaby-expression={expression}
+          aria-label="Barnaby Minimal Study Companion"
+          className="px-4 py-3 rounded-2xl bg-white dark:bg-[#11201E] border border-[#134E41]/15 dark:border-[#1F8A70]/35 flex flex-wrap items-center justify-between gap-3 transition-colors"
         >
-          {state === 'analyzing' && <Loader2 className="w-3 h-3 animate-spin shrink-0" />}
-          <span>{guidance.focusLabel}</span>
-        </span>
-      </div>
-
-      {/* Visual Stage + Copy */}
-      <div className="flex items-start gap-3.5">
-        {/* 1:1 Character Frame or Clean Emerald/Gold Fallback Ring */}
-        <div
-          className="w-20 h-20 rounded-xl bg-white border border-[#134E41]/15 flex items-center justify-center shrink-0 overflow-hidden"
-          aria-hidden="true"
-        >
-          {!showFallbackAvatar ? (
-            <img
-              key={state}
-              src={assetSrc}
-              alt={`Barnaby companion (${state})`}
-              referrerPolicy="no-referrer"
-              onError={() =>
-                setFailedImages((prev) => ({
-                  ...prev,
-                  [state]: true,
-                }))
-              }
-              className="w-full h-full object-contain p-0.5 select-none"
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <BarnabyCrest
+              size={26}
+              variant="badge"
+              animated={mode === 'celebration' || isEffectiveAnalyzing}
             />
-          ) : (
-            <div
-              data-testid="barnaby-fallback-avatar"
-              className="w-14 h-14 rounded-full border-2 border-[#134E41] ring-2 ring-[#F59E0B]/70 ring-offset-2 ring-offset-white bg-[#134E41]/10 flex items-center justify-center text-[#134E41]"
-            >
-              <Compass className="w-6 h-6 text-[#F59E0B]" />
-            </div>
-          )}
-        </div>
-
-        <div className="min-w-0 flex-1 space-y-1">
-          <h2 className="font-display text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1] leading-snug">
-            {guidance.headline}
-          </h2>
-          <p className="text-xs text-[#566664] dark:text-slate-300 leading-relaxed">
-            {guidance.message}
-          </p>
-        </div>
-      </div>
-
-      {/* Primary Action + Secondary Ask Toggle */}
-      <div className="flex items-center gap-2 pt-0.5">
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playBeep(560, 0.04);
-            onNavigate(guidance.ctaRoute);
-          }}
-          className="flex-1 min-h-[40px] px-3.5 py-2 rounded-xl bg-[#134E41] hover:bg-[#0D3A30] active:scale-[0.99] text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
-        >
-          <span className="truncate">{guidance.ctaLabel}</span>
-          <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playBeep(520, 0.035);
-            setIsCoachOpen((prev) => !prev);
-          }}
-          aria-expanded={isCoachOpen}
-          aria-label="Ask Barnaby a study strategy question"
-          className={`min-h-[40px] px-3 py-2 rounded-xl border text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
-            isCoachOpen
-              ? 'bg-[#F59E0B]/15 border-[#F59E0B]/40 text-[#B45309] dark:text-[#FBBF24]'
-              : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#134E41]/15 dark:border-[#1F8A70]/30 text-[#134E41] dark:text-[#EEF3F1] hover:border-[#134E41]/40'
-          }`}
-        >
-          {isCoachOpen ? <X className="w-3.5 h-3.5" /> : <MessageSquare className="w-3.5 h-3.5" />}
-          <span>{isCoachOpen ? 'Close' : 'Ask'}</span>
-        </button>
-      </div>
-
-      {/* Inline Coaching Drawer (Zero Floating Overlap) */}
-      {isCoachOpen && (
-        <div className="pt-3 border-t border-[#134E41]/10 dark:border-[#1F8A70]/25 space-y-2.5">
-          {coachReply && (
-            <div className="p-3 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#134E41]/10 dark:border-[#1F8A70]/25 space-y-2 text-xs">
-              <p className="text-[#0E1F1E] dark:text-[#EEF3F1] leading-relaxed">
-                {coachReply.reply}
-              </p>
-              {coachReply.strategyTip && (
-                <p className="text-[11px] text-[#566664] dark:text-slate-400 leading-relaxed">
-                  Strategy note: {coachReply.strategyTip}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-display text-xs font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
+                  Barnaby
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap ${exprConfig.pillClasses}`}
+                >
+                  {exprConfig.statusLabel}
+                </span>
+                <span className="text-xs text-[#566664] dark:text-slate-300 truncate">
+                  {briefing.headline}
+                </span>
+              </div>
+              {isUnassessed && (
+                <p className="text-[11px] text-[#566664] dark:text-slate-400 mt-0.5">
+                  {BARNABY_CORE_TAGLINE}
                 </p>
               )}
-              {coachReply.suggestedNextAction?.route && (
-                <button
-                  type="button"
-                  onClick={() => onNavigate(coachReply.suggestedNextAction!.route)}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#134E41] dark:text-[#FBBF24] hover:underline cursor-pointer"
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playBeep(560, 0.04);
+                onNavigate(briefing.ctaRoute);
+              }}
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-[#134E41] hover:bg-[#0D3A30] text-white font-semibold text-xs transition inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+            >
+              <span>{briefing.ctaLabel}</span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+            </button>
+            <button
+              type="button"
+              onClick={openTutorDrawer}
+              aria-label="Ask Barnaby"
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#134E41]/15 dark:border-[#1F8A70]/30 text-[#134E41] dark:text-[#EEF3F1] hover:border-[#134E41]/40 text-xs font-semibold transition inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Ask Barnaby</span>
+            </button>
+          </div>
+        </section>
+
+        <BarnabyTutorDrawer
+          isOpen={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+          onNavigate={onNavigate}
+          userName={userName}
+          currentEstimate={currentEstimate}
+          targetBand={targetBand}
+          examMode={examMode}
+          topWeakness={topWeakness}
+          screenContextOverride={screenContext}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <section
+        data-testid="barnaby-companion-card"
+        data-barnaby-mode={mode}
+        data-barnaby-state={briefing.pose}
+        data-barnaby-expression={expression}
+        aria-label="Barnaby AI Learning Companion"
+        className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#134E41]/15 dark:border-[#1F8A70]/35 transition-colors"
+      >
+        <div
+          className={
+            compactStrip
+              ? 'flex flex-col md:flex-row md:items-center justify-between gap-4'
+              : 'space-y-4'
+          }
+        >
+          {/* Left / Main Identity & Guidance */}
+          <div className="flex items-start sm:items-center gap-3.5 sm:gap-4 min-w-0 flex-1">
+            {/* Clickable Articulated Vector Rig Frame (Omitted when hideRig prevents Home duplication) */}
+            {!hideRig && (
+              <button
+                type="button"
+                onClick={openTutorDrawer}
+                aria-label="Open Ask Barnaby tutor drawer"
+                title="Tap to open Ask Barnaby"
+                className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-transparent flex items-center justify-center shrink-0 overflow-visible cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#134E41]"
+              >
+                <BarnabyRig
+                  expression={expression}
+                  mode={mode}
+                  animationState={
+                    mode === 'celebration' || (typeof bandDelta === 'number' && bandDelta >= 0.5)
+                      ? 'celebratory'
+                      : isDrawerOpen
+                      ? 'speaking'
+                      : isEffectiveAnalyzing || screen === 'practice'
+                      ? 'focused'
+                      : 'idle'
+                  }
+                  moodState={
+                    mode === 'celebration' || (typeof bandDelta === 'number' && bandDelta >= 0.5)
+                      ? 'celebratory'
+                      : isEffectiveAnalyzing || screen === 'practice'
+                      ? 'focused'
+                      : 'neutral'
+                  }
+                  isSpeaking={isDrawerOpen || isEffectiveAnalyzing}
+                  interactive
+                  className="w-full h-full p-0.5"
+                  testId="barnaby-inline-rig"
+                />
+
+                {isEffectiveAnalyzing && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -bottom-1.5 -right-1.5 bg-white dark:bg-[#0D1A19] rounded-full p-0.5 shadow-xs border border-[#134E41]/20"
+                  >
+                    <BarnabyCrest size={18} variant="inline" animated />
+                  </span>
+                )}
+              </button>
+            )}
+
+            <div className="min-w-0 flex-1 space-y-1.5">
+              {/* Top Meta Strip: Barnaby Identity + Stage + Expression & Focus Badges */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-display text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
+                  Barnaby
+                </span>
+                <span className="text-[11px] font-medium text-[#566664] dark:text-slate-400">
+                  · Stage {briefing.progression.stage}: {briefing.progression.title}
+                </span>
+                <span
+                  data-testid="barnaby-expression-pill"
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap ${exprConfig.pillClasses}`}
                 >
-                  <span>{coachReply.suggestedNextAction.label}</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
+                  {isEffectiveAnalyzing && <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />}
+                  <span>{exprConfig.statusLabel}</span>
+                </span>
+                <span
+                  data-testid="barnaby-focus-badge"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F59E0B]/15 text-[#B45309] dark:text-[#FBBF24] text-[10px] font-semibold whitespace-nowrap"
+                >
+                  <span>{briefing.focusLabel}</span>
+                </span>
+              </div>
+
+              <h2 className="font-display text-sm sm:text-base font-bold text-[#0E1F1E] dark:text-[#EEF3F1] leading-snug">
+                {briefing.headline}
+              </h2>
+
+              <p className="text-xs text-[#566664] dark:text-slate-300 leading-relaxed max-w-2xl">
+                {briefing.message}
+              </p>
+
+              {isUnassessed && (
+                <p
+                  data-testid="barnaby-core-tagline"
+                  className="text-[11px] font-medium text-[#134E41]/80 dark:text-[#6EE7B7]/85 italic"
+                >
+                  {BARNABY_CORE_TAGLINE}
+                </p>
               )}
             </div>
-          )}
+          </div>
 
-          {askError && (
-            <p className="text-[11px] text-rose-600 dark:text-rose-400">{askError}</p>
-          )}
-
-          <form onSubmit={handleAskBarnaby} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Ask about TFNG traps, Task 2 structure, or pacing..."
-              className="flex-1 min-w-0 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#134E41]/15 dark:border-[#1F8A70]/30 text-xs text-[#0E1F1E] dark:text-[#EEF3F1] placeholder:text-[#566664]/70 focus:outline-none focus:border-[#134E41]"
-            />
+          {/* Right / Action Buttons */}
+          <div
+            className={`flex items-center gap-2 shrink-0 ${
+              compactStrip ? 'w-full md:w-auto' : 'w-full'
+            }`}
+          >
             <button
-              type="submit"
-              disabled={isAsking || !question.trim()}
-              aria-label="Send question to Barnaby"
-              className="min-w-[38px] min-h-[38px] rounded-xl bg-[#134E41] hover:bg-[#0D3A30] disabled:opacity-50 text-white flex items-center justify-center transition cursor-pointer shrink-0"
+              type="button"
+              onClick={() => {
+                soundManager.playBeep(560, 0.04);
+                onNavigate(briefing.ctaRoute);
+              }}
+              className={`${
+                compactStrip ? 'flex-1 md:flex-initial' : 'flex-1'
+              } min-h-[40px] px-4 py-2 rounded-xl bg-[#134E41] hover:bg-[#0D3A30] active:scale-[0.99] text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer`}
             >
-              {isAsking ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Send className="w-3.5 h-3.5" />
-              )}
+              <span className="truncate">{briefing.ctaLabel}</span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </button>
-          </form>
+
+            <button
+              type="button"
+              onClick={openTutorDrawer}
+              aria-expanded={isDrawerOpen}
+              aria-label="Open Ask Barnaby tutor drawer"
+              className={`min-h-[40px] px-3.5 py-2 rounded-xl border text-xs font-semibold transition flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer ${
+                isDrawerOpen
+                  ? 'bg-[#F59E0B]/15 border-[#F59E0B]/40 text-[#B45309] dark:text-[#FBBF24]'
+                  : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#134E41]/15 dark:border-[#1F8A70]/30 text-[#134E41] dark:text-[#EEF3F1] hover:border-[#134E41]/40'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+              <span>Ask Barnaby</span>
+            </button>
+          </div>
         </div>
-      )}
-    </section>
+      </section>
+
+      <BarnabyTutorDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onNavigate={onNavigate}
+        userName={userName}
+        currentEstimate={currentEstimate}
+        targetBand={targetBand}
+        examMode={examMode}
+        topWeakness={topWeakness}
+        screenContextOverride={screenContext}
+      />
+    </>
   );
 };

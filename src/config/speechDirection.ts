@@ -209,12 +209,12 @@ export const SPEECH_DELIVERY_PROFILES: Record<SpeechDeliveryProfileId, SpeechDel
   },
   barnaby_companion: {
     id: 'barnaby_companion',
-    name: 'Barnaby IELTS Mentor',
-    description: 'Warm, expressive British English mentor cadence—encouraging and approachable without sounding childish',
-    rateOffsetPercent: 2,
+    name: 'Barnaby Duo Mascot',
+    description: 'Snappy, cheerful, witty Duolingo-style mascot cadence—upbeat, motivating, and crisp',
+    rateOffsetPercent: 5,
     pitchOffsetHz: 2,
-    commaPauseMs: 125,
-    sentencePauseMs: 340,
+    commaPauseMs: 100,
+    sentencePauseMs: 300,
     punctuationEnhancement: true
   }
 };

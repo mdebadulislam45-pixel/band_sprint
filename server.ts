@@ -24,7 +24,8 @@ import {
 import {
   buildBarnabyCompanionSystemInstruction,
   buildEvaluatorSystemInstruction,
-  enforceBarnabyCompanionConstraints
+  enforceBarnabyCompanionConstraints,
+  scrubAnswerFromUnrevealedHint
 } from './src/services/geminiService.ts';
 import {
   isGoogleOAuthConfigured,
@@ -347,7 +348,7 @@ export interface IELTSCharacterVoice {
   name: string;
   displayName: string;
   edgeVoice: string;
-  accent: 'British' | 'Australian' | 'American' | 'Canadian' | 'New Zealand' | 'Irish' | 'Commonwealth';
+  accent: 'British' | 'Australian' | 'American' | 'Canadian' | 'New Zealand' | 'Irish' | 'Commonwealth' | 'Bengali';
   accentCode: string;
   gender: 'male' | 'female';
   role: string;
@@ -600,18 +601,18 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
   },
   speaker_barnaby: {
     id: 'speaker_barnaby',
-    name: 'Barnaby (British IELTS Mentor Companion)',
-    displayName: 'Barnaby · Warm British IELTS Mentor Companion',
-    edgeVoice: 'en-GB-ThomasNeural',
+    name: 'Barnaby (Duolingo-Style IELTS Mascot)',
+    displayName: 'Barnaby · Upbeat Duolingo-Style Study Companion',
+    edgeVoice: 'en-GB-LibbyNeural',
     voiceName: 'Puck',
     accent: 'British',
     accentCode: 'en-GB',
-    gender: 'male',
-    role: 'Warm, articulate, encouraging British English IELTS mentor and study companion',
+    gender: 'female',
+    role: 'Playful, snappy, encouraging Duolingo-style IELTS study mascot companion',
     personaPrompt:
-      'Barnaby, a warm, intelligent, expressive British English young-adult IELTS mentor companion. Speak with natural conversational pacing, clear British diction, encouraging warmth, and subtle wit—distinct from formal examiners, yet strictly composed, credible, and never childish, babyish, squeaky, or theatrical.',
-    defaultPitch: '+0Hz',
-    defaultRateOffset: 0
+      'Barnaby, a playful, upbeat, witty Duolingo-style study mascot and IELTS companion. Speak with snappy conversational punch, bright cheerful encouragement, expressive mascot warmth, and crisp friendly clarity—energetic and motivating like Duo!',
+    defaultPitch: '+7Hz',
+    defaultRateOffset: 7
   },
   speaker_uk_northern_m: {
     id: 'speaker_uk_northern_m',
@@ -668,6 +669,36 @@ export const IELTS_CHARACTERS: Record<string, IELTSCharacterVoice> = {
     personaPrompt: 'Articulate Scottish Standard English female voice with crisp rhotic cadence.',
     defaultPitch: '+0Hz',
     defaultRateOffset: 0
+  },
+  speaker_bn_f: {
+    id: 'speaker_bn_f',
+    name: 'Nabanita (Bangladeshi IELTS Coach)',
+    displayName: 'Nabanita · Bangladeshi IELTS Coach (bn-BD)',
+    edgeVoice: 'bn-BD-NabanitaNeural',
+    voiceName: 'Aoede',
+    accent: 'Bengali',
+    accentCode: 'bn-BD',
+    gender: 'female',
+    role: 'Bilingual Bangladeshi IELTS Study Coach',
+    personaPrompt:
+      'Warm, clear, encouraging Bangladeshi Bengali (bn-BD) IELTS mentor speaking natural Dhaka Bengali mixed smoothly with accurate English IELTS terminology.',
+    defaultPitch: '+0Hz',
+    defaultRateOffset: 0
+  },
+  speaker_bn_m: {
+    id: 'speaker_bn_m',
+    name: 'Pradeep (Bangladeshi IELTS Coach)',
+    displayName: 'Pradeep · Bangladeshi IELTS Coach (bn-BD)',
+    edgeVoice: 'bn-BD-PradeepNeural',
+    voiceName: 'Orus',
+    accent: 'Bengali',
+    accentCode: 'bn-BD',
+    gender: 'male',
+    role: 'Bilingual Bangladeshi IELTS Study Coach',
+    personaPrompt:
+      'Calm, authoritative Bangladeshi Bengali (bn-BD) IELTS mentor speaking natural Dhaka Bengali mixed cleanly with accurate English IELTS terminology.',
+    defaultPitch: '+0Hz',
+    defaultRateOffset: 0
   }
 };
 
@@ -691,6 +722,24 @@ export function resolveCharacterVoice(
 
   const sLower = (speakerKey || '').toLowerCase();
   const aLower = (accentHint || '').toLowerCase();
+
+  // Bangladeshi Bengali (bn-BD) bilingual coaching voices
+  if (
+    sLower.includes('speaker_bn') ||
+    sLower.includes('bangla') ||
+    sLower.includes('bengali') ||
+    sLower.includes('nabanita') ||
+    sLower.includes('pradeep') ||
+    aLower === 'bn-bd' ||
+    aLower === 'bn' ||
+    aLower.includes('bengali') ||
+    aLower.includes('bangla')
+  ) {
+    if (genderHint === 'male' || sLower.includes('_m') || sLower.includes('pradeep')) {
+      return IELTS_CHARACTERS['speaker_bn_m'];
+    }
+    return IELTS_CHARACTERS['speaker_bn_f'];
+  }
 
   // British Regional Accents (Northern UK, Scottish Standard, Welsh/Celtic)
   if (sLower.includes('northern') || aLower.includes('northern') || aLower === 'northern_uk') {
@@ -940,6 +989,8 @@ const execFileAsync = promisify(execFile);
  * Every voice ID listed here has been empirically verified against MsEdgeTTS.getVoices().
  */
 const SIBLING_VOICE_FALLBACKS: Record<string, string[]> = {
+  'en-GB-MaisieNeural': ['en-US-AnaNeural', 'en-GB-LibbyNeural'],
+  'en-US-AnaNeural': ['en-GB-MaisieNeural', 'en-GB-LibbyNeural'],
   'en-GB-RyanNeural': ['en-GB-ThomasNeural', 'en-IE-ConnorNeural'],
   'en-GB-ThomasNeural': ['en-GB-RyanNeural', 'en-IE-ConnorNeural'],
   'en-GB-SoniaNeural': ['en-GB-LibbyNeural', 'en-IE-EmilyNeural'],
@@ -955,7 +1006,9 @@ const SIBLING_VOICE_FALLBACKS: Record<string, string[]> = {
   'en-IE-ConnorNeural': ['en-GB-RyanNeural', 'en-GB-ThomasNeural'],
   'en-IE-EmilyNeural': ['en-GB-SoniaNeural', 'en-GB-LibbyNeural'],
   'en-US-AndrewNeural': ['en-US-BrianNeural', 'en-US-ChristopherNeural'],
-  'en-ZA-LukeNeural': ['en-AU-WilliamMultilingualNeural', 'en-GB-ThomasNeural']
+  'en-ZA-LukeNeural': ['en-AU-WilliamMultilingualNeural', 'en-GB-ThomasNeural'],
+  'bn-BD-NabanitaNeural': ['bn-BD-PradeepNeural', 'bn-IN-TanishaaNeural'],
+  'bn-BD-PradeepNeural': ['bn-BD-NabanitaNeural', 'bn-IN-BashkarNeural']
 };
 
 const SPOKEN_MONTH_NAMES = [
@@ -1412,18 +1465,18 @@ export const SPEAKER_ACOUSTIC_SIGNATURES: Record<string, SpeakerAcousticSignatur
     lowpassHz: 11200
   },
   speaker_barnaby: {
-    signatureId: 'companion-uk-barnaby-mentor-v2',
-    nativePollyVoice: 'Brian',
+    signatureId: 'companion-duo-barnaby-mascot-v4',
+    nativePollyVoice: 'Amy',
     nativeTikTokVoice: 'en_uk_001',
-    pitchRatio: 1.02,
-    cadenceFactor: 1.01,
-    chestEqFreqHz: 155,
-    chestEqGainDb: 0.3,
-    formantMidFreqHz: 1320,
-    formantMidGainDb: 0.4,
-    presenceFreqHz: 3100,
-    presenceGainDb: 0.5,
-    lowpassHz: 11500
+    pitchRatio: 1.07,
+    cadenceFactor: 1.06,
+    chestEqFreqHz: 230,
+    chestEqGainDb: -0.4,
+    formantMidFreqHz: 1800,
+    formantMidGainDb: 1.0,
+    presenceFreqHz: 3400,
+    presenceGainDb: 1.4,
+    lowpassHz: 12200
   }
 };
 
@@ -1840,10 +1893,13 @@ function buildConversationalExaminerStyle(
   deliveryProfileId?: string
 ): string {
   if (character.id === 'speaker_barnaby' || deliveryProfileId === 'barnaby_companion') {
-    return 'Barnaby, a warm, intelligent, expressive British English young-adult IELTS mentor and study companion. Speak at a natural conversational pace with clear British diction, encouraging warmth, and subtle wit—never robotic, formal, childish, babyish, squeaky, or theatrical.';
+    return 'Barnaby, a playful, upbeat, witty Duolingo-style IELTS study mascot companion. Speak with snappy energetic warmth, punchy expressive mascot inflection, joyful encouragement, and crisp clarity!';
   }
 
   const isQuestion = text.trim().endsWith('?') || deliveryProfileId === 'examiner_question';
+  if (character.accent === 'Bengali') {
+    return `${character.personaPrompt} Speak in natural, clear Bangladeshi Bengali (bn-BD) as a supportive IELTS coach, pronouncing embedded English IELTS terms cleanly.`;
+  }
   const accentLabel =
     character.accent === 'British'
       ? 'Standard Southern British English (Received Pronunciation, en-GB)'
@@ -1924,23 +1980,31 @@ async function synthesizeWithGeminiNeuralTts(
             partPayload.speechMetadata = { style: stylePrompt };
           }
 
-          const resp = await ai.models.generateContent({
-            model: modelName,
-            contents: [
-              {
-                role: 'user',
-                parts: [partPayload as any]
-              }
-            ],
-            config: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName }
+          const runGenerate = (parts: any[]) =>
+            ai.models.generateContent({
+              model: modelName,
+              contents: [{ role: 'user', parts }],
+              config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName }
+                  }
                 }
               }
+            });
+
+          let resp;
+          try {
+            resp = await runGenerate([partPayload as any]);
+          } catch (innerErr: any) {
+            const innerMsg = String(innerErr?.message || innerErr || '');
+            if (is38Model && (innerMsg.includes('speechMetadata') || innerMsg.includes('400') || innerMsg.includes('INVALID_ARGUMENT'))) {
+              resp = await runGenerate([{ text: segment }]);
+            } else {
+              throw innerErr;
             }
-          });
+          }
 
           const inline = resp.candidates?.[0]?.content?.parts?.[0]?.inlineData;
           if (inline?.data) {
@@ -2186,7 +2250,8 @@ async function generateNativeNeuralEdgeMp3(
 
   const pitchNum = profile ? profile.pitchOffsetHz : 0;
   const basePitchVal = parseInt(speakerPitch, 10) || 0;
-  const finalPitchHz = Math.max(-10, Math.min(8, basePitchVal + pitchNum));
+  const maxPitch = character.id === 'speaker_barnaby' || deliveryProfileId === 'barnaby_companion' ? 22 : 8;
+  const finalPitchHz = Math.max(-10, Math.min(maxPitch, basePitchVal + pitchNum));
   const pitchStr = finalPitchHz >= 0 ? `+${finalPitchHz}Hz` : `${finalPitchHz}Hz`;
 
   // 2. Secondary Neural Provider: MsEdgeTTS (locks a SINGLE voice across all segments of an utterance)
@@ -2390,24 +2455,24 @@ export async function getOrGenerateAudio(
     forceProvider?: 'edge-neural' | 'translate-tts-fallback';
   }
 ): Promise<GeneratedAudioArtifact | null> {
-  const cleanText = text
-    .replace(/[\u0980-\u09FF]+/g, '')
+  const character = resolveCharacterVoice(speakerId, genderOverride, cacheContext?.accent);
+  const preserveBangla = character.accent === 'Bengali';
+  const cleanText = (preserveBangla ? text : text.replace(/[\u0980-\u09FF]+/g, ''))
     .replace(/[*_#`~]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (!cleanText) return null;
 
-  const character = resolveCharacterVoice(speakerId, genderOverride, cacheContext?.accent);
   const sig = getSpeakerAcousticSignature(character);
   const geminiVoice = getCharacterGeminiVoiceName(character);
   const clampedSpeed = Math.max(0.75, Math.min(1.35, Number(speed) || 1.0));
   const versionTag = cacheContext?.contentVersion || 'v24';
   const pitchTag = character.defaultPitch || '+0Hz';
   const profileKey = cacheContext?.deliveryProfile || 'default';
-  const providerTag = cacheContext?.forceProvider || 'auto';
+  const providerTag = cacheContext?.forceProvider || (preserveBangla ? 'edge-neural' : 'auto');
 
   const isBarnaby = character.id === 'speaker_barnaby' || profileKey === 'barnaby_companion';
-  const cacheNamespace = isBarnaby ? 'v2_barnaby_mentor' : 'v24_studio_neural';
+  const cacheNamespace = isBarnaby ? 'v4_barnaby_duo_style' : 'v24_studio_neural';
 
   // Strict cache key isolation: Barnaby uses v2_barnaby_mentor while examiners & speakers use v24_studio_neural
   const hash = crypto
@@ -2546,7 +2611,7 @@ export async function getOrGenerateAudio(
         character,
         clampedSpeed,
         cacheContext?.deliveryProfile,
-        cacheContext?.forceProvider
+        cacheContext?.forceProvider || (preserveBangla ? 'edge-neural' : undefined)
       );
 
       if (!synthResult || !synthResult.buffer || synthResult.buffer.length < 256) {
@@ -2560,9 +2625,10 @@ export async function getOrGenerateAudio(
 
       // Never store or serve degraded Translate TTS fallback audio as canonical neural cache
       if (!isDegradedResult) {
+        const isWavBuffer = synthResult.buffer.length >= 4 && synthResult.buffer.subarray(0, 4).toString('ascii') === 'RIFF';
         const result = {
           buffer: synthResult.buffer,
-          mimeType: 'audio/mpeg',
+          mimeType: isWavBuffer ? 'audio/wav' : 'audio/mpeg',
           providerUsed: synthResult.providerUsed,
           actualVoiceId: finalActualVoiceId,
           fallbackStatus: synthResult.fallbackStatus,
@@ -3257,7 +3323,9 @@ CRITICAL ANTI-INFLATION CALIBRATION RULES:
 3. In "evidenceSummary", explicitly name the specific weaknesses observed and explain WHY they reduce the score before giving actionable fixes in "actionableTips".
 4. Under "grammaticalErrors", include ONLY genuine grammatical errors EXACTLY present in the candidate's transcript. If there are none, return [].
 5. Under "pronunciation.trickyWords", include ONLY multisyllabic words ACTUALLY PRESENT in the candidate's transcript (or [] if none).
-6. Return strictly valid JSON matching this schema:
+6. Under "topicVocabularyUpgrades", provide EXACTLY 3 concrete Band 8.5+ vocabulary or idiomatic upgrades tailored directly to the specific topics and ideas the candidate spoke about (not generic filler words).
+7. Under "barnabySummary", write 1–2 honest, analytical sentences (ZERO emojis, maximum ONE exclamation mark, no generic praise) summarizing the highest-leverage next step.
+8. Return strictly valid JSON matching this schema:
 {
   "estimatedBands": {
     "fluency": number,
@@ -3267,6 +3335,16 @@ CRITICAL ANTI-INFLATION CALIBRATION RULES:
     "overall": null
   },
   "evidenceSummary": string,
+  "criterionNotes": {
+    "fluency": string,
+    "lexical": string,
+    "grammar": string,
+    "pronunciation": string
+  },
+  "barnabySummary": string,
+  "topicVocabularyUpgrades": [
+    { "phrase": string, "bandLevel": "C1" | "C2" | "Band 8.5" | "Band 9.0", "topicContext": string, "meaning": string, "exampleInContext": string }
+  ],
   "grammaticalErrors": [
     {
       "observed": string,
@@ -3446,6 +3524,55 @@ CRITICAL ANTI-INFLATION CALIBRATION RULES:
             audioPromptText: safeModelAnswer
           },
           actionableTips: Array.isArray(parsed.actionableTips) ? parsed.actionableTips : [],
+          criterionNotes: {
+            fluency:
+              typeof parsed.criterionNotes?.fluency === 'string' && parsed.criterionNotes.fluency.trim()
+                ? enforceBarnabyCompanionConstraints(parsed.criterionNotes.fluency)
+                : typeof parsed.evidenceSummary === 'string' && parsed.evidenceSummary.trim()
+                ? enforceBarnabyCompanionConstraints(parsed.evidenceSummary)
+                : 'Focus on extending ideas with natural discourse signposts rather than abrupt stops.',
+            lexical:
+              typeof parsed.criterionNotes?.lexical === 'string' && parsed.criterionNotes.lexical.trim()
+                ? enforceBarnabyCompanionConstraints(parsed.criterionNotes.lexical)
+                : 'Replace high-frequency general words with precise topic-specific collocations.',
+            grammar:
+              typeof parsed.criterionNotes?.grammar === 'string' && parsed.criterionNotes.grammar.trim()
+                ? enforceBarnabyCompanionConstraints(parsed.criterionNotes.grammar)
+                : 'Aim for consistent tense control alongside varied subordinate clauses.',
+            pronunciation: validated.pronunciationObservable
+              ? enforceBarnabyCompanionConstraints(
+                  String(
+                    parsed.criterionNotes?.pronunciation ||
+                      parsed.pronunciation?.rhythmVerdict ||
+                      'Assessed from recorded audio delivery.'
+                  )
+                )
+              : 'Acoustic pronunciation requires audio analysis and was not scored from text alone; keep pacing steady and stress key content words.'
+          },
+          topicVocabularyUpgrades: (() => {
+            const rawUpgrades = Array.isArray(parsed.topicVocabularyUpgrades)
+              ? parsed.topicVocabularyUpgrades
+              : Array.isArray(parsed.band8Answer?.highlightedCollocations)
+              ? parsed.band8Answer.highlightedCollocations
+              : [];
+            return rawUpgrades
+              .filter((u: any) => u && typeof u.phrase === 'string' && u.phrase.trim())
+              .slice(0, 3)
+              .map((u: any) => ({
+                phrase: String(u.phrase).trim(),
+                bandLevel: String(u.bandLevel || 'Band 8.5').trim(),
+                topicContext: typeof u.topicContext === 'string' ? u.topicContext.trim() : String(topic || ''),
+                meaning: String(u.meaning || '').trim(),
+                exampleInContext: typeof u.exampleInContext === 'string' ? u.exampleInContext.trim() : ''
+              }));
+          })(),
+          barnabySummary: enforceBarnabyCompanionConstraints(
+            typeof parsed.barnabySummary === 'string' && parsed.barnabySummary.trim()
+              ? parsed.barnabySummary
+              : typeof parsed.evidenceSummary === 'string' && parsed.evidenceSummary.trim()
+              ? parsed.evidenceSummary
+              : 'Focus your next timed speaking drill on your lowest criterion and weave the three upgraded phrases naturally into Part 2 and Part 3.'
+          ),
           modelUsed: aiOutcome.modelUsed,
           fallbackUsed: aiOutcome.fallbackUsed,
           isEstimated: true,
@@ -3597,31 +3724,9 @@ CRITICAL ANTI-INFLATION RULES:
 - Band 7.0–7.5: Well-developed, clear logical progression, flexible vocabulary, frequent error-free complex sentences.
 - Band 8.0–9.0: Thorough, sophisticated, precise, virtually error-free.
 - Explain WHY each identified weakness lowers the criterion band BEFORE offering actionable fixes.
-- Only list grammaticalErrors and vocabUpgrades that ACTUALLY APPEAR verbatim in the candidate's essay. Never invent errors or phrases the candidate did not write.
-
-Output strictly valid JSON matching this schema:
-{
-  "overallBand": number,
-  "proficiencyTitle": string,
-  "trScore": number,
-  "trComment": string,
-  "ccScore": number,
-  "ccComment": string,
-  "lrScore": number,
-  "lrComment": string,
-  "graScore": number,
-  "graComment": string,
-  "strengths": string[],
-  "weaknesses": string[],
-  "vocabUpgrades": [
-    { "original": string, "upgraded": string, "explanation": string }
-  ],
-  "grammaticalErrors": [
-    { "observed": string, "corrected": string, "explanation": string, "ruleCategory": string, "severity": "minor" | "moderate" | "critical" }
-  ],
-  "betterAnswerBand8": string,
-  "verdict": string
-}
+- Under "sentenceUpgrades", extract 3 to 5 weak sentences VERBATIM from the candidate's essay (if the essay has fewer than 3 weak sentences, extract the weakest available verbatim sentences), each paired with a concise "flawTag" (e.g., "Comma splice", "Informal register", "Unclear pronoun reference", "Mechanical linker", "Weak thesis focus") and a natural Band 8.5+ "band85Rewrite".
+- Under "barnabyVerdict", write 1–2 honest, analytical sentences in Barnaby's calm, strategic voice (ZERO emojis, maximum ONE exclamation mark, no generic praise) summarizing the single highest-leverage fix.
+- Only list grammaticalErrors, vocabUpgrades, and sentenceUpgrades that ACTUALLY APPEAR verbatim in the candidate's essay. Never invent errors or phrases the candidate did not write.
 
 Candidate prompt: ${prompt || 'Academic prompt'}
 
@@ -3638,9 +3743,82 @@ ${cleanEssay}`;
         ],
         config: {
           systemInstruction: writingEvaluatorSystemInstruction,
-          responseMimeType: 'application/json'
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              overallBand: { type: Type.NUMBER },
+              proficiencyTitle: { type: Type.STRING },
+              trScore: { type: Type.NUMBER },
+              trComment: { type: Type.STRING },
+              ccScore: { type: Type.NUMBER },
+              ccComment: { type: Type.STRING },
+              lrScore: { type: Type.NUMBER },
+              lrComment: { type: Type.STRING },
+              graScore: { type: Type.NUMBER },
+              graComment: { type: Type.STRING },
+              strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
+              sentenceUpgrades: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    originalSentence: { type: Type.STRING },
+                    flawTag: { type: Type.STRING },
+                    band85Rewrite: { type: Type.STRING },
+                    explanation: { type: Type.STRING }
+                  },
+                  required: ['originalSentence', 'flawTag', 'band85Rewrite']
+                }
+              },
+              barnabyVerdict: { type: Type.STRING },
+              vocabUpgrades: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    original: { type: Type.STRING },
+                    upgraded: { type: Type.STRING },
+                    explanation: { type: Type.STRING }
+                  },
+                  required: ['original', 'upgraded', 'explanation']
+                }
+              },
+              grammaticalErrors: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    observed: { type: Type.STRING },
+                    corrected: { type: Type.STRING },
+                    explanation: { type: Type.STRING },
+                    ruleCategory: { type: Type.STRING },
+                    severity: { type: Type.STRING, enum: ['minor', 'moderate', 'critical'] }
+                  },
+                  required: ['observed', 'corrected', 'explanation']
+                }
+              },
+              betterAnswerBand8: { type: Type.STRING },
+              verdict: { type: Type.STRING }
+            },
+            required: [
+              'overallBand',
+              'trScore',
+              'trComment',
+              'ccScore',
+              'ccComment',
+              'lrScore',
+              'lrComment',
+              'graScore',
+              'graComment',
+              'sentenceUpgrades',
+              'barnabyVerdict',
+              'verdict'
+            ]
+          }
         },
-        timeoutMs: 15_000,
+        timeoutMs: 18_000,
         taskLabel: 'evaluate_writing'
       });
 
@@ -3708,6 +3886,43 @@ ${cleanEssay}`;
         };
       }
 
+      const writingLowestCandidates = [
+        {
+          label: normalizedTaskType === 'task1' ? 'Task 1 Task Achievement' : 'Task 2 Task Response',
+          score: validated.criteria.ta ?? 9
+        },
+        { label: 'Coherence & Cohesion', score: validated.criteria.cc ?? 9 },
+        { label: 'Lexical Resource', score: validated.criteria.lr ?? 9 },
+        { label: 'Grammatical Range & Accuracy', score: validated.criteria.gra ?? 9 }
+      ].sort((a, b) => a.score - b.score);
+
+      const normalizedSentenceUpgrades = Array.isArray(parsed.sentenceUpgrades)
+        ? parsed.sentenceUpgrades
+            .filter(
+              (u: any) =>
+                u &&
+                typeof u.originalSentence === 'string' &&
+                u.originalSentence.trim() &&
+                typeof u.band85Rewrite === 'string' &&
+                u.band85Rewrite.trim()
+            )
+            .slice(0, 5)
+            .map((u: any) => ({
+              originalSentence: String(u.originalSentence).trim(),
+              flawTag: String(u.flawTag || 'Clarity & Precision').trim(),
+              band85Rewrite: String(u.band85Rewrite).trim(),
+              explanation: typeof u.explanation === 'string' ? u.explanation.trim() : ''
+            }))
+        : [];
+
+      const safeBarnabyVerdict = enforceBarnabyCompanionConstraints(
+        String(
+          parsed.barnabyVerdict ||
+            parsed.verdict ||
+            `Your lowest-scoring area is ${writingLowestCandidates[0].label}. Addressing that criterion directly is your fastest path to a higher band.`
+        )
+      );
+
       return {
         _httpStatus: 200,
         payload: {
@@ -3720,6 +3935,27 @@ ${cleanEssay}`;
           lrScore: validated.criteria.lr,
           graScore: validated.criteria.gra,
           overallBand: validated.overallBand,
+          criteria: {
+            taskAchievementOrResponse: {
+              score: validated.criteria.ta,
+              explanation: String(parsed.trComment || 'Evaluated against official IELTS Task Achievement / Response descriptors.')
+            },
+            coherenceAndCohesion: {
+              score: validated.criteria.cc,
+              explanation: String(parsed.ccComment || 'Evaluated against official IELTS Coherence & Cohesion descriptors.')
+            },
+            lexicalResource: {
+              score: validated.criteria.lr,
+              explanation: String(parsed.lrComment || 'Evaluated against official IELTS Lexical Resource descriptors.')
+            },
+            grammaticalRangeAndAccuracy: {
+              score: validated.criteria.gra,
+              explanation: String(parsed.graComment || 'Evaluated against official IELTS Grammatical Range & Accuracy descriptors.')
+            }
+          },
+          sentenceUpgrades: normalizedSentenceUpgrades,
+          barnabyVerdict: safeBarnabyVerdict,
+          lowestCriterion: writingLowestCandidates[0].label,
           calibrationNotes: validated.calibrationNotes,
           vocabUpgrades: Array.isArray(parsed.vocabUpgrades) ? parsed.vocabUpgrades : [],
           grammaticalErrors: Array.isArray(parsed.grammaticalErrors) ? parsed.grammaticalErrors : [],
@@ -3835,7 +4071,11 @@ async function handleMultiTurnTutorChat(req: express.Request, res: express.Respo
       recurringMistakeCount = 0,
       currentActivity = '',
       currentPage = '/',
-      bondStage = 'Word Explorer'
+      bondStage = 'Stage 1: First Meeting',
+      passageSnippet = '',
+      essayDraft = '',
+      bandTrendSummary = '',
+      emotionalState = 'neutral'
     } = context || {};
 
     const defaultPlan = resolveTextModelCandidates();
@@ -3876,15 +4116,16 @@ LIVE CANDIDATE CONTEXT:
 - Practice Diagnostic Estimate: ${typeof diagnosticEstimateBand === 'number' ? `Band ${diagnosticEstimateBand.toFixed(1)} (practice estimate only, not a verified exam band)` : 'None recorded'}
 - Weakest Skill Signal: ${weakestSkill ? `${weakestSkill} (source: ${weakestSkillSource})` : 'Not enough data yet'}
 - Active Mistake Vault Count: ${mistakeCount} unmastered items${recurringMistakeCategory && recurringMistakeCount > 0 ? ` (Recurring pattern: "${String(recurringMistakeCategory).slice(0, 120)}" x${recurringMistakeCount})` : topMistake ? ` (Latest item: "${String(topMistake).slice(0, 140)}")` : ''}
-- Barnaby Bond Stage: ${bondStage}
-- Current Question / Prompt: "${currentQuestion || 'General IELTS Preparation'}"
+- Barnaby Milestone Stage: ${bondStage}
+- Emotional / Pacing Cue: ${emotionalState} (If overwhelmed_or_tired or repeated_mistakes, slow down, break today into one small 5-minute concrete step, and never guilt-trip.)
+${bandTrendSummary ? `- Band Trend Summary: "${String(bandTrendSummary).slice(0, 600)}"\n` : ''}${passageSnippet ? `- Active Passage / Transcript Excerpt: "${String(passageSnippet).slice(0, 900)}"\n` : ''}${essayDraft ? `- Active Writing Draft Excerpt: "${String(essayDraft).slice(0, 900)}"\n` : ''}- Current Question / Prompt: "${currentQuestion || 'General IELTS Preparation'}"
 - Question Type: ${questionType || 'Standard'}
 - Candidate's Answer: "${userAnswer || 'Not provided'}"
 - Official Answer / Key (if applicable): "${correctAnswer || 'Not specified'}"
 
-Always respond in valid JSON matching this exact schema:
+Always respond in valid JSON matching this exact schema (ZERO emojis, max ONE exclamation mark, explain WHY a mistake or cap occurs before encouraging, no fake praise):
 {
-  "reply": "string (Concise, lively, warm, exam-accurate answer directly addressing the student — max 110 words unless a full plan is requested)",
+  "reply": "string (Concise, analytical, honest, warm, exam-accurate answer directly addressing the student — max 120 words unless a step-by-step breakdown is requested)",
   "mood": "happy" | "excited" | "proud" | "curious" | "playful" | "cheering" | "thinking",
   "strategyTip": "string (1 crisp sentence on the exact IELTS examiner trap or Band 8+ upgrade)",
   "academicCollocations": ["string", "string", "string"],
@@ -3892,7 +4133,7 @@ Always respond in valid JSON matching this exact schema:
     "label": "string (Short 3-5 word action label)",
     "route": "/practice/listening" | "/practice/reading" | "/practice/writing" | "/practice/speaking" | "/practice/question-bank" | "/practice/mock-tests" | "/learn/vocab" | "/learn/vault" | "/learn/diagnostic"
   },
-  "bengaliTip": "string (Short, natural Bengali / বাংলা memory hook or encouraging translation)"
+  "bengaliTip": "string (Short, natural Bengali / বাংলা memory hook or clear rule summary)"
 }`;
 
       const contentsPayload = [
@@ -4018,8 +4259,8 @@ app.post('/api/mentor/explain', async (req, res) => {
         });
 
         const revealInstruction = isAnswerRevealed
-          ? `The candidate has already checked or revealed the answer. Clearly explain WHY the official answer ("${correctAnswer}") is correct, why any competing distractor or the candidate's answer ("${userAnswer || 'unanswered'}") is a trap, and point to the exact lexical paraphrase in the passage/transcript.`
-          : `The candidate answered incorrectly or asked for a hint BEFORE revealing the final answer. Do NOT reveal the final answer yet. Give a concise, strategic hint pointing to the relevant clue, paraphrase shift, or distractor trap so they can find the right answer themselves.`;
+          ? `The candidate has already checked or revealed the answer. Clearly explain WHY the official answer ("${correctAnswer}") is correct, why any competing distractor or the candidate's answer ("${userAnswer || 'unanswered'}") failed, and point to the exact lexical paraphrase in the passage/transcript.`
+          : `ATTEMPT 1 HINT-BEFORE-REVEAL INTERCEPT: The candidate selected an incorrect answer ("${userAnswer || 'unknown'}"). The private official key is provided below ONLY so you can contrast it against the distractor trap. STRICT RULE: NEVER reveal, quote, spell out, or state the official answer letter/word/paragraph anywhere in your response. Instead, identify the exact distractor trap or keyword paraphrase shift in the snippet and prompt the student to try Attempt 2.`;
 
         const systemInstruction = `${companionBaseInstruction}
 
@@ -4027,9 +4268,9 @@ ${revealInstruction}
 
 Always respond in valid JSON matching this exact schema (obey ZERO emojis and max ONE exclamation mark across all text fields):
 {
-  "headline": "string (A crisp 1-sentence strategic headline summarizing the clue or answer logic without revealing the answer if unrevealed)",
-  "stepByStepExplanation": "string (2-4 clear sentences pointing to the relevant textual/audio clue, paraphrase mapping, or logical deduction step by step)",
-  "distractorTrapAnalysis": "string (Specific breakdown of the IELTS distractor trap—e.g. extreme qualifiers like 'exclusively', FALSE vs NOT GIVEN distinction, or Listening self-correction/synonym traps)",
+  "headline": "string (A crisp 1-sentence strategic headline summarizing the distractor trap or answer logic without revealing the answer if unrevealed)",
+  "stepByStepExplanation": "string (2-3 clear sentences pointing directly to the relevant textual/audio clue or keyword paraphrase so the candidate can try Attempt 2 if unrevealed)",
+  "distractorTrapAnalysis": "string (Specific breakdown of why the selected distractor failed—e.g. extreme qualifier like 'exclusively', FALSE vs NOT GIVEN trap, or Listening self-correction/synonym shift)",
   "keyConceptRule": "string (1 transferable IELTS exam rule the candidate can apply to similar ${cleanModule} questions)",
   "lexicalTakeaways": [
     {
@@ -4046,10 +4287,18 @@ Always respond in valid JSON matching this exact schema (obey ZERO emojis and ma
           questionType ? `Question Type: ${questionType}` : '',
           questionPrompt ? `Question / Statement: "${questionPrompt}"` : '',
           evidenceContext ? `Passage / Audio Transcript Evidence Context:\n"""\n${evidenceContext}\n"""` : '',
-          userAnswer ? `Candidate's Current Answer: "${userAnswer}"` : '',
-          isAnswerRevealed && correctAnswer ? `Correct Answer: "${correctAnswer}"` : '',
+          userAnswer ? `Candidate's Selected Answer: "${userAnswer}"` : '',
+          correctAnswer
+            ? isAnswerRevealed
+              ? `Official Answer (revealed): "${correctAnswer}"`
+              : `Private Official Key (HIDDEN from student — DO NOT reveal this in output): "${correctAnswer}"`
+            : '',
           trapNote ? `Reference Examiner Trap Note: "${trapNote}"` : '',
-          customQuery ? `Candidate's Specific Question: "${customQuery}"` : 'Please give a strategic hint pointing to the clue and distractor trap for this question.'
+          customQuery
+            ? `Candidate's Specific Question: "${customQuery}"`
+            : isAnswerRevealed
+            ? 'Explain clearly why the official answer is correct and why the distractor failed.'
+            : 'Identify the exact distractor trap or keyword paraphrase without revealing the correct answer, and prompt the student to try Attempt 2.'
         ]
           .filter(Boolean)
           .join('\n');
@@ -4068,16 +4317,21 @@ Always respond in valid JSON matching this exact schema (obey ZERO emojis and ma
         if (aiOutcome.ok && aiOutcome.text) {
           const parsed = JSON.parse(aiOutcome.text);
           if (parsed && parsed.headline && parsed.stepByStepExplanation) {
+            const sanitizeField = (val: string) =>
+              !isAnswerRevealed && correctAnswer
+                ? scrubAnswerFromUnrevealedHint(val, String(correctAnswer))
+                : enforceBarnabyCompanionConstraints(val);
+
             return res.json({
-              headline: enforceBarnabyCompanionConstraints(String(parsed.headline)),
-              stepByStepExplanation: enforceBarnabyCompanionConstraints(String(parsed.stepByStepExplanation)),
-              distractorTrapAnalysis: enforceBarnabyCompanionConstraints(
+              headline: sanitizeField(String(parsed.headline)),
+              stepByStepExplanation: sanitizeField(String(parsed.stepByStepExplanation)),
+              distractorTrapAnalysis: sanitizeField(
                 String(
                   parsed.distractorTrapAnalysis ||
                     'Watch for extreme qualifiers and synonym shifts between the question stem and the source text.'
                 )
               ),
-              keyConceptRule: enforceBarnabyCompanionConstraints(
+              keyConceptRule: sanitizeField(
                 String(
                   parsed.keyConceptRule ||
                     'Always verify that every qualifier in the question statement is supported by explicit evidence.'
@@ -4086,7 +4340,7 @@ Always respond in valid JSON matching this exact schema (obey ZERO emojis and ma
               lexicalTakeaways: Array.isArray(parsed.lexicalTakeaways)
                 ? parsed.lexicalTakeaways.slice(0, 3)
                 : [],
-              banglaSummary: enforceBarnabyCompanionConstraints(
+              banglaSummary: sanitizeField(
                 String(
                   parsed.banglaSummary ||
                     'প্রশ্নের মূল শব্দগুলোর সমার্থক শব্দ (paraphrase) প্যাসেজ বা অডিওতে খুঁজে বের করুন এবং চরম শব্দ (যেমন exclusively, always) থেকে সতর্ক থাকুন।'
@@ -7597,7 +7851,9 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
 1. Score strictly and HONESTLY against IELTS 1.0–9.0 public descriptors for TA/TR (taScore), CC (ccScore), LR (lrScore), and GRA (graScore) in 0.5 increments. Never inflate weak, off-topic, repetitive, or memorized essays; score as low as 1.0–4.5 when warranted.
 2. Score each of the 4 criteria independently (strong grammar must not hide weak Task Achievement/Response).
 3. Inspect every major sentence in the essay (up to 10 sentences). For sentences with weaknesses, set category to "grammar", "lexical", or "cohesion", provide exact original sentence, concise errorTitle, identifiedIssue, a Band 8.5+ suggestedCorrection, rationaleEn (clear English examiner coaching), and rationaleBn (natural Bengali / বাংলা explanation). Mark strong sentences as "clean".
-4. Provide 2-4 upgradedModelParagraphs pairing each original paragraph with its Band 8.5+ rewritten paragraph.`
+4. Under "sentenceUpgrades", extract 3 to 5 weak sentences VERBATIM from the candidate's essay, each paired with a specific "flawTag" (e.g. "Comma splice", "Informal register", "Unclear pronoun reference", "Mechanical linker") and a natural Band 8.5+ "band85Rewrite".
+5. Under "barnabyVerdict", write 1–2 sentences in Barnaby's honest, analytical voice (ZERO emojis, maximum ONE exclamation mark, no generic praise) summarizing the single highest-leverage fix.
+6. Provide 2-4 upgradedModelParagraphs pairing each original paragraph with its Band 8.5+ rewritten paragraph.`
       ].join('\n\n'),
       config: {
         systemInstruction: buildEvaluatorSystemInstruction(
@@ -7617,6 +7873,20 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
             graScore: { type: Type.NUMBER },
             graSummary: { type: Type.STRING },
             cefrLevel: { type: Type.STRING },
+            barnabyVerdict: { type: Type.STRING },
+            sentenceUpgrades: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  originalSentence: { type: Type.STRING },
+                  flawTag: { type: Type.STRING },
+                  band85Rewrite: { type: Type.STRING },
+                  explanation: { type: Type.STRING }
+                },
+                required: ['originalSentence', 'flawTag', 'band85Rewrite']
+              }
+            },
             annotations: {
               type: Type.ARRAY,
               items: {
@@ -7655,6 +7925,8 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
             'graScore',
             'graSummary',
             'cefrLevel',
+            'barnabyVerdict',
+            'sentenceUpgrades',
             'annotations',
             'upgradedParagraphs'
           ]
@@ -7763,6 +8035,57 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
         }).filter((p: any) => p.original.length > 0 || p.upgradedHtml.length > 0)
       : [];
 
+    const deepLowestCandidates = [
+      {
+        label: normalizedTaskType === 1 ? 'Task 1 Task Achievement' : 'Task 2 Task Response',
+        score: taScore
+      },
+      { label: 'Coherence & Cohesion', score: ccScore },
+      { label: 'Lexical Resource', score: lrScore },
+      { label: 'Grammatical Range & Accuracy', score: graScore }
+    ].sort((a, b) => a.score - b.score);
+
+    const sentenceUpgrades = (() => {
+      if (Array.isArray(parsed.sentenceUpgrades) && parsed.sentenceUpgrades.length > 0) {
+        return parsed.sentenceUpgrades
+          .filter(
+            (u: any) =>
+              u &&
+              typeof u.originalSentence === 'string' &&
+              u.originalSentence.trim() &&
+              typeof u.band85Rewrite === 'string' &&
+              u.band85Rewrite.trim()
+          )
+          .slice(0, 5)
+          .map((u: any) => ({
+            originalSentence: String(u.originalSentence).trim(),
+            flawTag: String(u.flawTag || 'Clarity & Precision').trim(),
+            band85Rewrite: String(u.band85Rewrite).trim(),
+            explanation: typeof u.explanation === 'string' ? u.explanation.trim() : ''
+          }));
+      }
+      return annotations
+        .filter((a: any) => a.category !== 'clean' && a.suggestedCorrection)
+        .slice(0, 5)
+        .map((a: any) => ({
+          originalSentence: a.sentence,
+          flawTag: a.errorTitle || a.category,
+          band85Rewrite: a.suggestedCorrection,
+          explanation: a.rationaleEn || a.identifiedIssue || ''
+        }));
+    })();
+
+    const barnabyVerdict = enforceBarnabyCompanionConstraints(
+      typeof parsed.barnabyVerdict === 'string' && parsed.barnabyVerdict.trim()
+        ? parsed.barnabyVerdict
+        : `Your lowest criterion is ${deepLowestCandidates[0].label} (Band ${deepLowestCandidates[0].score.toFixed(1)}). Targeting that dimension first will lift your overall Writing band fastest.`
+    );
+
+    const taSummaryText = String(parsed.taSummary || 'Evaluated against IELTS Task Achievement / Response descriptors.');
+    const ccSummaryText = String(parsed.ccSummary || 'Evaluated against IELTS Coherence & Cohesion descriptors.');
+    const lrSummaryText = String(parsed.lrSummary || 'Evaluated against IELTS Lexical Resource descriptors.');
+    const graSummaryText = String(parsed.graSummary || 'Evaluated against IELTS Grammatical Range & Accuracy descriptors.');
+
     return res.json({
       isValidAttempt: true,
       assessmentStatus: validatedDeep.assessmentStatus,
@@ -7783,13 +8106,22 @@ app.post('/api/writing/deep-evaluate', async (req, res) => {
           ? 'C1 Advanced'
           : 'B2 Upper-Intermediate',
       taScore,
-      taSummary: String(parsed.taSummary || 'Evaluated against IELTS Task Achievement / Response descriptors.'),
+      taSummary: taSummaryText,
       ccScore,
-      ccSummary: String(parsed.ccSummary || 'Evaluated against IELTS Coherence & Cohesion descriptors.'),
+      ccSummary: ccSummaryText,
       lrScore,
-      lrSummary: String(parsed.lrSummary || 'Evaluated against IELTS Lexical Resource descriptors.'),
+      lrSummary: lrSummaryText,
       graScore,
-      graSummary: String(parsed.graSummary || 'Evaluated against IELTS Grammatical Range & Accuracy descriptors.'),
+      graSummary: graSummaryText,
+      criteria: {
+        taskAchievementOrResponse: { score: taScore, explanation: taSummaryText },
+        coherenceAndCohesion: { score: ccScore, explanation: ccSummaryText },
+        lexicalResource: { score: lrScore, explanation: lrSummaryText },
+        grammaticalRangeAndAccuracy: { score: graScore, explanation: graSummaryText }
+      },
+      sentenceUpgrades,
+      barnabyVerdict,
+      lowestCriterion: deepLowestCandidates[0].label,
       annotations,
       upgradedModelParagraphs,
       calibrationNotes: validatedDeep.calibrationNotes

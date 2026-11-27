@@ -23,6 +23,9 @@
 import { IELTSQuestion } from './QuestionEngine';
 import { audioService, DialogueLine, AudioPlaybackState, isInterruptedPlaybackError } from './audioService';
 import { getGlobalPreferredMaleVoice } from '../config/voiceConfig';
+import { soundManager } from '../utils/audioEffects';
+
+const STORAGE_KEY_UI_SOUND_ENABLED = 'bandsprint_ui_sounds_enabled_v1';
 
 export interface AudioItemMetadata {
   audioId: string;
@@ -109,16 +112,226 @@ export class AudioManagerService {
   private activeAbortController: AbortController | null = null;
   private metadataRegistry: Map<string, AudioItemMetadata> = new Map();
   private isPlaybackLocked: boolean = false;
+  private uiSoundsEnabled: boolean = true;
   private listeners: Set<(state: { activeAudioId: string | null; activeQuestionId: string | null; isPlaying: boolean }) => void> = new Set();
 
   constructor() {
     this.loadRecentHistory();
+    this.loadUiSoundPreference();
     audioService.subscribe((state) => {
       if (!state.isPlaying && !state.isLoading && !state.isPaused && this.isPlaybackLocked) {
         this.isPlaybackLocked = false;
         this.notifyState();
       }
     });
+  }
+
+  private loadUiSoundPreference(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_UI_SOUND_ENABLED);
+      if (raw === 'false') {
+        this.uiSoundsEnabled = false;
+      }
+    } catch {
+      this.uiSoundsEnabled = true;
+    }
+  }
+
+  public isUiSoundEnabled(): boolean {
+    return this.uiSoundsEnabled;
+  }
+
+  public setUiSoundEnabled(enabled: boolean): void {
+    this.uiSoundsEnabled = enabled;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_UI_SOUND_ENABLED, enabled ? 'true' : 'false');
+      } catch {}
+    }
+  }
+
+  /**
+   * Subtle, low-volume tactile Web Audio UI click for IELTS Hub buttons, tabs, and checkboxes.
+   */
+  public playUiClick(variant: 'soft' | 'tab' | 'toggle' | 'check' = 'soft'): void {
+    if (!this.uiSoundsEnabled) return;
+    try {
+      const ctx = soundManager.initCtx();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1900, now);
+
+      if (variant === 'check') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(640, now);
+        osc.frequency.exponentialRampToValueAtTime(860, now + 0.038);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.038, now + 0.006);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.048);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.052);
+        return;
+      }
+
+      if (variant === 'tab') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(610, now + 0.028);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.03, now + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.036);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.04);
+        return;
+      }
+
+      if (variant === 'toggle') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(580, now);
+        osc.frequency.exponentialRampToValueAtTime(700, now + 0.026);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.032, now + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.034);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.038);
+        return;
+      }
+
+      // Default subtle 'soft' tactile click
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(480, now);
+      osc.frequency.exponentialRampToValueAtTime(540, now + 0.022);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.028, now + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.035);
+    } catch {
+      // Ignore autoplay blocks prior to user gesture
+    }
+  }
+
+  /**
+   * Subtle, warm ascending two-tone chime when a Pomodoro sprint starts or resumes.
+   */
+  public playPomodoroStart(): void {
+    if (!this.uiSoundsEnabled) return;
+    try {
+      const ctx = soundManager.initCtx();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const notes = [440, 659.25];
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const start = now + idx * 0.075;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.001, start);
+        gain.gain.linearRampToValueAtTime(0.045, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.24);
+      });
+    } catch {}
+  }
+
+  /**
+   * Gentle descending soft tone when a Pomodoro sprint is paused.
+   */
+  public playPomodoroPause(): void {
+    if (!this.uiSoundsEnabled) return;
+    try {
+      const ctx = soundManager.initCtx();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const notes = [523.25, 392];
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const start = now + idx * 0.07;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.001, start);
+        gain.gain.linearRampToValueAtTime(0.038, start + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.2);
+      });
+    } catch {}
+  }
+
+  /**
+   * Clean low-volume tap when resetting the Pomodoro timer.
+   */
+  public playPomodoroReset(): void {
+    if (!this.uiSoundsEnabled) return;
+    try {
+      const ctx = soundManager.initCtx();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(420, now);
+      osc.frequency.exponentialRampToValueAtTime(320, now + 0.08);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.036, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.12);
+    } catch {}
+  }
+
+  /**
+   * Warm, low-volume harmonic chime when a Pomodoro sprint block finishes.
+   */
+  public playPomodoroComplete(): void {
+    if (!this.uiSoundsEnabled) return;
+    try {
+      const ctx = soundManager.initCtx();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = idx === notes.length - 1 ? 'triangle' : 'sine';
+        const start = now + idx * 0.11;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.001, start);
+        gain.gain.linearRampToValueAtTime(0.058, start + 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.55);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.58);
+      });
+    } catch {}
   }
 
   private loadRecentHistory(): void {

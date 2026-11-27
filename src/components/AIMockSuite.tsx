@@ -449,21 +449,26 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
     }
   };
 
-  const handleSaveUpgradeToVault = (item: { original: string; upgraded: string; explanation: string }) => {
+  const [isPlayingModelAudio, setIsPlayingModelAudio] = useState(false);
+  const [copiedModelAnswer, setCopiedModelAnswer] = useState(false);
+  const [savedVocabMap, setSavedVocabMap] = useState<Record<string, boolean>>({});
+  const [savedGrammarErrorMap, setSavedGrammarErrorMap] = useState<Record<string, boolean>>({});
+
+  const handleSaveUpgradeToVault = (item: { original: string; upgraded: string; explanation: string }, idx?: number) => {
+    const key = typeof idx === 'number' ? `vocab_${idx}` : `vocab_${item.original}`;
+    if (savedVocabMap[key]) return;
     addMistake({
       module: 'vocab',
       title: `Vocab Upgrade: "${item.original}" ➔ "${item.upgraded}"`,
       userAnswer: item.original,
       correctAnswer: item.upgraded,
-      explanation: item.explanation
+      explanation: item.explanation,
+      trapExplanationBn: `সাধারণ শব্দ "${item.original}" এর বদলে Band 8.5+ একাডেমিক শব্দ "${item.upgraded}" ব্যবহার করলে Lexical Resource স্কোর বাড়ে। (${item.explanation})`
     });
+    setSavedVocabMap((prev) => ({ ...prev, [key]: true }));
     soundManager.playSuccess();
-    onShowToast(`Saved "${item.upgraded}" to Mistake Vault!`);
+    onShowToast(`Queued "${item.upgraded}" into Daily Sprint & Mistake Vault!`);
   };
-
-  const [isPlayingModelAudio, setIsPlayingModelAudio] = useState(false);
-  const [copiedModelAnswer, setCopiedModelAnswer] = useState(false);
-  const [savedGrammarErrorMap, setSavedGrammarErrorMap] = useState<Record<string, boolean>>({});
 
   const handlePlayModelAudio = (text: string) => {
     if (isPlayingModelAudio) {
@@ -497,11 +502,61 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       title: `Grammar Correction: ${err.ruleCategory || 'Grammar Rule'}`,
       userAnswer: err.observed,
       correctAnswer: err.corrected,
-      explanation: err.explanation
+      explanation: err.explanation,
+      trapExplanationBn: `${err.ruleCategory || 'গ্রামার নিয়ম'}: "${err.observed}" এর সঠিক একাডেমিক রূপ হলো "${err.corrected}"। (${err.explanation})`
     });
     setSavedGrammarErrorMap(prev => ({ ...prev, [`err_${idx}`]: true }));
     soundManager.playSuccess();
-    onShowToast(`Saved "${err.corrected}" to Mistake Vault!`);
+    onShowToast(`Queued "${err.corrected}" into Daily Sprint & Mistake Vault!`);
+  };
+
+  const handlePushAllEvaluationFixesToSprint = () => {
+    if (!evaluation) return;
+    let added = 0;
+    const nextVocab = { ...savedVocabMap };
+    const nextGrammar = { ...savedGrammarErrorMap };
+
+    (evaluation.vocabUpgrades || []).forEach((item, idx) => {
+      const key = `vocab_${idx}`;
+      if (!nextVocab[key]) {
+        addMistake({
+          module: 'vocab',
+          title: `Vocab Upgrade: "${item.original}" ➔ "${item.upgraded}"`,
+          userAnswer: item.original,
+          correctAnswer: item.upgraded,
+          explanation: item.explanation,
+          trapExplanationBn: `সাধারণ শব্দ "${item.original}" এর বদলে Band 8.5+ একাডেমিক শব্দ "${item.upgraded}" ব্যবহার করলে Lexical Resource স্কোর বাড়ে। (${item.explanation})`
+        });
+        nextVocab[key] = true;
+        added++;
+      }
+    });
+
+    (evaluation.grammaticalErrors || []).forEach((err, idx) => {
+      const key = `err_${idx}`;
+      if (!nextGrammar[key]) {
+        addMistake({
+          module: testType === 'speaking' ? 'speaking' : 'writing',
+          title: `Grammar Correction: ${err.ruleCategory || 'Grammar Rule'}`,
+          userAnswer: err.observed,
+          correctAnswer: err.corrected,
+          explanation: err.explanation,
+          trapExplanationBn: `${err.ruleCategory || 'গ্রামার নিয়ম'}: "${err.observed}" এর সঠিক একাডেমিক রূপ হলো "${err.corrected}"। (${err.explanation})`
+        });
+        nextGrammar[key] = true;
+        added++;
+      }
+    });
+
+    setSavedVocabMap(nextVocab);
+    setSavedGrammarErrorMap(nextGrammar);
+
+    if (added > 0) {
+      soundManager.playSuccess();
+      onShowToast(`Pushed ${added} upgrade${added > 1 ? 's' : ''} into your Daily Sprint & Mistake Vault.`);
+    } else {
+      onShowToast('All vocabulary upgrades & grammar fixes are already queued in your Daily Sprint.');
+    }
   };
 
   return (
@@ -885,30 +940,47 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
           {/* Side-by-side Vocabulary Upgrades */}
           {isWritingEvaluationComplete && evaluation.vocabUpgrades.length > 0 && (
             <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h4 className="font-bold text-slate-900 text-base">Examiner Vocabulary Upgrades</h4>
                   <p className="text-xs text-slate-500">Transform everyday phrases into Band 8.5+ academic collocations.</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={handlePushAllEvaluationFixesToSprint}
+                  className="min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Push All to Daily Sprint</span>
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {evaluation.vocabUpgrades.map((item, idx) => (
-                  <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 flex flex-col justify-between">
-                    <div>
-                      <div className="text-xs text-slate-500 line-through">"{item.original}"</div>
-                      <div className="font-bold text-indigo-900 text-sm mt-0.5">➔ "{item.upgraded}"</div>
-                      <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">{item.explanation}</p>
+                {evaluation.vocabUpgrades.map((item, idx) => {
+                  const isSaved = !!savedVocabMap[`vocab_${idx}`];
+                  return (
+                    <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 flex flex-col justify-between">
+                      <div>
+                        <div className="text-xs text-slate-500 line-through">"{item.original}"</div>
+                        <div className="font-bold text-indigo-900 text-sm mt-0.5">➔ "{item.upgraded}"</div>
+                        <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">{item.explanation}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveUpgradeToVault(item, idx)}
+                        disabled={isSaved}
+                        className={`mt-3 text-xs font-bold flex items-center gap-1.5 pt-2 border-t border-slate-200 transition ${
+                          isSaved
+                            ? 'text-emerald-700 cursor-default'
+                            : 'text-indigo-700 hover:text-indigo-900 cursor-pointer'
+                        }`}
+                      >
+                        {isSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+                        <span>{isSaved ? 'Queued in Daily Sprint' : 'Save to Vault & Sprint'}</span>
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleSaveUpgradeToVault(item)}
-                      className="mt-3 text-xs font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1.5 pt-2 border-t border-slate-200"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Save to Mistake Vault</span>
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -916,19 +988,23 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
           {/* Examiner Grammatical Errors & Sentence Corrections */}
           {evaluation.grammaticalErrors && evaluation.grammaticalErrors.length > 0 && (
             <div className="bg-white rounded-3xl border border-rose-200 p-6 sm:p-8 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-                    <h4 className="font-bold text-slate-900 text-base">Examiner Grammatical Errors & Corrections</h4>
-                  </div>
+                  <h4 className="font-bold text-slate-900 text-base">
+                    Examiner Grammatical Errors &amp; Corrections
+                  </h4>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Practice rubric corrections with underlying grammatical rule principles. Save directly to your Mistake Vault.
+                    {evaluation.grammaticalErrors.length} issue{evaluation.grammaticalErrors.length > 1 ? 's' : ''} identified · Save directly to your Mistake Vault &amp; Daily Sprint queue.
                   </p>
                 </div>
-                <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-mono font-bold">
-                  {evaluation.grammaticalErrors.length} Issue{evaluation.grammaticalErrors.length > 1 ? 's' : ''} Identified
-                </span>
+                <button
+                  type="button"
+                  onClick={handlePushAllEvaluationFixesToSprint}
+                  className="min-h-[40px] px-3.5 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Push All to Daily Sprint</span>
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -955,6 +1031,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                       </div>
 
                       <button
+                        type="button"
                         onClick={() => handleSaveGrammarError(err, idx)}
                         disabled={isSaved}
                         className={`mt-3 text-xs font-bold flex items-center gap-1.5 pt-2 border-t border-rose-200 transition ${
@@ -964,7 +1041,7 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
                         }`}
                       >
                         {isSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                        <span>{isSaved ? 'Saved in Vault' : 'Save Error to Mistake Vault'}</span>
+                        <span>{isSaved ? 'Queued in Daily Sprint' : 'Save to Vault & Sprint'}</span>
                       </button>
                     </div>
                   );

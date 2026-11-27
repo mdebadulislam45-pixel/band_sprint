@@ -11,7 +11,11 @@ import {
   XP_ALL_MISSIONS_BONUS
 } from '../../services/streakService';
 
+import { DiagnosticSkill, loadDiagnosticResult } from '../../services/diagnosticResultStore';
+import { loadOnboardingSurvey } from '../../services/onboardingSurveyStore';
+
 interface DailySprintMissionHubProps {
+  weakestSkill?: DiagnosticSkill;
   onNavigate: (module: string) => void;
   onShowToast: (msg: string) => void;
 }
@@ -63,6 +67,7 @@ const DEFAULT_MISSIONS: Mission[] = [
 const DEFAULT_MISSION_IDS = DEFAULT_MISSIONS.map((m) => m.id);
 
 export const DailySprintMissionHub: React.FC<DailySprintMissionHubProps> = ({
+  weakestSkill,
   onNavigate,
   onShowToast
 }) => {
@@ -70,6 +75,21 @@ export const DailySprintMissionHub: React.FC<DailySprintMissionHubProps> = ({
     if (typeof window === 'undefined') return [];
     return getCompletedMissionsToday();
   });
+
+  const activeWeakest =
+    weakestSkill ||
+    loadDiagnosticResult()?.weakest ||
+    loadOnboardingSurvey()?.weakestSkill ||
+    'writing';
+
+  const orderedMissions = React.useMemo(() => {
+    const targetSkillLower = activeWeakest.toLowerCase();
+    return [...DEFAULT_MISSIONS].sort((a, b) => {
+      const aMatch = a.skill.toLowerCase() === targetSkillLower ? 0 : 1;
+      const bMatch = b.skill.toLowerCase() === targetSkillLower ? 0 : 1;
+      return aMatch - bMatch;
+    });
+  }, [activeWeakest]);
 
   useEffect(() => {
     const syncCompleted = () => setCompletedIds(getCompletedMissionsToday());
@@ -144,8 +164,9 @@ export const DailySprintMissionHub: React.FC<DailySprintMissionHubProps> = ({
 
       {/* Checklist Rows */}
       <div className="divide-y divide-[#EEF3F1] dark:divide-[#1F8A70]/20 -mx-2">
-        {DEFAULT_MISSIONS.map((mission) => {
+        {orderedMissions.map((mission) => {
           const isDone = completedIds.includes(mission.id);
+          const isPrioritySkill = mission.skill.toLowerCase() === activeWeakest.toLowerCase();
           return (
             <div
               key={mission.id}
@@ -178,6 +199,14 @@ export const DailySprintMissionHub: React.FC<DailySprintMissionHubProps> = ({
                     <span className="font-semibold text-[#0F4C45] dark:text-[#1F8A70]">
                       {mission.skill}
                     </span>
+                    {isPrioritySkill && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-semibold text-[#9B6314] dark:text-[#F4A62A]">
+                          Priority Focus
+                        </span>
+                      </>
+                    )}
                     <span aria-hidden="true">·</span>
                     <span className="inline-flex items-center gap-1 font-mono tabular-nums">
                       <Clock className="w-3 h-3" />

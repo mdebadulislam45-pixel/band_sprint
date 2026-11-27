@@ -29,7 +29,12 @@ import {
   Sparkles
 } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
-import { getCurrentUser, recordExamAttempt } from '../../utils/userStorage';
+import {
+  getCurrentUser,
+  recordExamAttempt,
+  setTopWeakness,
+  detectLowestWritingCriterion
+} from '../../utils/userStorage';
 import { addMistake } from '../../utils/vaultStorage';
 import { checkWritingWordThreshold } from '../../services/WritingEvaluationService';
 import { getStoredSessionToken } from '../../services/authService';
@@ -39,6 +44,11 @@ import {
   validateCriterionBand
 } from '../../utils/scoringIntegrity';
 import { setBarnabyAnalyzing } from '../../utils/getBarnabyState';
+import { BarnabyRig } from '../BarnabyRig';
+import type {
+  WritingCriteriaBreakdown,
+  WritingSentenceUpgrade
+} from '../../services/geminiService';
 import {
   CDIELTSColorScheme,
   CDIELTSZoomLevel,
@@ -104,6 +114,10 @@ export interface WritingDiagnosticResult {
   lrSummary: string;
   graScore: number | null;
   graSummary: string;
+  criteria?: WritingCriteriaBreakdown;
+  sentenceUpgrades?: WritingSentenceUpgrade[];
+  barnabyVerdict?: string;
+  lowestCriterion?: string | null;
   annotations: SentenceAnnotation[];
   upgradedModelParagraphs: Array<{
     original: string;
@@ -837,6 +851,108 @@ export function mapDeepWritingResponseToDiagnostic(params: {
       ? data.upgradedModelParagraphs
       : fallbackPrecheck.upgradedModelParagraphs;
 
+  const taExplanation =
+    typeof data?.criteria?.taskAchievementOrResponse?.explanation === 'string' &&
+    data.criteria.taskAchievementOrResponse.explanation.trim()
+      ? data.criteria.taskAchievementOrResponse.explanation.trim()
+      : typeof data?.taSummary === 'string' && data.taSummary.trim()
+      ? data.taSummary.trim()
+      : fallbackPrecheck.taSummary;
+
+  const ccExplanation =
+    typeof data?.criteria?.coherenceAndCohesion?.explanation === 'string' &&
+    data.criteria.coherenceAndCohesion.explanation.trim()
+      ? data.criteria.coherenceAndCohesion.explanation.trim()
+      : typeof data?.ccSummary === 'string' && data.ccSummary.trim()
+      ? data.ccSummary.trim()
+      : fallbackPrecheck.ccSummary;
+
+  const lrExplanation =
+    typeof data?.criteria?.lexicalResource?.explanation === 'string' &&
+    data.criteria.lexicalResource.explanation.trim()
+      ? data.criteria.lexicalResource.explanation.trim()
+      : typeof data?.lrSummary === 'string' && data.lrSummary.trim()
+      ? data.lrSummary.trim()
+      : fallbackPrecheck.lrSummary;
+
+  const graExplanation =
+    typeof data?.criteria?.grammaticalRangeAndAccuracy?.explanation === 'string' &&
+    data.criteria.grammaticalRangeAndAccuracy.explanation.trim()
+      ? data.criteria.grammaticalRangeAndAccuracy.explanation.trim()
+      : typeof data?.graSummary === 'string' && data.graSummary.trim()
+      ? data.graSummary.trim()
+      : fallbackPrecheck.graSummary;
+
+  const resolvedCriteria: WritingCriteriaBreakdown | undefined =
+    validated.criteria.ta !== null &&
+    validated.criteria.cc !== null &&
+    validated.criteria.lr !== null &&
+    validated.criteria.gra !== null
+      ? {
+          taskAchievementOrResponse: {
+            score: validated.criteria.ta,
+            explanation: taExplanation
+          },
+          coherenceAndCohesion: {
+            score: validated.criteria.cc,
+            explanation: ccExplanation
+          },
+          lexicalResource: {
+            score: validated.criteria.lr,
+            explanation: lrExplanation
+          },
+          grammaticalRangeAndAccuracy: {
+            score: validated.criteria.gra,
+            explanation: graExplanation
+          }
+        }
+      : undefined;
+
+  const resolvedSentenceUpgrades: WritingSentenceUpgrade[] = Array.isArray(data?.sentenceUpgrades)
+    ? data.sentenceUpgrades
+        .filter(
+          (item: any) =>
+            item &&
+            typeof item.originalSentence === 'string' &&
+            item.originalSentence.trim() &&
+            typeof item.band85Rewrite === 'string' &&
+            item.band85Rewrite.trim()
+        )
+        .slice(0, 5)
+        .map((item: any) => ({
+          originalSentence: item.originalSentence.trim(),
+          flawTag:
+            typeof item.flawTag === 'string' && item.flawTag.trim()
+              ? item.flawTag.trim()
+              : 'Precision & Cohesion',
+          band85Rewrite: item.band85Rewrite.trim(),
+          explanation:
+            typeof item.explanation === 'string' && item.explanation.trim()
+              ? item.explanation.trim()
+              : undefined
+        }))
+    : [];
+
+  const resolvedLowestCriterion =
+    typeof data?.lowestCriterion === 'string' && data.lowestCriterion.trim()
+      ? data.lowestCriterion.trim()
+      : detectLowestWritingCriterion(
+          {
+            ta: validated.criteria.ta,
+            cc: validated.criteria.cc,
+            lr: validated.criteria.lr,
+            gra: validated.criteria.gra
+          },
+          fallbackPrecheck.taskType
+        );
+
+  const resolvedBarnabyVerdict =
+    typeof data?.barnabyVerdict === 'string' && data.barnabyVerdict.trim()
+      ? data.barnabyVerdict.trim()
+      : resolvedLowestCriterion
+      ? `Focus first on ${resolvedLowestCriterion}, as it is currently holding back your overall Writing band.`
+      : undefined;
+
   return {
     ...fallbackPrecheck,
     isValidAttempt: true,
@@ -856,22 +972,14 @@ export function mapDeepWritingResponseToDiagnostic(params: {
     ccScore: validated.criteria.cc,
     lrScore: validated.criteria.lr,
     graScore: validated.criteria.gra,
-    taSummary:
-      typeof data?.taSummary === 'string' && data.taSummary.trim()
-        ? data.taSummary
-        : fallbackPrecheck.taSummary,
-    ccSummary:
-      typeof data?.ccSummary === 'string' && data.ccSummary.trim()
-        ? data.ccSummary
-        : fallbackPrecheck.ccSummary,
-    lrSummary:
-      typeof data?.lrSummary === 'string' && data.lrSummary.trim()
-        ? data.lrSummary
-        : fallbackPrecheck.lrSummary,
-    graSummary:
-      typeof data?.graSummary === 'string' && data.graSummary.trim()
-        ? data.graSummary
-        : fallbackPrecheck.graSummary,
+    taSummary: taExplanation,
+    ccSummary: ccExplanation,
+    lrSummary: lrExplanation,
+    graSummary: graExplanation,
+    criteria: resolvedCriteria,
+    sentenceUpgrades: resolvedSentenceUpgrades,
+    barnabyVerdict: resolvedBarnabyVerdict,
+    lowestCriterion: resolvedLowestCriterion,
     cefrLevel:
       typeof data?.cefrLevel === 'string' && data.cefrLevel.trim()
         ? data.cefrLevel
@@ -1316,6 +1424,20 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
       }
 
       if (shouldPersistWritingDiagnostic(mapped)) {
+        const syncedLowest =
+          mapped.lowestCriterion ||
+          detectLowestWritingCriterion(
+            {
+              ta: mapped.taScore,
+              cc: mapped.ccScore,
+              lr: mapped.lrScore,
+              gra: mapped.graScore
+            },
+            mapped.taskType
+          );
+        if (syncedLowest) {
+          setTopWeakness(syncedLowest, 'writing');
+        }
         recordExamAttempt({
           examType: 'writing_only',
           writingBand: mapped.overallBand,
@@ -2741,6 +2863,57 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                   </div>
                 )}
 
+                {/* BARNABY POST-GRADING VERDICT & WEAKNESS AUTO-SYNC */}
+                {diagnosticResult.assessmentStatus === 'evaluated' && diagnosticResult.barnabyVerdict && (
+                  <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#0D1E1D] border border-[#134E41]/15 dark:border-[#1F8A70]/30 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-transparent flex items-center justify-center shrink-0 overflow-hidden p-0.5">
+                      <BarnabyRig
+                        expression={
+                          typeof diagnosticResult.overallBand === 'number' &&
+                          diagnosticResult.overallBand >= diagnosticResult.targetBand
+                            ? 'celebrating'
+                            : 'encouraging'
+                        }
+                        mode={
+                          typeof diagnosticResult.overallBand === 'number' &&
+                          diagnosticResult.overallBand >= diagnosticResult.targetBand
+                            ? 'celebration'
+                            : 'tutor'
+                        }
+                        animationState={
+                          typeof diagnosticResult.overallBand === 'number' &&
+                          diagnosticResult.overallBand >= diagnosticResult.targetBand
+                            ? 'celebratory'
+                            : 'idle'
+                        }
+                        moodState={
+                          typeof diagnosticResult.overallBand === 'number' &&
+                          diagnosticResult.overallBand >= diagnosticResult.targetBand
+                            ? 'celebratory'
+                            : 'encouraging'
+                        }
+                        className="w-full h-full"
+                        ariaLabel="Barnaby Writing coaching verdict"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#134E41] dark:text-[#6EE7B7]">
+                          Barnaby Verdict · Highest-Leverage Fix
+                        </span>
+                        {diagnosticResult.lowestCriterion && (
+                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F59E0B]/15 text-[#B45309] dark:text-amber-300 text-[11px] font-semibold">
+                            Dashboard Focus Queued: {diagnosticResult.lowestCriterion}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs sm:text-sm text-[#0E1F1E] dark:text-slate-100 leading-relaxed font-medium">
+                        {diagnosticResult.barnabyVerdict}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* SECTION A: 4 IELTS Descriptors with Individual Null-Safe Band Scores & Progress Bars */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
@@ -2749,21 +2922,21 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                     title: diagnosticResult.taskType === 1 ? 'Task Achievement (TA)' : 'Task Response (TR)',
                     score: diagnosticResult.taScore,
                     summary: diagnosticResult.taSummary,
-                    barColor: 'bg-blue-600'
+                    barColor: 'bg-[#134E41]'
                   },
                   {
                     code: 'CC',
                     title: 'Coherence & Cohesion (CC)',
                     score: diagnosticResult.ccScore,
                     summary: diagnosticResult.ccSummary,
-                    barColor: 'bg-amber-500'
+                    barColor: 'bg-[#F59E0B]'
                   },
                   {
                     code: 'LR',
                     title: 'Lexical Resource (LR)',
                     score: diagnosticResult.lrScore,
                     summary: diagnosticResult.lrSummary,
-                    barColor: 'bg-indigo-600'
+                    barColor: 'bg-[#0F766E]'
                   },
                   {
                     code: 'GRA',
@@ -2775,12 +2948,12 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                 ].map((crit) => (
                   <div
                     key={crit.code}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3"
+                    className="p-4 rounded-2xl bg-[#F4F7F6] dark:bg-slate-800/60 border border-[#134E41]/15 dark:border-slate-800 flex flex-col justify-between space-y-3"
                   >
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-bold text-slate-900 dark:text-white">{crit.title}</span>
-                        <span className="text-sm font-black font-mono text-blue-600 dark:text-blue-400">
+                        <span className="text-sm font-black font-mono tabular-nums text-[#134E41] dark:text-emerald-300 shrink-0">
                           {formatNullableBand(crit.score)} / 9.0
                         </span>
                       </div>
@@ -2801,6 +2974,66 @@ export const CDIELTSWritingExamRoom: React.FC<WritingExamRoomProps> = ({
                   </div>
                 ))}
               </div>
+
+              {/* SECTION B: VERBATIM WEAK SENTENCE UPGRADES (FLAW TAG -> BAND 8.5+ REWRITE) */}
+              {diagnosticResult.assessmentStatus === 'evaluated' &&
+                Array.isArray(diagnosticResult.sentenceUpgrades) &&
+                diagnosticResult.sentenceUpgrades.length > 0 && (
+                  <div className="rounded-2xl border border-[#134E41]/15 dark:border-[#1F8A70]/30 bg-white dark:bg-[#0D1E1D] p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#134E41]/10 dark:border-slate-800 pb-3">
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#134E41] dark:text-[#6EE7B7]">
+                          Verbatim Sentence Upgrades
+                        </span>
+                        <h3 className="text-sm sm:text-base font-bold text-[#0E1F1E] dark:text-white">
+                          Weak Sentences from Your Essay Rewritten to Band 8.5+
+                        </h3>
+                      </div>
+                      <span className="text-xs font-semibold tabular-nums text-[#566664] dark:text-slate-400">
+                        {diagnosticResult.sentenceUpgrades.length} targeted rewrites
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {diagnosticResult.sentenceUpgrades.map((upg, idx) => (
+                        <div
+                          key={`sent-upg-${idx}`}
+                          className="p-4 rounded-xl bg-[#F4F7F6] dark:bg-slate-900/70 border border-[#134E41]/12 dark:border-slate-800 space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold font-mono text-[#566664] dark:text-slate-400">
+                              Sentence #{idx + 1}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-[#F59E0B]/15 text-[#B45309] dark:text-amber-300 text-[11px] font-semibold">
+                              {upg.flawTag}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                              Your Original (Verbatim)
+                            </div>
+                            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed line-through decoration-rose-400/70">
+                              {upg.originalSentence}
+                            </p>
+                          </div>
+                          <div className="space-y-1 pt-1 border-t border-[#134E41]/10 dark:border-slate-800">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-[#134E41] dark:text-emerald-300">
+                              Natural Band 8.5+ Rewrite
+                            </div>
+                            <p className="text-xs text-[#0E1F1E] dark:text-white font-medium leading-relaxed">
+                              {upg.band85Rewrite}
+                            </p>
+                            {upg.explanation && (
+                              <p className="text-[11px] text-[#566664] dark:text-slate-400 leading-relaxed pt-0.5">
+                                {upg.explanation}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
               {/* Navigation Switcher: Side-by-Side Band 8.5+ Diff Studio vs Interactive Sentence Inspector */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D3DDDA] dark:border-[#1F8A70]/25 pb-3">

@@ -282,7 +282,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
       sourceContext: testTitle
     });
     setSavedToVaultIds((prev) => new Set(prev).add(q.id));
-    onShowToast(`Saved Q${q.id} to SuperMemo SM-2 Spaced Repetition Vault`);
+    onShowToast(`Queued Q${q.id} into Daily Sprint & SM-2 Mistake Vault`);
   };
 
   const handleSaveAllIncorrectToVault = () => {
@@ -307,9 +307,9 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
       const nextSet = new Set(savedToVaultIds);
       questions.forEach((q) => nextSet.add(q.id));
       setSavedToVaultIds(nextSet);
-      onShowToast(`Added ${added} missed item${added > 1 ? 's' : ''} to SM-2 Spaced Repetition Vault`);
+      onShowToast(`Sent ${added} missed item${added > 1 ? 's' : ''} to Daily Sprint & SM-2 Vault`);
     } else {
-      onShowToast('All incorrect items are already in your SM-2 Mistake Vault');
+      onShowToast('All missed items are already queued in your Daily Sprint & SM-2 Vault');
     }
   };
 
@@ -337,7 +337,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
               className="px-3.5 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
               <Brain className="w-4 h-4 text-amber-400" />
-              <span>Save {totalQuestions - correctCount} Mistakes to SM-2 Vault</span>
+              <span>Send {totalQuestions - correctCount} Missed Items to Daily Sprint</span>
             </button>
           )}
           <button
@@ -936,7 +936,7 @@ export const PostTestDiagnosticReport: React.FC<PostTestDiagnosticReportProps> =
                         }`}
                       >
                         <BookmarkPlus className="w-3 h-3" />
-                        <span>{savedToVaultIds.has(q.id) ? 'Saved in SM-2 Vault' : '+ SM-2 Vault'}</span>
+                        <span>{savedToVaultIds.has(q.id) ? 'Queued in Sprint & Vault' : '+ Daily Sprint & Vault'}</span>
                       </button>
                     )}
 

@@ -26,6 +26,10 @@ import {
   type StreakState
 } from '../../services/streakService';
 import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
+import {
+  DAILY_SPRINT_SYNCED_EVENT,
+  loadDailySprintProgress
+} from '../../utils/dailySprintProgressStore';
 
 interface HomeExtendedBlocksProps {
   section?: 'all' | 'skills' | 'sidebar';
@@ -48,15 +52,25 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
 
   // Real persisted streak & XP (syncs immediately when missions or blitz complete)
   const [streakState, setStreakState] = useState<StreakState>(() => getStreakState());
+  const [pomodoroMinutesToday, setPomodoroMinutesToday] = useState<number>(
+    () => loadDailySprintProgress().pomodoroFocusMinutesLogged
+  );
 
   useEffect(() => {
-    const refreshStreak = () => setStreakState(getStreakState());
+    const refreshStreak = () => {
+      setStreakState(getStreakState());
+      setPomodoroMinutesToday(loadDailySprintProgress().pomodoroFocusMinutesLogged);
+    };
     window.addEventListener('bandsprint_streak_updated', refreshStreak);
     window.addEventListener('bandsprint_tasks_updated', refreshStreak);
+    window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, refreshStreak);
+    window.addEventListener('bandsprint_cloud_sync_updated', refreshStreak);
     window.addEventListener('storage', refreshStreak);
     return () => {
       window.removeEventListener('bandsprint_streak_updated', refreshStreak);
       window.removeEventListener('bandsprint_tasks_updated', refreshStreak);
+      window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, refreshStreak);
+      window.removeEventListener('bandsprint_cloud_sync_updated', refreshStreak);
       window.removeEventListener('storage', refreshStreak);
     };
   }, []);
@@ -170,15 +184,15 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
     return items;
   }, [examHistory, diagnostic]);
 
-  // Today's study minutes (atomically synced from Today's Study Tasks + completed exams)
+  // Today's study minutes (atomically synced from Today's Study Tasks + Pomodoro Sprint + completed exams)
   const dailyGoalMinutes = diagnostic?.dailyMinutes || user?.progress?.dailyMinutes || 30;
   const todayMinutesStudied = useMemo(() => {
     const nowStr = new Date().toDateString();
     const todayRecs = examHistory.filter((rec) => new Date(rec.timestamp).toDateString() === nowStr);
     const fromHistory = todayRecs.length * 15;
     const fromTasksAndActivities = getTodayMinutes(streakState);
-    return fromHistory + fromTasksAndActivities;
-  }, [examHistory, streakState]);
+    return fromHistory + fromTasksAndActivities + pomodoroMinutesToday;
+  }, [examHistory, pomodoroMinutesToday, streakState]);
 
   const goalPercent = Math.min(100, Math.round((todayMinutesStudied / dailyGoalMinutes) * 100));
 

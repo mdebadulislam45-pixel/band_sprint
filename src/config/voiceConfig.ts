@@ -148,19 +148,19 @@ export interface CompanionVoiceProfile {
   personaName: string;
   displayName: string;
   shortLabel: string;
-  gender: 'male';
+  gender: 'female' | 'male';
   locale: 'en-GB';
   accent: 'British';
   preferredCloudVoiceId: 'gemini-3.8-flash-tts:Puck' | 'gemini-3.8-flash-lite-tts:Puck';
   geminiVoiceName: 'Puck';
-  edgeNeuralVoiceId: 'en-GB-ThomasNeural';
+  edgeNeuralVoiceId: string;
   preferredBrowserVoiceNames: string[];
-  acousticSignatureId: 'companion-uk-barnaby-mentor-v2';
+  acousticSignatureId: string;
   speakingRatePreference: number;
   browserRatePreference: number;
   pitchPreference: number;
   deliveryProfile: 'barnaby_companion';
-  cacheVersionPrefix: 'v2_barnaby_mentor';
+  cacheVersionPrefix: string;
   styleInstruction: string;
   personaDescription: string;
 }
@@ -169,32 +169,33 @@ export const BARNABY_VOICE_PROFILE: CompanionVoiceProfile = {
   companionId: 'barnaby',
   speakerId: 'speaker_barnaby',
   personaName: 'Barnaby',
-  displayName: 'Barnaby · Warm British IELTS Mentor Companion',
-  shortLabel: 'Barnaby — IELTS Mentor',
-  gender: 'male',
+  displayName: 'Barnaby · Duolingo-Style IELTS Mascot',
+  shortLabel: 'Barnaby — Duo Mascot',
+  gender: 'female',
   locale: 'en-GB',
   accent: 'British',
   preferredCloudVoiceId: 'gemini-3.8-flash-tts:Puck',
   geminiVoiceName: 'Puck',
-  edgeNeuralVoiceId: 'en-GB-ThomasNeural',
+  edgeNeuralVoiceId: 'en-GB-LibbyNeural',
   preferredBrowserVoiceNames: [
-    'Microsoft Thomas Online (Natural) - English (United Kingdom)',
-    'Microsoft Oliver Online (Natural) - English (United Kingdom)',
-    'Google UK English Male',
-    'Daniel',
-    'Arthur',
-    'Oliver'
+    'Microsoft Libby Online (Natural) - English (United Kingdom)',
+    'Microsoft Sonia Online (Natural) - English (United Kingdom)',
+    'Microsoft Maisie Online (Natural) - English (United Kingdom)',
+    'Microsoft Jenny Online (Natural) - English (United States)',
+    'Google UK English Female',
+    'Serena',
+    'Kate'
   ],
-  acousticSignatureId: 'companion-uk-barnaby-mentor-v2',
-  speakingRatePreference: 1.02,
-  browserRatePreference: 0.98,
-  pitchPreference: 1.03,
+  acousticSignatureId: 'companion-duo-barnaby-mascot-v4',
+  speakingRatePreference: 1.07,
+  browserRatePreference: 1.07,
+  pitchPreference: 1.14,
   deliveryProfile: 'barnaby_companion',
-  cacheVersionPrefix: 'v2_barnaby_mentor',
+  cacheVersionPrefix: 'v4_barnaby_duo_style',
   styleInstruction:
-    'Warm, intelligent, expressive British English young-adult IELTS mentor named Barnaby. Speak with natural conversational pacing, clear British pronunciation, encouraging warmth, and subtle wit—distinct from formal examiners, yet strictly composed, credible, and never childish, babyish, squeaky, or exaggerated.',
+    'Barnaby, a playful, upbeat, witty Duolingo-style IELTS study mascot companion. Speak with snappy conversational punch, bright cheerful encouragement, expressive mascot warmth, and crisp friendly clarity—energetic and motivating like Duo!',
   personaDescription:
-    'Warm, expressive British English mentor voice—friendly, encouraging, and distinct from formal IELTS examiners without sounding childish.'
+    'Upbeat, snappy Duolingo-style mascot voice—bright, playful, expressive, and motivating!'
 };
 
 export function isBarnabyCompanionVoice(identifier?: string | null): boolean {

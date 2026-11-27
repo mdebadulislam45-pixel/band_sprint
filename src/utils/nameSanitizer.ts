@@ -5,32 +5,46 @@
  * Sanitizes raw emails, database IDs (usr_123), numeric suffixes (Imran001),
  * and Honorific prefixes (Md/Mohammad) to display a crisp first name.
  */
+const GENERIC_PLACEHOLDER_NAMES = new Set([
+  'ielts',
+  'ielts candidate',
+  'candidate',
+  'guest',
+  'guest user',
+  'user',
+  'student',
+  'bandsprint',
+  'bandsprint user',
+]);
+
 export function sanitizeCandidateName(name?: string, email?: string): string {
   if (name && name.trim()) {
     let clean = name.trim();
-    if (clean.includes('@')) {
-      clean = clean.split('@')[0];
-    }
-    // Remove database ID patterns like usr_123 or candidate_456
-    clean = clean.replace(/^(usr|user|cand|candidate|id)[-_]/i, '');
-    // Remove trailing numbers (e.g. Imran001 -> Imran)
-    clean = clean.replace(/\d+$/, '');
-    clean = clean.replace(/[_-]+/g, ' ');
-    // Split camelCase if present
-    clean = clean.replace(/([a-z])([A-Z])/g, '$1 $2');
-
-    // Pick the most meaningful name token (skip prefix like Md / Md. / Mohammad if secondary token exists)
-    const tokens = clean.trim().split(/\s+/).filter(Boolean);
-    if (tokens.length > 1 && /^md\.?$|^mohammad$/i.test(tokens[0])) {
-      const candidate = tokens[1].replace(/[^a-zA-Z]/g, '');
-      if (candidate.length >= 2) {
-        return candidate.charAt(0).toUpperCase() + candidate.slice(1).toLowerCase();
+    if (!GENERIC_PLACEHOLDER_NAMES.has(clean.toLowerCase())) {
+      if (clean.includes('@')) {
+        clean = clean.split('@')[0];
       }
-    }
-    if (tokens.length > 0) {
-      const first = tokens[0].replace(/[^a-zA-Z]/g, '');
-      if (first.length >= 2) {
-        return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+      // Remove database ID patterns like usr_123 or candidate_456
+      clean = clean.replace(/^(usr|user|cand|candidate|id)[-_]/i, '');
+      // Remove trailing numbers (e.g. Imran001 -> Imran)
+      clean = clean.replace(/\d+$/, '');
+      clean = clean.replace(/[_-]+/g, ' ');
+      // Split camelCase if present
+      clean = clean.replace(/([a-z])([A-Z])/g, '$1 $2');
+
+      // Pick the most meaningful name token (skip prefix like Md / Md. / Mohammad / IELTS if secondary token exists)
+      const tokens = clean.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length > 1 && /^md\.?$|^mohammad$|^ielts$/i.test(tokens[0])) {
+        const candidate = tokens[1].replace(/[^a-zA-Z]/g, '');
+        if (candidate.length >= 2 && !GENERIC_PLACEHOLDER_NAMES.has(candidate.toLowerCase())) {
+          return candidate.charAt(0).toUpperCase() + candidate.slice(1).toLowerCase();
+        }
+      }
+      if (tokens.length > 0) {
+        const first = tokens[0].replace(/[^a-zA-Z]/g, '');
+        if (first.length >= 2 && !GENERIC_PLACEHOLDER_NAMES.has(first.toLowerCase())) {
+          return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+        }
       }
     }
   }
@@ -43,7 +57,7 @@ export function sanitizeCandidateName(name?: string, email?: string): string {
     const parts = username.split(/\s+/).filter(Boolean);
     if (parts.length > 0) {
       const part = parts[0].replace(/[^a-zA-Z]/g, '');
-      if (part.length >= 2) {
+      if (part.length >= 2 && !GENERIC_PLACEHOLDER_NAMES.has(part.toLowerCase())) {
         return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
       }
     }

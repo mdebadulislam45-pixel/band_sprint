@@ -380,6 +380,264 @@ class SoundManager {
     }
   }
 
+  /**
+   * Synthesizes an organic, warm cat purr using amplitude modulation (26Hz purr rate over ~75Hz carrier)
+   * passed through a gentle low-pass acoustic resonance filter.
+   */
+  playPurr(duration = 1.6) {
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // 74Hz low carrier
+      const carrier = this.ctx.createOscillator();
+      carrier.type = 'sine';
+      carrier.frequency.setValueAtTime(74, now);
+
+      // Secondary subtle harmonic (112Hz)
+      const harmonic = this.ctx.createOscillator();
+      harmonic.type = 'triangle';
+      harmonic.frequency.setValueAtTime(112, now);
+
+      // Purr vibration LFO: 25.5Hz (natural feline purr oscillation frequency)
+      const lfo = this.ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(25.5, now);
+
+      const lfoGain = this.ctx.createGain();
+      lfoGain.gain.setValueAtTime(0.045, now);
+
+      const carrierGain = this.ctx.createGain();
+      carrierGain.gain.setValueAtTime(0.001, now);
+      carrierGain.gain.linearRampToValueAtTime(0.07, now + 0.35);
+      carrierGain.gain.linearRampToValueAtTime(0.05, now + duration * 0.7);
+      carrierGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+      // Low-pass filter for cozy muffled warmth
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(210, now);
+      filter.Q.setValueAtTime(2.2, now);
+
+      // AM modulation: LFO modulates carrierGain
+      lfo.connect(lfoGain);
+      lfoGain.connect(carrierGain.gain);
+
+      carrier.connect(carrierGain);
+      harmonic.connect(carrierGain);
+      carrierGain.connect(filter);
+      filter.connect(this.ctx.destination);
+
+      carrier.start(now);
+      harmonic.start(now);
+      lfo.start(now);
+
+      carrier.stop(now + duration);
+      harmonic.stop(now + duration);
+      lfo.stop(now + duration);
+    } catch {
+      // AudioContext blocked or muted
+    }
+  }
+
+  /**
+   * Delicate stardust / gold spectacles glint chime (E6 + B6 harmonic bell)
+   */
+  playChimeGlint() {
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      const gain2 = this.ctx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1318.51, now); // E6
+      gain1.gain.setValueAtTime(0.06, now);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1975.53, now + 0.05); // B6
+      gain2.gain.setValueAtTime(0.04, now + 0.05);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+
+      osc1.connect(gain1);
+      gain1.connect(this.ctx.destination);
+
+      osc2.connect(gain2);
+      gain2.connect(this.ctx.destination);
+
+      osc1.start(now);
+      osc1.stop(now + 0.45);
+      osc2.start(now + 0.05);
+      osc2.stop(now + 0.5);
+    } catch {}
+  }
+
+  /**
+   * Warm awakening yawn-stretch tone: soft ascending-descending resonant glide
+   */
+  playYawnStretch() {
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(310, now);
+      osc.frequency.exponentialRampToValueAtTime(460, now + 0.38);
+      osc.frequency.exponentialRampToValueAtTime(392, now + 0.75);
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(800, now);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.06, now + 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.82);
+    } catch {}
+  }
+
+  /**
+   * Cheerful feline trill / greeting chirp
+   */
+  playAffectionChirp() {
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(460, now);
+      osc.frequency.exponentialRampToValueAtTime(720, now + 0.16);
+
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.24);
+    } catch {}
+  }
+
+  /**
+   * Adorable anime kitten meow / "nyaa~" vocalization synthesized via Web Audio:
+   * Smooth formant-filtered melodic contour gliding up to 880Hz and settling down to 720Hz
+   */
+  playAnimeMeow(pitchMultiplier = 1.0) {
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const baseFreq = 640 * pitchMultiplier;
+
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const vibrato = this.ctx.createOscillator();
+      const vibratoGain = this.ctx.createGain();
+      const formantFilter = this.ctx.createBiquadFilter();
+      const mainGain = this.ctx.createGain();
+
+      // Main vocal tone: gentle triangle + sine blend
+      osc1.type = 'triangle';
+      osc2.type = 'sine';
+
+      // Pitch contour: rising chirp -> sweet falling tail
+      osc1.frequency.setValueAtTime(baseFreq * 0.9, now);
+      osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.35, now + 0.09);
+      osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.1, now + 0.32);
+
+      osc2.frequency.setValueAtTime(baseFreq * 1.8, now);
+      osc2.frequency.exponentialRampToValueAtTime(baseFreq * 2.7, now + 0.09);
+      osc2.frequency.exponentialRampToValueAtTime(baseFreq * 2.2, now + 0.32);
+
+      // Cute anime vocal tract formant filter (resonant peak around 1600Hz)
+      formantFilter.type = 'bandpass';
+      formantFilter.frequency.setValueAtTime(1400, now);
+      formantFilter.frequency.linearRampToValueAtTime(1850, now + 0.1);
+      formantFilter.frequency.linearRampToValueAtTime(1200, now + 0.34);
+      formantFilter.Q.setValueAtTime(3.2, now);
+
+      // Vibrato LFO for expressive tail
+      vibrato.type = 'sine';
+      vibrato.frequency.setValueAtTime(5.8, now);
+      vibratoGain.gain.setValueAtTime(0, now);
+      vibratoGain.gain.setValueAtTime(12, now + 0.12);
+      vibrato.connect(vibratoGain);
+      vibratoGain.connect(osc1.frequency);
+
+      // Volume envelope
+      mainGain.gain.setValueAtTime(0.001, now);
+      mainGain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+      mainGain.gain.exponentialRampToValueAtTime(0.05, now + 0.18);
+      mainGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
+
+      osc1.connect(formantFilter);
+      osc2.connect(formantFilter);
+      formantFilter.connect(mainGain);
+      mainGain.connect(this.ctx.destination);
+
+      vibrato.start(now + 0.08);
+      osc1.start(now);
+      osc2.start(now);
+
+      vibrato.stop(now + 0.38);
+      osc1.stop(now + 0.38);
+      osc2.stop(now + 0.38);
+    } catch {}
+  }
+
+  /**
+   * Subtle soft cushioned paw step tap
+   */
+  playPawStep() {
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(120, now);
+      osc.frequency.exponentialRampToValueAtTime(60, now + 0.04);
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(240, now);
+
+      gain.gain.setValueAtTime(0.025, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.05);
+    } catch {}
+  }
+
   playSuccess() {
     this.playBeep(523.25, 0.15, 'sine'); // C5
     setTimeout(() => this.playBeep(659.25, 0.2, 'sine'), 120); // E5

@@ -137,10 +137,10 @@ function evaluateWritingParagraphLive(text: string) {
 
   const clampBand = (val: number) => Math.round(Math.min(8.5, Math.max(4.5, val)) * 2) / 2;
 
-  const tr = clampBand(5.0 + (words >= 35 ? 1.5 : words / 25) + (longWords >= 4 ? 1.0 : longWords * 0.2));
-  const cc = clampBand(5.5 + linkersFound.length * 0.7 - mechanicalLinkers.length * 0.4 + (sentences >= 2 ? 0.5 : 0));
+  const tr = clampBand(5.0 + (words >= 35 ? 1.5 : words / 25) + (longWords >= 6 ? 1.5 : longWords >= 4 ? 1.0 : longWords * 0.2));
+  const cc = clampBand(5.5 + linkersFound.length * 1.0 - mechanicalLinkers.length * 0.4 + (sentences >= 2 ? 0.5 : 0) + (longWords >= 6 && mechanicalLinkers.length === 0 ? 1.0 : 0));
   const lr = clampBand(5.0 + (uniqueRatio >= 75 ? 1.5 : uniqueRatio / 60) + Math.min(1.5, longWords * 0.25));
-  const gra = clampBand(5.0 + (avgWordsPerSentence >= 16 && avgWordsPerSentence <= 28 ? 2.0 : 1.0) + (lower.includes(',') ? 0.5 : 0));
+  const gra = clampBand(5.0 + (avgWordsPerSentence >= 16 && avgWordsPerSentence <= 28 ? 2.0 : 1.0) + (lower.includes(',') ? 0.5 : 0) + (longWords >= 6 && mechanicalLinkers.length === 0 ? 0.5 : 0));
   const overall = clampBand((tr + cc + lr + gra) / 4);
 
   let summary = '';
@@ -298,9 +298,19 @@ export const PreLoginLanding: React.FC<PreLoginLandingProps> = ({
     }
     setIsPlayingSampleAudio(true);
     try {
-      const sampleScript = LISTENING_SAMPLE_TURNS.map((t) => t.line).join(' ');
       const svc = await getAudioService();
-      await svc.speakText(sampleScript, 'speaker_05');
+      const dialogueTurns = LISTENING_SAMPLE_TURNS.map((t) => ({
+        speakerId: t.speaker === 'Applicant' ? 'speaker_01' : 'speaker_05',
+        speakerName: t.speaker,
+        gender: (t.speaker === 'Applicant' ? 'male' : 'female') as 'male' | 'female',
+        text: t.line,
+        pauseAfterMs: 320,
+        deliveryProfile: 'natural_conversation' as const
+      }));
+      await svc.playDialogueSequentially(dialogueTurns, {
+        accent: 'British Received Pronunciation (en-GB)',
+        deliveryProfile: 'natural_conversation'
+      });
     } catch {
       onShowToast?.('Audio preview requires browser speech synthesis support.');
     } finally {
@@ -830,20 +840,12 @@ export const PreLoginLanding: React.FC<PreLoginLandingProps> = ({
                       stopSampleAudio();
                       setActivePreviewTab(tab.id);
                     }}
-                    className={`relative min-h-[52px] px-3.5 py-2.5 rounded-xl text-left transition-colors flex items-center gap-3 cursor-pointer ${focusRing} ${
+                    className={`relative min-h-[52px] px-3.5 py-2.5 rounded-xl text-left transition-colors duration-150 flex items-center gap-3 cursor-pointer ${focusRing} ${
                       isActive
-                        ? 'text-white'
+                        ? 'bg-[#0F4C45] text-white shadow-sm'
                         : 'bg-transparent text-[#0E1F1E] hover:bg-white/70'
                     }`}
                   >
-                    {isActive && (
-                      <motion.span
-                        layoutId="landing-preview-active-tab"
-                        transition={SPRING_SNAPPY}
-                        className="absolute inset-0 rounded-xl bg-[#0F4C45]"
-                        aria-hidden="true"
-                      />
-                    )}
                     <Icon className={`relative z-10 w-4 h-4 shrink-0 ${isActive ? 'text-[#F4A62A]' : 'text-[#0F4C45]'}`} />
                     <div className="relative z-10 min-w-0">
                       <div className="text-xs sm:text-sm font-semibold truncate">{tab.label}</div>
@@ -1092,6 +1094,7 @@ export const PreLoginLanding: React.FC<PreLoginLandingProps> = ({
                       {['9:30 AM (Original Flyer Time)', '10:15 AM (Revised Curator Time)', '11:00 AM'].map((option) => {
                         const shortVal = option.split(' ')[0] + ' ' + option.split(' ')[1];
                         const isSelected = selectedListeningAnswer === shortVal;
+                        const isCorrectOption = shortVal === '10:15 AM';
                         return (
                           <button
                             key={option}
@@ -1102,12 +1105,19 @@ export const PreLoginLanding: React.FC<PreLoginLandingProps> = ({
                             }}
                             className={`w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-left text-sm font-medium border transition-colors flex items-center justify-between cursor-pointer ${focusRing} ${
                               isSelected
-                                ? 'bg-[#EEF3F1] border-[#0F4C45] text-[#0E1F1E] font-semibold'
+                                ? isCorrectOption
+                                  ? 'bg-[#EEF3F1] border-[#0F4C45] text-[#0E1F1E] font-semibold'
+                                  : 'bg-rose-50 border-rose-400 text-rose-900 font-semibold'
                                 : 'bg-[#F7F9F8] border-[#D3DDDA] text-[#566664] hover:border-[#0F4C45]/50'
                             }`}
                           >
                             <span>{option}</span>
-                            {isSelected && <CheckCircle2 className="w-4 h-4 text-[#0F4C45] shrink-0" />}
+                            {isSelected && isCorrectOption && (
+                              <CheckCircle2 className="w-4 h-4 text-[#0F4C45] shrink-0" />
+                            )}
+                            {isSelected && !isCorrectOption && (
+                              <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                            )}
                           </button>
                         );
                       })}
@@ -1593,7 +1603,7 @@ export const PreLoginLanding: React.FC<PreLoginLandingProps> = ({
                 <button
                   type="button"
                   onClick={() => handleStartFreeClick('/')}
-                  className={`min-h-[48px] w-full rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-sm font-semibold transition-colors cursor-pointer ${focusRing}`}
+                  className={`relative z-10 min-h-[48px] w-full rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-sm font-semibold transition-colors cursor-pointer ${focusRing}`}
                 >
                   Create my free account
                 </button>

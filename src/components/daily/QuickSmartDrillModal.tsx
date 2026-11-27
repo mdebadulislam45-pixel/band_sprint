@@ -22,6 +22,7 @@ import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import { soundManager } from '../../utils/audioEffects';
 import { MistakeItem } from '../../types';
 import { EASE_EDITORIAL } from '../common/MotionPrimitives';
+import { triggerBarnabyCelebration } from '../../utils/barnabyStateEngine';
 
 interface TFNGTrapQuestion {
   id: string;
@@ -199,6 +200,7 @@ export const QuickSmartDrillModal: React.FC<QuickSmartDrillModalProps> = ({
       setTimeLeftSec((prev) => {
         if (prev <= 1) {
           setIsFinished(true);
+          triggerBarnabyCelebration('5-Minute Smart Drill complete');
           return 0;
         }
         return prev - 1;
@@ -235,6 +237,7 @@ export const QuickSmartDrillModal: React.FC<QuickSmartDrillModalProps> = ({
     if (currentIdx + 1 >= deck.length) {
       setIsFinished(true);
       soundManager.playSuccess();
+      triggerBarnabyCelebration('5-Minute Smart Drill complete');
       onShowToast('5-Minute Smart Drill complete! Progress synced.');
       return;
     }

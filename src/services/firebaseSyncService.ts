@@ -58,6 +58,14 @@ import {
   saveSpellingProgress,
   sanitizeSpellingProgress
 } from '../utils/spellingProgressStore';
+import {
+  DailySprintProgressState,
+  DAILY_SPRINT_SAVED_EVENT,
+  loadDailySprintProgress,
+  saveDailySprintProgress,
+  sanitizeDailySprintProgress,
+  mergeDailySprintProgress
+} from '../utils/dailySprintProgressStore';
 
 export type SubmissionModule = 'listening' | 'reading' | 'writing' | 'speaking' | 'full_mock';
 
@@ -240,7 +248,7 @@ export function hydrateSubmissionDocToExamHistory(
   };
 }
 
-type StudyStateKind = 'diagnostic' | 'examSetup' | 'spellingProgress';
+type StudyStateKind = 'diagnostic' | 'examSetup' | 'spellingProgress' | 'dailySprintProgress';
 
 class FirebaseSyncService {
   private currentUser: FirebaseUser | null = null;
@@ -281,6 +289,13 @@ class FirebaseSyncService {
         const detail = (e as CustomEvent<SpellingProgressState>).detail;
         if (this.currentUser && detail) {
           this.saveStudyStateToFirestore(this.currentUser.uid, 'spellingProgress', detail).catch(() => {});
+        }
+      });
+
+      window.addEventListener(DAILY_SPRINT_SAVED_EVENT, (e: Event) => {
+        const detail = (e as CustomEvent<DailySprintProgressState>).detail;
+        if (this.currentUser && detail) {
+          this.saveStudyStateToFirestore(this.currentUser.uid, 'dailySprintProgress', detail).catch(() => {});
         }
       });
 
@@ -628,6 +643,10 @@ class FirebaseSyncService {
               },
               { skipCloud: true }
             );
+          } else if (kind === 'dailySprintProgress') {
+            const localSprint = loadDailySprintProgress();
+            const mergedSprint = mergeDailySprintProgress(localSprint, payload);
+            saveDailySprintProgress(mergedSprint, { skipCloud: true });
           }
         });
 
@@ -649,6 +668,21 @@ class FirebaseSyncService {
               this.saveStudyStateToFirestore(userId, 'spellingProgress', localSp).catch(() => {});
             }
           }
+          if (!remoteKinds.has('dailySprintProgress')) {
+            const localSprint = loadDailySprintProgress();
+            const hasLocalSprintActivity =
+              localSprint.pomodoroBlocksCompleted > 0 ||
+              localSprint.masteredVocabIds.length > 0 ||
+              localSprint.masteredIdiomIds.length > 0 ||
+              localSprint.masteredPhraseIds.length > 0 ||
+              localSprint.masteredSpellingIds.length > 0 ||
+              localSprint.masteredGrammarIds.length > 0 ||
+              localSprint.reviewQueueIds.length > 0 ||
+              localSprint.lastExamSummary !== null;
+            if (hasLocalSprintActivity) {
+              this.saveStudyStateToFirestore(userId, 'dailySprintProgress', localSprint).catch(() => {});
+            }
+          }
         }
 
         if (typeof window !== 'undefined') {
@@ -667,7 +701,7 @@ class FirebaseSyncService {
   public async saveStudyStateToFirestore(
     userId: string,
     kind: StudyStateKind,
-    rawPayload: DiagnosticResult | ExamSetup | SpellingProgressState
+    rawPayload: DiagnosticResult | ExamSetup | SpellingProgressState | DailySprintProgressState
   ): Promise<void> {
     const docRef = doc(db, 'users', userId, 'studyState', kind);
     const path = `users/${userId}/studyState/${kind}`;
@@ -699,6 +733,22 @@ class FirebaseSyncService {
         weakest: d.weakest,
         writingWords: Math.min(5000, Math.max(0, Number(d.writingWords) || 0)),
         speakingRecorded: Boolean(d.speakingRecorded)
+      };
+    } else if (kind === 'dailySprintProgress') {
+      const ds = sanitizeDailySprintProgress(rawPayload);
+      payload = {
+        dateKey: ds.dateKey,
+        quotaTier: ds.quotaTier,
+        pomodoroBlocksCompleted: ds.pomodoroBlocksCompleted,
+        pomodoroFocusMinutesLogged: ds.pomodoroFocusMinutesLogged,
+        masteredVocabIds: ds.masteredVocabIds,
+        masteredIdiomIds: ds.masteredIdiomIds,
+        masteredPhraseIds: ds.masteredPhraseIds,
+        masteredSpellingIds: ds.masteredSpellingIds,
+        masteredGrammarIds: ds.masteredGrammarIds,
+        reviewQueueIds: ds.reviewQueueIds,
+        reviewSchedule: ds.reviewSchedule,
+        lastExamSummary: ds.lastExamSummary
       };
     } else {
       const sp = sanitizeSpellingProgress(rawPayload);

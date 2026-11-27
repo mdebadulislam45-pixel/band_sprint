@@ -34,7 +34,11 @@ service cloud.firestore {
     }
 
     function isValidStateId(stateId) {
-      return stateId in ['diagnostic', 'examSetup', 'spellingProgress'];
+      return stateId in ['diagnostic', 'examSetup', 'spellingProgress', 'dailySprintProgress'];
+    }
+
+    function isBoundedStringList(val, maxItems) {
+      return val is list && val.size() <= maxItems && (val.size() == 0 || val[0] is string);
     }
 
     // 3. Entity Validation Blueprints (called on BOTH create and update)
@@ -147,8 +151,27 @@ service cloud.firestore {
             && payload.keys().hasOnly(['correctCount', 'attemptedCount', 'masteredWords', 'wrongWords'])
             && (!('correctCount' in payload) || (payload.correctCount is number && payload.correctCount >= 0 && payload.correctCount <= 100000))
             && (!('attemptedCount' in payload) || (payload.attemptedCount is number && payload.attemptedCount >= 0 && payload.attemptedCount <= 100000))
-            && (!('masteredWords' in payload) || (payload.masteredWords is list && payload.masteredWords.size() <= 750 && (payload.masteredWords.size() == 0 || payload.masteredWords[0] is string)))
-            && (!('wrongWords' in payload) || (payload.wrongWords is list && payload.wrongWords.size() <= 750 && (payload.wrongWords.size() == 0 || payload.wrongWords[0] is string))))
+            && (!('masteredWords' in payload) || isBoundedStringList(payload.masteredWords, 750))
+            && (!('wrongWords' in payload) || isBoundedStringList(payload.wrongWords, 750)))
+          || (kind == 'dailySprintProgress'
+            && payload.keys().hasOnly([
+              'dateKey', 'quotaTier', 'pomodoroBlocksCompleted', 'pomodoroFocusMinutesLogged',
+              'masteredVocabIds', 'masteredIdiomIds', 'masteredPhraseIds',
+              'masteredSpellingIds', 'masteredGrammarIds', 'reviewQueueIds',
+              'reviewSchedule', 'lastExamSummary'
+            ])
+            && (!('dateKey' in payload) || (payload.dateKey is string && payload.dateKey.size() <= 16))
+            && (!('quotaTier' in payload) || payload.quotaTier in ['standard', 'light'])
+            && (!('pomodoroBlocksCompleted' in payload) || (payload.pomodoroBlocksCompleted is number && payload.pomodoroBlocksCompleted >= 0 && payload.pomodoroBlocksCompleted <= 500))
+            && (!('pomodoroFocusMinutesLogged' in payload) || (payload.pomodoroFocusMinutesLogged is number && payload.pomodoroFocusMinutesLogged >= 0 && payload.pomodoroFocusMinutesLogged <= 5000))
+            && (!('masteredVocabIds' in payload) || isBoundedStringList(payload.masteredVocabIds, 50))
+            && (!('masteredIdiomIds' in payload) || isBoundedStringList(payload.masteredIdiomIds, 50))
+            && (!('masteredPhraseIds' in payload) || isBoundedStringList(payload.masteredPhraseIds, 50))
+            && (!('masteredSpellingIds' in payload) || isBoundedStringList(payload.masteredSpellingIds, 100))
+            && (!('masteredGrammarIds' in payload) || isBoundedStringList(payload.masteredGrammarIds, 50))
+            && (!('reviewQueueIds' in payload) || isBoundedStringList(payload.reviewQueueIds, 60))
+            && (!('reviewSchedule' in payload) || (payload.reviewSchedule is map && payload.reviewSchedule.keys().size() <= 60))
+            && (!('lastExamSummary' in payload) || payload.lastExamSummary == null || (payload.lastExamSummary is map && payload.lastExamSummary.keys().size() <= 8)))
         );
     }
 
@@ -187,7 +210,7 @@ service cloud.firestore {
         && (!('passageOrScript' in data) || (data.passageOrScript is string && data.passageOrScript.size() <= 12000))
         && data.prompt is string && data.prompt.size() >= 1 && data.prompt.size() <= 3000
         && (!('modelAnswer' in data) || (data.modelAnswer is string && data.modelAnswer.size() <= 8000))
-        && (!('keyVocab' in data) || (data.keyVocab is list && data.keyVocab.size() <= 15 && (data.keyVocab.size() == 0 || data.keyVocab[0] is string)))
+        && (!('keyVocab' in data) || isBoundedStringList(data.keyVocab, 15))
         && (!('questions' in data) || (data.questions is list && data.questions.size() <= 15 && (data.questions.size() == 0 || data.questions[0] is map)))
         && (!('chartData' in data) || (data.chartData == null || (data.chartData is map && data.chartData.keys().size() <= 12)))
         && data.qualityScore is number && data.qualityScore >= 0 && data.qualityScore <= 100
@@ -251,7 +274,7 @@ service cloud.firestore {
         allow delete: if isOwner(userId) && isValidId(chatId);
       }
 
-      // Cross-Device Study State (Diagnostic, Exam Setup, Spelling Mastery)
+      // Cross-Device Study State (Diagnostic, Exam Setup, Spelling Mastery, Daily Sprint)
       match /studyState/{stateId} {
         allow get: if isOwner(userId) && isValidStateId(stateId);
         allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;

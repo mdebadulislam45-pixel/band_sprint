@@ -7,7 +7,13 @@
  * always stay 100% synchronized in real time.
  */
 
-export type ActivitySource = 'mission' | 'mission_bonus' | 'challenge' | 'diagnostic' | 'mock';
+export type ActivitySource =
+  | 'mission'
+  | 'mission_bonus'
+  | 'challenge'
+  | 'diagnostic'
+  | 'mock'
+  | 'practice_hint_recovery';
 
 export interface StreakState {
   /** Lifetime XP earned from real activities. */
@@ -43,6 +49,8 @@ export const XP_DAILY_CHALLENGE = 25;
 export const XP_DIAGNOSTIC = 50;
 /** XP awarded for completing a full mock test. */
 export const XP_MOCK = 100;
+/** Partial XP awarded when recovering an incorrect Practice Mode question on Attempt 2 after a Barnaby hint. */
+export const XP_HINT_RECOVERY = 15;
 
 const EMPTY_STATE: StreakState = {
   totalXp: 0,
@@ -355,4 +363,13 @@ export function recordAllMissionsBonus(): StreakState {
 /** Convenience: record finishing the 5-question daily sprint (25 XP + 5 min, once per day). */
 export function recordDailyChallengeComplete(): StreakState {
   return recordActivity('challenge', XP_DAILY_CHALLENGE, 'challenge', 5);
+}
+
+/**
+ * Awards partial XP (+15 XP) when a learner recovers an incorrect Practice Mode
+ * Reading/Listening question on Attempt 2 after receiving Barnaby's strategic hint.
+ */
+export function recordHintRecoveryXp(questionKey: string): StreakState {
+  const cleanKey = questionKey.trim() || 'practice_q';
+  return recordActivity('practice_hint_recovery', XP_HINT_RECOVERY, `hint_recovery:${cleanKey}`, 1);
 }

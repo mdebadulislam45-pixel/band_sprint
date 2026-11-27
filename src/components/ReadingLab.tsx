@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Highlighter, Trash2, Sparkles, StickyNote, Compass, BookOpen, CheckCircle2, Clock, Play, Pause, RotateCcw, Gauge, Contrast, Type, Flag } from 'lucide-react';
+import { Highlighter, Trash2, Sparkles, StickyNote, Compass, BookOpen, CheckCircle2, Clock, Play, Pause, RotateCcw, Gauge, Contrast, Type, Flag, BookmarkPlus } from 'lucide-react';
 import { CefrTerm } from '../types';
 import { soundManager } from '../utils/audioEffects';
 import { addMistake } from '../utils/vaultStorage';
@@ -13,6 +13,11 @@ import {
   getCDIELTSThemeClasses,
   getCDIELTSFontSizeClass
 } from './cdielts/CDIELTSThemeContainer';
+import { BarnabyHintCard, HintLoopPhase } from './common/BarnabyHintCard';
+import { requestBarnabyPracticeHint } from '../services/geminiService';
+import { setBarnabyAnalyzing } from '../utils/getBarnabyState';
+import { triggerBarnabyCelebration } from '../utils/barnabyStateEngine';
+import { recordHintRecoveryXp, XP_HINT_RECOVERY } from '../services/streakService';
 import type { MockExamSet } from '../data/mockExams';
 
 interface ReadingLabProps {
@@ -696,6 +701,23 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
   const [activeQuestionNum, setActiveQuestionNum] = useState<1 | 2 | 3 | 4>(1);
   const [flaggedByPassage, setFlaggedByPassage] = useState<Record<string, Record<number, boolean>>>({});
+  const [pushedMissedByPassage, setPushedMissedByPassage] = useState<Record<string, boolean>>({});
+
+  // Interactive Hint-Before-Reveal Loop state (strictly active in untimed Reading Practice Mode)
+  const [hintLoopByQuestion, setHintLoopByQuestion] = useState<
+    Record<
+      string,
+      {
+        phase: HintLoopPhase;
+        attempt1Answer: string;
+        attempt2Answer?: string;
+        hintHeadline?: string;
+        hintBody?: string;
+        distractorAnalysis?: string;
+        revealExplanation?: string;
+      }
+    >
+  >({});
 
   // Authentic CD-IELTS Contrast & Text-Size Accessibility Controls (persisted across Writing & Reading)
   const [colorScheme, setColorScheme] = useState<CDIELTSColorScheme>(() => {
@@ -817,13 +839,9 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
   };
 
   const handleSelectAnswer = (qNum: 1 | 2 | 3 | 4, val: string) => {
-    setActiveQuestionNum((prev) => {
-      // Auto-advance active question timer focus to the next unanswered question
-      const nextUnanswered = ([1, 2, 3, 4] as const).find(
-        (n) => n !== qNum && !(answersByPassage[activePassage.id]?.[n])
-      );
-      return nextUnanswered || qNum || prev;
-    });
+    const qKey = `${activePassage.id}_q${qNum}`;
+    const qObj = activePassage.questions.find((item) => item.num === qNum);
+
     setAnswersByPassage((prev) => ({
       ...prev,
       [activePassage.id]: {
@@ -831,6 +849,126 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
         [qNum]: val
       }
     }));
+
+    // Hint-Before-Reveal Loop (only in untimed Reading Practice Mode before final passage check)
+    if (!isChecked && qObj) {
+      const existingHint = hintLoopByQuestion[qKey];
+      const displayVal = qObj.type === 'matching' ? `Paragraph ${val}` : val;
+      const correctDisplay =
+        qObj.type === 'matching' ? `Paragraph ${qObj.correctAnswer}` : qObj.correctAnswer;
+      const isRight = val === qObj.correctAnswer;
+
+      if (!existingHint) {
+        if (!isRight) {
+          // Intercept Attempt 1 incorrect selection: switch Barnaby to analyzing, fetch hint, then encouraging
+          setActiveQuestionNum(qNum);
+          setHintLoopByQuestion((prev) => ({
+            ...prev,
+            [qKey]: {
+              phase: 'analyzing',
+              attempt1Answer: displayVal
+            }
+          }));
+          setBarnabyAnalyzing(true, 'Analyzing Reading distractor trap...');
+          soundManager.playBeep(420, 0.06);
+
+          const passageSnippet = `Paragraph [${qObj.evidencePara}]: ${activePassage.paragraphs[qObj.evidencePara]}`;
+          requestBarnabyPracticeHint({
+            module: 'reading',
+            questionPrompt: qObj.statement,
+            questionType: qObj.type === 'tfng' ? 'True / False / Not Given' : 'Paragraph Matching',
+            topic: `${activePassage.title} (${activePassage.topic})`,
+            evidenceContext: passageSnippet,
+            userAnswer: displayVal,
+            correctAnswer: correctDisplay,
+            trapNote: qObj.trapTitle,
+            isAnswerRevealed: false,
+            attemptMode: 'hint_before_reveal'
+          })
+            .then((res) => {
+              setHintLoopByQuestion((prev) => {
+                const current = prev[qKey];
+                if (!current || current.phase !== 'analyzing') return prev;
+                return {
+                  ...prev,
+                  [qKey]: {
+                    ...current,
+                    phase: 'hint_attempt_1',
+                    hintHeadline: res.headline,
+                    hintBody: res.stepByStepExplanation,
+                    distractorAnalysis: res.distractorTrapAnalysis
+                  }
+                };
+              });
+            })
+            .catch(() => {
+              setHintLoopByQuestion((prev) => {
+                const current = prev[qKey];
+                if (!current || current.phase !== 'analyzing') return prev;
+                return {
+                  ...prev,
+                  [qKey]: {
+                    ...current,
+                    phase: 'hint_attempt_1',
+                    hintHeadline: `Re-check the qualifier and paraphrase for "${displayVal}"`,
+                    hintBody: `Compare the exact wording of the statement against Paragraph [${qObj.evidencePara}]. Watch for extreme qualifiers or ideas that are never stated in the text.`,
+                    distractorAnalysis: qObj.trapTitle
+                  }
+                };
+              });
+            })
+            .finally(() => {
+              setBarnabyAnalyzing(false);
+            });
+          return;
+        }
+      } else if (existingHint.phase === 'hint_attempt_1' || existingHint.phase === 'analyzing') {
+        if (displayVal === existingHint.attempt1Answer) {
+          return;
+        }
+        if (isRight) {
+          soundManager.playSuccess();
+          recordHintRecoveryXp(qKey);
+          triggerBarnabyCelebration('Reading Attempt 2 recovered');
+          setHintLoopByQuestion((prev) => ({
+            ...prev,
+            [qKey]: {
+              ...existingHint,
+              phase: 'recovered_attempt_2',
+              attempt2Answer: displayVal,
+              revealExplanation: qObj.explanationEn
+            }
+          }));
+          onShowToast(`Attempt 2 correct — +${XP_HINT_RECOVERY} XP awarded.`);
+        } else {
+          soundManager.playBeep(340, 0.08);
+          addMistake({
+            module: 'reading',
+            title: qObj.trapTitle,
+            userAnswer: displayVal,
+            correctAnswer: correctDisplay,
+            explanation: qObj.explanationEn,
+            trapExplanationBn: qObj.explanationBn
+          });
+          setHintLoopByQuestion((prev) => ({
+            ...prev,
+            [qKey]: {
+              ...existingHint,
+              phase: 'revealed_attempt_2',
+              attempt2Answer: displayVal,
+              revealExplanation: qObj.explanationEn
+            }
+          }));
+        }
+      }
+    }
+
+    setActiveQuestionNum((prev) => {
+      const nextUnanswered = ([1, 2, 3, 4] as const).find(
+        (n) => n !== qNum && !(answersByPassage[activePassage.id]?.[n])
+      );
+      return nextUnanswered || qNum || prev;
+    });
   };
 
   const handleHighlightSelection = () => {
@@ -1650,7 +1788,7 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
                         onClick={() => handleSelectAnswer(q.num, opt)}
                         className={`flex-1 min-h-[42px] py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
                           userVal === opt
-                            ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] shadow-xs'
+                            ? 'bg-[#134E41] text-white border-[#134E41] shadow-xs'
                             : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100'
                         }`}
                       >
@@ -1658,6 +1796,28 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
                       </button>
                     ))}
                   </div>
+
+                  {/* Interactive Barnaby Hint-Before-Reveal Card (Untimed Practice Mode only) */}
+                  {!isChecked && hintLoopByQuestion[`${activePassage.id}_q${q.num}`] && (
+                    <BarnabyHintCard
+                      phase={hintLoopByQuestion[`${activePassage.id}_q${q.num}`].phase}
+                      module="reading"
+                      attempt1Answer={hintLoopByQuestion[`${activePassage.id}_q${q.num}`].attempt1Answer}
+                      attempt2Answer={hintLoopByQuestion[`${activePassage.id}_q${q.num}`].attempt2Answer}
+                      correctAnswerDisplay={
+                        q.type === 'matching' ? `Paragraph ${q.correctAnswer}` : q.correctAnswer
+                      }
+                      hintHeadline={hintLoopByQuestion[`${activePassage.id}_q${q.num}`].hintHeadline}
+                      hintBody={hintLoopByQuestion[`${activePassage.id}_q${q.num}`].hintBody}
+                      distractorAnalysis={
+                        hintLoopByQuestion[`${activePassage.id}_q${q.num}`].distractorAnalysis
+                      }
+                      revealExplanation={
+                        hintLoopByQuestion[`${activePassage.id}_q${q.num}`].revealExplanation
+                      }
+                      partialXpAwarded={XP_HINT_RECOVERY}
+                    />
+                  )}
 
                     {isChecked && (
                     <div
@@ -1747,22 +1907,76 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
 
             {isChecked && (
               <div className="space-y-3">
-                <div className="p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">
-                      Practice Reading Conversion
+                <div className="p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">
+                        Practice Reading Conversion
+                      </div>
+                      <div className="text-xs font-bold mt-0.5 tabular-nums">
+                        Raw Score: {currentPassageScore.correct} / {currentPassageScore.total} Correct
+                        {currentPassageScore.unanswered > 0 && ` (${currentPassageScore.unanswered} unanswered = 0 pts)`}
+                      </div>
                     </div>
-                    <div className="text-xs font-bold mt-0.5">
-                      Raw Score: {currentPassageScore.correct} / {currentPassageScore.total} Correct
-                      {currentPassageScore.unanswered > 0 && ` (${currentPassageScore.unanswered} unanswered = 0 pts)`}
+                    <div className="px-3.5 py-2 rounded-xl bg-white/10 border border-white/15 text-right shrink-0">
+                      <div className="text-[9px] font-mono uppercase text-slate-300">Band Score</div>
+                      <div className="text-lg font-mono font-black text-amber-300 tabular-nums">
+                        Band {currentPassageScore.band.toFixed(1)}
+                      </div>
                     </div>
                   </div>
-                  <div className="px-3.5 py-2 rounded-xl bg-white/10 border border-white/15 text-right shrink-0">
-                    <div className="text-[9px] font-mono uppercase text-slate-300">Band Score</div>
-                    <div className="text-lg font-mono font-black text-amber-300">
-                      Band {currentPassageScore.band.toFixed(1)}
+                  {currentPassageScore.total - currentPassageScore.correct > 0 && (
+                    <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-300">
+                        Practice missed traps with Bangla notes in your Daily Sprint queue.
+                      </span>
+                      <button
+                        type="button"
+                        disabled={Boolean(pushedMissedByPassage[activePassage.id])}
+                        onClick={() => {
+                          const missedQs = activePassage.questions.filter(
+                            (q) => (currentAnswers[q.num] || '') !== q.correctAnswer
+                          );
+                          missedQs.forEach((q) => {
+                            const userVal = currentAnswers[q.num] || '';
+                            addMistake({
+                              module: 'reading',
+                              title: `${activePassage.topic} Q${q.num}: ${q.trapTitle}`,
+                              userAnswer: userVal || '(Unanswered)',
+                              correctAnswer: q.type === 'matching' ? `Paragraph ${q.correctAnswer}` : q.correctAnswer,
+                              explanation: q.explanationEn,
+                              trapExplanationBn: q.explanationBn,
+                              sourceContext: activePassage.title
+                            });
+                          });
+                          setPushedMissedByPassage((prev) => ({ ...prev, [activePassage.id]: true }));
+                          soundManager.playSuccess();
+                          onShowToast(
+                            `Sent ${missedQs.length} missed Reading item${missedQs.length > 1 ? 's' : ''} to Daily Sprint & Mistake Vault.`
+                          );
+                        }}
+                        className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          pushedMissedByPassage[activePassage.id]
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-default'
+                            : 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                        }`}
+                      >
+                        {pushedMissedByPassage[activePassage.id] ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Queued in Daily Sprint</span>
+                          </>
+                        ) : (
+                          <>
+                            <BookmarkPlus className="w-3.5 h-3.5" />
+                            <span>
+                              Send {currentPassageScore.total - currentPassageScore.correct} Missed Items to Daily Sprint
+                            </span>
+                          </>
+                        )}
+                      </button>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* End-of-Session Time-Per-Question Pacing Analysis */}

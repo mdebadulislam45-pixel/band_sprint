@@ -23,66 +23,89 @@ import { AppHeader } from './components/navigation/AppHeader';
 import { BottomNav } from './components/navigation/BottomNav';
 import { DesktopSidebar } from './components/navigation/DesktopSidebar';
 import { MobileSidebarDrawer } from './components/navigation/MobileSidebarDrawer';
+import { FloatingBarnaby } from './components/FloatingBarnaby';
 
 // Theme Provider
 import { ThemeProvider } from './context/ThemeContext';
 import { audioManager } from './services/AudioManager';
 
+// Primary Dashboard (Eagerly loaded so initial authenticated view never fails dynamic chunk fetch)
+import { HomeDashboard } from './components/HomeDashboard';
+
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T }>,
+  retries = 2
+): React.LazyExoticComponent<T> {
+  return lazy(async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await factory();
+      } catch (err) {
+        lastError = err;
+        if (attempt < retries) {
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastError;
+  });
+}
+
 // Lazy-Loaded Pre-Login Landing & Modals (Excluded from Main Initial Chunk)
-const PreLoginLanding = lazy(() => import('./components/landing/PreLoginLanding').then(m => ({ default: m.PreLoginLanding })));
-const ProductionAuthModal = lazy(() => import('./components/auth/ProductionAuthModal').then(m => ({ default: m.ProductionAuthModal })));
-const GlobalSearchModal = lazy(() => import('./components/modals/GlobalSearchModal').then(m => ({ default: m.GlobalSearchModal })));
-const MistakeVault = lazy(() => import('./components/MistakeVault').then(m => ({ default: m.MistakeVault })));
-const BandCalculatorModal = lazy(() => import('./components/BandCalculatorModal').then(m => ({ default: m.BandCalculatorModal })));
-const AuthModal = lazy(() => import('./components/AuthModal').then(m => ({ default: m.AuthModal })));
-const CommercialShowcaseModal = lazy(() => import('./components/commercial/CommercialShowcaseModal').then(m => ({ default: m.CommercialShowcaseModal })));
-const TermsAndPrivacyModal = lazy(() => import('./components/commercial/TermsAndPrivacyModal').then(m => ({ default: m.TermsAndPrivacyModal })));
-const ContactSupportModal = lazy(() => import('./components/commercial/ContactSupportModal').then(m => ({ default: m.ContactSupportModal })));
-const LaunchSeoGuideModal = lazy(() => import('./components/commercial/LaunchSeoGuideModal').then(m => ({ default: m.LaunchSeoGuideModal })));
-const PreExamHardwareCheck = lazy(() => import('./components/cdielts/PreExamHardwareCheck').then(m => ({ default: m.PreExamHardwareCheck })));
-const FloatingBarnaby = lazy(() => import('./components/common/FloatingBarnaby').then(m => ({ default: m.FloatingBarnaby })));
-const OnboardingDiagnosticFunnel = lazy(() => import('./components/onboarding/OnboardingDiagnosticFunnel').then(m => ({ default: m.OnboardingDiagnosticFunnel })));
-const PreAuthOnboardingFunnel = lazy(() => import('./components/onboarding/PreAuthOnboardingFunnel').then(m => ({ default: m.PreAuthOnboardingFunnel })));
+const PreLoginLanding = lazyWithRetry(() => import('./components/landing/PreLoginLanding').then(m => ({ default: m.PreLoginLanding })));
+const ProductionAuthModal = lazyWithRetry(() => import('./components/auth/ProductionAuthModal').then(m => ({ default: m.ProductionAuthModal })));
+const GlobalSearchModal = lazyWithRetry(() => import('./components/modals/GlobalSearchModal').then(m => ({ default: m.GlobalSearchModal })));
+const MistakeVault = lazyWithRetry(() => import('./components/MistakeVault').then(m => ({ default: m.MistakeVault })));
+const BandCalculatorModal = lazyWithRetry(() => import('./components/BandCalculatorModal').then(m => ({ default: m.BandCalculatorModal })));
+const AuthModal = lazyWithRetry(() => import('./components/AuthModal').then(m => ({ default: m.AuthModal })));
+const CommercialShowcaseModal = lazyWithRetry(() => import('./components/commercial/CommercialShowcaseModal').then(m => ({ default: m.CommercialShowcaseModal })));
+const TermsAndPrivacyModal = lazyWithRetry(() => import('./components/commercial/TermsAndPrivacyModal').then(m => ({ default: m.TermsAndPrivacyModal })));
+const ContactSupportModal = lazyWithRetry(() => import('./components/commercial/ContactSupportModal').then(m => ({ default: m.ContactSupportModal })));
+const LaunchSeoGuideModal = lazyWithRetry(() => import('./components/commercial/LaunchSeoGuideModal').then(m => ({ default: m.LaunchSeoGuideModal })));
+const PreExamHardwareCheck = lazyWithRetry(() => import('./components/cdielts/PreExamHardwareCheck').then(m => ({ default: m.PreExamHardwareCheck })));
+const OnboardingDiagnosticFunnel = lazyWithRetry(() => import('./components/onboarding/OnboardingDiagnosticFunnel').then(m => ({ default: m.OnboardingDiagnosticFunnel })));
+const PreAuthOnboardingFunnel = lazyWithRetry(() => import('./components/onboarding/PreAuthOnboardingFunnel').then(m => ({ default: m.PreAuthOnboardingFunnel })));
 
 // Lazy-Loaded Main Hubs & Pages for Maximum Mobile Performance
-const HomeDashboard = lazy(() => import('./components/HomeDashboard').then(m => ({ default: m.HomeDashboard })));
-const PracticePage = lazy(() => import('./components/pages/PracticePage').then(m => ({ default: m.PracticePage })));
-const LearnPage = lazy(() => import('./components/pages/LearnPage').then(m => ({ default: m.LearnPage })));
-const ProgressPage = lazy(() => import('./components/pages/ProgressPage').then(m => ({ default: m.ProgressPage })));
-const ProfilePage = lazy(() => import('./components/pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
+const PracticePage = lazyWithRetry(() => import('./components/pages/PracticePage').then(m => ({ default: m.PracticePage })));
+const LearnPage = lazyWithRetry(() => import('./components/pages/LearnPage').then(m => ({ default: m.LearnPage })));
+const ProgressPage = lazyWithRetry(() => import('./components/pages/ProgressPage').then(m => ({ default: m.ProgressPage })));
+const ProfilePage = lazyWithRetry(() => import('./components/pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
 
 // Lazy-Loaded Practice Labs & Tools
-const ListeningLab = lazy(() => import('./components/ListeningLab').then(m => ({ default: m.ListeningLab })));
-const ReadingLab = lazy(() => import('./components/ReadingLab').then(m => ({ default: m.ReadingLab })));
-const SpeakingLabPage = lazy(() => import('./components/pages/SpeakingLabPage').then(m => ({ default: m.SpeakingLabPage })));
-const WritingLabPage = lazy(() => import('./components/pages/WritingLabPage').then(m => ({ default: m.WritingLabPage })));
-const MockTestPage = lazy(() => import('./components/pages/MockTestPage').then(m => ({ default: m.MockTestPage })));
-const QuestionBankPage = lazy(() => import('./components/pages/QuestionBankPage').then(m => ({ default: m.QuestionBankPage })));
-const AIToolsPage = lazy(() => import('./components/pages/AIToolsPage').then(m => ({ default: m.AIToolsPage })));
+const ListeningLab = lazyWithRetry(() => import('./components/ListeningLab').then(m => ({ default: m.ListeningLab })));
+const ReadingLab = lazyWithRetry(() => import('./components/ReadingLab').then(m => ({ default: m.ReadingLab })));
+const SpeakingLabPage = lazyWithRetry(() => import('./components/pages/SpeakingLabPage').then(m => ({ default: m.SpeakingLabPage })));
+const WritingLabPage = lazyWithRetry(() => import('./components/pages/WritingLabPage').then(m => ({ default: m.WritingLabPage })));
+const MockTestPage = lazyWithRetry(() => import('./components/pages/MockTestPage').then(m => ({ default: m.MockTestPage })));
+const QuestionBankPage = lazyWithRetry(() => import('./components/pages/QuestionBankPage').then(m => ({ default: m.QuestionBankPage })));
+const AIToolsPage = lazyWithRetry(() => import('./components/pages/AIToolsPage').then(m => ({ default: m.AIToolsPage })));
+const DailySprintPage = lazyWithRetry(() => import('./components/pages/DailySprintPage').then(m => ({ default: m.DailySprintPage })));
 
 // Lazy-Loaded Learning Labs & Decks
-const VocabDeck = lazy(() => import('./components/VocabDeck').then(m => ({ default: m.VocabDeck })));
-const UsefulPhrasesPage = lazy(() => import('./components/pages/UsefulPhrasesPage').then(m => ({ default: m.UsefulPhrasesPage })));
-const IdiomLabPage = lazy(() => import('./components/pages/IdiomLabPage').then(m => ({ default: m.IdiomLabPage })));
-const CollocationLabPage = lazy(() => import('./components/pages/CollocationLabPage').then(m => ({ default: m.CollocationLabPage })));
-const GrammarLabPage = lazy(() => import('./components/pages/GrammarLabPage').then(m => ({ default: m.GrammarLabPage })));
-const SpellingLabPage = lazy(() => import('./components/pages/SpellingLabPage').then(m => ({ default: m.SpellingLabPage })));
-const SpeakingVaultPage = lazy(() => import('./components/pages/SpeakingVaultPage').then(m => ({ default: m.SpeakingVaultPage })));
-const ModelAnswersPage = lazy(() => import('./components/pages/ModelAnswersPage').then(m => ({ default: m.ModelAnswersPage })));
-const BandDescriptorsPage = lazy(() => import('./components/pages/BandDescriptorsPage').then(m => ({ default: m.BandDescriptorsPage })));
-const StudyPlanPage = lazy(() => import('./components/pages/StudyPlanPage').then(m => ({ default: m.StudyPlanPage })));
-const DiagnosticTestPage = lazy(() => import('./components/pages/DiagnosticTestPage').then(m => ({ default: m.DiagnosticTestPage })));
-const BanglaIELTSGuide = lazy(() => import('./components/BanglaIELTSGuide').then(m => ({ default: m.BanglaIELTSGuide })));
-const Beginner101 = lazy(() => import('./components/Beginner101').then(m => ({ default: m.Beginner101 })));
-const SlideGuide = lazy(() => import('./components/SlideGuide').then(m => ({ default: m.SlideGuide })));
-const Task1Visualizer = lazy(() => import('./components/Task1Visualizer').then(m => ({ default: m.Task1Visualizer })));
-const ArgumentMatrix = lazy(() => import('./components/ArgumentMatrix').then(m => ({ default: m.ArgumentMatrix })));
+const VocabDeck = lazyWithRetry(() => import('./components/VocabDeck').then(m => ({ default: m.VocabDeck })));
+const UsefulPhrasesPage = lazyWithRetry(() => import('./components/pages/UsefulPhrasesPage').then(m => ({ default: m.UsefulPhrasesPage })));
+const IdiomLabPage = lazyWithRetry(() => import('./components/pages/IdiomLabPage').then(m => ({ default: m.IdiomLabPage })));
+const CollocationLabPage = lazyWithRetry(() => import('./components/pages/CollocationLabPage').then(m => ({ default: m.CollocationLabPage })));
+const GrammarLabPage = lazyWithRetry(() => import('./components/pages/GrammarLabPage').then(m => ({ default: m.GrammarLabPage })));
+const SpellingLabPage = lazyWithRetry(() => import('./components/pages/SpellingLabPage').then(m => ({ default: m.SpellingLabPage })));
+const SpeakingVaultPage = lazyWithRetry(() => import('./components/pages/SpeakingVaultPage').then(m => ({ default: m.SpeakingVaultPage })));
+const ModelAnswersPage = lazyWithRetry(() => import('./components/pages/ModelAnswersPage').then(m => ({ default: m.ModelAnswersPage })));
+const BandDescriptorsPage = lazyWithRetry(() => import('./components/pages/BandDescriptorsPage').then(m => ({ default: m.BandDescriptorsPage })));
+const StudyPlanPage = lazyWithRetry(() => import('./components/pages/StudyPlanPage').then(m => ({ default: m.StudyPlanPage })));
+const DiagnosticTestPage = lazyWithRetry(() => import('./components/pages/DiagnosticTestPage').then(m => ({ default: m.DiagnosticTestPage })));
+const BanglaIELTSGuide = lazyWithRetry(() => import('./components/BanglaIELTSGuide').then(m => ({ default: m.BanglaIELTSGuide })));
+const Beginner101 = lazyWithRetry(() => import('./components/Beginner101').then(m => ({ default: m.Beginner101 })));
+const SlideGuide = lazyWithRetry(() => import('./components/SlideGuide').then(m => ({ default: m.SlideGuide })));
+const Task1Visualizer = lazyWithRetry(() => import('./components/Task1Visualizer').then(m => ({ default: m.Task1Visualizer })));
+const ArgumentMatrix = lazyWithRetry(() => import('./components/ArgumentMatrix').then(m => ({ default: m.ArgumentMatrix })));
 
 // Lazy-Loaded Progress Subpages
-const CandidateAnalyticsPage = lazy(() => import('./components/pages/CandidateAnalyticsPage').then(m => ({ default: m.CandidateAnalyticsPage })));
-const QuestionHistoryPage = lazy(() => import('./components/pages/QuestionHistoryPage').then(m => ({ default: m.QuestionHistoryPage })));
-const SprintCalendarPage = lazy(() => import('./components/pages/SprintCalendarPage').then(m => ({ default: m.SprintCalendarPage })));
-const AdminAnalyticsPage = lazy(() => import('./components/pages/AdminAnalyticsPage').then(m => ({ default: m.AdminAnalyticsPage })));
+const CandidateAnalyticsPage = lazyWithRetry(() => import('./components/pages/CandidateAnalyticsPage').then(m => ({ default: m.CandidateAnalyticsPage })));
+const QuestionHistoryPage = lazyWithRetry(() => import('./components/pages/QuestionHistoryPage').then(m => ({ default: m.QuestionHistoryPage })));
+const SprintCalendarPage = lazyWithRetry(() => import('./components/pages/SprintCalendarPage').then(m => ({ default: m.SprintCalendarPage })));
+const AdminAnalyticsPage = lazyWithRetry(() => import('./components/pages/AdminAnalyticsPage').then(m => ({ default: m.AdminAnalyticsPage })));
 
 function AppContent() {
   const { currentPath, routeInfo, hub, isNotFound, navigate, goBack } = useAppRouter();
@@ -95,6 +118,7 @@ function AppContent() {
     }
   });
   const [examMode, setExamMode] = useState<'Academic' | 'General Training'>('Academic');
+  const [isDashboardLoading, setIsDashboardLoading] = useState<boolean>(true);
 
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -169,6 +193,13 @@ function AppContent() {
     return () => window.removeEventListener('sign_out_candidate', handleSignOutEvent);
   }, [handleSignOut]);
 
+  // Sync canonical document title
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = 'BandSprint — AI IELTS Preparation';
+    }
+  }, []);
+
   // Sync session on startup
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -185,49 +216,88 @@ function AppContent() {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    validateCurrentServerSession().then((res) => {
-      const cachedUser = getCurrentUser();
-      if (res.success && res.user) {
-        // Merge with local cached user progress to ensure no exam records or streaks are lost
-        const mergedUser = cachedUser && cachedUser.progress && cachedUser.progress.examHistory && cachedUser.progress.examHistory.length > (res.user.progress?.examHistory?.length || 0)
-          ? {
-              ...res.user,
-              progress: {
-                ...res.user.progress,
-                examHistory: cachedUser.progress.examHistory,
-                streakDays: Math.max(res.user.progress?.streakDays || 1, cachedUser.progress.streakDays || 1)
+    let active = true;
+    const bootSafetyTimer = window.setTimeout(() => {
+      if (active) setIsDashboardLoading(false);
+    }, 450);
+
+    validateCurrentServerSession()
+      .then((res) => {
+        const cachedUser = getCurrentUser();
+        if (res.success && res.user) {
+          // Merge with local cached user progress to ensure no exam records or streaks are lost
+          const mergedUser = cachedUser && cachedUser.progress && cachedUser.progress.examHistory && cachedUser.progress.examHistory.length > (res.user.progress?.examHistory?.length || 0)
+            ? {
+                ...res.user,
+                progress: {
+                  ...res.user.progress,
+                  examHistory: cachedUser.progress.examHistory,
+                  streakDays: Math.max(res.user.progress?.streakDays || 1, cachedUser.progress.streakDays || 1)
+                }
               }
+            : res.user;
+          setUser((prev) => {
+            if (
+              prev &&
+              prev.id === mergedUser.id &&
+              prev.email === mergedUser.email &&
+              prev.name === mergedUser.name &&
+              prev.progress?.streakDays === mergedUser.progress?.streakDays &&
+              (prev.progress?.examHistory?.length || 0) === (mergedUser.progress?.examHistory?.length || 0)
+            ) {
+              return prev;
             }
-          : res.user;
-        setUser((prev) => {
-          if (
-            prev &&
-            prev.id === mergedUser.id &&
-            prev.email === mergedUser.email &&
-            prev.name === mergedUser.name &&
-            prev.progress?.streakDays === mergedUser.progress?.streakDays &&
-            (prev.progress?.examHistory?.length || 0) === (mergedUser.progress?.examHistory?.length || 0)
-          ) {
-            return prev;
-          }
-          return mergedUser;
-        });
-        saveUser(mergedUser);
-      } else {
-        // If server validation fails (e.g., server restart), preserve local cached user instead of logging out or wiping progress!
-        if (cachedUser && cachedUser.id && cachedUser.id !== 'default_candidate') {
-          setUser((prev) => (prev && prev.id === cachedUser.id ? prev : cachedUser));
+            return mergedUser;
+          });
+          saveUser(mergedUser);
         } else {
-          setUser((prev) => (prev === null ? prev : null));
+          // If server validation fails (e.g., server restart), preserve local cached user instead of logging out or wiping progress!
+          if (cachedUser && cachedUser.id && cachedUser.id !== 'default_candidate') {
+            setUser((prev) => (prev && prev.id === cachedUser.id ? prev : cachedUser));
+          } else {
+            setUser((prev) => (prev === null ? prev : null));
+          }
         }
-      }
-    });
+      })
+      .finally(() => {
+        window.clearTimeout(bootSafetyTimer);
+        if (active) setIsDashboardLoading(false);
+      });
+
+    return () => {
+      active = false;
+      window.clearTimeout(bootSafetyTimer);
+    };
   }, [showToast]);
 
-  // Stop audio on path change
+  // Stop audio and reset scroll position on path or pre-auth overlay change
   useEffect(() => {
     audioManager.killAllAudio();
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [currentPath]);
+
+  useEffect(() => {
+    if (isPreAuthSurveyOpen || isGoogleAuthOpen) {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [isPreAuthSurveyOpen, isGoogleAuthOpen]);
+
+  useEffect(() => {
+    const handleOpenLegalEvent = (e: Event) => {
+      const detail = (e as CustomEvent<'terms' | 'privacy'>).detail;
+      setLegalTab(detail === 'privacy' ? 'privacy' : 'terms');
+      setIsLegalOpen(true);
+    };
+    const handleOpenContactEvent = () => {
+      setIsContactOpen(true);
+    };
+    window.addEventListener('open_legal_modal', handleOpenLegalEvent);
+    window.addEventListener('open_contact_modal', handleOpenContactEvent);
+    return () => {
+      window.removeEventListener('open_legal_modal', handleOpenLegalEvent);
+      window.removeEventListener('open_contact_modal', handleOpenContactEvent);
+    };
+  }, []);
 
   // Sync user and mistakes (single consolidated listener for auth/progress/vault events)
   const syncUserData = useCallback(() => {
@@ -378,7 +448,7 @@ function AppContent() {
           </Suspense>
         </ErrorBoundary>
         {isPreAuthSurveyOpen && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<div className="fixed inset-0 z-50 bg-[#F7F9F8]" />}>
             <PreAuthOnboardingFunnel
               isOpen={isPreAuthSurveyOpen}
               onClose={() => setIsPreAuthSurveyOpen(false)}
@@ -396,7 +466,7 @@ function AppContent() {
           </Suspense>
         )}
         {showAuthPage && !isPreAuthSurveyOpen && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<div className="fixed inset-0 z-50 bg-[#F7F9F8]" />}>
             <ProductionAuthModal
               isOpen={showAuthPage}
               initialMode={effectiveAuthMode}
@@ -513,13 +583,15 @@ function AppContent() {
       case '/practice/question-bank':
         return <QuestionBankPage onBack={goBack} onShowToast={showToast} />;
       case '/practice/sprint':
-        return <PracticePage onNavigate={navigate} onShowToast={showToast} />;
+        return <DailySprintPage user={user} onNavigate={navigate} onShowToast={showToast} />;
       case '/practice/ai-tools':
         return <AIToolsPage onNavigate={navigate} onShowToast={showToast} />;
 
       // Learn Hub & Subpages
       case '/learn':
         return <LearnPage onNavigate={navigate} onShowToast={showToast} />;
+      case '/learn/daily-sprint':
+        return <DailySprintPage user={user} onNavigate={navigate} onShowToast={showToast} />;
       case '/learn/vocabulary':
         return <VocabDeck onShowToast={showToast} />;
       case '/learn/phrases':
@@ -671,10 +743,12 @@ function AppContent() {
   const canGoBack = currentPath !== '/' && currentPath !== '/home';
 
   return (
-    <div className="min-h-screen bg-[#F7F9F8] dark:bg-[#0B1514] text-[#0E1F1E] dark:text-[#EEF3F1] flex flex-col md:flex-row font-sans selection:bg-[#0F4C45] selection:text-white transition-colors">
-      {/* 1. Desktop Sidebar (5 Main Destinations Only) */}
+    <>
+      <div className="min-h-screen bg-[#F7F9F8] dark:bg-[#0B1514] text-[#0E1F1E] dark:text-[#EEF3F1] flex flex-col md:flex-row font-sans selection:bg-[#0F4C45] selection:text-white transition-colors">
+      {/* 1. Desktop Sidebar */}
       <DesktopSidebar
         activeHub={hub}
+        currentPath={currentPath}
         onNavigate={navigate}
         mistakeCount={mistakeCount}
         onOpenVault={() => setIsVaultOpen(true)}
@@ -697,8 +771,8 @@ function AppContent() {
         onSignOut={handleSignOut}
       />
 
-      {/* Main Viewport Workspace */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen pb-20 md:pb-8">
+      {/* Main Viewport Workspace (offset on desktop for fixed rock-steady sidebar) */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen md:pl-64 lg:pl-72 pb-20 md:pb-8">
         {/* App Header */}
         <AppHeader
           currentPage={currentPath}
@@ -882,12 +956,17 @@ function AppContent() {
 
       {/* Offline / Reconnected Study Pack Indicator */}
       <OfflineStatusIndicator />
+      </div>
 
-      {/* Floating Barnaby — automatically hidden on active exams, speaking drills, and /progress */}
-      <Suspense fallback={null}>
-        <FloatingBarnaby onNavigate={navigate} currentPath={currentPath} />
-      </Suspense>
-    </div>
+      {/* Root-Level Persistent Draggable Floating 3D Barnaby Companion (Auto-unmounts in timed exams) */}
+      <FloatingBarnaby
+        currentPath={currentPath}
+        user={user}
+        examMode={examMode}
+        onNavigate={navigate}
+        isLoading={isDashboardLoading}
+      />
+    </>
   );
 }
 

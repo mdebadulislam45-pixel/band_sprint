@@ -9,8 +9,9 @@
  * - Strict bypass for /api/, Firebase Auth/Firestore, billing, and Vite dev endpoints
  */
 
-const CACHE_NAME = 'bandsprint-study-pack-v3.1.0';
+const CACHE_NAME = 'bandsprint-study-pack-v3.3.0';
 const FONT_CACHE_NAME = 'bandsprint-fonts-v1';
+const AUDIO_CACHE_NAME = 'bandsprint-audio-pack-v1';
 
 const APP_SHELL_ASSETS = [
   '/',
@@ -18,7 +19,8 @@ const APP_SHELL_ASSETS = [
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',
-  '/favicon.svg'
+  '/favicon.svg',
+  '/daily-sprint-icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
@@ -39,7 +41,7 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(
           keys.map((key) => {
-            if (key !== CACHE_NAME && key !== FONT_CACHE_NAME) {
+            if (key !== CACHE_NAME && key !== FONT_CACHE_NAME && key !== AUDIO_CACHE_NAME) {
               return caches.delete(key);
             }
           })
@@ -69,6 +71,19 @@ self.addEventListener('fetch', (event) => {
               return networkRes;
             })
             .catch(() => cached);
+        })
+      )
+    );
+    return;
+  }
+
+  // 1b. Serve downloaded Offline Audio Commute Pack clips (/api/tts/stream) when cached
+  if (url.origin === location.origin && url.pathname === '/api/tts/stream') {
+    event.respondWith(
+      caches.open(AUDIO_CACHE_NAME).then((cache) =>
+        cache.match(request).then((cached) => {
+          if (cached) return cached;
+          return fetch(request);
         })
       )
     );

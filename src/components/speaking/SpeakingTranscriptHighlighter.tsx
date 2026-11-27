@@ -428,12 +428,12 @@ export const SpeakingTranscriptHighlighter: React.FC<SpeakingTranscriptHighlight
                 {savedToVault ? (
                   <>
                     <Check className="w-3.5 h-3.5" />
-                    <span>Saved to Mistake Vault</span>
+                    <span>Queued in Vault &amp; Sprint</span>
                   </>
                 ) : (
                   <>
                     <BookmarkPlus className="w-3.5 h-3.5 text-[#0F4C45] dark:text-[#F4A62A]" />
-                    <span>Save Filler Trap to Vault</span>
+                    <span>Save Trap to Vault &amp; Sprint</span>
                   </>
                 )}
               </button>

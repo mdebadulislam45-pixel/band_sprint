@@ -31,6 +31,13 @@ import {
   validateClientWritingEvaluation
 } from '../../utils/scoringIntegrity';
 import { setBarnabyAnalyzing } from '../../utils/getBarnabyState';
+import { BarnabyRig } from '../BarnabyRig';
+import {
+  getCurrentUser,
+  setTopWeakness,
+  detectLowestWritingCriterion
+} from '../../utils/userStorage';
+import type { WritingSentenceUpgrade } from '../../services/geminiService';
 
 export type ArchitectAiEvalStatus =
   | 'not_evaluated'
@@ -51,6 +58,9 @@ export interface ParsedArchitectWritingResult {
   status: Exclude<ArchitectAiEvalStatus, 'not_evaluated' | 'evaluating'>;
   scores: ArchitectAiEvalScores;
   verdict: string | null;
+  barnabyVerdict: string | null;
+  sentenceUpgrades: WritingSentenceUpgrade[];
+  lowestCriterion: string | null;
   message: string | null;
 }
 
@@ -74,6 +84,9 @@ export function parseArchitectWritingResponse(params: {
       status: 'insufficient_evidence',
       scores: { ...EMPTY_ARCHITECT_SCORES },
       verdict: null,
+      barnabyVerdict: null,
+      sentenceUpgrades: [],
+      lowestCriterion: null,
       message:
         typeof data.error === 'string' && data.error.trim()
           ? data.error
@@ -94,6 +107,9 @@ export function parseArchitectWritingResponse(params: {
       status: 'unavailable',
       scores: { ...EMPTY_ARCHITECT_SCORES },
       verdict: null,
+      barnabyVerdict: null,
+      sentenceUpgrades: [],
+      lowestCriterion: null,
       message: serverMessage
     };
   }
@@ -104,11 +120,39 @@ export function parseArchitectWritingResponse(params: {
       status: validated.assessmentStatus === 'insufficient_evidence' ? 'insufficient_evidence' : 'unavailable',
       scores: { ...EMPTY_ARCHITECT_SCORES },
       verdict: null,
+      barnabyVerdict: null,
+      sentenceUpgrades: [],
+      lowestCriterion: null,
       message:
         validated.reason ||
         'AI Writing evaluation returned an incomplete or invalid payload. No fallback score was assigned.'
     };
   }
+
+  const sentenceUpgrades: WritingSentenceUpgrade[] = Array.isArray(data?.sentenceUpgrades)
+    ? data.sentenceUpgrades
+        .filter(
+          (item: any) =>
+            item &&
+            typeof item.originalSentence === 'string' &&
+            item.originalSentence.trim() &&
+            typeof item.band85Rewrite === 'string' &&
+            item.band85Rewrite.trim()
+        )
+        .slice(0, 5)
+        .map((item: any) => ({
+          originalSentence: item.originalSentence.trim(),
+          flawTag:
+            typeof item.flawTag === 'string' && item.flawTag.trim()
+              ? item.flawTag.trim()
+              : 'Precision & Cohesion',
+          band85Rewrite: item.band85Rewrite.trim(),
+          explanation:
+            typeof item.explanation === 'string' && item.explanation.trim()
+              ? item.explanation.trim()
+              : undefined
+        }))
+    : [];
 
   return {
     status: 'evaluated',
@@ -122,6 +166,15 @@ export function parseArchitectWritingResponse(params: {
     verdict:
       typeof data?.examinerVerdict === 'string' && data.examinerVerdict.trim()
         ? data.examinerVerdict.trim()
+        : null,
+    barnabyVerdict:
+      typeof data?.barnabyVerdict === 'string' && data.barnabyVerdict.trim()
+        ? data.barnabyVerdict.trim()
+        : null,
+    sentenceUpgrades,
+    lowestCriterion:
+      typeof data?.lowestCriterion === 'string' && data.lowestCriterion.trim()
+        ? data.lowestCriterion.trim()
         : null,
     message: null
   };
@@ -368,12 +421,16 @@ export const Band9EssayArchitect: React.FC = () => {
   const [aiScores, setAiScores] = useState<ArchitectAiEvalScores>({ ...EMPTY_ARCHITECT_SCORES });
   const [aiEvalMessage, setAiEvalMessage] = useState<string | null>(null);
   const [aiVerdict, setAiVerdict] = useState<string | null>(null);
+  const [aiBarnabyVerdict, setAiBarnabyVerdict] = useState<string | null>(null);
+  const [aiSentenceUpgrades, setAiSentenceUpgrades] = useState<WritingSentenceUpgrade[]>([]);
 
   const resetAiEvaluation = () => {
     setAiEvalStatus('not_evaluated');
     setAiScores({ ...EMPTY_ARCHITECT_SCORES });
     setAiEvalMessage(null);
     setAiVerdict(null);
+    setAiBarnabyVerdict(null);
+    setAiSentenceUpgrades([]);
   };
 
   // Vocabulary Enhancement Dictionary (Band 5/6 to Band 8/9 C1/C2)
@@ -515,9 +572,25 @@ export const Band9EssayArchitect: React.FC = () => {
       setAiEvalStatus(parsed.status);
       setAiScores(parsed.scores);
       setAiVerdict(parsed.verdict);
+      setAiBarnabyVerdict(parsed.barnabyVerdict);
+      setAiSentenceUpgrades(parsed.sentenceUpgrades);
       setAiEvalMessage(parsed.message);
 
       if (parsed.status === 'evaluated') {
+        const lowest =
+          parsed.lowestCriterion ||
+          detectLowestWritingCriterion(
+            {
+              ta: parsed.scores.tr,
+              cc: parsed.scores.cc,
+              lr: parsed.scores.lr,
+              gra: parsed.scores.gra
+            },
+            essayTaskType === 'task1' ? 1 : 2
+          );
+        if (lowest) {
+          setTopWeakness(lowest, 'writing');
+        }
         soundManager.playSuccess();
       } else {
         soundManager.playBeep(360, 0.08);
@@ -526,6 +599,8 @@ export const Band9EssayArchitect: React.FC = () => {
       setAiEvalStatus('unavailable');
       setAiScores({ ...EMPTY_ARCHITECT_SCORES });
       setAiVerdict(null);
+      setAiBarnabyVerdict(null);
+      setAiSentenceUpgrades([]);
       setAiEvalMessage(
         'Unable to reach the live AI Writing evaluation service. Please retry — no fallback IELTS band was assigned.'
       );
@@ -1038,9 +1113,46 @@ export const Band9EssayArchitect: React.FC = () => {
                   </div>
                 )}
 
-                {aiEvalStatus === 'evaluated' && aiVerdict && (
-                  <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 text-[11px] text-emerald-950 dark:text-emerald-200 leading-relaxed">
-                    {aiVerdict}
+                {aiEvalStatus === 'evaluated' && (aiBarnabyVerdict || aiVerdict) && (
+                  <div className="p-3.5 rounded-2xl bg-[#F4F7F6] dark:bg-emerald-950/30 border border-[#134E41]/15 dark:border-emerald-800/60 flex items-start gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-[#F8FAF9] dark:bg-emerald-950/60 border border-[#134E41]/20 flex items-center justify-center shrink-0 overflow-hidden p-0.5">
+                      <BarnabyRig
+                        expression={
+                          typeof aiScores.overall === 'number' &&
+                          aiScores.overall >= (getCurrentUser()?.progress?.targetBand ?? 7.5)
+                            ? 'celebrating'
+                            : 'encouraging'
+                        }
+                        mode={
+                          typeof aiScores.overall === 'number' &&
+                          aiScores.overall >= (getCurrentUser()?.progress?.targetBand ?? 7.5)
+                            ? 'celebration'
+                            : 'tutor'
+                        }
+                        animationState={
+                          typeof aiScores.overall === 'number' &&
+                          aiScores.overall >= (getCurrentUser()?.progress?.targetBand ?? 7.5)
+                            ? 'celebratory'
+                            : 'idle'
+                        }
+                        moodState={
+                          typeof aiScores.overall === 'number' &&
+                          aiScores.overall >= (getCurrentUser()?.progress?.targetBand ?? 7.5)
+                            ? 'celebratory'
+                            : 'encouraging'
+                        }
+                        className="w-full h-full"
+                        ariaLabel="Barnaby Writing verdict"
+                      />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#134E41] dark:text-emerald-300">
+                        Barnaby Verdict
+                      </div>
+                      <p className="text-[11px] text-[#0E1F1E] dark:text-emerald-100 leading-relaxed">
+                        {aiBarnabyVerdict || aiVerdict}
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -1075,7 +1187,7 @@ export const Band9EssayArchitect: React.FC = () => {
                     <div key={item.label} className="space-y-1">
                       <div className="flex items-center justify-between font-bold">
                         <span className="text-slate-700 dark:text-slate-300">{item.label}</span>
-                        <span className={`font-mono ${item.color}`}>
+                        <span className={`font-mono tabular-nums ${item.color}`}>
                           {aiEvalStatus === 'evaluated' ? formatNullableBand(item.score) : '—'}
                         </span>
                       </div>
@@ -1093,6 +1205,32 @@ export const Band9EssayArchitect: React.FC = () => {
                     </div>
                   ))}
                 </div>
+
+                {aiEvalStatus === 'evaluated' && aiSentenceUpgrades.length > 0 && (
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#134E41] dark:text-emerald-300">
+                      Verbatim Sentence Upgrades (Band 8.5+)
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {aiSentenceUpgrades.map((upg, idx) => (
+                        <div
+                          key={`arch-upg-${idx}`}
+                          className="p-2.5 rounded-xl bg-[#F4F7F6] dark:bg-slate-900/70 border border-[#134E41]/12 dark:border-slate-800 space-y-1.5"
+                        >
+                          <span className="inline-block px-2 py-0.5 rounded bg-[#F59E0B]/15 text-[#B45309] dark:text-amber-300 text-[10px] font-semibold">
+                            {upg.flawTag}
+                          </span>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 line-through">
+                            {upg.originalSentence}
+                          </p>
+                          <p className="text-[11px] font-medium text-[#0E1F1E] dark:text-slate-100 leading-relaxed">
+                            {upg.band85Rewrite}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <p className="text-[10px] text-slate-400 leading-relaxed pt-1 border-t border-slate-100 dark:border-slate-800">
                   AI diagnostic estimate for practice only; not an official IELTS test report.

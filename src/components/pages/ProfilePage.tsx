@@ -49,6 +49,9 @@ import { AccentAuditionModal } from '../audio/AccentAuditionModal';
 import { CommercialShowcaseModal } from '../commercial/CommercialShowcaseModal';
 import { TermsAndPrivacyModal } from '../commercial/TermsAndPrivacyModal';
 import { ContactSupportModal } from '../commercial/ContactSupportModal';
+import { getBarnabyVisibility, setBarnabyVisibility } from '../../utils/barnabyStateEngine';
+import type { BarnabyVisibilitySetting } from '../../types/barnaby';
+import { BarnabyCrest } from '../common/BarnabyCrest';
 
 interface ProfilePageProps {
   user?: UserProfile | null;
@@ -124,6 +127,22 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>(() => getPreferredVoiceGender());
   const [activeVoicePlaying, setActiveVoicePlaying] = useState<'male' | 'female' | null>(null);
+  const [barnabyVisibility, setBarnabyVisibilityState] = useState<BarnabyVisibilitySetting>(() =>
+    getBarnabyVisibility()
+  );
+
+  const handleSelectBarnabyVisibility = (setting: BarnabyVisibilitySetting) => {
+    setBarnabyVisibilityState(setting);
+    setBarnabyVisibility(setting);
+    soundManager.playBeep(560, 0.035);
+    const label =
+      setting === 'ambient_and_tutor'
+        ? 'Ambient & Tutor'
+        : setting === 'minimal_badge'
+        ? 'Minimal Badge'
+        : 'Hidden / Focus Only';
+    onShowToast(`Barnaby Companion visibility set to ${label}.`);
+  };
 
   const handleSelectVoiceGender = (gender: 'male' | 'female') => {
     setVoiceGender(gender);
@@ -241,9 +260,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         path: '/profile/settings',
         title: 'App & Voice Settings',
         shortName: 'Settings',
-        description: 'Examiner audio profiles, native accent preferences & theme customization.',
+        description: 'Examiner audio profiles, Barnaby companion visibility & theme preferences.',
         icon: Settings,
-        badge: 'Voice & Theme',
+        badge: 'Voice & Companion',
         color: 'bg-[#F59E0B]/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
       },
       {
@@ -464,6 +483,66 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     {activeVoicePlaying === 'male' ? 'Stop' : 'Test'}
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Barnaby Companion Visibility Setting */}
+            <div className="pt-5 border-t border-slate-100 dark:border-slate-800 space-y-3" data-testid="barnaby-visibility-settings">
+              <div className="flex items-center gap-2.5">
+                <BarnabyCrest size={22} variant="badge" />
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Barnaby Companion Visibility
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Choose how Barnaby appears on Home, Learn, and Progress. Active timed exams always hide Barnaby automatically.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {(
+                  [
+                    {
+                      id: 'ambient_and_tutor' as BarnabyVisibilitySetting,
+                      title: 'Ambient & Tutor',
+                      desc: 'Full contextual briefings, floating physics & interactive hints',
+                    },
+                    {
+                      id: 'minimal_badge' as BarnabyVisibilitySetting,
+                      title: 'Minimal Badge',
+                      desc: 'Compact crest strip with one-tap Ask Barnaby access',
+                    },
+                    {
+                      id: 'hidden_focus_only' as BarnabyVisibilitySetting,
+                      title: 'Hidden / Focus Only',
+                      desc: 'Hide dashboard companion cards while keeping exam focus clean',
+                    },
+                  ] as const
+                ).map((option) => {
+                  const active = barnabyVisibility === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handleSelectBarnabyVisibility(option.id)}
+                      aria-pressed={active}
+                      className={`p-4 rounded-2xl border text-left transition cursor-pointer ${
+                        active
+                          ? 'border-[#134E41] bg-[#134E41]/5 dark:bg-[#1F8A70]/15 text-[#0E1F1E] dark:text-[#EEF3F1]'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-sm">{option.title}</span>
+                        {active && <Check className="w-4 h-4 text-[#134E41] dark:text-[#6EE7B7] shrink-0" />}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        {option.desc}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

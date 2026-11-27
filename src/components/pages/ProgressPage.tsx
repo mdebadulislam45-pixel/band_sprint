@@ -15,6 +15,15 @@ import { UserProfile } from '../../types';
 import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
 import { PrintablePracticeReportModal } from '../reports/PrintablePracticeReportModal';
 import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
+import { BarnabyCompanion } from '../BarnabyCompanion';
+import { getTopWeakness } from '../../utils/userStorage';
+import { computeDaysInactive } from '../../utils/getBarnabyState';
+import { sanitizeCandidateName } from '../../utils/nameSanitizer';
+import {
+  DAILY_SPRINT_SYNCED_EVENT,
+  isReviewItemDueToday,
+  loadDailySprintProgress
+} from '../../utils/dailySprintProgressStore';
 import {
   AnimatedNumber,
   StaggerGroup,
@@ -68,7 +77,18 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<ProgressTab>('readiness');
   const [showPrintReport, setShowPrintReport] = useState(false);
+  const [sprintState, setSprintState] = useState(() => loadDailySprintProgress());
   const diagnostic = loadDiagnosticResult();
+
+  React.useEffect(() => {
+    const syncSprint = () => setSprintState(loadDailySprintProgress());
+    window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, syncSprint);
+    window.addEventListener('bandsprint_cloud_sync_updated', syncSprint);
+    return () => {
+      window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, syncSprint);
+      window.removeEventListener('bandsprint_cloud_sync_updated', syncSprint);
+    };
+  }, []);
 
   const examMode = user?.progress?.intendedFormat || 'Academic';
   const targetBand = user?.progress?.targetBand || 7.5;
@@ -103,6 +123,44 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
     overallBand !== null
       ? Math.min(100, Math.round((overallBand / targetBand) * 100))
       : Math.round((assessedSkillCount / 4) * 100);
+
+  const bandDelta = agg.overall.trend?.delta ?? null;
+  const progressTopWeakness = (() => {
+    const stored = getTopWeakness();
+    if (stored) return stored;
+    const entries = (
+      [
+        ['Listening', skillBands.listening],
+        ['Reading', skillBands.reading],
+        ['Writing', skillBands.writing],
+        ['Speaking', skillBands.speaking],
+      ] as Array<[string, number | null]>
+    ).filter((entry): entry is [string, number] => entry[1] !== null);
+    if (entries.length > 0) {
+      entries.sort((a, b) => a[1] - b[1]);
+      return entries[0][0];
+    }
+    return diagnostic?.weakest || user?.progress?.weakestSkill || null;
+  })();
+
+  const bandTrendSummary =
+    agg.overall.trend?.status === 'up' && bandDelta !== null
+      ? `Latest overall trend +${bandDelta.toFixed(1)} across ${agg.overall.sampleCount} sittings`
+      : agg.overall.trend?.status === 'down' && bandDelta !== null
+      ? `Latest overall trend ${bandDelta.toFixed(1)} across ${agg.overall.sampleCount} sittings`
+      : overallBand !== null
+      ? `Current overall Band ${overallBand.toFixed(1)}`
+      : 'No verified 4-skill mock sitting yet';
+
+  const latestExamTs = examHistory.reduce<number | null>(
+    (maxTs, item) =>
+      typeof item.timestamp === 'number' && (maxTs === null || item.timestamp > maxTs)
+        ? item.timestamp
+        : maxTs,
+    null
+  );
+  const daysInactive = computeDaysInactive(user?.progress?.lastActiveDate, latestExamTs);
+  const userName = user ? sanitizeCandidateName(user.name, user.email) : 'Candidate';
 
   const destinations: ProgressItem[] = [
     {
@@ -233,6 +291,28 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
         </div>
       </section>
 
+      {/* Barnaby Progress Analyst (Zero Overlap, Analyzing Pose) */}
+      <BarnabyCompanion
+        pose="analyzing"
+        screen="progress"
+        userName={userName}
+        currentEstimate={overallBand}
+        targetBand={targetBand}
+        examDate={user?.progress?.examDate || diagnostic?.examDate || null}
+        daysInactive={daysInactive}
+        topWeakness={progressTopWeakness}
+        bandDelta={bandDelta}
+        mistakeCount={mistakeCount}
+        screenContext={{
+          bandTrendSummary,
+          skillBands,
+        }}
+        currentPath="/progress"
+        examMode={examMode}
+        compactStrip
+        onNavigate={onNavigate}
+      />
+
       {/* 4 Dedicated Progress Views */}
       <StaggerGroup className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5" stagger={0.055}>
         {destinations.map((item) => {
@@ -362,6 +442,117 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
                 onOpenVault={onOpenVault || (() => onNavigate('/progress/saved'))}
               />
             </div>
+
+            {/* IELTS Examiner Rubric Breakdown & Daily Sprint Retention */}
+            {(() => {
+              const quotaStd = sprintState.quotaTier === 'standard';
+              const vocabPct = Math.min(
+                100,
+                Math.round((sprintState.masteredVocabIds.length / (quotaStd ? 20 : 10)) * 100)
+              );
+              const grammarPct = Math.min(
+                100,
+                Math.round((sprintState.masteredGrammarIds.length / (quotaStd ? 6 : 4)) * 100)
+              );
+              const phraseIdiomPct = Math.min(
+                100,
+                Math.round(
+                  ((sprintState.masteredIdiomIds.length + sprintState.masteredPhraseIds.length) /
+                    (quotaStd ? 20 : 10)) *
+                    100
+                )
+              );
+              const spellingPct = Math.min(
+                100,
+                Math.round((sprintState.masteredSpellingIds.length / (quotaStd ? 40 : 20)) * 100)
+              );
+              const dueSrCount = sprintState.reviewQueueIds.filter((id) =>
+                isReviewItemDueToday(sprintState.reviewSchedule[id])
+              ).length;
+
+              const toBandPct = (band: number | null, sprintPct: number) => {
+                if (band !== null) {
+                  return Math.min(100, Math.round((band / 9) * 80 + sprintPct * 0.2));
+                }
+                return Math.max(15, Math.min(100, Math.round(45 + sprintPct * 0.55)));
+              };
+
+              const rubricRows = [
+                {
+                  label: 'Lexical Resource (Vocab & Idioms)',
+                  sub: `${vocabPct}% daily vocab · ${sprintState.lastExamSummary ? `${sprintState.lastExamSummary.scorePct}% mastery exam` : 'Ready for exam'}`,
+                  pct: toBandPct(skillBands.writing ?? skillBands.speaking, vocabPct)
+                },
+                {
+                  label: 'Grammatical Range & Accuracy',
+                  sub: `${grammarPct}% Band 8+ rules mastered today`,
+                  pct: toBandPct(skillBands.writing, grammarPct)
+                },
+                {
+                  label: 'Coherence, Fluency & Idiomatic Delivery',
+                  sub: `${phraseIdiomPct}% idioms & collocations practised`,
+                  pct: toBandPct(skillBands.speaking, phraseIdiomPct)
+                },
+                {
+                  label: 'Listening & Spelling Precision',
+                  sub: `${spellingPct}% spelling targets · ${dueSrCount} due in SR recall`,
+                  pct: toBandPct(skillBands.listening ?? skillBands.reading, spellingPct)
+                }
+              ];
+
+              return (
+                <section
+                  data-testid="examiner-rubric-breakdown"
+                  className="rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-5 sm:p-6 space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#EEF3F1] dark:border-[#1F8A70]/25">
+                    <div>
+                      <h3 className="font-display text-base font-bold text-[#0E1F1E] dark:text-white">
+                        Examiner Rubric Breakdown &amp; Daily Retention
+                      </h3>
+                      <p className="text-xs text-[#566664] dark:text-slate-400">
+                        Combines your assessed Band scores with today’s Daily Sprint mastery ({sprintState.pomodoroBlocksCompleted} Pomodoro blocks · {sprintState.pomodoroFocusMinutesLogged}m focus).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundManager.playBeep(540, 0.04);
+                        onNavigate('/learn/daily-sprint');
+                      }}
+                      className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      <span>Open Daily Sprint</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-[#F4A62A]" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {rubricRows.map((row) => (
+                      <div key={row.label} className="space-y-1.5">
+                        <div className="flex items-baseline justify-between gap-2 text-xs">
+                          <span className="font-semibold text-[#0E1F1E] dark:text-[#EEF3F1]">
+                            {row.label}
+                          </span>
+                          <span className="font-mono font-bold text-[#0F4C45] dark:text-[#6EE7B7] tabular-nums">
+                            {row.pct}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-[#EEF3F1] dark:bg-[#0B1514] overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[#0F4C45] dark:bg-[#1F8A70] transition-all duration-300"
+                            style={{ width: `${row.pct}%` }}
+                          />
+                        </div>
+                        <div className="text-[11px] text-[#566664] dark:text-slate-400">
+                          {row.sub}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })()}
           </div>
         )}
 

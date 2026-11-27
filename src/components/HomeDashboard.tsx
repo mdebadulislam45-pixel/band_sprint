@@ -6,14 +6,15 @@ import {
   RotateCcw,
   ClipboardCheck,
   Award,
-  Zap
+  Zap,
+  Flame,
+  Clock
 } from 'lucide-react';
 import { UserProfile } from '../types';
-import { soundManager } from '../utils/audioEffects';
+import { audioManager } from '../services/AudioManager';
 import { sanitizeCandidateName } from '../utils/nameSanitizer';
 import { loadDiagnosticResult } from '../services/diagnosticResultStore';
 import { loadOnboardingSurvey, WEAK_SKILL_META } from '../services/onboardingSurveyStore';
-import { DailySprintMissionHub } from './home/DailySprintMissionHub';
 import { AIWeaknessDetector } from './home/AIWeaknessDetector';
 import { HomeExtendedBlocks } from './home/HomeExtendedBlocks';
 import { BarnabyCompanion } from './BarnabyCompanion';
@@ -23,6 +24,12 @@ import { aggregateExamHistory, validateOptionalHalfBand } from '../utils/history
 import { computeDaysInactive } from '../utils/getBarnabyState';
 import { getCompletedMissionsToday, getStreakState } from '../services/streakService';
 import { getMistakes } from '../utils/vaultStorage';
+import { getTopWeakness, TOP_WEAKNESS_UPDATED_EVENT } from '../utils/userStorage';
+import {
+  DAILY_SPRINT_SYNCED_EVENT,
+  loadDailySprintProgress
+} from '../utils/dailySprintProgressStore';
+import { computeSmartSprintBrief } from '../utils/smartSprintEngine';
 
 interface HomeDashboardProps {
   user?: UserProfile | null;
@@ -44,7 +51,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   const [survey, setSurvey] = useState(() => loadOnboardingSurvey());
   const [streakState, setStreakState] = useState(() => getStreakState());
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>(() => getCompletedMissionsToday());
+  const [storedTopWeakness, setStoredTopWeakness] = useState<string | null>(() => getTopWeakness());
+  const [sprintProgress, setSprintProgress] = useState(() => loadDailySprintProgress());
   const [isSmartDrillOpen, setIsSmartDrillOpen] = useState(false);
+
+  const smartBrief = useMemo(
+    () => computeSmartSprintBrief(user, sprintProgress),
+    [sprintProgress, user]
+  );
 
   useEffect(() => {
     const refresh = () => {
@@ -53,18 +67,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
       const nextStreak = getStreakState();
       setStreakState(nextStreak);
       setCompletedTaskIds(getCompletedMissionsToday(nextStreak));
+      setStoredTopWeakness(getTopWeakness());
+      setSprintProgress(loadDailySprintProgress());
     };
     window.addEventListener('bandsprint_cloud_sync_updated', refresh);
     window.addEventListener('bandsprint_diagnostic_saved', refresh);
     window.addEventListener('bandsprint_onboarding_survey_saved', refresh);
     window.addEventListener('bandsprint_streak_updated', refresh);
     window.addEventListener('bandsprint_tasks_updated', refresh);
+    window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, refresh);
+    window.addEventListener(TOP_WEAKNESS_UPDATED_EVENT, refresh);
     return () => {
       window.removeEventListener('bandsprint_cloud_sync_updated', refresh);
       window.removeEventListener('bandsprint_diagnostic_saved', refresh);
       window.removeEventListener('bandsprint_onboarding_survey_saved', refresh);
       window.removeEventListener('bandsprint_streak_updated', refresh);
       window.removeEventListener('bandsprint_tasks_updated', refresh);
+      window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, refresh);
+      window.removeEventListener(TOP_WEAKNESS_UPDATED_EVENT, refresh);
     };
   }, []);
 
@@ -94,17 +114,17 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   const currentBandEstimate = useMemo(() => {
     const agg = aggregateExamHistory(user?.progress?.examHistory || []);
     if (agg.overall.latest !== null) {
-      return { value: agg.overall.latest, source: 'Latest full mock' };
+      return { value: agg.overall.latest, source: 'Latest mock' };
     }
     const diagOverall = validateOptionalHalfBand(diagnostic?.scores?.overall, 1.0);
     if (diagOverall !== null) {
-      return { value: diagOverall, source: 'Diagnostic baseline' };
+      return { value: diagOverall, source: 'Diagnostic' };
     }
     const selfEst =
       validateOptionalHalfBand(user?.progress?.currentBandEstimate, 1.0) ??
       validateOptionalHalfBand(survey?.currentBand, 1.0);
     if (selfEst !== null) {
-      return { value: selfEst, source: 'Survey baseline' };
+      return { value: selfEst, source: 'Survey est.' };
     }
     return null;
   }, [user?.progress?.examHistory, user?.progress?.currentBandEstimate, diagnostic, survey]);
@@ -116,6 +136,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   }, [diagnostic, surveyWeakest]);
 
   const topWeakness = useMemo(() => {
+    if (storedTopWeakness) {
+      return storedTopWeakness;
+    }
     try {
       const unresolved = getMistakes().filter((m) => !m.mastered);
       if (unresolved.length > 0) {
@@ -139,7 +162,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
       // ignore storage errors
     }
     return weakestLabel;
-  }, [weakestLabel, completedTaskIds.length]);
+  }, [storedTopWeakness, weakestLabel, completedTaskIds.length]);
 
   const daysInactive = useMemo(() => {
     const history = user?.progress?.examHistory || [];
@@ -154,6 +177,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   }, [streakState.lastActiveDate, user?.progress?.examHistory]);
 
   const allDailyTasksCompleted = completedTaskIds.length >= 3;
+  const unresolvedMistakeCount = useMemo(() => {
+    try {
+      return getMistakes().filter((m) => !m.mastered).length;
+    } catch {
+      return 0;
+    }
+  }, [completedTaskIds.length]);
 
   // Primary action decision: Diagnostic first (contextualized to survey goals), or Priority Weak Skill / Resume / Study Plan
   const primaryHeroAction = useMemo(() => {
@@ -196,7 +226,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
       {/* =====================================================================
           1. FOCUSED COMMAND HEADER (Single Dominant Focal Anchor)
       ===================================================================== */}
-      <section className="rounded-2xl bg-[#0F4C45] text-white border border-[#1F8A70]/40 p-5 sm:p-7">
+      <section
+        data-testid="daily-command-center-hero"
+        className="rounded-2xl bg-[#0F4C45] text-white border border-[#1F8A70]/40 p-5 sm:p-7"
+      >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           {/* Left: Greeting + Next Best Action */}
           <div className="space-y-3 max-w-2xl">
@@ -214,7 +247,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => {
-                  soundManager.playSuccess();
+                  audioManager.playUiClick('check');
                   onNavigate(primaryHeroAction.path);
                 }}
                 className="min-h-[46px] px-5 py-2.5 rounded-xl bg-[#F4A62A] hover:bg-[#d98f1d] active:scale-[0.99] text-[#0E1F1E] font-bold text-sm transition flex items-center gap-2 whitespace-nowrap cursor-pointer"
@@ -230,7 +263,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => {
-                  soundManager.playBeep(640, 0.04);
+                  audioManager.playUiClick('soft');
                   setIsSmartDrillOpen(true);
                 }}
                 className="min-h-[46px] px-4 py-2.5 rounded-xl bg-white/15 hover:bg-white/20 border border-[#F4A62A]/45 text-white font-semibold text-sm transition flex items-center gap-2 whitespace-nowrap cursor-pointer"
@@ -242,7 +275,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => {
-                  soundManager.playBeep(520, 0.04);
+                  audioManager.playUiClick('soft');
                   onNavigate('/practice/mock-tests');
                 }}
                 className="min-h-[46px] px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-semibold text-sm transition flex items-center gap-2 whitespace-nowrap cursor-pointer"
@@ -254,25 +287,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
           </div>
 
           {/* Right: Clean Tabular Band & Countdown Metrics */}
-          <StaggerGroup className="grid grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-2.5 shrink-0" stagger={0.06}>
+          <StaggerGroup className="grid grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-2 sm:gap-2.5 shrink-0" stagger={0.06}>
             <StaggerItem>
               <button
                 type="button"
                 onClick={() => {
-                  soundManager.playBeep(520, 0.04);
+                  audioManager.playUiClick('soft');
                   onNavigate(diagnostic ? '/progress' : '/learn/diagnostic');
                 }}
-                className="w-full px-3.5 py-3 rounded-xl bg-[#0B3833] hover:bg-[#082B27] border border-white/10 hover:border-[#F4A62A]/40 text-left transition-all duration-150 hover:-translate-y-0.5 cursor-pointer min-h-[44px]"
+                className="w-full px-2.5 sm:px-3.5 py-3 rounded-xl bg-[#0B3833] hover:bg-[#082B27] border border-white/10 hover:border-[#F4A62A]/40 text-left transition-all duration-150 hover:-translate-y-0.5 cursor-pointer min-h-[44px]"
                 title="View Band Progress"
               >
-                <div className="flex items-center gap-1.5 text-[11px] text-[#EEF3F1]/75 font-medium whitespace-nowrap">
+                <div className="flex items-center gap-1 text-[11px] text-[#EEF3F1]/75 font-medium whitespace-nowrap">
                   <Award className="w-3.5 h-3.5 text-[#F4A62A] shrink-0" />
                   <span>Current Est.</span>
                 </div>
                 <div className="text-lg font-bold text-white font-mono tabular-nums mt-0.5">
                   {currentBandEstimate ? <AnimatedNumber value={currentBandEstimate.value} decimals={1} /> : '—'}
                 </div>
-                <div className="text-[10px] text-[#EEF3F1]/65 truncate">
+                <div className="text-[10px] text-[#EEF3F1]/65 whitespace-nowrap">
                   {currentBandEstimate ? currentBandEstimate.source : 'Not assessed'}
                 </div>
               </button>
@@ -282,20 +315,20 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => {
-                  soundManager.playBeep(520, 0.04);
+                  audioManager.playUiClick('soft');
                   onOpenBandModal();
                 }}
-                className="w-full px-3.5 py-3 rounded-xl bg-[#0B3833] hover:bg-[#082B27] border border-white/10 hover:border-[#F4A62A]/40 text-left transition-all duration-150 hover:-translate-y-0.5 cursor-pointer min-h-[44px]"
+                className="w-full px-2.5 sm:px-3.5 py-3 rounded-xl bg-[#0B3833] hover:bg-[#082B27] border border-white/10 hover:border-[#F4A62A]/40 text-left transition-all duration-150 hover:-translate-y-0.5 cursor-pointer min-h-[44px]"
                 title="Click to edit Target Band"
               >
-                <div className="flex items-center gap-1.5 text-[11px] text-[#EEF3F1]/75 font-medium whitespace-nowrap">
+                <div className="flex items-center gap-1 text-[11px] text-[#EEF3F1]/75 font-medium whitespace-nowrap">
                   <Target className="w-3.5 h-3.5 text-[#F4A62A] shrink-0" />
                   <span>Target Band</span>
                 </div>
                 <div className="text-lg font-bold text-white font-mono tabular-nums mt-0.5">
                   <AnimatedNumber value={targetBand} decimals={1} />
                 </div>
-                <div className="text-[10px] text-[#EEF3F1]/65 truncate">Click to adjust</div>
+                <div className="text-[10px] text-[#EEF3F1]/65 whitespace-nowrap">Tap to set</div>
               </button>
             </StaggerItem>
 
@@ -303,20 +336,20 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => {
-                  soundManager.playBeep(520, 0.04);
+                  audioManager.playUiClick('soft');
                   onOpenBandModal();
                 }}
-                className="w-full px-3.5 py-3 rounded-xl bg-[#0B3833] hover:bg-[#082B27] border border-white/10 hover:border-[#F4A62A]/40 text-left transition-all duration-150 hover:-translate-y-0.5 cursor-pointer min-h-[44px]"
+                className="w-full px-2.5 sm:px-3.5 py-3 rounded-xl bg-[#0B3833] hover:bg-[#082B27] border border-white/10 hover:border-[#F4A62A]/40 text-left transition-all duration-150 hover:-translate-y-0.5 cursor-pointer min-h-[44px]"
                 title="Click to edit Exam Date"
               >
-                <div className="flex items-center gap-1.5 text-[11px] text-[#EEF3F1]/75 font-medium whitespace-nowrap">
+                <div className="flex items-center gap-1 text-[11px] text-[#EEF3F1]/75 font-medium whitespace-nowrap">
                   <Calendar className="w-3.5 h-3.5 text-[#F4A62A] shrink-0" />
                   <span>Exam Day</span>
                 </div>
                 <div className="text-lg font-bold text-[#F4A62A] font-mono tabular-nums mt-0.5">
                   <AnimatedNumber value={daysRemaining} decimals={0} suffix="d" />
                 </div>
-                <div className="text-[10px] text-[#EEF3F1]/65 truncate">Days remaining</div>
+                <div className="text-[10px] text-[#EEF3F1]/65 whitespace-nowrap">Days left</div>
               </button>
             </StaggerItem>
           </StaggerGroup>
@@ -324,15 +357,108 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
       </section>
 
       {/* =====================================================================
-          2. MAIN 12-COLUMN WORKSPACE (BandSprint Action Center + Right Column)
+          1.5 BARNABY BRIEFING STRIP (Text-only on Home; rig lives in FloatingBarnaby)
+      ===================================================================== */}
+      <FadeInSection immediate delay={0.04} y={8}>
+        <BarnabyCompanion
+          screen="home"
+          userName={sanitizedFirstName}
+          currentEstimate={currentBandEstimate ? currentBandEstimate.value : null}
+          targetBand={targetBand}
+          examDate={testDate || null}
+          daysRemaining={daysRemaining}
+          daysInactive={daysInactive}
+          allDailyTasksCompleted={allDailyTasksCompleted}
+          topWeakness={topWeakness}
+          mistakeCount={unresolvedMistakeCount}
+          currentPath="/"
+          examMode={intendedFormat}
+          compactStrip
+          hideRig
+          onNavigate={onNavigate}
+        />
+      </FadeInSection>
+
+      {/* =====================================================================
+          2. MAIN 12-COLUMN WORKSPACE (Compact Daily Sprint Launcher + 4-Skill Matrix + Right Sidebar)
       ===================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left 8 Columns: Today's Study Sprint + Unified 4-Skill Matrix */}
+        {/* Left 8 Columns: Executive Daily Sprint Launcher Card + Unified 4-Skill Matrix */}
         <FadeInSection immediate delay={0.08} y={10} className="lg:col-span-8 space-y-6">
-          <DailySprintMissionHub
-            onNavigate={onNavigate}
-            onShowToast={onShowToast}
-          />
+          <section
+            data-testid="home-daily-sprint-launcher"
+            className="rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          >
+            <div className="flex items-start sm:items-center gap-4 min-w-0">
+              {/* Homescreen App Icon Shortcut for Daily Sprint */}
+              <button
+                type="button"
+                data-testid="homescreen-daily-sprint-icon"
+                onClick={() => {
+                  audioManager.playUiClick('check');
+                  onNavigate('/learn/daily-sprint');
+                }}
+                className="group flex flex-col items-center gap-1 shrink-0 cursor-pointer focus-visible:outline-none"
+                title="Tap to practise Daily IELTS Sprint"
+                aria-label="Open Daily Sprint Hub"
+              >
+                <div className="relative w-14 h-14 rounded-2xl overflow-hidden border border-[#1F8A70]/40 bg-[#0F4C45] shadow-xs group-hover:-translate-y-0.5 transition-transform">
+                  <img
+                    src="/daily-sprint-icon.svg"
+                    alt="Daily IELTS Sprint"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <span className="text-[10px] font-bold tracking-tight text-[#0F4C45] dark:text-[#6EE7B7]">
+                  Daily Sprint
+                </span>
+              </button>
+
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono text-[#566664] dark:text-slate-400">
+                  <span className="font-bold uppercase tracking-wide text-[#0F4C45] dark:text-[#6EE7B7] inline-flex items-center gap-1">
+                    <Flame className="w-3 h-3 text-[#F4A62A]" />
+                    <span>Smart Pomodoro Hub</span>
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums">
+                    {sprintProgress.pomodoroBlocksCompleted} blocks · {sprintProgress.pomodoroFocusMinutesLogged}m today
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums font-semibold text-[#0F4C45] dark:text-[#6EE7B7]">
+                    {smartBrief.todayReadinessPct}% ready
+                  </span>
+                  {smartBrief.dueReviewCount > 0 && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-semibold text-[#9B6314] dark:text-[#F4A62A]">
+                        {smartBrief.dueReviewCount} due review
+                      </span>
+                    </>
+                  )}
+                </div>
+                <h2 className="font-display text-base sm:text-lg font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
+                  Daily IELTS Sprint, 5 Bangla Targets &amp; Mastery Exam
+                </h2>
+                <p className="text-xs text-[#566664] dark:text-slate-400 leading-relaxed">
+                  {smartBrief.coachHeadline}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="open-daily-sprint-page-btn"
+              onClick={() => {
+                audioManager.playUiClick('check');
+                onNavigate('/learn/daily-sprint');
+              }}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-xs sm:text-sm transition inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <span>Open Daily Sprint</span>
+              <ArrowRight className="w-4 h-4 text-[#F4A62A]" />
+            </button>
+          </section>
 
           <HomeExtendedBlocks
             section="skills"
@@ -344,20 +470,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
           />
         </FadeInSection>
 
-        {/* Right 4 Columns: Barnaby Companion + Weekly Momentum + Study Plan + Mistake Vault + Word of Day */}
+        {/* Right 4 Columns: Weekly Momentum + Study Plan + Mistake Vault + Word of Day */}
         <FadeInSection immediate delay={0.14} y={10} className="lg:col-span-4 space-y-6">
-          <BarnabyCompanion
-            userName={sanitizedFirstName}
-            currentEstimate={currentBandEstimate ? currentBandEstimate.value : null}
-            targetBand={targetBand}
-            daysInactive={daysInactive}
-            allDailyTasksCompleted={allDailyTasksCompleted}
-            topWeakness={topWeakness}
-            currentPath="/"
-            examMode={intendedFormat}
-            onNavigate={onNavigate}
-          />
-
           <HomeExtendedBlocks
             section="sidebar"
             user={user}

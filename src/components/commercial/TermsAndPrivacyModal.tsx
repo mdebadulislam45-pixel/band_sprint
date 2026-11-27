@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, ShieldCheck, FileText, Lock, Globe2, HelpCircle } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
 
@@ -14,6 +14,12 @@ export const TermsAndPrivacyModal: React.FC<TermsAndPrivacyModalProps> = ({
   initialTab = 'terms'
 }) => {
   const [activeTab, setActiveTab] = useState<'terms' | 'privacy'>(initialTab);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   if (!isOpen) return null;
 

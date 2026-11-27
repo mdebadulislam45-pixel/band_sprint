@@ -8,12 +8,13 @@ import {
   LucideIcon
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { soundManager } from '../../utils/audioEffects';
+import { audioManager } from '../../services/AudioManager';
 import { SPRING_SNAPPY } from '../common/MotionPrimitives';
 import { MainDestination, prefetchRoute } from '../../router/useAppRouter';
 
 interface BottomNavProps {
   activeHub: MainDestination;
+  currentPath?: string;
   onNavigate: (path: string) => void;
   mistakeCount?: number;
 }
@@ -27,7 +28,8 @@ interface NavDestination {
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeHub,
-  onNavigate
+  onNavigate,
+  mistakeCount = 0
 }) => {
   const items: NavDestination[] = [
     { id: 'home', label: 'Home', icon: Home, path: '/' },
@@ -37,13 +39,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     { id: 'profile', label: 'Profile', icon: User, path: '/profile' }
   ];
 
-  const handleTabClick = (path: string, isActive: boolean) => {
+  const handleTabClick = (path: string) => {
     if (typeof window !== 'undefined' && 'navigator' in window && 'vibrate' in navigator) {
       try {
         navigator.vibrate(6);
       } catch {}
     }
-    soundManager.playBeep(isActive ? 500 : 640, 0.035);
+    audioManager.playUiClick('tab');
     onNavigate(path);
   };
 
@@ -56,14 +58,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       {items.map((item) => {
         const Icon = item.icon;
         const isActive = activeHub === item.id;
+        const showMistakeBadge = item.id === 'progress' && mistakeCount > 0;
 
         return (
           <button
             key={item.id}
             type="button"
+            data-testid={`bottom-nav-${item.id}`}
             aria-current={isActive ? 'page' : undefined}
             aria-label={item.label}
-            onClick={() => handleTabClick(item.path, isActive)}
+            onClick={() => handleTabClick(item.path)}
             onMouseEnter={() => prefetchRoute(item.path)}
             onFocus={() => prefetchRoute(item.path)}
             className="relative flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl min-w-0 min-h-[44px] transition-colors cursor-pointer"
@@ -77,13 +81,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             )}
 
             <div
-              className={`w-8 h-6 flex items-center justify-center rounded-lg transition-all duration-150 ${
+              className={`relative w-8 h-6 flex items-center justify-center rounded-lg transition-all duration-150 ${
                 isActive
                   ? 'text-[#0F4C45] dark:text-[#EEF3F1] font-bold scale-105'
                   : 'text-[#566664] dark:text-slate-400 hover:text-[#0E1F1E]'
               }`}
             >
               <Icon className="w-5 h-5" />
+              {showMistakeBadge && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#F4A62A]" />
+              )}
             </div>
 
             <span
