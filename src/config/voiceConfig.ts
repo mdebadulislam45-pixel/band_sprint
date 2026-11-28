@@ -180,7 +180,6 @@ export const BARNABY_VOICE_PROFILE: CompanionVoiceProfile = {
   preferredBrowserVoiceNames: [
     'Microsoft Libby Online (Natural) - English (United Kingdom)',
     'Microsoft Sonia Online (Natural) - English (United Kingdom)',
-    'Microsoft Maisie Online (Natural) - English (United Kingdom)',
     'Microsoft Jenny Online (Natural) - English (United States)',
     'Google UK English Female',
     'Serena',
@@ -902,9 +901,288 @@ export function setPreferredAccent(accent: OfficialIELTSAccent): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_ACCENT_PREF, accent);
-    window.dispatchEvent(new CustomEvent('ielts_accent_changed', { detail: { accent } }));
-  } catch (err) {
+    const matchingSpeaker = resolveSpeakerForAccentAndGender(accent, getPreferredVoiceGender());
+    localStorage.setItem(STORAGE_KEY_STUDIO_SPEAKER, matchingSpeaker);
+    resetLockedVoices();
+    window.dispatchEvent(new CustomEvent('ielts_accent_changed', { detail: { accent, speakerId: matchingSpeaker } }));
+  } catch {
   }
+}
+
+export interface StudioVoicePersona {
+  speakerId: string;
+  name: string;
+  role: string;
+  accent: OfficialIELTSAccent;
+  gender: 'male' | 'female';
+  locale: string;
+  styleTag: string;
+  voiceCategory?: 'examiner' | 'lecturer' | 'elder';
+  sampleLine: string;
+}
+
+export const PROFESSIONAL_STUDIO_VOICES: StudioVoicePersona[] = [
+  {
+    speakerId: 'speaker_04',
+    name: 'Prof. Arthur Pendelton',
+    role: 'Chief IELTS Examiner (RP)',
+    accent: 'British',
+    gender: 'male',
+    locale: 'en-GB',
+    styleTag: 'Formal RP Baritone',
+    voiceCategory: 'examiner',
+    sampleLine: 'Good afternoon. I am Professor Arthur Pendelton, your British Received Pronunciation IELTS examiner.'
+  },
+  {
+    speakerId: 'speaker_05',
+    name: 'Dr. Clara Sterling',
+    role: 'Senior Oral Assessor (RP)',
+    accent: 'British',
+    gender: 'female',
+    locale: 'en-GB',
+    styleTag: 'Articulate RP',
+    voiceCategory: 'examiner',
+    sampleLine: 'Welcome to the exam room. I am Doctor Clara Sterling, speaking in standard Southern British English.'
+  },
+  {
+    speakerId: 'speaker_17',
+    name: 'Oliver Vance',
+    role: 'BBC-Style Broadcast Academic',
+    accent: 'British',
+    gender: 'male',
+    locale: 'en-GB',
+    styleTag: 'Part 4 Lecture',
+    voiceCategory: 'lecturer',
+    sampleLine: 'In Part Four, you will hear a university lecture on urban climate resilience and sustainable architecture.'
+  },
+  {
+    speakerId: 'speaker_18',
+    name: 'Dr. Eleanor Vance',
+    role: 'Oxbridge Tutorial Fellow',
+    accent: 'British',
+    gender: 'female',
+    locale: 'en-GB',
+    styleTag: 'Seminar Clarity',
+    voiceCategory: 'lecturer',
+    sampleLine: 'Let us examine how paraphrasing transforms key claims in academic reading passages.'
+  },
+  {
+    speakerId: 'speaker_06',
+    name: 'William Fraser',
+    role: 'Australian Marine Tutor',
+    accent: 'Australian',
+    gender: 'male',
+    locale: 'en-AU',
+    styleTag: 'Sydney Natural',
+    sampleLine: 'G’day and welcome to today’s listening briefing on coastal reef conservation in Queensland.'
+  },
+  {
+    speakerId: 'speaker_07',
+    name: 'Natasha Reid',
+    role: 'Australian Community Guide',
+    accent: 'Australian',
+    gender: 'female',
+    locale: 'en-AU',
+    styleTag: 'Warm AU Cadence',
+    sampleLine: 'Before we begin the campus orientation tour, please check your timetable and registration details.'
+  },
+  {
+    speakerId: 'speaker_21',
+    name: 'Dr. Freya Callaghan',
+    role: 'Melbourne Senior Lecturer',
+    accent: 'Australian',
+    gender: 'female',
+    locale: 'en-AU',
+    styleTag: 'Cultivated AU',
+    sampleLine: 'Recent ecological surveys across southern Australia show a measurable recovery in native wetlands.'
+  },
+  {
+    speakerId: 'speaker_09',
+    name: 'Christopher Brooks',
+    role: 'American Visiting Scholar',
+    accent: 'American',
+    gender: 'male',
+    locale: 'en-US',
+    styleTag: 'General American',
+    sampleLine: 'Good morning. Let us review the economic data from our metropolitan transport study.'
+  },
+  {
+    speakerId: 'speaker_19',
+    name: 'Prof. Guy Holloway',
+    role: 'US Ivy League Professor',
+    accent: 'American',
+    gender: 'male',
+    locale: 'en-US',
+    styleTag: 'Academic Lecture',
+    sampleLine: 'Notice how the speaker signals a counterargument before introducing the primary statistical evidence.'
+  },
+  {
+    speakerId: 'speaker_20',
+    name: 'Aria Bennett',
+    role: 'US Academic Moderator',
+    accent: 'American',
+    gender: 'female',
+    locale: 'en-US',
+    styleTag: 'Studio Interviewer',
+    sampleLine: 'In Part Three, I would like to ask you a few more abstract questions related to your cue card topic.'
+  },
+  {
+    speakerId: 'speaker_22',
+    name: 'Andrew Mercer',
+    role: 'North American Studio Narrator',
+    accent: 'American',
+    gender: 'male',
+    locale: 'en-US',
+    styleTag: 'Broadcast Studio',
+    sampleLine: 'You now have thirty seconds to check your answers before we move on to the final section.'
+  },
+  {
+    speakerId: 'speaker_11',
+    name: 'Liam MacLeod',
+    role: 'Canadian Fieldwork Director',
+    accent: 'Canadian',
+    gender: 'male',
+    locale: 'en-CA',
+    styleTag: 'Standard Canadian',
+    sampleLine: 'Hello from Toronto. Today’s fieldwork seminar covers boreal forest carbon monitoring.'
+  },
+  {
+    speakerId: 'speaker_12',
+    name: 'Clara Tremblay',
+    role: 'Canadian University Registrar',
+    accent: 'Canadian',
+    gender: 'female',
+    locale: 'en-CA',
+    styleTag: 'Crisp Canadian',
+    sampleLine: 'Please confirm your student identification number and preferred accommodation wing.'
+  },
+  {
+    speakerId: 'speaker_13',
+    name: 'Mitchell Hale',
+    role: 'New Zealand Ecology Warden',
+    accent: 'New Zealand',
+    gender: 'male',
+    locale: 'en-NZ',
+    styleTag: 'Authentic Kiwi',
+    sampleLine: 'Welcome to the wildlife reserve briefing. We will discuss island habitat restoration.'
+  },
+  {
+    speakerId: 'speaker_14',
+    name: 'Molly Sinclair',
+    role: 'New Zealand Student Officer',
+    accent: 'New Zealand',
+    gender: 'female',
+    locale: 'en-NZ',
+    styleTag: 'Friendly Kiwi',
+    sampleLine: 'The student union workshops run every Wednesday afternoon in the main lecture theatre.'
+  },
+  {
+    speakerId: 'speaker_15',
+    name: 'Connor Gallagher',
+    role: 'Irish Heritage Curator',
+    accent: 'Irish',
+    gender: 'male',
+    locale: 'en-IE',
+    styleTag: 'Dublin Academic',
+    sampleLine: 'Welcome to the cultural archives. Today we trace nineteenth-century maritime trade routes.'
+  },
+  {
+    speakerId: 'speaker_16',
+    name: 'Dr. Emily Byrne',
+    role: 'Irish Linguistics Scholar',
+    accent: 'Irish',
+    gender: 'female',
+    locale: 'en-IE',
+    styleTag: 'Melodious Irish',
+    voiceCategory: 'lecturer',
+    sampleLine: 'Pay close attention to connected speech and vowel reductions across regional English accents.'
+  },
+  {
+    speakerId: 'speaker_23',
+    name: 'Grandpa Reginald Whitmore',
+    role: 'Deep British Elder & Emeritus Chair',
+    accent: 'British',
+    gender: 'male',
+    locale: 'en-GB',
+    styleTag: 'Deep Grandpa Bass',
+    voiceCategory: 'elder',
+    sampleLine: 'Take a calm breath, my friend. I am Sir Reginald Whitmore—let us walk steadily through your IELTS preparation together.'
+  },
+  {
+    speakerId: 'speaker_24',
+    name: 'Grandpa Roger Holloway',
+    role: 'Deep American Elder & Retired Dean',
+    accent: 'American',
+    gender: 'male',
+    locale: 'en-US',
+    styleTag: 'Deep Grandpa Baritone',
+    voiceCategory: 'elder',
+    sampleLine: 'Good evening. Settle in and listen carefully—clear, unhurried structure is the hallmark of a Band Eight speaker.'
+  },
+  {
+    speakerId: 'speaker_25',
+    name: 'Uncle Graham Reid',
+    role: 'Deep Australian Elder Historian',
+    accent: 'Australian',
+    gender: 'male',
+    locale: 'en-AU',
+    styleTag: 'Deep AU Elder',
+    voiceCategory: 'elder',
+    sampleLine: 'Welcome along. Over forty years in marine research, I have learned that listening for key signposts changes everything.'
+  },
+  {
+    speakerId: 'speaker_26',
+    name: 'Grandpa Seamus Doyle',
+    role: 'Deep Irish Elder Storyteller',
+    accent: 'Irish',
+    gender: 'male',
+    locale: 'en-IE',
+    styleTag: 'Deep Irish Elder',
+    voiceCategory: 'elder',
+    sampleLine: 'Welcome to the study hall. Take your time with every question, and let the rhythm of natural English guide your ear.'
+  }
+];
+
+const STORAGE_KEY_STUDIO_SPEAKER = 'ielts_sprint_preferred_studio_speaker_v1';
+
+export function resolveSpeakerForAccentAndGender(
+  accent: OfficialIELTSAccent,
+  gender: 'male' | 'female' = getPreferredVoiceGender()
+): string {
+  const exact = PROFESSIONAL_STUDIO_VOICES.find((v) => v.accent === accent && v.gender === gender);
+  if (exact) return exact.speakerId;
+  const byAccent = PROFESSIONAL_STUDIO_VOICES.find((v) => v.accent === accent);
+  if (byAccent) return byAccent.speakerId;
+  return gender === 'female' ? 'speaker_05' : 'speaker_04';
+}
+
+export function getPreferredStudioSpeakerId(): string {
+  if (typeof window === 'undefined') return 'speaker_04';
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_STUDIO_SPEAKER);
+    if (saved && PROFESSIONAL_STUDIO_VOICES.some((v) => v.speakerId === saved)) {
+      return saved;
+    }
+  } catch {}
+  return resolveSpeakerForAccentAndGender(getPreferredAccent(), getPreferredVoiceGender());
+}
+
+export function setPreferredStudioSpeakerId(speakerId: string): StudioVoicePersona | null {
+  const found = PROFESSIONAL_STUDIO_VOICES.find((v) => v.speakerId === speakerId);
+  if (!found) return null;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_KEY_STUDIO_SPEAKER, found.speakerId);
+      localStorage.setItem(STORAGE_KEY_ACCENT_PREF, found.accent);
+      setPreferredVoiceGender(found.gender);
+      window.dispatchEvent(
+        new CustomEvent('ielts_accent_changed', {
+          detail: { accent: found.accent, speakerId: found.speakerId, persona: found }
+        })
+      );
+    } catch {}
+  }
+  return found;
 }
 
 export type BritishRegionalAccent = 'london_rp' | 'northern' | 'scottish' | 'welsh_west';

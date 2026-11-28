@@ -27,17 +27,23 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   } else {
     // In development mode, unregister any active service workers and clear caches
     // to prevent stale Vite dependency chunks or multiple React copies.
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      for (const registration of registrations) {
-        registration.unregister();
-      }
-    });
-    if ('caches' in window) {
-      caches.keys().then((keys) => {
-        for (const key of keys) {
-          caches.delete(key);
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister().catch(() => {});
         }
-      });
+      })
+      .catch(() => {});
+    if ('caches' in window) {
+      caches
+        .keys()
+        .then((keys) => {
+          for (const key of keys) {
+            caches.delete(key).catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
   }
 }

@@ -372,8 +372,10 @@ function resolveCurrentActivityLabel(currentPage: string): string {
   if (path.includes('/practice/listening')) return 'Listening Lab';
   if (path.includes('/practice/mock-tests')) return 'Full Mock Exam';
   if (path.includes('/practice/question-bank')) return 'Question Bank Drills';
-  if (path.includes('/learn/vault')) return 'Mistake Vault Review';
-  if (path.includes('/learn/vocab')) return 'Vocabulary Lab';
+  if (path.includes('/progress/mistakes') || path.includes('/progress/saved') || path.includes('/learn/vault')) {
+    return 'Mistake Vault Review';
+  }
+  if (path.includes('/learn/vocabulary') || path.includes('/learn/vocab')) return 'Vocabulary Lab';
   if (path.includes('/learn/grammar')) return 'Grammar Lab';
   if (path.includes('/learn/diagnostic')) return 'Diagnostic Assessment';
   if (path.includes('/progress')) return 'Progress & Analytics';
@@ -568,7 +570,7 @@ export function generateContextAwareCoachTip(ctx: StudentContextSnapshot): {
     return {
       mood: 'curious',
       text: `You have ${count} unresolved ${category} item${count > 1 ? 's' : ''} (${module}) in your Mistake Vault. ${targetedGuidance}`,
-      suggestedAction: { label: `Review ${ctx.mistakeCount} Vault Trap${ctx.mistakeCount > 1 ? 's' : ''}`, route: '/learn/vault' }
+      suggestedAction: { label: `Review ${ctx.mistakeCount} Vault Trap${ctx.mistakeCount > 1 ? 's' : ''}`, route: '/progress/mistakes' }
     };
   }
 
@@ -870,10 +872,10 @@ function normalizeGuideRoute(rawRoute?: string): string | undefined {
     reading: '/practice/reading',
     writing: '/practice/writing',
     speaking: '/practice/speaking',
-    vocab: '/learn/vocab',
+    vocab: '/learn/vocabulary',
     grammar: '/learn/grammar',
     livemock: '/practice/mock-tests',
-    vault: '/learn/vault',
+    vault: '/progress/mistakes',
     diagnostic: '/learn/diagnostic',
     'question-bank': '/practice/question-bank'
   };
@@ -887,7 +889,7 @@ function smartOfflineReply(query: string, ctx: StudentContextSnapshot): Partial<
       mood: 'excited',
       text: `Ooh, my favourite snack! Try “a double-edged sword” in Speaking Part 3: “Remote learning is a double-edged sword — it adds flexibility while reducing face-to-face mentorship.”`,
       bengaliTip: '“দুধারী তলোয়ার” — যেকোনো টেকনোলজি বা সোশ্যাল মিডিয়া টপিকে সহজেই বসাতে পারবে!',
-      suggestedAction: { label: 'Open Vocabulary Lab', route: '/learn/vocab' }
+      suggestedAction: { label: 'Open Vocabulary Lab', route: '/learn/vocabulary' }
     };
   }
   if (q.includes('writing') || q.includes('task 2') || q.includes('essay')) {
@@ -1077,13 +1079,17 @@ export function getContextualWhisper(currentPage: string, ctx: StudentContextSna
       text: 'Ooh! Try a 2-Pass Blind-Verified drill or open your Private PDF Exam Room!'
     };
   }
-  if (currentPage.includes('/learn/vocab')) {
+  if (currentPage.includes('/learn/vocabulary') || currentPage.includes('/learn/vocab')) {
     return {
       mood: 'eating',
       text: 'Mmm, juicy C2 words! Tap me and feed me a Word Treat!'
     };
   }
-  if (currentPage.includes('/learn/vault')) {
+  if (
+    currentPage.includes('/progress/mistakes') ||
+    currentPage.includes('/progress/saved') ||
+    currentPage.includes('/learn/vault')
+  ) {
     return {
       mood: 'cheering',
       text:
@@ -1096,14 +1102,14 @@ export function getContextualWhisper(currentPage: string, ctx: StudentContextSna
     return {
       mood: 'curious',
       text: `Hey ${ctx.userName}! You have ${ctx.recurringMistakePattern.count} unresolved ${ctx.recurringMistakePattern.category} item${ctx.recurringMistakePattern.count > 1 ? 's' : ''} in your Mistake Vault. Ready to clear them?`,
-      action: { label: 'Open Vault', route: '/learn/vault' }
+      action: { label: 'Open Vault', route: '/progress/mistakes' }
     };
   }
   if (ctx.mistakeCount > 0) {
     return {
       mood: 'curious',
       text: `Hey ${ctx.userName}! ${ctx.mistakeCount} trap${ctx.mistakeCount > 1 ? 's are' : ' is'} waiting in your Mistake Vault. Quick 15-sec quiz?`,
-      action: { label: 'Open Vault', route: '/learn/vault' }
+      action: { label: 'Open Vault', route: '/progress/mistakes' }
     };
   }
   if (ctx.daysUntilExam !== null) {

@@ -68,9 +68,13 @@ const LEGACY_PAGE_KEY_MAP: Record<string, string> = {
   'practice': '/practice',
   'listening': '/practice/listening',
   'reading': '/practice/reading',
+  'speedreading': '/practice/reading',
   'writing': '/practice/writing',
+  'scratchpad': '/practice/writing',
   'speaking': '/practice/speaking',
+  'examiner': '/practice/speaking',
   'mock-tests': '/practice/mock-tests',
+  'mocktest': '/practice/mock-tests',
   'cdielts': '/practice/mock-tests',
   'question-bank': '/practice/question-bank',
   'sprint': '/practice/sprint',
@@ -83,25 +87,33 @@ const LEGACY_PAGE_KEY_MAP: Record<string, string> = {
   'vocabulary': '/learn/vocabulary',
   'phrases': '/learn/phrases',
   'idioms': '/learn/idioms',
+  'c1idioms': '/learn/idioms',
   'collocations': '/learn/collocations',
   'grammar': '/learn/grammar',
   'spelling': '/learn/spelling',
   'shadowing': '/learn/shadowing',
+  'speakingvault': '/learn/shadowing',
   'model-answers': '/learn/model-answers',
+  'modelanswers': '/learn/model-answers',
   'band-descriptors': '/learn/band-descriptors',
+  'banddescriptors': '/learn/band-descriptors',
+  'bandcalculator': '/progress',
   'diagnostic': '/learn/diagnostic',
   'study-plan': '/learn/study-plan',
   'bangla-guide': '/learn/bangla-guide',
   'beginner-101': '/learn/beginner-101',
   'slide-guide': '/learn/slide-guide',
+  'slides': '/learn/slide-guide',
   'task1-visualizer': '/learn/task1-visualizer',
+  'task1': '/learn/task1-visualizer',
   'argument-matrix': '/learn/argument-matrix',
+  'arguments': '/learn/argument-matrix',
   'progress': '/progress',
   'analytics': '/progress/analytics',
   'history': '/progress/history',
   'saved': '/progress/saved',
-  'mistakes': '/progress/saved',
-  'vault': '/progress/saved',
+  'mistakes': '/progress/mistakes',
+  'vault': '/progress/mistakes',
   'calendar': '/progress/calendar',
   'admin-analytics': '/progress/admin-analytics',
   'profile': '/profile',
@@ -111,12 +123,17 @@ const LEGACY_PAGE_KEY_MAP: Record<string, string> = {
   'help': '/profile/help'
 };
 
+const ROUTE_PATH_ALIASES: Record<string, string> = {
+  '/learn/vocab': '/learn/vocabulary',
+  '/learn/vault': '/progress/mistakes'
+};
+
 export function normalizeRoutePath(raw: string): string {
   if (!raw) return '/';
   const withoutQueryOrHash = raw.split('?')[0].split('#')[0].trim();
   if (!withoutQueryOrHash || withoutQueryOrHash === '/') return '/';
   const cleaned = withoutQueryOrHash.replace(/\/+$/, '');
-  return cleaned || '/';
+  return ROUTE_PATH_ALIASES[cleaned] || cleaned || '/';
 }
 
 export function resolvePath(target: string): string {
@@ -129,7 +146,7 @@ export function resolvePath(target: string): string {
     if (LEGACY_PAGE_KEY_MAP[strippedKey]) return LEGACY_PAGE_KEY_MAP[strippedKey];
     return normalized;
   }
-  return LEGACY_PAGE_KEY_MAP[trimmed] || '/';
+  return LEGACY_PAGE_KEY_MAP[trimmed.toLowerCase()] || '/';
 }
 
 // ---------------------------------------------------------------------------

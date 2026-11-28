@@ -4,6 +4,8 @@
  * Covers Writing Task 1, Writing Task 2, Speaking Parts 1-3, Reading, and Listening.
  */
 
+import { EXPANDED_MODULE_QB_ITEMS } from './expandedModuleQuestionBank';
+
 export interface QuestionBankItem {
   id: string;
   module:
@@ -1517,7 +1519,7 @@ const ADDITIONAL_CAMBRIDGE_QB_ITEMS: QuestionBankItem[] = [
   }
 ];
 
-IELTS_QUESTION_BANK.push(...ADDITIONAL_CAMBRIDGE_QB_ITEMS);
+IELTS_QUESTION_BANK.push(...ADDITIONAL_CAMBRIDGE_QB_ITEMS, ...EXPANDED_MODULE_QB_ITEMS);
 
 
 

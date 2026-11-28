@@ -11,6 +11,8 @@ import {
   formatNullableBand,
   validateClientWritingEvaluation
 } from '../utils/scoringIntegrity';
+import { Task1VisualPromptStudio } from './writing/Task1VisualPromptStudio';
+import { loadActiveLabDrafts, saveActiveLabDrafts } from '../services/adaptivePreferencesStore';
 
 /**
  * Pure parser for /api/evaluate-writing responses used by AIMockSuite.
@@ -208,7 +210,10 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
 }) => {
   const [testType, setTestType] = useState<'task2' | 'task1' | 'speaking'>('task2');
   const [prompt, setPrompt] = useState(initialPrompt || 'Some people believe that university education should be free for all citizens. To what extent do you agree or disagree?');
-  const [essayText, setEssayText] = useState(initialText);
+  const [essayText, setEssayText] = useState(() => {
+    if (initialText) return initialText;
+    return loadActiveLabDrafts().writingTask2Draft || '';
+  });
   const [timeLeft, setTimeLeft] = useState(40 * 60); // 40 mins
   const [timerActive, setTimerActive] = useState(false);
   const [activeTab, setActiveTab] = useState<'editor' | 'heatmap' | 'evaluation'>('editor');
@@ -231,6 +236,19 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       setEssayText(initialText);
     }
   }, [initialText]);
+
+  // Cross-device debounced draft persistence for Task 1 and Task 2
+  useEffect(() => {
+    if (testType === 'speaking') return;
+    const timer = window.setTimeout(() => {
+      if (testType === 'task1') {
+        saveActiveLabDrafts({ activeModule: 'writing', writingTask1Draft: essayText });
+      } else {
+        saveActiveLabDrafts({ activeModule: 'writing', writingTask2Draft: essayText });
+      }
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [essayText, testType]);
 
   // Timer logic
   useEffect(() => {
@@ -258,12 +276,15 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
   const setTestMode = (mode: 'task2' | 'task1' | 'speaking') => {
     setTestType(mode);
     setTimerActive(false);
+    const saved = loadActiveLabDrafts();
     if (mode === 'task2') {
       setTimeLeft(40 * 60);
       setPrompt('Some people believe that university education should be free for all citizens. To what extent do you agree or disagree?');
+      if (saved.writingTask2Draft && !initialText) setEssayText(saved.writingTask2Draft);
     } else if (mode === 'task1') {
       setTimeLeft(20 * 60);
-      setPrompt('The line graph delineates the proportion of electricity generated from renewable sources in Norway and Germany across a 24-year timeframe from 2000 to 2024. Summarize the information.');
+      setPrompt('The chart compares the percentage of total electricity generated from renewable sources in Norway, Germany, the UK, and Japan between 2000 and 2024. Summarise the information by selecting and reporting the main features, and make comparisons where relevant.');
+      if (saved.writingTask1Draft && !initialText) setEssayText(saved.writingTask1Draft);
     } else {
       setTimeLeft(15 * 60);
       setPrompt('Describe an ambitious project or goal you successfully achieved. Talk about what the goal was, what obstacles you overcame, and why it was memorable.');
@@ -561,37 +582,50 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">
-            <Sparkles className="w-3.5 h-3.5" /> Practice Rubric Diagnostic & Gemini AI Examiner
+      {/* Header (Unified Deep Forest Teal + Dark Mode) */}
+      <div className="bg-white dark:bg-[#11201E] rounded-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="text-[11px] font-mono uppercase tracking-wider font-bold text-[#0F4C45] dark:text-[#6EE7B7] inline-flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-[#F4A62A]" />
+            <span>Practice Rubric Diagnostic &amp; Gemini AI Examiner</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1">
-            Module 9: AI Mock Exam Suite with Syntax & Cohesion Heatmap
+          <h2 className="font-display text-xl sm:text-2xl font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
+            AI Writing Practice Suite &amp; Syntax Heatmap
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Timed test station, live sentence complexity heatmap, and instant Band 1.0–9.0 rubric scoring.
+          <p className="text-xs sm:text-sm text-[#566664] dark:text-slate-400">
+            Timed test station, interactive Task 1 visuals, live sentence complexity heatmap, and instant Band 1.0–9.0 rubric scoring.
           </p>
         </div>
 
         {/* Test Mode Selector */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setTestMode('task2')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${testType === 'task2' ? 'bg-indigo-700 text-white border-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}
+            className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              testType === 'task2'
+                ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+                : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1F8A70]/30 text-[#0E1F1E] dark:text-slate-200'
+            }`}
           >
             Task 2 Essay (40m)
           </button>
           <button
             onClick={() => setTestMode('task1')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${testType === 'task1' ? 'bg-indigo-700 text-white border-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}
+            className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              testType === 'task1'
+                ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+                : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1F8A70]/30 text-[#0E1F1E] dark:text-slate-200'
+            }`}
           >
             Task 1 Report (20m)
           </button>
           <button
             onClick={() => setTestMode('speaking')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${testType === 'speaking' ? 'bg-indigo-700 text-white border-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}
+            className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              testType === 'speaking'
+                ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+                : 'bg-[#F7F9F8] dark:bg-[#0B1514] border-[#D3DDDA] dark:border-[#1F8A70]/30 text-[#0E1F1E] dark:text-slate-200'
+            }`}
           >
             Speaking Transcript
           </button>
@@ -599,61 +633,81 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
       </div>
 
       {/* Timer & Word Count Bar */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-md flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-6">
+      <div className="bg-[#0F4C45] text-white rounded-2xl border border-[#1F8A70]/45 p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-6">
           {/* Timer */}
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700">
-              <Timer className="w-5 h-5 text-amber-400" />
+            <div className="p-2.5 rounded-xl bg-[#0B3833] border border-white/10">
+              <Timer className="w-5 h-5 text-[#F4A62A]" />
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 uppercase font-semibold">Test Clock</div>
-              <div className="font-mono text-xl font-bold text-white">
+              <div className="text-[10px] text-[#EEF3F1]/75 uppercase font-semibold">Test Clock</div>
+              <div className="font-mono text-xl font-bold text-white tabular-nums">
                 {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
               </div>
             </div>
             <button
               onClick={() => setTimerActive(!timerActive)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ml-2 ${timerActive ? 'bg-amber-500 text-slate-950' : 'bg-blue-600 text-white'}`}
+              className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition ml-1 cursor-pointer ${
+                timerActive
+                  ? 'bg-[#F4A62A] text-[#0E1F1E]'
+                  : 'bg-white/15 hover:bg-white/25 text-white border border-white/20'
+              }`}
             >
               {timerActive ? 'Pause' : 'Start Timer'}
             </button>
           </div>
 
           {/* Word Count */}
-          <div className="flex items-center gap-3 border-l border-slate-800 pl-6">
+          <div className="flex items-center gap-3 border-l border-white/15 pl-6">
             <div>
-              <div className="text-[10px] text-slate-400 uppercase font-semibold">Word Volume</div>
-              <div className="font-mono text-xl font-bold text-white flex items-center gap-2">
+              <div className="text-[10px] text-[#EEF3F1]/75 uppercase font-semibold">Word Volume</div>
+              <div className="font-mono text-xl font-bold text-white tabular-nums flex items-center gap-2">
                 <span>{wordCount}</span>
-                <span className="text-xs text-slate-400 font-normal">/ {targetWords} min</span>
+                <span className="text-xs text-[#EEF3F1]/70 font-normal">/ {targetWords} min</span>
               </div>
             </div>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isWordTargetMet ? 'bg-emerald-900 text-emerald-300 border border-emerald-600' : 'bg-rose-900 text-rose-300 border border-rose-600'}`}>
+            <span
+              className={`text-[11px] font-mono font-bold ${
+                isWordTargetMet ? 'text-[#6EE7B7]' : 'text-[#F4A62A]'
+              }`}
+            >
               {isWordTargetMet ? 'Threshold Met' : 'Underlength'}
             </span>
           </div>
         </div>
 
         {/* Tab switchers */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setActiveTab('editor')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${activeTab === 'editor' ? 'bg-white text-slate-900' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+            className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeTab === 'editor'
+                ? 'bg-white text-[#0E1F1E]'
+                : 'bg-[#0B3833] text-[#EEF3F1]/85 hover:text-white'
+            }`}
           >
             Essay Editor
           </button>
           <button
             onClick={() => setActiveTab('heatmap')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'heatmap' ? 'bg-white text-slate-900' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+            className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'heatmap'
+                ? 'bg-white text-[#0E1F1E]'
+                : 'bg-[#0B3833] text-[#EEF3F1]/85 hover:text-white'
+            }`}
           >
-            <Flame className="w-3.5 h-3.5 text-amber-400" />
+            <Flame className="w-3.5 h-3.5 text-[#F4A62A]" />
             <span>Syntax Heatmap</span>
           </button>
           {evaluation && (
             <button
               onClick={() => setActiveTab('evaluation')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'evaluation' ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+              className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'evaluation'
+                  ? 'bg-[#F4A62A] text-[#0E1F1E]'
+                  : 'bg-[#0B3833] text-[#EEF3F1]/85 hover:text-white'
+              }`}
             >
               <Award className="w-3.5 h-3.5" />
               <span>
@@ -668,46 +722,59 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
         </div>
       </div>
 
+      {/* Interactive Academic Task 1 Visual Data + Live Key-Trend Checklist */}
+      {activeTab === 'editor' && testType === 'task1' && (
+        <Task1VisualPromptStudio
+          compact
+          externalDraft={essayText}
+          onExternalDraftChange={setEssayText}
+          onPromptSelect={(text) => setPrompt(text)}
+          onShowToast={onShowToast}
+        />
+      )}
+
       {/* Editor Tab */}
       {activeTab === 'editor' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Assigned Exam Task Prompt:</span>
-            <p className="text-sm font-serif font-bold text-slate-900 leading-relaxed">
-              "{prompt}"
+        <div className="bg-white dark:bg-[#11201E] rounded-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-5 sm:p-7 space-y-4">
+          <div className="p-4 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/25">
+            <span className="text-[11px] font-mono font-bold text-[#0F4C45] dark:text-[#6EE7B7] uppercase tracking-wider block mb-1">
+              Assigned Exam Task Prompt
+            </span>
+            <p className="text-sm font-serif font-bold text-[#0E1F1E] dark:text-[#EEF3F1] leading-relaxed">
+              &ldquo;{prompt}&rdquo;
             </p>
           </div>
 
           <textarea
             value={essayText}
             onChange={(e) => setEssayText(e.target.value)}
-            placeholder="Compose your response here. Type naturally or paste from Voice Examiner / PESTLE Argument Generator..."
+            placeholder="Compose your response here. Your draft auto-syncs across devices when signed in..."
             rows={14}
-            className="w-full p-4 rounded-2xl border border-slate-200 font-serif text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-600 leading-relaxed"
+            className="w-full p-4 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 font-serif text-sm text-[#0E1F1E] dark:text-[#EEF3F1] focus:outline-none focus:ring-2 focus:ring-[#0F4C45] leading-relaxed"
           />
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
-            <div className="text-xs text-slate-500">
-              <span className="text-blue-700 font-semibold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                Practice Set 4-Criteria Diagnostic Engine (TR · CC · LR · GRA)
+            <div className="text-xs text-[#566664] dark:text-slate-400">
+              <span className="text-[#0F4C45] dark:text-[#6EE7B7] font-semibold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#F4A62A]" />
+                4-Criteria Diagnostic Engine (TR/TA · CC · LR · GRA) · Auto-synced
               </span>
             </div>
 
             <button
               onClick={handleEvaluate}
               disabled={isEvaluating}
-              className="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-700 to-blue-700 hover:from-indigo-800 hover:to-blue-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
+              className="min-h-[44px] px-6 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               {isEvaluating ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#F4A62A]" />
                   <span>Evaluating Rubric...</span>
                 </>
               ) : (
                 <>
-                  <Award className="w-4 h-4" />
-                  <span>Grade Essay & Generate Scorecard</span>
+                  <Award className="w-4 h-4 text-[#F4A62A]" />
+                  <span>Grade Essay &amp; Generate Scorecard</span>
                 </>
               )}
             </button>
@@ -717,17 +784,21 @@ export const AIMockSuite: React.FC<AIMockSuiteProps> = ({
 
       {/* Syntax Heatmap Tab */}
       {activeTab === 'heatmap' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+        <div className="bg-white dark:bg-[#11201E] rounded-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-5 sm:p-7 space-y-6">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">Grammar Complexity & Cohesion Visual Heatmap</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Examiners look for a balanced distribution of simple, compound, and complex sentence structures.</p>
+            <h3 className="font-display text-lg font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
+              Grammar Complexity &amp; Cohesion Visual Heatmap
+            </h3>
+            <p className="text-xs text-[#566664] dark:text-slate-400 mt-0.5">
+              Examiners look for a balanced distribution of simple, compound, and complex sentence structures.
+            </p>
           </div>
 
-          <div className="flex flex-wrap gap-4 text-xs font-semibold p-3 rounded-2xl bg-slate-50 border border-slate-200">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-400 inline-block"></span> Simple Clauses</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-400 inline-block"></span> Compound (and, but, so)</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-100 border border-purple-400 inline-block"></span> Complex (although, because, which)</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-200 text-amber-950 inline-block text-[9px] text-center font-bold">L</span> Cohesive Linkers</span>
+          <div className="flex flex-wrap gap-4 text-xs font-semibold p-3 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/25 text-[#0E1F1E] dark:text-slate-200">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-500 inline-block"></span> Simple Clauses</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-teal-100 border border-teal-500 inline-block"></span> Compound (and, but, so)</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-500 inline-block"></span> Complex (although, because, which)</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-[#F4A62A] text-[#0E1F1E] inline-block text-[9px] text-center font-bold">L</span> Cohesive Linkers</span>
           </div>
 
           {/* Parsed Sentences List */}

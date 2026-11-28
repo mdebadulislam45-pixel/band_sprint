@@ -20,6 +20,7 @@ import { audioManager } from '../../services/AudioManager';
 import { loadDiagnosticResult } from '../../services/diagnosticResultStore';
 import { IELTS_SPELLING_TRAPS } from '../../data/ieltsSpellingData';
 import { BarnabyCompanion } from '../BarnabyCompanion';
+import { InteractiveLearningPath } from '../learn/InteractiveLearningPath';
 import { getCurrentUser, getTopWeakness } from '../../utils/userStorage';
 import { aggregateExamHistory, validateOptionalHalfBand } from '../../utils/historyAggregation';
 import { getMistakes } from '../../utils/vaultStorage';
@@ -40,7 +41,7 @@ interface LearnPageProps {
   onShowToast?: (msg: string) => void;
 }
 
-export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate }) => {
+export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate, onShowToast }) => {
   const diagnostic = loadDiagnosticResult();
   const user = getCurrentUser();
   const agg = aggregateExamHistory(user?.progress?.examHistory || []);
@@ -242,6 +243,16 @@ export const LearnPage: React.FC<LearnPageProps> = ({ onNavigate }) => {
         examMode={examMode}
         compactStrip
         onNavigate={onNavigate}
+      />
+
+      {/* Interactive Evolving Band 8.0 Learning Path Map (Framer Motion) */}
+      <InteractiveLearningPath
+        diagnostic={diagnostic}
+        user={user}
+        currentEstimate={currentEstimate}
+        targetBand={targetBand}
+        onNavigate={onNavigate}
+        onShowToast={onShowToast}
       />
 
       {/* Featured Start Strip: Diagnostic + Study Plan */}

@@ -808,7 +808,25 @@ export const PomodoroDailySprintHub: React.FC<PomodoroDailySprintHubProps> = ({
           <div className="text-[11px] font-mono uppercase tracking-wider text-[#0F4C45] dark:text-[#6EE7B7] font-semibold flex flex-wrap items-center gap-2">
             <span>{pools.cycleLabel}</span>
             <span aria-hidden="true">·</span>
-            <span>Bangladeshi Learner Edition</span>
+            <span>
+              {pools.adaptivePath.difficultyTier === 'stretch'
+                ? 'Stretch Mode (Band 8.5–9.0)'
+                : pools.adaptivePath.difficultyTier === 'recovery'
+                ? 'Recovery Mode (Band 7.5–8.0)'
+                : 'Balanced Mode (Band 8.0)'}
+            </span>
+            {pools.adaptivePath.prioritizedVocabIds.length +
+              pools.adaptivePath.prioritizedGrammarIds.length >
+              0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-[#9B6314] dark:text-[#F4A62A]">
+                  {pools.adaptivePath.prioritizedVocabIds.length +
+                    pools.adaptivePath.prioritizedGrammarIds.length}{' '}
+                  Vault-Prioritized Lessons First
+                </span>
+              </>
+            )}
           </div>
           <h2 className="font-display text-lg sm:text-xl font-bold text-[#0E1F1E] dark:text-[#EEF3F1]">
             Timed Focus &amp; 5 Daily IELTS Targets
@@ -1251,12 +1269,20 @@ export const PomodoroDailySprintHub: React.FC<PomodoroDailySprintHubProps> = ({
               const item = filteredVocabList[idx];
               const isDone = sprintState.masteredVocabIds.includes(item.id);
               const isRevealed = Boolean(revealedFlashcardIds[item.id]);
+              const adaptiveMeta = pools.adaptivePath.priorityByItemId[item.id];
               return (
                 <div className="p-5 sm:p-6 rounded-2xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 space-y-5">
                   <div className="flex items-center justify-between gap-3 text-xs text-[#566664] dark:text-slate-400">
-                    <span className="font-mono font-semibold tabular-nums">
-                      Card {idx + 1} of {filteredVocabList.length} · {item.pos} · {item.bandLevel}
-                    </span>
+                    <div className="space-y-0.5">
+                      <span className="font-mono font-semibold tabular-nums block">
+                        Card {idx + 1} of {filteredVocabList.length} · {item.pos} · {item.bandLevel}
+                      </span>
+                      {adaptiveMeta && (
+                        <span className="text-[11px] font-semibold text-[#9B6314] dark:text-[#F4A62A] block">
+                          {adaptiveMeta.tag} · {adaptiveMeta.reason}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
@@ -1961,6 +1987,7 @@ export const PomodoroDailySprintHub: React.FC<PomodoroDailySprintHubProps> = ({
                   const isDone = sprintState.masteredGrammarIds.includes(rule.id);
                   const selectedAnswer = grammarAnswers[rule.id];
                   const isCorrect = selectedAnswer === rule.quickCheck.correctIndex;
+                  const adaptiveMeta = pools.adaptivePath.priorityByItemId[rule.id];
 
                   return (
                     <div
@@ -1981,6 +2008,11 @@ export const PomodoroDailySprintHub: React.FC<PomodoroDailySprintHubProps> = ({
                               · {rule.bandImpact}
                             </span>
                           </div>
+                          {adaptiveMeta && (
+                            <p className="text-[11px] font-semibold text-[#9B6314] dark:text-[#F4A62A] mt-0.5">
+                              {adaptiveMeta.tag} · {adaptiveMeta.reason}
+                            </p>
+                          )}
                           <p className="text-xs text-[#384543] dark:text-slate-300 mt-1">
                             {rule.englishExplanation}
                           </p>

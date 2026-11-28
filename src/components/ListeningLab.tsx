@@ -35,11 +35,15 @@ import {
   Filter,
   CheckCheck,
   Flame,
-  ListFilter
+  ListFilter,
+  Globe,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { soundManager } from '../utils/audioEffects';
 import { addMistake } from '../utils/vaultStorage';
 import { speakBritish, stopSpeech } from '../utils/britishVoice';
+import { getPreferredAccent, OfficialIELTSAccent } from '../config/voiceConfig';
 import { IELTSAudioPlayer } from './audio/IELTSAudioPlayer';
 import { AudioPlaybackWaveform } from './audio/AudioPlaybackWaveform';
 import { questionEngine, IELTSQuestion } from '../services/QuestionEngine';
@@ -75,6 +79,13 @@ import { setBarnabyAnalyzing } from '../utils/getBarnabyState';
 import { triggerBarnabyCelebration } from '../utils/barnabyStateEngine';
 import { recordHintRecoveryXp, XP_HINT_RECOVERY } from '../services/streakService';
 import type { MockExamSet } from '../data/mockExams';
+import {
+  ListeningAccentMode,
+  loadAdaptivePreferences,
+  saveAdaptivePreferences,
+  saveActiveLabDrafts,
+  resolveListeningSpeakerForAccent
+} from '../services/adaptivePreferencesStore';
 
 const LISTENING_STORAGE_KEY = 'ielts_sprint_listening_state_v3';
 
@@ -168,12 +179,106 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
   const [audioPlaybackState, setAudioPlaybackState] = useState<AudioPlaybackState>(audioService.getState());
   const [autoFollowAudio, setAutoFollowAudio] = useState<boolean>(true);
 
+  // Accent Rotation (UK / AU / US / Mixed) + Strict 1-Play Exam Mode with 30s Check-Your-Answers Countdown
+  const mapProfileAccentToListeningMode = (accent: OfficialIELTSAccent): ListeningAccentMode => {
+    if (accent === 'Australian') return 'au';
+    if (accent === 'American' || accent === 'Canadian') return 'us';
+    if (accent === 'British') return 'uk';
+    return 'mixed';
+  };
+
+  const [accentMode, setAccentMode] = useState<ListeningAccentMode>(
+    () => loadAdaptivePreferences().listeningAccent || mapProfileAccentToListeningMode(getPreferredAccent())
+  );
+  const [strictOnePlayMode, setStrictOnePlayMode] = useState<boolean>(
+    () => loadAdaptivePreferences().strictExamListening
+  );
+  const [sectionAudioConsumed, setSectionAudioConsumed] = useState<boolean>(false);
+  const [checkAnswersCountdownSec, setCheckAnswersCountdownSec] = useState<number | null>(null);
+  const wasPlayingRef = useRef<boolean>(false);
+
   useEffect(() => {
+    const onProfileAccentChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ accent?: OfficialIELTSAccent }>).detail;
+      if (detail?.accent) {
+        const mapped = mapProfileAccentToListeningMode(detail.accent);
+        setAccentMode(mapped);
+        saveAdaptivePreferences({ listeningAccent: mapped });
+      }
+    };
+    window.addEventListener('ielts_accent_changed', onProfileAccentChange);
     const unsub = audioService.subscribe((s) => {
       setAudioPlaybackState(s);
     });
-    return unsub;
+    return () => {
+      window.removeEventListener('ielts_accent_changed', onProfileAccentChange);
+      unsub();
+    };
   }, []);
+
+  // Detect natural completion of section audio to lock 1-Play Exam Mode & start 30s Check-Your-Answers timer
+  useEffect(() => {
+    const isNowPlaying = audioPlaybackState.isPlaying;
+    const dur = audioPlaybackState.duration || 0;
+    const cur = audioPlaybackState.currentTime || 0;
+    const nearEnd = dur > 5 && cur >= dur - 1.5;
+
+    if (wasPlayingRef.current && !isNowPlaying && nearEnd && strictOnePlayMode) {
+      setSectionAudioConsumed(true);
+      setCheckAnswersCountdownSec(30);
+      soundManager.playBeep(720, 0.08);
+      onShowToast('Section audio complete — 30 seconds to check your answers.');
+    }
+    wasPlayingRef.current = isNowPlaying;
+  }, [audioPlaybackState.isPlaying, audioPlaybackState.currentTime, audioPlaybackState.duration, strictOnePlayMode, onShowToast]);
+
+  // 30-second Check-Your-Answers countdown ticker
+  useEffect(() => {
+    if (checkAnswersCountdownSec === null) return;
+    if (checkAnswersCountdownSec <= 0) {
+      soundManager.playChimeTimeUp();
+      onShowToast('30-second answer check complete. Advance to the next section or submit.');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setCheckAnswersCountdownSec((prev) => (prev !== null && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [checkAnswersCountdownSec, onShowToast]);
+
+  // Sync active listening section across devices
+  useEffect(() => {
+    saveActiveLabDrafts({ activeModule: 'listening', listeningSection: activeSection });
+  }, [activeSection]);
+
+  const handleAccentChange = (nextAccent: ListeningAccentMode) => {
+    setAccentMode(nextAccent);
+    saveAdaptivePreferences({ listeningAccent: nextAccent });
+    audioService.stop();
+    stopSpeech();
+    soundManager.playBeep(560, 0.04);
+    const labels: Record<ListeningAccentMode, string> = {
+      uk: 'British RP (UK)',
+      au: 'Australian (AU)',
+      us: 'American (US)',
+      mixed: 'Mixed Exam Rotation (UK · AU · US)'
+    };
+    onShowToast(`Listening accent set to ${labels[nextAccent]}.`);
+  };
+
+  const handleToggleStrictExamMode = () => {
+    const next = !strictOnePlayMode;
+    setStrictOnePlayMode(next);
+    setSectionAudioConsumed(false);
+    setCheckAnswersCountdownSec(null);
+    saveAdaptivePreferences({ strictExamListening: next });
+    soundManager.playBeep(next ? 680 : 480, 0.05);
+    onShowToast(
+      next
+        ? 'Strict 1-Play Exam Mode enabled: audio plays once per section followed by a 30s review timer.'
+        : 'Practice Replay Mode restored: you can replay and seek freely.'
+    );
+  };
 
   // 1. Initial State Restoration from localStorage with IndexedDB fallback
   useEffect(() => {
@@ -447,6 +552,8 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
   // Handle Section Tab switching
   const handleSelectSection = (sec: 1 | 2 | 3 | 4) => {
     if (sec === activeSection && questions.length > 0) return;
+    setSectionAudioConsumed(false);
+    setCheckAnswersCountdownSec(null);
     setActiveSection(sec);
     loadSectionQuestions(sec, mode, true);
   };
@@ -667,13 +774,32 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
   // Audio Playback using professional audioManager & audioService (Synchronous user-gesture trigger)
   const handlePlayAudio = useCallback(() => {
     try {
+      if (strictOnePlayMode && sectionAudioConsumed) {
+        soundManager.playBeep(320, 0.08);
+        onShowToast('Strict 1-Play Exam Mode: this section audio has already played once. Switch sections or toggle Exam Mode off to replay.');
+        return;
+      }
+
       audioService.unlockAudio();
       soundManager.playBeep(600, 0.1);
 
       if (questions.length === 0) return;
 
       const dialogueLines: DialogueLine[] = currentDialogue.map((line, idx) => {
-        const speakerId = resolveDialogueLineSpeakerId(line, activeSection);
+        const baseSpeakerId = resolveDialogueLineSpeakerId(line, activeSection);
+        const isExaminerAnnouncer = /examiner/i.test(line.speaker || '');
+        const accentResolved = resolveListeningSpeakerForAccent(
+          accentMode,
+          line.gender || 'male',
+          idx,
+          activeSection
+        );
+        const speakerId =
+          accentMode === 'uk' && !isExaminerAnnouncer
+            ? baseSpeakerId
+            : isExaminerAnnouncer && accentMode === 'uk'
+            ? baseSpeakerId
+            : accentResolved.speakerId;
         const isLast = idx === currentDialogue.length - 1;
         return {
           speakerId,
@@ -695,7 +821,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
       };
       const sectionDialogueQuestion: IELTSQuestion = {
         ...firstQ,
-        id: `listening_sec_${activeSection}_${activeScenarioTopic || 'default'}`,
+        id: `listening_sec_${activeSection}_${activeScenarioTopic || 'default'}_${accentMode}`,
         module: 'listening',
         section: activeSection,
         topic: activeScenarioTopic || 'Practice Recording',
@@ -710,7 +836,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
       };
 
       audioManager.playQuestionAudio(sectionDialogueQuestion, {
-        allowReplay: true,
+        allowReplay: !strictOnePlayMode,
         onError: (err) => {
           if (isInterruptedPlaybackError(err)) return;
           onShowToast('Audio stream reconnection in progress...');
@@ -720,7 +846,7 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
       console.error('Audio unlock or trigger error:', err);
       onShowToast('Audio initialization error.');
     }
-  }, [currentDialogue, activeSection, questions, activeScenarioTopic, onShowToast]);
+  }, [currentDialogue, activeSection, questions, activeScenarioTopic, accentMode, strictOnePlayMode, sectionAudioConsumed, onShowToast]);
 
   const handleStopAudio = useCallback(() => {
     audioManager.pause();
@@ -1221,42 +1347,42 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
         />
       )}
 
-      {/* Top Banner & Header */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7 shadow-xs">
+      {/* Top Banner & Header (Editorial Deep Forest Teal + Dark Mode Parity) */}
+      <div className="bg-white dark:bg-[#11201E] rounded-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-5 sm:p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold font-mono">
-                <Volume2 className="w-3.5 h-3.5" /> Practice Computer-Delivered Suite
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono font-bold text-[#566664] dark:text-slate-400">
+              <span className="text-[#0F4C45] dark:text-[#6EE7B7] uppercase tracking-wider inline-flex items-center gap-1.5">
+                <Volume2 className="w-3.5 h-3.5 text-[#F4A62A]" />
+                <span>Computer-Delivered Listening Suite</span>
               </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold font-mono border border-slate-200">
-                <Layers className="w-3 h-3 text-slate-500" />
-                {bankStats.total} Questions in Bank
-              </span>
+              <span aria-hidden="true">·</span>
+              <span className="tabular-nums">{bankStats.total} Questions in Bank</span>
               {hasRestoredSession && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold font-mono">
-                  <Save className="w-3 h-3" /> Resumed Session
-                </span>
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-emerald-700 dark:text-emerald-300">Session Resumed</span>
+                </>
               )}
             </div>
 
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            <h2 className="font-display text-xl sm:text-2xl font-bold text-[#0E1F1E] dark:text-[#EEF3F1] tracking-tight">
               IELTS Listening Laboratory
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl">
-              Realistic British multi-speaker audio, interactive form filling, map labelling, and academic lectures.
-              Integrated with the adaptive QuestionEngine.
+            <p className="text-xs sm:text-sm text-[#566664] dark:text-slate-400 max-w-2xl">
+              Multi-accent IELTS audio (UK · AU · US · Mixed), strict 1-play exam mode with 30-second review timers, map labelling, and academic lectures.
             </p>
           </div>
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {/* Mode selector */}
-            <div className="inline-flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-bold">
+            <div className="inline-flex bg-[#EEF3F1] dark:bg-[#0B1514] p-1 rounded-xl border border-[#D3DDDA] dark:border-[#1F8A70]/30 text-xs font-bold">
               <button
                 onClick={() => handleSelectMode('adaptive_10')}
-                className={`px-3 py-1.5 rounded-xl transition ${
-                  mode === 'adaptive_10' ? 'bg-white text-blue-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  mode === 'adaptive_10'
+                    ? 'bg-[#0F4C45] text-white'
+                    : 'text-[#566664] dark:text-slate-300 hover:text-[#0E1F1E]'
                 }`}
                 title="10 Questions calibrated adaptively"
               >
@@ -1264,8 +1390,10 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               </button>
               <button
                 onClick={() => handleSelectMode('all')}
-                className={`px-3 py-1.5 rounded-xl transition ${
-                  mode === 'all' ? 'bg-white text-blue-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  mode === 'all'
+                    ? 'bg-[#0F4C45] text-white'
+                    : 'text-[#566664] dark:text-slate-300 hover:text-[#0E1F1E]'
                 }`}
                 title="Practice all available questions for this section"
               >
@@ -1273,8 +1401,10 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
               </button>
               <button
                 onClick={() => handleSelectMode('weakness')}
-                className={`px-3 py-1.5 rounded-xl transition ${
-                  mode === 'weakness' ? 'bg-white text-rose-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  mode === 'weakness'
+                    ? 'bg-rose-700 text-white'
+                    : 'text-[#566664] dark:text-slate-300 hover:text-[#0E1F1E]'
                 }`}
                 title="Focus on mistake review and low accuracy questions"
               >
@@ -1284,146 +1414,189 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
 
             <button
               onClick={handleShuffleFreshScenario}
-              className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold text-xs border border-purple-200 flex items-center gap-1.5 transition active:scale-95 shadow-2xs"
+              className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#EEF3F1] dark:bg-[#0B1514] hover:bg-[#D3DDDA] dark:hover:bg-[#1F8A70]/25 text-[#0F4C45] dark:text-[#6EE7B7] font-bold text-xs border border-[#D3DDDA] dark:border-[#1F8A70]/30 flex items-center gap-1.5 transition cursor-pointer"
               title="Load fresh questions without repetition"
             >
-              <Shuffle className="w-3.5 h-3.5 text-purple-600" />
+              <Shuffle className="w-3.5 h-3.5 text-[#F4A62A]" />
               <span className="hidden sm:inline">Fresh Set</span>
             </button>
 
             <button
               onClick={handleResetSession}
-              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 flex items-center gap-1.5 transition active:scale-95"
+              className="min-h-[40px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#0B1514] hover:bg-[#F7F9F8] dark:hover:bg-[#11201E] text-[#0E1F1E] dark:text-slate-200 font-bold text-xs border border-[#D3DDDA] dark:border-[#1F8A70]/30 flex items-center gap-1.5 transition cursor-pointer"
               title="Reset current session"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              <RotateCcw className="w-3.5 h-3.5 text-[#566664]" />
               <span>Reset</span>
             </button>
           </div>
         </div>
 
-        {/* Live Progress Bar */}
-        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-slate-700">
-              Progress: {answeredCount} of {questions.length} completed
-            </span>
-            {flaggedCount > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                <Flag className="w-3 h-3 fill-amber-500 text-amber-500" /> {flaggedCount} Flagged
-              </span>
-            )}
+        {/* Accent Rotation + Strict 1-Play Exam Mode Realism Controls */}
+        <div className="mt-4 pt-4 border-t border-[#EEF3F1] dark:border-[#1F8A70]/25 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-1.5 font-semibold text-[#0E1F1E] dark:text-[#EEF3F1]">
+              <Globe className="w-3.5 h-3.5 text-[#0F4C45] dark:text-[#F4A62A]" />
+              <span>Accent Rotation:</span>
+            </div>
+            <div
+              data-testid="listening-accent-selector"
+              className="inline-flex bg-[#EEF3F1] dark:bg-[#0B1514] p-0.5 rounded-lg border border-[#D3DDDA] dark:border-[#1F8A70]/30 font-mono text-[11px] font-bold"
+            >
+              {(['uk', 'au', 'us', 'mixed'] as ListeningAccentMode[]).map((acc) => (
+                <button
+                  key={acc}
+                  type="button"
+                  onClick={() => handleAccentChange(acc)}
+                  className={`px-2.5 py-1 rounded-md uppercase transition cursor-pointer ${
+                    accentMode === acc
+                      ? 'bg-[#0F4C45] text-white'
+                      : 'text-[#566664] dark:text-slate-300 hover:text-[#0E1F1E]'
+                  }`}
+                >
+                  {acc}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              data-testid="strict-exam-mode-toggle"
+              onClick={handleToggleStrictExamMode}
+              className={`min-h-[34px] px-3 py-1 rounded-lg border font-bold text-xs inline-flex items-center gap-1.5 transition cursor-pointer ${
+                strictOnePlayMode
+                  ? 'bg-[#FEF6E8] dark:bg-[#F4A62A]/15 text-[#9B6314] dark:text-[#F4A62A] border-[#F4A62A]/60'
+                  : 'bg-[#F7F9F8] dark:bg-[#0B1514] text-[#566664] dark:text-slate-300 border-[#D3DDDA] dark:border-[#1F8A70]/30 hover:border-[#0F4C45]'
+              }`}
+            >
+              {strictOnePlayMode ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+              <span>Strict 1-Play Exam Mode: {strictOnePlayMode ? 'ON' : 'OFF'}</span>
+            </button>
           </div>
 
-          <div className="w-full sm:w-64 bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200">
-            <div
-              className="bg-blue-600 h-full rounded-full transition-all duration-300"
-              style={{ width: `${questions.length > 0 ? (answeredCount / questions.length) * 100 : 0}%` }}
-            />
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-[#0E1F1E] dark:text-[#EEF3F1] font-mono tabular-nums">
+              {answeredCount}/{questions.length} answered
+            </span>
+            {flaggedCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#9B6314] dark:text-[#F4A62A]">
+                <Flag className="w-3 h-3 fill-[#F4A62A] text-[#F4A62A]" /> {flaggedCount}
+              </span>
+            )}
+            <div className="w-36 sm:w-44 bg-[#EEF3F1] dark:bg-[#0B1514] rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-[#0F4C45] dark:bg-[#1F8A70] h-full rounded-full transition-all duration-300"
+                style={{ width: `${questions.length > 0 ? (answeredCount / questions.length) * 100 : 0}%` }}
+              />
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Real 30-Second "Check Your Answers" Countdown Banner (Strict Exam Pacing) */}
+      {checkAnswersCountdownSec !== null && (
+        <div
+          data-testid="check-answers-countdown-banner"
+          className="p-4 rounded-2xl bg-[#0F4C45] text-white border border-[#1F8A70]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#0B3833] border border-[#F4A62A]/40 flex items-center justify-center font-mono font-bold text-base text-[#F4A62A] tabular-nums shrink-0">
+              {checkAnswersCountdownSec}s
+            </div>
+            <div>
+              <div className="text-xs font-mono uppercase tracking-wider font-bold text-[#F4A62A]">
+                IELTS Exam Pacing · Check Your Answers
+              </div>
+              <p className="text-xs text-[#EEF3F1]/90">
+                {checkAnswersCountdownSec > 0
+                  ? `You now have ${checkAnswersCountdownSec} seconds to check spelling, plurals, and word limits for Section ${activeSection}.`
+                  : `Answer check window complete for Section ${activeSection}.`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {activeSection < 4 && (
+              <button
+                type="button"
+                onClick={() => handleSelectSection((activeSection + 1) as 1 | 2 | 3 | 4)}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-[#F4A62A] hover:bg-[#d98f1d] text-[#0E1F1E] font-bold text-xs cursor-pointer"
+              >
+                Next Section ({activeSection + 1}) →
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setCheckAnswersCountdownSec(null);
+                setSectionAudioConsumed(false);
+              }}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Section Switcher Tabs (1 to 4) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200">
-        <button
-          onClick={() => handleSelectSection(1)}
-          className={`flex items-center justify-between p-2.5 sm:px-3 sm:py-2.5 rounded-xl text-xs font-bold transition text-left ${
-            activeSection === 1
-              ? 'bg-white text-blue-900 shadow-xs border border-slate-200/90'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-          }`}
-        >
-          <div className="flex items-center gap-2 truncate">
-            <Users className="w-4 h-4 text-blue-600 shrink-0" />
-            <span className="truncate">Section 1: Social & Forms</span>
-          </div>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-            {bankStats.s1} Qs
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleSelectSection(2)}
-          className={`flex items-center justify-between p-2.5 sm:px-3 sm:py-2.5 rounded-xl text-xs font-bold transition text-left ${
-            activeSection === 2
-              ? 'bg-white text-blue-900 shadow-xs border border-slate-200/90'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-          }`}
-        >
-          <div className="flex items-center gap-2 truncate">
-            <Compass className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span className="truncate">Section 2: Maps & Guides</span>
-          </div>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-            {bankStats.s2} Qs
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleSelectSection(3)}
-          className={`flex items-center justify-between p-2.5 sm:px-3 sm:py-2.5 rounded-xl text-xs font-bold transition text-left ${
-            activeSection === 3
-              ? 'bg-white text-blue-900 shadow-xs border border-slate-200/90'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-          }`}
-        >
-          <div className="flex items-center gap-2 truncate">
-            <GraduationCap className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="truncate">Section 3: Academic Debate</span>
-          </div>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-            {bankStats.s3} Qs
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleSelectSection(4)}
-          className={`flex items-center justify-between p-2.5 sm:px-3 sm:py-2.5 rounded-xl text-xs font-bold transition text-left ${
-            activeSection === 4
-              ? 'bg-white text-blue-900 shadow-xs border border-slate-200/90'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-          }`}
-        >
-          <div className="flex items-center gap-2 truncate">
-            <BookOpen className="w-4 h-4 text-rose-600 shrink-0" />
-            <span className="truncate">Section 4: University Lecture</span>
-          </div>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-            {bankStats.s4} Qs
-          </span>
-        </button>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 bg-[#EEF3F1] dark:bg-[#0B1514] p-1.5 rounded-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/30">
+        {[
+          { sec: 1 as const, label: 'Section 1: Social & Forms', count: bankStats.s1, Icon: Users },
+          { sec: 2 as const, label: 'Section 2: Maps & Guides', count: bankStats.s2, Icon: Compass },
+          { sec: 3 as const, label: 'Section 3: Academic Debate', count: bankStats.s3, Icon: GraduationCap },
+          { sec: 4 as const, label: 'Section 4: University Lecture', count: bankStats.s4, Icon: BookOpen }
+        ].map(({ sec, label, count, Icon }) => (
+          <button
+            key={sec}
+            onClick={() => handleSelectSection(sec)}
+            className={`flex items-center justify-between p-2.5 sm:px-3 sm:py-2.5 rounded-xl text-xs font-bold transition text-left cursor-pointer ${
+              activeSection === sec
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#566664] dark:text-slate-300 hover:bg-white/70 dark:hover:bg-[#11201E]'
+            }`}
+          >
+            <div className="flex items-center gap-2 truncate">
+              <Icon className={`w-4 h-4 shrink-0 ${activeSection === sec ? 'text-[#F4A62A]' : 'text-[#0F4C45] dark:text-[#6EE7B7]'}`} />
+              <span className="truncate">{label}</span>
+            </div>
+            <span
+              className={`text-[10px] font-mono tabular-nums shrink-0 ${
+                activeSection === sec ? 'text-[#EEF3F1]/80' : 'text-[#566664] dark:text-slate-400'
+              }`}
+            >
+              {count} Qs
+            </span>
+          </button>
+        ))}
       </div>
 
-      {/* 🎧 Interactive Audio Scenario / Track Selector (Prevents Repeated Audio Tracks) */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-blue-50 via-indigo-50/70 to-slate-50 border border-blue-200/90 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* Interactive Audio Scenario / Track Selector */}
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-[#EEF3F1] dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/35 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-            <Radio className="w-5 h-5 animate-pulse" />
+          <div className="w-9 h-9 rounded-xl bg-[#0F4C45] text-[#F4A62A] flex items-center justify-center shrink-0">
+            <Radio className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono font-black uppercase text-blue-700 tracking-wider">
-                Active Audio Track · Section {activeSection}
+            <div className="flex items-center gap-2 text-[11px] font-mono font-bold text-[#0F4C45] dark:text-[#6EE7B7]">
+              <span className="uppercase tracking-wider">
+                Active Track · Section {activeSection} · {accentMode.toUpperCase()} Voice
               </span>
-              <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-mono font-bold">
-                {availableTopicsForSection.length} Scenarios
-              </span>
+              <span aria-hidden="true">·</span>
+              <span>{availableTopicsForSection.length} Scenarios</span>
             </div>
-            <div className="text-sm font-black text-slate-900 truncate">
+            <div className="text-sm font-bold text-[#0E1F1E] dark:text-[#EEF3F1] truncate">
               {activeScenarioTopic || currentQ?.topic || 'Practice Audio'}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {/* Dropdown to pick any specific scenario */}
           <div className="relative">
             <select
               aria-label="Select audio scenario"
               value={activeScenarioTopic || currentQ?.topic || ''}
               onChange={(e) => handleSwitchScenario(e.target.value)}
-              className="appearance-none bg-white border border-slate-300 hover:border-blue-400 text-slate-800 text-xs font-bold py-2 pl-3 pr-8 rounded-xl shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[200px] sm:max-w-[260px] truncate"
+              className="appearance-none bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/35 hover:border-[#0F4C45] text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-bold py-2 pl-3 pr-8 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0F4C45] cursor-pointer max-w-[200px] sm:max-w-[260px] truncate"
             >
               {availableTopicsForSection.map((t) => (
                 <option key={t} value={t}>
@@ -1431,16 +1604,15 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                 </option>
               ))}
             </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <ChevronDown className="w-3.5 h-3.5 text-[#566664] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
-          {/* 🎲 Different Audio Button */}
           <button
             onClick={() => handleSwitchScenario()}
-            className="min-h-[36px] px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs hover:shadow transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
+            className="min-h-[38px] px-3.5 py-2 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
             title="Load a completely different scenario and audio track"
           >
-            <Shuffle className="w-3.5 h-3.5" />
+            <Shuffle className="w-3.5 h-3.5 text-[#F4A62A]" />
             <span className="whitespace-nowrap">Different Audio</span>
           </button>
         </div>
@@ -1453,64 +1625,67 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
       >
         <IELTSAudioPlayer
           title={`Listening Section ${activeSection}: ${activeScenarioTopic || currentQ?.topic || 'Original Practice Recording'}`}
-          subtitle="Original Practice Audio · British RP Multi-Speaker Studio (IELTS-style)"
-          questionId={`listening_sec_${activeSection}_${activeScenarioTopic || 'default'}`}
-          audioId={computeContentFingerprint(currentDialogue.map((d) => d.text).join('|'), `sec${activeSection}`)}
+          subtitle={
+            strictOnePlayMode && sectionAudioConsumed
+              ? 'Strict 1-Play Mode: Recording completed once (locked)'
+              : `Multi-Accent IELTS Studio · ${accentMode.toUpperCase()} Rotation${strictOnePlayMode ? ' · 1-Play Exam Lock' : ''}`
+          }
+          questionId={`listening_sec_${activeSection}_${activeScenarioTopic || 'default'}_${accentMode}`}
+          audioId={computeContentFingerprint(currentDialogue.map((d) => d.text).join('|'), `sec${activeSection}_${accentMode}`)}
           onPlay={handlePlayAudio}
           onPause={handleStopAudio}
           onRetry={handlePlayAudio}
         />
       </AudioErrorBoundary>
 
-      {/* Interactive 10-Question Audio Timestamp Sync Strip (Calibrated to 47s recording timeline) */}
+      {/* Interactive 10-Question Audio Timestamp Sync Strip */}
       {audioSyncCues.length > 0 && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+        <div className="bg-white dark:bg-[#11201E] rounded-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-4 sm:p-5 space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#EEF3F1] dark:border-[#1F8A70]/25">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0">
-                <Radio className={`w-4 h-4 ${audioPlaybackState.isPlaying ? 'animate-pulse text-blue-600' : 'text-slate-500'}`} />
+              <div className="w-8 h-8 rounded-xl bg-[#EEF3F1] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 text-[#0F4C45] dark:text-[#6EE7B7] flex items-center justify-center shrink-0">
+                <Radio className="w-4 h-4" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 font-mono">
-                    Audio Sync Timeline ({questions.length} Questions Tracked)
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#0E1F1E] dark:text-[#EEF3F1] font-mono">
+                    Audio Sync Timeline ({questions.length} Qs)
                   </h4>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold border border-slate-200">
-                    {formatAudioTimestamp(audioDurationForSync)} Studio Track
+                  <span className="text-[11px] font-mono text-[#566664] dark:text-slate-400 tabular-nums">
+                    · {formatAudioTimestamp(audioDurationForSync)}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 font-medium">
+                <p className="text-[11px] text-[#566664] dark:text-slate-400">
                   {audioPlaybackState.isPlaying
-                    ? `Playing audio cue for Question ${audioSyncCues[activeAudioCueIdx]?.questionNumber || 1} (${audioSyncCues[activeAudioCueIdx]?.timeRangeLabel || ''})`
+                    ? `Playing cue for Q${audioSyncCues[activeAudioCueIdx]?.questionNumber || 1} (${audioSyncCues[activeAudioCueIdx]?.timeRangeLabel || ''})`
+                    : strictOnePlayMode
+                    ? 'Strict 1-Play Mode active — cues highlight live as the track plays.'
                     : 'Click any question cue to jump audio and sync active question.'}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5 self-start sm:self-auto">
-              {/* Playhead Time */}
-              <div className="px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs font-bold text-slate-700">
+              <div className="px-2.5 py-1 rounded-xl bg-[#F7F9F8] dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 font-mono text-xs font-bold text-[#0E1F1E] dark:text-[#EEF3F1] tabular-nums">
                 {formatAudioTimestamp(audioPlaybackState.currentTime || 0)} / {formatAudioTimestamp(audioDurationForSync)}
               </div>
 
-              {/* Auto-Follow Toggle */}
               <button
                 type="button"
                 onClick={() => setAutoFollowAudio((prev) => !prev)}
-                className={`min-h-[32px] px-3 py-1 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 cursor-pointer border ${
+                className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 cursor-pointer border ${
                   autoFollowAudio
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                    ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+                    : 'bg-[#F7F9F8] dark:bg-[#0B1514] text-[#566664] dark:text-slate-300 border-[#D3DDDA] dark:border-[#1F8A70]/30'
                 }`}
                 title="When ON, active question automatically switches as audio plays"
               >
-                <Sparkles className="w-3 h-3" />
+                <Sparkles className="w-3 h-3 text-[#F4A62A]" />
                 <span>Auto-Follow: {autoFollowAudio ? 'ON' : 'OFF'}</span>
               </button>
             </div>
           </div>
 
-          {/* 10-Question Cue Buttons Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2">
             {audioSyncCues.map((cue, idx) => {
               const isPlayingCue = audioPlaybackState.isPlaying && activeAudioCueIdx === idx;
@@ -1523,43 +1698,49 @@ export const ListeningLab: React.FC<ListeningLabProps> = React.memo(({ onShowToa
                 <button
                   key={cue.questionId}
                   type="button"
-                  onClick={() => handleSeekToQuestionAudio(idx)}
-                  className={`group relative p-2 rounded-2xl border text-center transition flex flex-col items-center justify-between min-h-[58px] cursor-pointer ${
+                  onClick={() => {
+                    if (strictOnePlayMode) {
+                      setActiveQuestionIndex(idx);
+                      return;
+                    }
+                    handleSeekToQuestionAudio(idx);
+                  }}
+                  className={`group relative p-2 rounded-xl border text-center transition flex flex-col items-center justify-between min-h-[56px] cursor-pointer ${
                     isPlayingCue
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400 ring-offset-1'
+                      ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
                       : isSelectedView
-                      ? 'bg-blue-50 text-blue-900 border-blue-400 ring-1 ring-blue-300'
+                      ? 'bg-[#EEF3F1] dark:bg-[#1F8A70]/25 text-[#0F4C45] dark:text-[#EEF3F1] border-[#0F4C45]'
                       : isRight
-                      ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100/70'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 border-emerald-400/50'
                       : isWrong
-                      ? 'bg-rose-50 text-rose-900 border-rose-300 hover:bg-rose-100/70'
+                      ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200 border-rose-400/50'
                       : isAnswered
-                      ? 'bg-slate-50 text-slate-800 border-blue-200 hover:bg-blue-50/50'
-                      : 'bg-slate-50/70 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                      ? 'bg-[#F7F9F8] dark:bg-[#0B1514] text-[#0E1F1E] dark:text-[#EEF3F1] border-[#1F8A70]/40'
+                      : 'bg-[#F7F9F8] dark:bg-[#0B1514] text-[#566664] dark:text-slate-300 border-[#D3DDDA] dark:border-[#1F8A70]/25 hover:border-[#0F4C45]'
                   }`}
                   title={`Question ${cue.questionNumber} · Spoken at ${cue.timeRangeLabel}: ${cue.promptPreview}`}
                 >
                   <div className="flex items-center justify-between w-full px-1">
-                    <span className={`font-mono text-xs font-black ${isPlayingCue ? 'text-white' : 'text-slate-900'}`}>
+                    <span className={`font-mono text-xs font-bold ${isPlayingCue ? 'text-white' : ''}`}>
                       Q{cue.questionNumber}
                     </span>
-                    {isPlayingCue ? (
-                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                    ) : isAnswered ? (
+                    {isAnswered && (
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          isPlayingCue ? 'bg-white' : isRight ? 'bg-emerald-500' : isWrong ? 'bg-rose-500' : 'bg-blue-500'
+                          isPlayingCue
+                            ? 'bg-[#F4A62A]'
+                            : isRight
+                            ? 'bg-emerald-500'
+                            : isWrong
+                            ? 'bg-rose-500'
+                            : 'bg-[#0F4C45] dark:bg-[#1F8A70]'
                         }`}
                       />
-                    ) : null}
+                    )}
                   </div>
                   <span
-                    className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-md mt-1 ${
-                      isPlayingCue
-                        ? 'bg-blue-700/80 text-blue-100'
-                        : isSelectedView
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-white/80 text-slate-600 border border-slate-200/60'
+                    className={`font-mono text-[10px] font-bold mt-1 tabular-nums ${
+                      isPlayingCue ? 'text-[#F4A62A]' : 'text-[#566664] dark:text-slate-400'
                     }`}
                   >
                     {cue.timestampLabel}

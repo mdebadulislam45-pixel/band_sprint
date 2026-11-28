@@ -44,7 +44,7 @@ const DRAG_THRESHOLD_PX = 6;
 const DOUBLE_TAP_WINDOW_MS = 260;
 const LONG_PRESS_DURATION_MS = 580;
 
-export const POS_STORAGE_KEY = 'barnaby_pos_v15';
+export const POS_STORAGE_KEY = 'barnaby_pos_v16';
 const LEGACY_POS_KEYS = [
   'barnaby_pos_v1',
   'barnaby_pos_v2',
@@ -60,6 +60,7 @@ const LEGACY_POS_KEYS = [
   'barnaby_pos_v12',
   'barnaby_pos_v13',
   'barnaby_pos_v14',
+  'barnaby_pos_v15',
   'bandsprint_barnaby_pos_v1',
   'bandsprint_barnaby_float_pos_v1',
   'bandsprint_barnaby_float_pos_v2',
@@ -67,10 +68,10 @@ const LEGACY_POS_KEYS = [
 
 const MOBILE_CHAR_SIZE = 76;
 const DESKTOP_CHAR_SIZE = 96;
-const MOBILE_BOTTOM_OFFSET = 68;
-const DESKTOP_BOTTOM_OFFSET = 24;
+const MOBILE_BOTTOM_OFFSET = 76;
+const DESKTOP_BOTTOM_OFFSET = 16;
 const MOBILE_RIGHT_OFFSET = 12;
-const DESKTOP_RIGHT_OFFSET = 24;
+const DESKTOP_RIGHT_OFFSET = 16;
 
 function getViewportMetrics(customSize?: number) {
   if (typeof window === 'undefined') {

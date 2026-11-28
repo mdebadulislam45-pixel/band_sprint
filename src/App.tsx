@@ -24,6 +24,7 @@ import { BottomNav } from './components/navigation/BottomNav';
 import { DesktopSidebar } from './components/navigation/DesktopSidebar';
 import { MobileSidebarDrawer } from './components/navigation/MobileSidebarDrawer';
 import { FloatingBarnaby } from './components/FloatingBarnaby';
+import { DailyReminderManager } from './components/reminders/DailyReminderManager';
 
 // Theme Provider
 import { ThemeProvider } from './context/ThemeContext';
@@ -282,23 +283,6 @@ function AppContent() {
     }
   }, [isPreAuthSurveyOpen, isGoogleAuthOpen]);
 
-  useEffect(() => {
-    const handleOpenLegalEvent = (e: Event) => {
-      const detail = (e as CustomEvent<'terms' | 'privacy'>).detail;
-      setLegalTab(detail === 'privacy' ? 'privacy' : 'terms');
-      setIsLegalOpen(true);
-    };
-    const handleOpenContactEvent = () => {
-      setIsContactOpen(true);
-    };
-    window.addEventListener('open_legal_modal', handleOpenLegalEvent);
-    window.addEventListener('open_contact_modal', handleOpenContactEvent);
-    return () => {
-      window.removeEventListener('open_legal_modal', handleOpenLegalEvent);
-      window.removeEventListener('open_contact_modal', handleOpenContactEvent);
-    };
-  }, []);
-
   // Sync user and mistakes (single consolidated listener for auth/progress/vault events)
   const syncUserData = useCallback(() => {
     const activeUser = getCurrentUser();
@@ -342,8 +326,10 @@ function AppContent() {
     };
 
     const handleOpenShowcase = () => setIsShowcaseOpen(true);
-    const handleOpenLegal = (e: any) => {
-      setLegalTab(e?.detail?.tab || 'terms');
+    const handleOpenLegal = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail;
+      const requestedTab = typeof detail === 'string' ? detail : detail?.tab;
+      setLegalTab(requestedTab === 'privacy' ? 'privacy' : 'terms');
       setIsLegalOpen(true);
     };
     const handleOpenContact = () => setIsContactOpen(true);
@@ -566,14 +552,16 @@ function AppContent() {
           <WritingLabPage
             onBack={goBack}
             onShowToast={showToast}
-            onTransferToMock={() => navigate('/practice/writing')}
+            onTransferToMock={(_text, title) => {
+              showToast(`Loaded "${title || 'Essay Draft'}" into the Writing Exam Room.`);
+            }}
           />
         );
       case '/practice/speaking':
         return (
           <SpeakingLabPage
             onBack={goBack}
-            onGradeInMock={() => navigate('/practice/writing')}
+            onGradeInMock={() => navigate('/practice/mock-tests')}
             onShowToast={showToast}
             onNavigateToVault={() => setIsVaultOpen(true)}
           />
@@ -613,13 +601,26 @@ function AppContent() {
       case '/learn/diagnostic':
         return <DiagnosticTestPage onBack={goBack} onNavigate={navigate} onShowToast={showToast} />;
       case '/learn/study-plan':
-        return <StudyPlanPage onBack={goBack} onNavigateToModule={(m) => navigate(`/practice/${m}`)} onShowToast={showToast} onOpenDiagnostic={() => navigate('/learn/diagnostic')} />;
+        return (
+          <StudyPlanPage
+            onBack={goBack}
+            onNavigateToModule={(m) => {
+              if (m === 'bandcalculator') {
+                setIsBandModalOpen(true);
+                return;
+              }
+              navigate(m);
+            }}
+            onShowToast={showToast}
+            onOpenDiagnostic={() => navigate('/learn/diagnostic')}
+          />
+        );
       case '/learn/bangla-guide':
-        return <BanglaIELTSGuide onNavigateToModule={(m) => navigate(`/practice/${m}`)} onShowToast={showToast} />;
+        return <BanglaIELTSGuide onNavigateToModule={(m) => navigate(m)} onShowToast={showToast} />;
       case '/learn/beginner-101':
-        return <Beginner101 onNavigate={(m) => navigate(`/practice/${m}`)} />;
+        return <Beginner101 onNavigate={(m) => navigate(m)} />;
       case '/learn/slide-guide':
-        return <SlideGuide onNavigate={(m) => navigate(`/practice/${m}`)} />;
+        return <SlideGuide onNavigate={(m) => navigate(m)} />;
       case '/learn/task1-visualizer':
         return <Task1Visualizer onShowToast={showToast} />;
       case '/learn/argument-matrix':
@@ -643,16 +644,7 @@ function AppContent() {
         return <QuestionHistoryPage onBack={goBack} onNavigate={navigate} onShowToast={showToast} />;
       case '/progress/saved':
       case '/progress/mistakes':
-        return (
-          <ProgressPage
-            onNavigate={navigate}
-            onShowToast={showToast}
-            onOpenBandModal={() => setIsBandModalOpen(true)}
-            onOpenVault={() => setIsVaultOpen(true)}
-            user={user}
-            mistakeCount={mistakeCount}
-          />
-        );
+        return <MistakeVault onShowToast={showToast} />;
       case '/progress/calendar':
         return <SprintCalendarPage onNavigate={navigate} onShowToast={showToast} />;
       case '/progress/admin-analytics':
@@ -798,7 +790,6 @@ function AppContent() {
               <Breadcrumbs
                 items={breadcrumbItems}
                 onNavigate={navigate}
-                onBack={goBack}
               />
             </div>
           )}
@@ -842,6 +833,7 @@ function AppContent() {
       {isVaultOpen && (
         <Suspense fallback={null}>
           <MistakeVault
+            isModal
             isOpen={isVaultOpen}
             onClose={() => setIsVaultOpen(false)}
             onShowToast={showToast}
@@ -957,6 +949,16 @@ function AppContent() {
       {/* Offline / Reconnected Study Pack Indicator */}
       <OfflineStatusIndicator />
       </div>
+
+      {/* Root-Level Recurring Daily BandSprint Browser Notification Scheduler */}
+      {isLoggedIn && (
+        <DailyReminderManager
+          currentPath={currentPath}
+          user={user}
+          onNavigate={navigate}
+          onShowToast={showToast}
+        />
+      )}
 
       {/* Root-Level Persistent Draggable Floating 3D Barnaby Companion (Auto-unmounts in timed exams) */}
       <FloatingBarnaby

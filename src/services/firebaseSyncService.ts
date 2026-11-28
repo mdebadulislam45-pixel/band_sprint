@@ -66,6 +66,28 @@ import {
   sanitizeDailySprintProgress,
   mergeDailySprintProgress
 } from '../utils/dailySprintProgressStore';
+import {
+  AdaptivePreferencesState,
+  ActiveLabDraftsState,
+  ADAPTIVE_PREFERENCES_SAVED_EVENT,
+  ACTIVE_LAB_DRAFTS_SAVED_EVENT,
+  ADAPTIVE_DIFFICULTY_UPDATED_EVENT,
+  loadAdaptivePreferences,
+  saveAdaptivePreferences,
+  sanitizeAdaptivePreferences,
+  loadActiveLabDrafts,
+  saveActiveLabDrafts,
+  sanitizeActiveLabDrafts,
+  mergeActiveLabDrafts
+} from './adaptivePreferencesStore';
+import {
+  AchievementsPersistenceState,
+  ACHIEVEMENTS_SAVED_EVENT,
+  loadAchievementsState,
+  saveAchievementsState,
+  sanitizeAchievementsState,
+  mergeAchievementsState
+} from './achievementService';
 
 export type SubmissionModule = 'listening' | 'reading' | 'writing' | 'speaking' | 'full_mock';
 
@@ -248,7 +270,14 @@ export function hydrateSubmissionDocToExamHistory(
   };
 }
 
-type StudyStateKind = 'diagnostic' | 'examSetup' | 'spellingProgress' | 'dailySprintProgress';
+type StudyStateKind =
+  | 'diagnostic'
+  | 'examSetup'
+  | 'spellingProgress'
+  | 'dailySprintProgress'
+  | 'adaptivePreferences'
+  | 'activeLabDrafts'
+  | 'achievements';
 
 class FirebaseSyncService {
   private currentUser: FirebaseUser | null = null;
@@ -296,6 +325,34 @@ class FirebaseSyncService {
         const detail = (e as CustomEvent<DailySprintProgressState>).detail;
         if (this.currentUser && detail) {
           this.saveStudyStateToFirestore(this.currentUser.uid, 'dailySprintProgress', detail).catch(() => {});
+        }
+      });
+
+      window.addEventListener(ADAPTIVE_PREFERENCES_SAVED_EVENT, (e: Event) => {
+        const detail = (e as CustomEvent<AdaptivePreferencesState>).detail;
+        if (this.currentUser && detail) {
+          this.saveStudyStateToFirestore(this.currentUser.uid, 'adaptivePreferences', detail).catch(() => {});
+        }
+      });
+
+      window.addEventListener(ADAPTIVE_DIFFICULTY_UPDATED_EVENT, () => {
+        if (this.currentUser) {
+          const prefs = loadAdaptivePreferences();
+          this.saveStudyStateToFirestore(this.currentUser.uid, 'adaptivePreferences', prefs).catch(() => {});
+        }
+      });
+
+      window.addEventListener(ACTIVE_LAB_DRAFTS_SAVED_EVENT, (e: Event) => {
+        const detail = (e as CustomEvent<ActiveLabDraftsState>).detail;
+        if (this.currentUser && detail) {
+          this.saveStudyStateToFirestore(this.currentUser.uid, 'activeLabDrafts', detail).catch(() => {});
+        }
+      });
+
+      window.addEventListener(ACHIEVEMENTS_SAVED_EVENT, (e: Event) => {
+        const detail = (e as CustomEvent<AchievementsPersistenceState>).detail;
+        if (this.currentUser && detail) {
+          this.saveStudyStateToFirestore(this.currentUser.uid, 'achievements', detail).catch(() => {});
         }
       });
 
@@ -647,6 +704,22 @@ class FirebaseSyncService {
             const localSprint = loadDailySprintProgress();
             const mergedSprint = mergeDailySprintProgress(localSprint, payload);
             saveDailySprintProgress(mergedSprint, { skipCloud: true });
+          } else if (kind === 'adaptivePreferences') {
+            const localPrefs = loadAdaptivePreferences();
+            const remotePrefs = sanitizeAdaptivePreferences(payload);
+            if (remotePrefs.updatedAt >= localPrefs.updatedAt) {
+              saveAdaptivePreferences(remotePrefs, { skipCloud: true });
+            } else {
+              this.saveStudyStateToFirestore(userId, 'adaptivePreferences', localPrefs).catch(() => {});
+            }
+          } else if (kind === 'activeLabDrafts') {
+            const localDrafts = loadActiveLabDrafts();
+            const mergedDrafts = mergeActiveLabDrafts(localDrafts, payload);
+            saveActiveLabDrafts(mergedDrafts, { skipCloud: true });
+          } else if (kind === 'achievements') {
+            const localAch = loadAchievementsState();
+            const mergedAch = mergeAchievementsState(localAch, payload);
+            saveAchievementsState(mergedAch, { skipCloud: true });
           }
         });
 
@@ -683,6 +756,29 @@ class FirebaseSyncService {
               this.saveStudyStateToFirestore(userId, 'dailySprintProgress', localSprint).catch(() => {});
             }
           }
+          if (!remoteKinds.has('adaptivePreferences')) {
+            const localPrefs = loadAdaptivePreferences();
+            this.saveStudyStateToFirestore(userId, 'adaptivePreferences', localPrefs).catch(() => {});
+          }
+          if (!remoteKinds.has('activeLabDrafts')) {
+            const localDrafts = loadActiveLabDrafts();
+            if (
+              localDrafts.writingTask1Draft ||
+              localDrafts.writingTask2Draft ||
+              localDrafts.readingPassageId
+            ) {
+              this.saveStudyStateToFirestore(userId, 'activeLabDrafts', localDrafts).catch(() => {});
+            }
+          }
+          if (!remoteKinds.has('achievements')) {
+            const localAch = loadAchievementsState();
+            if (
+              Object.keys(localAch.unlockedAtById).length > 0 ||
+              localAch.pinnedBadgeIds.length > 0
+            ) {
+              this.saveStudyStateToFirestore(userId, 'achievements', localAch).catch(() => {});
+            }
+          }
         }
 
         if (typeof window !== 'undefined') {
@@ -690,6 +786,10 @@ class FirebaseSyncService {
         }
       },
       (error) => {
+        const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        if (msg.includes('client is offline') || msg.includes('unavailable') || msg.includes('cancelled')) {
+          return;
+        }
         handleFirestoreError(error, OperationType.LIST, path);
       }
     );
@@ -701,7 +801,14 @@ class FirebaseSyncService {
   public async saveStudyStateToFirestore(
     userId: string,
     kind: StudyStateKind,
-    rawPayload: DiagnosticResult | ExamSetup | SpellingProgressState | DailySprintProgressState
+    rawPayload:
+      | DiagnosticResult
+      | ExamSetup
+      | SpellingProgressState
+      | DailySprintProgressState
+      | AdaptivePreferencesState
+      | ActiveLabDraftsState
+      | AchievementsPersistenceState
   ): Promise<void> {
     const docRef = doc(db, 'users', userId, 'studyState', kind);
     const path = `users/${userId}/studyState/${kind}`;
@@ -750,6 +857,34 @@ class FirebaseSyncService {
         reviewSchedule: ds.reviewSchedule,
         lastExamSummary: ds.lastExamSummary
       };
+    } else if (kind === 'adaptivePreferences') {
+      const ap = sanitizeAdaptivePreferences(rawPayload);
+      payload = {
+        difficultyPreference: ap.difficultyPreference,
+        reminderEnabled: ap.reminderEnabled,
+        reminderTime: ap.reminderTime,
+        listeningAccent: ap.listeningAccent,
+        strictExamListening: ap.strictExamListening,
+        updatedAt: ap.updatedAt
+      };
+    } else if (kind === 'activeLabDrafts') {
+      const ld = sanitizeActiveLabDrafts(rawPayload);
+      payload = {
+        activeModule: ld.activeModule,
+        writingTask1PromptId: ld.writingTask1PromptId,
+        writingTask1Draft: ld.writingTask1Draft,
+        writingTask2Draft: ld.writingTask2Draft,
+        readingPassageId: ld.readingPassageId,
+        listeningSection: ld.listeningSection,
+        updatedAt: ld.updatedAt
+      };
+    } else if (kind === 'achievements') {
+      const ach = sanitizeAchievementsState(rawPayload);
+      payload = {
+        unlockedAtById: ach.unlockedAtById,
+        pinnedBadgeIds: ach.pinnedBadgeIds,
+        updatedAt: ach.updatedAt
+      };
     } else {
       const sp = sanitizeSpellingProgress(rawPayload);
       payload = {
@@ -775,6 +910,10 @@ class FirebaseSyncService {
         { merge: true }
       );
     } catch (error) {
+      const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+      if (msg.includes('client is offline') || msg.includes('unavailable') || msg.includes('cancelled')) {
+        return;
+      }
       handleFirestoreError(error, OperationType.WRITE, path);
     }
   }
@@ -891,6 +1030,10 @@ class FirebaseSyncService {
         }
       },
       (error) => {
+        const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        if (msg.includes('client is offline') || msg.includes('unavailable') || msg.includes('cancelled')) {
+          return;
+        }
         handleFirestoreError(error, OperationType.LIST, path);
       }
     );
@@ -904,11 +1047,15 @@ class FirebaseSyncService {
     const docRef = doc(db, 'users', userId, 'mistakes', safeId);
     const path = `users/${userId}/mistakes/${safeId}`;
     const nowIso = new Date().toISOString();
+    const allowedModules = ['listening', 'reading', 'writing', 'speaking', 'vocab'] as const;
+    const normalizedModule = allowedModules.includes(mistake.module as any)
+      ? mistake.module
+      : 'vocab';
 
     const baseFields = {
       id: safeId,
       userId,
-      module: mistake.module,
+      module: normalizedModule,
       item: (mistake.title || 'IELTS Question').slice(0, 2000),
       category: String(mistake.module || 'vocab').slice(0, 120),
       questionType: (mistake.questionType || '').slice(0, 120),
@@ -929,6 +1076,10 @@ class FirebaseSyncService {
     try {
       await setDoc(docRef, baseFields, { merge: true });
     } catch (error) {
+      const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+      if (msg.includes('client is offline') || msg.includes('unavailable') || msg.includes('cancelled')) {
+        return;
+      }
       handleFirestoreError(error, OperationType.WRITE, path);
     }
   }
@@ -943,6 +1094,10 @@ class FirebaseSyncService {
     try {
       await deleteDoc(docRef);
     } catch (error) {
+      const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+      if (msg.includes('client is offline') || msg.includes('unavailable') || msg.includes('cancelled')) {
+        return;
+      }
       handleFirestoreError(error, OperationType.DELETE, path);
     }
   }

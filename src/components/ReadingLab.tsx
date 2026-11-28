@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Highlighter, Trash2, Sparkles, StickyNote, Compass, BookOpen, CheckCircle2, Clock, Play, Pause, RotateCcw, Gauge, Contrast, Type, Flag, BookmarkPlus } from 'lucide-react';
+import { Highlighter, Trash2, Sparkles, StickyNote, Compass, BookOpen, CheckCircle2, Clock, Play, Pause, RotateCcw, Gauge, Contrast, Type, Flag, BookmarkPlus, Lock, Unlock } from 'lucide-react';
 import { CefrTerm } from '../types';
 import { soundManager } from '../utils/audioEffects';
 import { addMistake } from '../utils/vaultStorage';
@@ -19,6 +19,7 @@ import { setBarnabyAnalyzing } from '../utils/getBarnabyState';
 import { triggerBarnabyCelebration } from '../utils/barnabyStateEngine';
 import { recordHintRecoveryXp, XP_HINT_RECOVERY } from '../services/streakService';
 import type { MockExamSet } from '../data/mockExams';
+import { EXTRA_READING_LAB_PASSAGES } from '../data/extraReadingLabPassages';
 
 interface ReadingLabProps {
   onShowToast: (msg: string) => void;
@@ -657,7 +658,8 @@ const READING_LAB_PASSAGES: ReadingLabPassage[] = [
         explanationBn: '[D] অনুচ্ছেদে ব্যাখ্যা করা হয়েছে কীভাবে এই যন্ত্রটি চতুর্দশ শতাব্দীর ইউরোপেই প্রথম জটিল গিয়ার ঘড়ি তৈরি হয়েছিল—এমন ঐতিহাসিক ধারণা ভেঙে দেয়।'
       }
     ]
-  }
+  },
+  ...EXTRA_READING_LAB_PASSAGES
 ];
 
 function escapeRegExp(str: string): string {
@@ -699,9 +701,30 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
     }
   });
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
+  const [strictSectionLock, setStrictSectionLock] = useState<boolean>(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    text: string;
+    paraLetter: ParagraphLetter;
+  } | null>(null);
   const [activeQuestionNum, setActiveQuestionNum] = useState<1 | 2 | 3 | 4>(1);
   const [flaggedByPassage, setFlaggedByPassage] = useState<Record<string, Record<number, boolean>>>({});
   const [pushedMissedByPassage, setPushedMissedByPassage] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [contextMenu]);
 
   // Interactive Hint-Before-Reveal Loop state (strictly active in untimed Reading Practice Mode)
   const [hintLoopByQuestion, setHintLoopByQuestion] = useState<
@@ -1344,6 +1367,11 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
                 key={passage.id}
                 type="button"
                 onClick={() => {
+                  if (strictSectionLock && !isChecked && passage.id !== activePassage.id) {
+                    soundManager.playWarning();
+                    onShowToast('Strict Section Lock is active. Submit this passage or unlock Exam Lock before switching.');
+                    return;
+                  }
                   soundManager.playBeep(600, 0.03);
                   setSelectedPassageId(passage.id);
                   setActiveTooltip(null);
@@ -1407,7 +1435,7 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
             </div>
 
             <div className="flex items-center gap-1.5">
-              {!isChecked && (
+              {!isChecked && !strictSectionLock && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1433,13 +1461,44 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
 
               <button
                 type="button"
-                onClick={handleResetPassageTimer}
-                className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-[#E6E1D6] dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-                title="Reset timer for this passage"
+                onClick={() => {
+                  const next = !strictSectionLock;
+                  setStrictSectionLock(next);
+                  if (next) setIsTimerRunning(true);
+                  soundManager.playBeep(next ? 700 : 500, 0.04);
+                  onShowToast(
+                    next
+                      ? 'Strict CD-IELTS Section Lock active: pause disabled and passage locked until submission.'
+                      : 'Strict Section Lock disabled: free navigation and pause restored.'
+                  );
+                }}
+                aria-pressed={strictSectionLock}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition border cursor-pointer ${
+                  strictSectionLock
+                    ? 'bg-[#0F4C45] text-white border-[#0F4C45]'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-[#E6E1D6] dark:border-slate-700 hover:border-[#0F4C45]'
+                }`}
+                title="Lock section timer & passage navigation for real CD-IELTS exam discipline"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset Timer</span>
+                {strictSectionLock ? (
+                  <Lock className="w-3.5 h-3.5 text-[#F4A62A]" />
+                ) : (
+                  <Unlock className="w-3.5 h-3.5" />
+                )}
+                <span>{strictSectionLock ? 'Exam Lock On' : 'Strict Section Lock'}</span>
               </button>
+
+              {!strictSectionLock && (
+                <button
+                  type="button"
+                  onClick={handleResetPassageTimer}
+                  className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-[#E6E1D6] dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  title="Reset timer for this passage"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Timer</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1593,6 +1652,19 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
                 <div
                   key={paraLetter}
                   id={`reading-para-${paraLetter}`}
+                  onContextMenu={(e) => {
+                    const sel = window.getSelection();
+                    const text = sel ? sel.toString().trim() : '';
+                    if (text.length >= 2) {
+                      e.preventDefault();
+                      setContextMenu({
+                        x: Math.min(e.clientX, window.innerWidth - 230),
+                        y: Math.min(e.clientY, window.innerHeight - 190),
+                        text,
+                        paraLetter
+                      });
+                    }
+                  }}
                   className={`p-4 rounded-2xl transition-all duration-300 border ${
                     pulsingParagraph === paraLetter
                       ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/40 shadow-sm'
@@ -1603,7 +1675,7 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
                 >
                   <div className="flex items-center justify-between mb-2 font-sans">
                     <span className="text-[11px] font-mono font-bold text-[#1E3A8A] dark:text-blue-400">
-                      PARAGRAPH [{paraLetter}]
+                      PARAGRAPH [{paraLetter}] · Right-click selection to highlight/note
                     </span>
                     <button
                       type="button"
@@ -2053,6 +2125,73 @@ export const ReadingLab: React.FC<ReadingLabProps> = ({ onShowToast, onBack }) =
           </div>
         </div>
       </div>
+
+      {/* Official CD-IELTS Right-Click Highlight & Quick Margin Note Context Menu */}
+      {contextMenu && (
+        <div
+          role="menu"
+          aria-label="CD-IELTS Passage Highlight and Note Actions"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+          className="fixed z-50 w-56 rounded-xl bg-white dark:bg-[#0E1B1A] border border-[#D3DDDA] dark:border-[#1F8A70]/50 shadow-xl p-1.5 space-y-1 text-xs animate-fade-in"
+        >
+          <div className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-[#566664] dark:text-slate-400 border-b border-[#EEF3F1] dark:border-[#1F8A70]/25 truncate">
+            &ldquo;{contextMenu.text.slice(0, 28)}
+            {contextMenu.text.length > 28 ? '…' : ''}&rdquo;
+          </div>
+          {(
+            [
+              { color: 'amber' as HighlightColor, label: 'Highlight Key Claim', dot: 'bg-amber-400' },
+              { color: 'emerald' as HighlightColor, label: 'Highlight Evidence', dot: 'bg-emerald-500' },
+              { color: 'rose' as HighlightColor, label: 'Highlight Trap Word', dot: 'bg-rose-500' }
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.color}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setHighlightsByPassage((prev) => ({
+                  ...prev,
+                  [activePassage.id]: [
+                    ...(prev[activePassage.id] || []),
+                    { text: contextMenu.text, color: item.color }
+                  ]
+                }));
+                window.getSelection()?.removeAllRanges();
+                soundManager.playBeep(640, 0.03);
+                onShowToast(`Highlighted (${item.label.replace('Highlight ', '')}): "${contextMenu.text.slice(0, 28)}"`);
+                setContextMenu(null);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-lg hover:bg-[#EEF3F1] dark:hover:bg-[#162C29] text-left font-semibold text-[#0E1F1E] dark:text-[#EEF3F1] flex items-center gap-2 cursor-pointer"
+            >
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${item.dot}`} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const noteKey = `${activePassage.id}_${contextMenu.paraLetter}`;
+              const existing = stickyNotes[noteKey] || '';
+              const appended = existing
+                ? `${existing}\n• "${contextMenu.text}"`
+                : `• "${contextMenu.text}"`;
+              handleSaveStickyNote(contextMenu.paraLetter, appended);
+              setOpenNotePara(contextMenu.paraLetter);
+              window.getSelection()?.removeAllRanges();
+              soundManager.playBeep(680, 0.035);
+              onShowToast(`Added quote to Paragraph [${contextMenu.paraLetter}] margin note.`);
+              setContextMenu(null);
+            }}
+            className="w-full px-2.5 py-1.5 rounded-lg hover:bg-[#EEF3F1] dark:hover:bg-[#162C29] text-left font-semibold text-[#0F4C45] dark:text-[#F4A62A] flex items-center gap-2 border-t border-[#EEF3F1] dark:border-[#1F8A70]/25 pt-2 cursor-pointer"
+          >
+            <StickyNote className="w-3.5 h-3.5 shrink-0" />
+            <span>Add to Margin Note [{contextMenu.paraLetter}]</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

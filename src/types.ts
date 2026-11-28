@@ -1,3 +1,5 @@
+import type { DistractorRootCauseId } from './utils/distractorRootCause';
+
 export interface MistakeItem {
   id: string;
   timestamp: number;
@@ -5,6 +7,7 @@ export interface MistakeItem {
   title: string;
   prompt?: string;
   questionType?: string;
+  rootCauseTag?: DistractorRootCauseId;
   userAnswer: string;
   userWrongAnswer?: string;
   correctAnswer: string;

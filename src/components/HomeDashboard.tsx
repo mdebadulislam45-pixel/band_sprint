@@ -27,9 +27,23 @@ import { getMistakes } from '../utils/vaultStorage';
 import { getTopWeakness, TOP_WEAKNESS_UPDATED_EVENT } from '../utils/userStorage';
 import {
   DAILY_SPRINT_SYNCED_EVENT,
+  getTodayDateKey,
   loadDailySprintProgress
 } from '../utils/dailySprintProgressStore';
-import { computeSmartSprintBrief } from '../utils/smartSprintEngine';
+import {
+  computeSmartSprintBrief,
+  getRotatedDailySprintPools
+} from '../utils/smartSprintEngine';
+import {
+  ADAPTIVE_DIFFICULTY_UPDATED_EVENT,
+  computeSmartSprintIntelligence,
+  DifficultyModePreference,
+  loadDifficultyPreference
+} from '../utils/adaptiveLearningPath';
+import { SprintVelocityCard } from './home/SprintVelocityCard';
+import { DailySprintProgressRingCard } from './home/DailySprintProgressRingCard';
+import { AISmartCoachCard } from './home/AISmartCoachCard';
+import { SmartSprintIntelligenceOverlay } from './daily/SmartSprintIntelligenceOverlay';
 
 interface HomeDashboardProps {
   user?: UserProfile | null;
@@ -53,11 +67,35 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>(() => getCompletedMissionsToday());
   const [storedTopWeakness, setStoredTopWeakness] = useState<string | null>(() => getTopWeakness());
   const [sprintProgress, setSprintProgress] = useState(() => loadDailySprintProgress());
+  const [difficultyPref, setDifficultyPref] = useState<DifficultyModePreference>(() =>
+    loadDifficultyPreference()
+  );
+  const [vaultVersion, setVaultVersion] = useState<number>(0);
   const [isSmartDrillOpen, setIsSmartDrillOpen] = useState(false);
+  const [isIntelligenceOverlayOpen, setIsIntelligenceOverlayOpen] = useState(false);
 
   const smartBrief = useMemo(
     () => computeSmartSprintBrief(user, sprintProgress),
-    [sprintProgress, user]
+    [sprintProgress, user, vaultVersion]
+  );
+
+  const sprintIntelligence = useMemo(
+    () =>
+      computeSmartSprintIntelligence(sprintProgress, {
+        user,
+        streakState,
+        difficultyPreference: difficultyPref
+      }),
+    [difficultyPref, sprintProgress, streakState, user, vaultVersion]
+  );
+
+  const adaptivePools = useMemo(
+    () =>
+      getRotatedDailySprintPools(sprintProgress.quotaTier, getTodayDateKey(), 0, {
+        difficultyTier: sprintIntelligence.activeDifficulty,
+        reviewSchedule: sprintProgress.reviewSchedule
+      }),
+    [sprintIntelligence.activeDifficulty, sprintProgress.quotaTier, sprintProgress.reviewSchedule, vaultVersion]
   );
 
   useEffect(() => {
@@ -69,6 +107,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
       setCompletedTaskIds(getCompletedMissionsToday(nextStreak));
       setStoredTopWeakness(getTopWeakness());
       setSprintProgress(loadDailySprintProgress());
+      setDifficultyPref(loadDifficultyPreference());
+      setVaultVersion((v) => v + 1);
     };
     window.addEventListener('bandsprint_cloud_sync_updated', refresh);
     window.addEventListener('bandsprint_diagnostic_saved', refresh);
@@ -77,6 +117,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
     window.addEventListener('bandsprint_tasks_updated', refresh);
     window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, refresh);
     window.addEventListener(TOP_WEAKNESS_UPDATED_EVENT, refresh);
+    window.addEventListener('vault_updated', refresh);
+    window.addEventListener(ADAPTIVE_DIFFICULTY_UPDATED_EVENT, refresh);
     return () => {
       window.removeEventListener('bandsprint_cloud_sync_updated', refresh);
       window.removeEventListener('bandsprint_diagnostic_saved', refresh);
@@ -85,6 +127,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
       window.removeEventListener('bandsprint_tasks_updated', refresh);
       window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, refresh);
       window.removeEventListener(TOP_WEAKNESS_UPDATED_EVENT, refresh);
+      window.removeEventListener('vault_updated', refresh);
+      window.removeEventListener(ADAPTIVE_DIFFICULTY_UPDATED_EVENT, refresh);
     };
   }, []);
 
@@ -114,7 +158,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   const currentBandEstimate = useMemo(() => {
     const agg = aggregateExamHistory(user?.progress?.examHistory || []);
     if (agg.overall.latest !== null) {
-      return { value: agg.overall.latest, source: 'Latest mock' };
+      return { value: agg.overall.latest, source: 'Latest full mock' };
     }
     const diagOverall = validateOptionalHalfBand(diagnostic?.scores?.overall, 1.0);
     if (diagOverall !== null) {
@@ -177,13 +221,27 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   }, [streakState.lastActiveDate, user?.progress?.examHistory]);
 
   const allDailyTasksCompleted = completedTaskIds.length >= 3;
-  const unresolvedMistakeCount = useMemo(() => {
+  const { unresolvedMistakeCount, topMistakeTopics } = useMemo(() => {
     try {
-      return getMistakes().filter((m) => !m.mastered).length;
+      const unresolved = getMistakes().filter((m) => !m.mastered);
+      const topicCounts = new Map<string, number>();
+      for (const item of unresolved) {
+        const label = (item.questionType || item.module || '').trim();
+        if (!label) continue;
+        topicCounts.set(label, (topicCounts.get(label) || 0) + 1);
+      }
+      const sortedTopics = Array.from(topicCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([label]) => label);
+      return {
+        unresolvedMistakeCount: unresolved.length,
+        topMistakeTopics: sortedTopics
+      };
     } catch {
-      return 0;
+      return { unresolvedMistakeCount: 0, topMistakeTopics: [] };
     }
-  }, [completedTaskIds.length]);
+  }, [completedTaskIds.length, vaultVersion]);
 
   // Primary action decision: Diagnostic first (contextualized to survey goals), or Priority Weak Skill / Resume / Study Plan
   const primaryHeroAction = useMemo(() => {
@@ -460,6 +518,35 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
             </button>
           </section>
 
+          <DailySprintProgressRingCard
+            onNavigate={onNavigate}
+            onShowToast={onShowToast}
+            weakestSkillLabel={weakestLabel}
+            unresolvedMistakes={unresolvedMistakeCount}
+          />
+
+          <AISmartCoachCard
+            candidateName={sanitizedFirstName}
+            examTrack={intendedFormat}
+            currentBand={currentBandEstimate ? currentBandEstimate.value : null}
+            targetBand={targetBand}
+            daysRemaining={daysRemaining}
+            weakestSkill={topWeakness}
+            unresolvedMistakes={unresolvedMistakeCount}
+            topMistakeTopics={topMistakeTopics}
+            todayCompletedTasks={completedTaskIds.length}
+            todayTotalTasks={4}
+            streakDays={Math.max(streakState.currentStreak, user?.progress?.streakDays || 0)}
+            onNavigate={onNavigate}
+          />
+
+          <SprintVelocityCard
+            intelligence={sprintIntelligence}
+            adaptivePath={adaptivePools.adaptivePath}
+            onOpenIntelligenceOverlay={() => setIsIntelligenceOverlayOpen(true)}
+            onNavigate={onNavigate}
+          />
+
           <HomeExtendedBlocks
             section="skills"
             user={user}
@@ -497,6 +584,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
       <QuickSmartDrillModal
         isOpen={isSmartDrillOpen}
         onClose={() => setIsSmartDrillOpen(false)}
+        onShowToast={onShowToast}
+      />
+
+      <SmartSprintIntelligenceOverlay
+        isOpen={isIntelligenceOverlayOpen}
+        onClose={() => setIsIntelligenceOverlayOpen(false)}
+        intelligence={sprintIntelligence}
+        adaptivePath={adaptivePools.adaptivePath}
+        topVocabItems={adaptivePools.vocabulary}
+        topGrammarRules={adaptivePools.grammar}
+        onDifficultyApplied={(pref) => setDifficultyPref(pref)}
+        onNavigate={onNavigate}
         onShowToast={onShowToast}
       />
     </div>

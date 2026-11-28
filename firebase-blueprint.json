@@ -79,13 +79,13 @@
     },
     "StudyState": {
       "title": "StudyState",
-      "description": "Cross-device candidate study state for diagnostic results, exam setup, spelling mastery, and daily sprint progress",
+      "description": "Cross-device candidate study state for diagnostic results, exam setup, spelling mastery, daily sprint progress, adaptive preferences, active lab drafts, and unlocked achievements",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "enum": ["diagnostic", "examSetup", "spellingProgress", "dailySprintProgress"], "description": "Fixed state document identifier" },
+        "id": { "type": "string", "enum": ["diagnostic", "examSetup", "spellingProgress", "dailySprintProgress", "adaptivePreferences", "activeLabDrafts", "achievements"], "description": "Fixed state document identifier" },
         "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Owner candidate UID" },
-        "kind": { "type": "string", "enum": ["diagnostic", "examSetup", "spellingProgress", "dailySprintProgress"], "description": "Study state category" },
-        "payload": { "type": "object", "description": "Structured native map containing diagnostic, exam setup, spelling mastery, or daily sprint fields" },
+        "kind": { "type": "string", "enum": ["diagnostic", "examSetup", "spellingProgress", "dailySprintProgress", "adaptivePreferences", "activeLabDrafts", "achievements"], "description": "Study state category" },
+        "payload": { "type": "object", "description": "Structured native map containing diagnostic, exam setup, spelling mastery, daily sprint, adaptive preferences, active lab drafts, or achievements fields" },
         "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },

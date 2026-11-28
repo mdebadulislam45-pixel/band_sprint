@@ -182,6 +182,9 @@ export function sanitizeConfigForModel(
     if (clone.thinkingConfig && typeof clone.thinkingConfig === 'object') {
       const tc = { ...clone.thinkingConfig };
       delete tc.thinkingBudget;
+      if (String(tc.thinkingLevel || '').toUpperCase() === 'MINIMAL') {
+        tc.thinkingLevel = 'LOW';
+      }
       if (Object.keys(tc).length > 0) {
         clone.thinkingConfig = tc;
       } else {

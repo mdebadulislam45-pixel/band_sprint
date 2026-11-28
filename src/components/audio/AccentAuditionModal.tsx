@@ -1,8 +1,18 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Volume2, VolumeX, Loader2, Sparkles, CheckCircle2, Globe, ShieldCheck } from 'lucide-react';
+import { X, Volume2, VolumeX, Loader2, CheckCircle2, Globe, ShieldCheck } from 'lucide-react';
 import { soundManager } from '../../utils/audioEffects';
-import { OfficialIELTSAccent, ACCENT_METADATA, IELTS_ACCENTS, setPreferredAccent, getPreferredAccent } from '../../config/voiceConfig';
+import {
+  OfficialIELTSAccent,
+  ACCENT_METADATA,
+  IELTS_ACCENTS,
+  PROFESSIONAL_STUDIO_VOICES,
+  setPreferredAccent,
+  getPreferredAccent,
+  getPreferredStudioSpeakerId,
+  setPreferredStudioSpeakerId,
+} from '../../config/voiceConfig';
+import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 
 interface AccentAuditionModalProps {
   isOpen: boolean;
@@ -10,91 +20,71 @@ interface AccentAuditionModalProps {
   onShowToast: (msg: string) => void;
 }
 
-const ACCENT_AUDIO_STREAMS: Record<OfficialIELTSAccent, string> = {
-  British: 'https://upload.wikimedia.org/wikipedia/commons/8/86/En-uk-Arthur_Davies_RP_sample.ogg',
-  Australian: 'https://upload.wikimedia.org/wikipedia/commons/7/77/En-au-William_sample.ogg',
-  American: 'https://upload.wikimedia.org/wikipedia/commons/1/1b/En-us-Christopher_sample.ogg',
-  Canadian: 'https://upload.wikimedia.org/wikipedia/commons/3/36/En-ca-Liam_sample.ogg',
-  'New Zealand': 'https://upload.wikimedia.org/wikipedia/commons/9/98/En-nz-Mitchell_sample.ogg',
-  Irish: 'https://upload.wikimedia.org/wikipedia/commons/5/5a/En-ie-Connor_sample.ogg'
-};
-
-// Singleton managed Audio instance for global killswitch
-let currentManagedAudio: HTMLAudioElement | null = null;
-
 export const AccentAuditionModal: React.FC<AccentAuditionModalProps> = ({
   isOpen,
   onClose,
   onShowToast
 }) => {
-  const [playingAccent, setPlayingAccent] = useState<OfficialIELTSAccent | null>(null);
-  const [isLoadingAccent, setIsLoadingAccent] = useState<OfficialIELTSAccent | null>(null);
-  const [selectedAccent, setSelectedAccent] = useState<OfficialIELTSAccent>(getPreferredAccent());
+  const [playingSpeakerId, setPlayingSpeakerId] = useState<string | null>(null);
+  const [loadingSpeakerId, setLoadingSpeakerId] = useState<string | null>(null);
+  const [selectedAccent, setSelectedAccent] = useState<OfficialIELTSAccent>(() => getPreferredAccent());
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string>(() => getPreferredStudioSpeakerId());
 
   useEffect(() => {
     return () => {
-      if (currentManagedAudio) {
-        currentManagedAudio.pause();
-        currentManagedAudio.currentTime = 0;
-        currentManagedAudio = null;
-      }
+      stopSpeech();
     };
   }, []);
 
   if (!isOpen) return null;
 
-  const handleAudition = (accent: OfficialIELTSAccent) => {
+  const handleAuditionVoice = (speakerId: string, accent: OfficialIELTSAccent, sampleLine: string, gender: 'male' | 'female') => {
     soundManager.playBeep(520, 0.03);
-
-    // Enforce global killswitch
-    if (currentManagedAudio) {
-      currentManagedAudio.pause();
-      currentManagedAudio.currentTime = 0;
-      currentManagedAudio = null;
-    }
-
-    if (playingAccent === accent) {
-      setPlayingAccent(null);
-      setIsLoadingAccent(null);
+    if (playingSpeakerId === speakerId) {
+      stopSpeech();
+      setPlayingSpeakerId(null);
+      setLoadingSpeakerId(null);
       return;
     }
-
-    setIsLoadingAccent(accent);
-    const audioUrl = ACCENT_AUDIO_STREAMS[accent] || ACCENT_AUDIO_STREAMS.British;
-    const audio = new Audio(audioUrl);
-    currentManagedAudio = audio;
-
-    audio.oncanplaythrough = () => {
-      setIsLoadingAccent(null);
-      setPlayingAccent(accent);
-      audio.play().catch(() => {
-        setIsLoadingAccent(null);
-        setPlayingAccent(null);
-        onShowToast(`Simulating studio recording stream for ${accent} (${ACCENT_METADATA[accent].maleSpeaker})`);
-      });
-    };
-
-    audio.onerror = () => {
-      setIsLoadingAccent(null);
-      setPlayingAccent(null);
-      // Fallback graceful simulation alert if network restricts external ogg
-      onShowToast(`✓ Active Human Voice Stream: ${ACCENT_METADATA[accent].maleSpeaker}`);
-      setPlayingAccent(accent);
-      setTimeout(() => setPlayingAccent(null), 3000);
-    };
-
-    audio.onended = () => {
-      setPlayingAccent(null);
-      setIsLoadingAccent(null);
-      currentManagedAudio = null;
-    };
+    stopSpeech();
+    setLoadingSpeakerId(speakerId);
+    speakBritish(sampleLine, {
+      speakerId,
+      accent,
+      gender,
+      deliveryProfile: 'natural_conversation',
+      onStart: () => {
+        setLoadingSpeakerId(null);
+        setPlayingSpeakerId(speakerId);
+      },
+      onEnd: () => {
+        setLoadingSpeakerId(null);
+        setPlayingSpeakerId(null);
+      },
+      onError: () => {
+        setLoadingSpeakerId(null);
+        setPlayingSpeakerId(null);
+        onShowToast('Studio stream paused. Try tapping Audition again.');
+      }
+    });
   };
 
   const handleSaveAccent = (accent: OfficialIELTSAccent) => {
     setSelectedAccent(accent);
     setPreferredAccent(accent);
+    setSelectedSpeakerId(getPreferredStudioSpeakerId());
     soundManager.playSuccess();
-    onShowToast(`✓ Successfully locked ${accent} (${ACCENT_METADATA[accent].label}) as your primary listening & exam voice.`);
+    onShowToast(`Locked ${ACCENT_METADATA[accent].label} as your primary IELTS exam accent.`);
+  };
+
+  const handleSelectStudioSpeaker = (speakerId: string) => {
+    const updated = setPreferredStudioSpeakerId(speakerId);
+    if (updated) {
+      setSelectedSpeakerId(updated.speakerId);
+      setSelectedAccent(updated.accent);
+      soundManager.playSuccess();
+      onShowToast(`Active studio voice set to ${updated.name} (${updated.accent}).`);
+    }
   };
 
   return (
@@ -102,129 +92,140 @@ export const AccentAuditionModal: React.FC<AccentAuditionModalProps> = ({
       <div
         onClick={(e) => {
           if (e.target === e.currentTarget) {
-            if (currentManagedAudio) {
-              currentManagedAudio.pause();
-              currentManagedAudio.currentTime = 0;
-              currentManagedAudio = null;
-            }
+            stopSpeech();
             onClose();
           }
         }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0E1F1E]/75 backdrop-blur-sm"
         role="dialog"
         aria-modal="true"
         aria-labelledby="accent-modal-title"
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          initial={{ opacity: 0, scale: 0.96, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden text-slate-900 dark:text-slate-100 select-none"
+          exit={{ opacity: 0, scale: 0.96, y: 8 }}
+          className="relative w-full max-w-3xl bg-white dark:bg-[#0D1A19] border border-[#D3DDDA] dark:border-[#1F8A70]/35 rounded-2xl shadow-2xl overflow-hidden text-[#0E1F1E] dark:text-[#EEF3F1]"
         >
           {/* Top Header */}
-          <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="p-5 border-b border-[#D3DDDA] dark:border-[#1F8A70]/25 flex items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                <h3 id="accent-modal-title" className="text-xl font-black text-slate-900 dark:text-white">
-                  IELTS Native Accent Audition Suite
+                <Globe className="w-5 h-5 text-[#0F4C45] dark:text-[#F4A62A]" />
+                <h3 id="accent-modal-title" className="font-display text-lg font-bold text-[#0E1F1E] dark:text-white">
+                  Multi-Accent &amp; Studio Voice Audition Suite
                 </h3>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Listen to studio-recorded human voice streams across all 6 official Practice testing accents. Zero synthetic distortion.
+              <p className="text-xs text-[#566664] dark:text-slate-400">
+                Live studio-mastered neural voices across all 6 official IELTS accents. Audition and lock your examiner voice.
               </p>
             </div>
 
             <button
+              type="button"
               onClick={() => {
-                if (currentManagedAudio) {
-                  currentManagedAudio.pause();
-                  currentManagedAudio.currentTime = 0;
-                  currentManagedAudio = null;
-                }
+                stopSpeech();
                 onClose();
               }}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
+              aria-label="Close accent audition suite"
+              className="p-2 rounded-xl bg-[#EEF3F1] dark:bg-[#11201E] text-[#566664] hover:text-[#0E1F1E] dark:hover:text-white transition cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Accent Cards Grid */}
-          <div className="p-6 max-h-[65vh] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Accent Filter Bar */}
+          <div className="px-5 py-3 bg-[#F7F9F8] dark:bg-[#11201E] border-b border-[#D3DDDA] dark:border-[#1F8A70]/20 flex flex-wrap items-center gap-2">
             {IELTS_ACCENTS.map((accent) => {
-              const meta = ACCENT_METADATA[accent];
-              const isPlaying = playingAccent === accent;
-              const isLoading = isLoadingAccent === accent;
-              const isSelected = selectedAccent === accent;
+              const active = selectedAccent === accent;
+              return (
+                <button
+                  key={accent}
+                  type="button"
+                  onClick={() => handleSaveAccent(accent)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    active
+                      ? 'bg-[#0F4C45] text-white'
+                      : 'bg-white dark:bg-[#0B1514] border border-[#D3DDDA] dark:border-[#1F8A70]/30 text-[#0E1F1E] dark:text-slate-200 hover:border-[#0F4C45]'
+                  }`}
+                >
+                  {ACCENT_METADATA[accent].label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Voices Grid for Active Accent */}
+          <div className="p-5 max-h-[60vh] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {PROFESSIONAL_STUDIO_VOICES.filter((v) => v.accent === selectedAccent).map((voice) => {
+              const isPlaying = playingSpeakerId === voice.speakerId;
+              const isLoading = loadingSpeakerId === voice.speakerId;
+              const isSelected = selectedSpeakerId === voice.speakerId;
 
               return (
                 <div
-                  key={accent}
-                  className={`p-4 rounded-2xl border transition-all flex flex-col justify-between space-y-3 ${
+                  key={voice.speakerId}
+                  className={`p-4 rounded-xl border transition flex flex-col justify-between space-y-3 ${
                     isSelected
-                      ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 shadow-md ring-2 ring-blue-500/20'
-                      : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/80 hover:border-slate-400'
+                      ? 'bg-[#0F4C45]/5 dark:bg-[#1F8A70]/15 border-[#0F4C45] dark:border-[#6EE7B7]'
+                      : 'bg-[#F7F9F8] dark:bg-[#11201E] border-[#D3DDDA] dark:border-[#1F8A70]/25'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-2xl">{meta.flag}</span>
-                      <div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                          {meta.label}
-                        </h4>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                          {meta.maleSpeaker} & {meta.femaleSpeaker}
-                        </p>
-                      </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-[#0E1F1E] dark:text-white">{voice.name}</h4>
+                      <p className="text-[11px] text-[#566664] dark:text-slate-400">
+                        {voice.role} · {voice.styleTag}
+                      </p>
                     </div>
-
                     {isSelected && (
-                      <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-mono font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" /> Active
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C45] dark:text-[#6EE7B7]">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Active</span>
                       </span>
                     )}
                   </div>
 
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    {meta.description}
+                  <p className="text-xs italic text-[#566664] dark:text-slate-300 leading-relaxed">
+                    &ldquo;{voice.sampleLine}&rdquo;
                   </p>
 
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#D3DDDA]/60 dark:border-[#1F8A70]/20">
                     <button
-                      onClick={() => handleAudition(accent)}
+                      type="button"
+                      onClick={() => handleAuditionVoice(voice.speakerId, voice.accent, voice.sampleLine, voice.gender)}
                       disabled={isLoading}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer ${
                         isPlaying
-                          ? 'bg-amber-600 text-white shadow-md'
-                          : 'bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white'
+                          ? 'bg-[#F4A62A] text-[#0E1F1E]'
+                          : 'bg-[#0E1F1E] dark:bg-[#162E2A] hover:bg-[#0F4C45] text-white'
                       }`}
                     >
                       {isLoading ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Buffering...</span>
+                          <span>Loading...</span>
                         </>
                       ) : isPlaying ? (
                         <>
-                          <VolumeX className="w-3.5 h-3.5 animate-pulse" />
-                          <span>Stop Stream</span>
+                          <VolumeX className="w-3.5 h-3.5" />
+                          <span>Stop</span>
                         </>
                       ) : (
                         <>
                           <Volume2 className="w-3.5 h-3.5" />
-                          <span>Audition Voice</span>
+                          <span>Play Sample</span>
                         </>
                       )}
                     </button>
 
                     {!isSelected && (
                       <button
-                        onClick={() => handleSaveAccent(accent)}
-                        className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition cursor-pointer shadow-xs"
+                        type="button"
+                        onClick={() => handleSelectStudioSpeaker(voice.speakerId)}
+                        className="px-3 py-1.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white text-xs font-bold transition cursor-pointer"
                       >
-                        Select Accent
+                        Set Active
                       </button>
                     )}
                   </div>
@@ -234,21 +235,18 @@ export const AccentAuditionModal: React.FC<AccentAuditionModalProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+          <div className="p-4 bg-[#F7F9F8] dark:bg-[#11201E] border-t border-[#D3DDDA] dark:border-[#1F8A70]/25 flex items-center justify-between text-xs text-[#566664] dark:text-slate-400">
             <div className="flex items-center gap-1.5 font-medium">
-              <ShieldCheck className="w-4 h-4 text-emerald-500" />
-              <span>Certified Practice CD-IELTS Audio Compliance</span>
+              <ShieldCheck className="w-4 h-4 text-[#0F4C45] dark:text-[#6EE7B7]" />
+              <span>24kHz Studio-Mastered Multi-Accent Neural Audio</span>
             </div>
             <button
+              type="button"
               onClick={() => {
-                if (currentManagedAudio) {
-                  currentManagedAudio.pause();
-                  currentManagedAudio.currentTime = 0;
-                  currentManagedAudio = null;
-                }
+                stopSpeech();
                 onClose();
               }}
-              className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-xs transition cursor-pointer"
             >
               Done
             </button>

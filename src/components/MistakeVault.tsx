@@ -26,8 +26,16 @@ import {
   toggleMastery,
   clearMistakes,
   recordSM2Review,
-  seedHighYieldSampleMistakes
+  seedHighYieldSampleMistakes,
+  updateMistakeRootCause
 } from '../utils/vaultStorage';
+import {
+  classifyMistakeRootCause,
+  summarizeRootCauseBreakdown,
+  DISTRACTOR_ROOT_CAUSES,
+  DISTRACTOR_ROOT_CAUSE_LIST,
+  DistractorRootCauseId
+} from '../utils/distractorRootCause';
 import { soundManager } from '../utils/audioEffects';
 import { speakBritish } from '../utils/britishVoice';
 import { ResponsiveModal } from './common/ResponsiveModal';
@@ -44,11 +52,12 @@ type VaultTabFilter = 'unresolved' | 'sm2_due' | 'listening' | 'reading' | 'writ
 export const MistakeVault: React.FC<MistakeVaultProps> = ({
   onShowToast,
   isModal = false,
-  isOpen = false,
+  isOpen,
   onClose
 }) => {
   const [mistakes, setMistakes] = useState<MistakeItem[]>([]);
   const [tabFilter, setTabFilter] = useState<VaultTabFilter>('unresolved');
+  const [rootCauseFilter, setRootCauseFilter] = useState<'all' | DistractorRootCauseId>('all');
   const [langPreference, setLangPreference] = useState<Record<string, 'en' | 'bn'>>({});
   const [activeDrillItem, setActiveDrillItem] = useState<MistakeItem | null>(null);
   const [drillInput, setDrillInput] = useState<string>('');
@@ -145,16 +154,35 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
   ).length;
   const masteredCount = (mistakes || []).filter((m) => m.mastered).length;
 
-  // Filter items according to active tab
+  const rootCauseSummary = useMemo(
+    () => summarizeRootCauseBreakdown(mistakes || []),
+    [mistakes]
+  );
+
+  // Filter items according to active tab + optional root-cause trap filter
   const filteredMistakes = (mistakes || []).filter((m) => {
     if (!m) return false;
-    if (tabFilter === 'mastered') return m.mastered;
-    if (tabFilter === 'sm2_due') return !m.mastered && (m.nextReviewAt ?? 0) <= now;
-    if (tabFilter === 'listening') return !m.mastered && m.module === 'listening';
-    if (tabFilter === 'reading') return !m.mastered && m.module === 'reading';
-    if (tabFilter === 'writing_speaking') return !m.mastered && (m.module === 'writing' || m.module === 'speaking');
-    return !m.mastered;
+    let matchesTab = !m.mastered;
+    if (tabFilter === 'mastered') matchesTab = m.mastered;
+    else if (tabFilter === 'sm2_due') matchesTab = !m.mastered && (m.nextReviewAt ?? 0) <= now;
+    else if (tabFilter === 'listening') matchesTab = !m.mastered && m.module === 'listening';
+    else if (tabFilter === 'reading') matchesTab = !m.mastered && m.module === 'reading';
+    else if (tabFilter === 'writing_speaking')
+      matchesTab = !m.mastered && (m.module === 'writing' || m.module === 'speaking');
+
+    if (!matchesTab) return false;
+    if (rootCauseFilter !== 'all') {
+      return classifyMistakeRootCause(m) === rootCauseFilter;
+    }
+    return true;
   });
+
+  const handleUpdateRootCause = (id: string, nextTag: DistractorRootCauseId) => {
+    updateMistakeRootCause(id, nextTag);
+    soundManager.playBeep(580, 0.03);
+    loadData();
+    onShowToast(`Root-cause tag updated to "${DISTRACTOR_ROOT_CAUSES[nextTag].label}".`);
+  };
 
   const toggleLang = (id: string) => {
     setLangPreference((prev) => ({
@@ -505,6 +533,73 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
         </div>
       )}
 
+      {/* Root-Cause Distractor Diagnostic Breakdown */}
+      {rootCauseSummary.length > 0 && (
+        <section
+          aria-label="Root-Cause Distractor Diagnostics"
+          className="rounded-2xl bg-[#FAFBF9] dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 p-4 space-y-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#0F4C45] dark:text-[#F4A62A]">
+                Root-Cause Cognitive Trap Diagnosis
+              </div>
+              <p className="text-xs text-[#566664] dark:text-slate-400">
+                Click any cognitive trap below to filter your Vault by why the error happened, not just the exam section.
+              </p>
+            </div>
+            {rootCauseFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setRootCauseFilter('all')}
+                className="px-2.5 py-1 rounded-lg bg-[#0F4C45] text-white text-[11px] font-bold cursor-pointer"
+              >
+                Show All Traps
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {rootCauseSummary.map((row) => {
+              const isSelected = rootCauseFilter === row.meta.id;
+              return (
+                <button
+                  key={row.meta.id}
+                  type="button"
+                  onClick={() => {
+                    soundManager.playBeep(540, 0.03);
+                    setRootCauseFilter(isSelected ? 'all' : row.meta.id);
+                  }}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer space-y-1.5 ${
+                    isSelected
+                      ? 'border-[#0F4C45] bg-[#0F4C45]/5 dark:bg-[#1F8A70]/20 ring-1 ring-[#0F4C45]'
+                      : 'border-[#D3DDDA] dark:border-[#1F8A70]/25 bg-white dark:bg-[#0B1514] hover:border-[#0F4C45]/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-[#0E1F1E] dark:text-white truncate">
+                      {row.meta.label}
+                    </span>
+                    <span className="font-mono text-xs font-bold text-[#0F4C45] dark:text-[#F4A62A] tabular-nums shrink-0">
+                      {row.count} ({row.sharePct}%)
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-[#EEF3F1] dark:bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#0F4C45] dark:bg-[#F4A62A]"
+                      style={{ width: `${Math.max(8, row.sharePct)}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-[#566664] dark:text-slate-400 line-clamp-2 leading-snug">
+                    {row.meta.fixRule}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Interactive Filter Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto scrollbar-none">
         {[
@@ -580,7 +675,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
               >
                 <div className="space-y-3">
                   {/* Top Unboxed Metadata Strip */}
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5 text-[11px] font-mono text-slate-500 dark:text-slate-400">
                     <div className="flex items-center gap-1.5 truncate">
                       <strong className="text-blue-600 dark:text-blue-400 uppercase">
                         {item.module || 'EXAM'}
@@ -597,7 +692,27 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
                       </span>
                     </div>
 
-                    <span className="shrink-0">{formatDate(item.timestamp)}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className="sr-only" htmlFor={`root-cause-${itemId}`}>
+                        Root-cause trap category
+                      </label>
+                      <select
+                        id={`root-cause-${itemId}`}
+                        value={classifyMistakeRootCause(item)}
+                        onChange={(e) =>
+                          handleUpdateRootCause(itemId, e.target.value as DistractorRootCauseId)
+                        }
+                        className="text-[10px] font-sans font-bold rounded-md px-2 py-0.5 border border-[#D3DDDA] dark:border-[#1F8A70]/40 bg-[#EEF3F1] dark:bg-[#0B1514] text-[#0F4C45] dark:text-[#6EE7B7] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#0F4C45]"
+                        title="Classify cognitive root cause"
+                      >
+                        {DISTRACTOR_ROOT_CAUSE_LIST.map((rc) => (
+                          <option key={rc.id} value={rc.id}>
+                            Trap: {rc.shortLabel}
+                          </option>
+                        ))}
+                      </select>
+                      <span>{formatDate(item.timestamp)}</span>
+                    </div>
                   </div>
 
                   {/* Title / Question Prompt */}
@@ -803,7 +918,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
     </div>
   );
 
-  if (isModal || isOpen !== undefined) {
+  if (isModal || typeof isOpen === 'boolean') {
     if (!isOpen) return null;
     return (
       <ResponsiveModal
@@ -818,8 +933,10 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
   }
 
   return (
-    <div className="bg-white dark:bg-[#0B1224] rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-xs">
-      {content}
+    <div className="w-full max-w-5xl mx-auto pb-16">
+      <div className="bg-white dark:bg-[#11201E] rounded-2xl border border-[#D3DDDA] dark:border-[#1F8A70]/35 p-5 sm:p-7 shadow-xs">
+        {content}
+      </div>
     </div>
   );
 };

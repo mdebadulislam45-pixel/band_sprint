@@ -136,6 +136,24 @@ function writeLocalVerifiedCache(items: VerifiedQuestionSet[]): void {
   } catch {}
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out`));
+    }, ms);
+    promise.then(
+      (val) => {
+        window.clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        window.clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 export async function fetchSharedVerifiedQuestions(): Promise<VerifiedQuestionSet[]> {
   const localItems = readLocalVerifiedCache();
   if (!auth?.currentUser) {
@@ -149,7 +167,7 @@ export async function fetchSharedVerifiedQuestions(): Promise<VerifiedQuestionSe
       where('verificationStatus', '==', 'blind-verified'),
       limit(60)
     );
-    const snap = await getDocs(q);
+    const snap = await withTimeout(getDocs(q), 4_000, 'verifiedQuestions list');
     const cloudItems: VerifiedQuestionSet[] = snap.docs.map((d) => ({
       ...(d.data() as VerifiedQuestionSet),
       id: d.id,
@@ -171,10 +189,19 @@ export async function fetchSharedVerifiedQuestions(): Promise<VerifiedQuestionSe
     writeLocalVerifiedCache(merged);
     return merged;
   } catch (err) {
-    try {
-      handleFirestoreError(err, OperationType.LIST, 'verifiedQuestions');
-    } catch {
-      // Fall back gracefully to local cache so UI stays responsive
+    const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    const isTransient =
+      msg.includes('client is offline') ||
+      msg.includes('unavailable') ||
+      msg.includes('aborted') ||
+      msg.includes('cancelled') ||
+      msg.includes('network');
+    if (!isTransient) {
+      try {
+        handleFirestoreError(err, OperationType.LIST, 'verifiedQuestions');
+      } catch {
+        // Fall back gracefully to local cache so UI stays responsive
+      }
     }
     return localItems.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
@@ -237,16 +264,36 @@ export async function saveVerifiedQuestionToFirestore(
     firestorePayload.verificationNotes = String(drill.verificationNotes).slice(0, 1000);
   }
 
+  // Persist to local cache immediately so the drill is never blocked by slow cloud sync
+  const localDraftItem: VerifiedQuestionSet = {
+    ...(firestorePayload as VerifiedQuestionSet),
+    _isCloudSynced: false
+  };
+  const existing = readLocalVerifiedCache().filter((item) => item.id !== safeId);
+  writeLocalVerifiedCache([localDraftItem, ...existing]);
+
   let cloudSynced = false;
   if (currentUser) {
     try {
-      await setDoc(doc(db, 'verifiedQuestions', safeId), firestorePayload);
+      await withTimeout(
+        setDoc(doc(db, 'verifiedQuestions', safeId), firestorePayload),
+        2_500,
+        'verifiedQuestions write'
+      );
       cloudSynced = true;
     } catch (err) {
-      try {
-        handleFirestoreError(err, OperationType.CREATE, `verifiedQuestions/${safeId}`);
-      } catch {
-        // Keep local copy even if cloud write fails (e.g. offline)
+      const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+      const isTransient =
+        msg.includes('timed out') ||
+        msg.includes('client is offline') ||
+        msg.includes('unavailable') ||
+        msg.includes('aborted');
+      if (!isTransient) {
+        try {
+          handleFirestoreError(err, OperationType.CREATE, `verifiedQuestions/${safeId}`);
+        } catch {
+          // Keep local copy even if cloud write fails
+        }
       }
     }
   }
@@ -256,26 +303,49 @@ export async function saveVerifiedQuestionToFirestore(
     _isCloudSynced: cloudSynced
   };
 
-  const existing = readLocalVerifiedCache().filter((item) => item.id !== safeId);
-  writeLocalVerifiedCache([savedItem, ...existing]);
+  if (cloudSynced) {
+    writeLocalVerifiedCache([savedItem, ...existing]);
+  }
   return savedItem;
 }
 
 export async function generateVerifiedDrillViaApi(
-  req: GenerateDrillRequest
+  req: GenerateDrillRequest,
+  externalSignal?: AbortSignal
 ): Promise<VerifiedQuestionSet> {
-  const res = await fetch('/api/questions/generate-verified-drill', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req)
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 38_000);
+  const onExternalAbort = () => controller.abort();
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.drill) {
-    throw new Error(data?.error || `Failed to generate verified drill (HTTP ${res.status}).`);
+  try {
+    const res = await fetch('/api/questions/generate-verified-drill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: controller.signal
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.drill) {
+      throw new Error(data?.error || `Failed to generate verified drill (HTTP ${res.status}).`);
+    }
+
+    return saveVerifiedQuestionToFirestore(data.drill);
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      if (externalSignal?.aborted) {
+        throw new Error('Drill generation cancelled.');
+      }
+      throw new Error(
+        'Drill generation took longer than expected. Please click Generate again for a fresh attempt.'
+      );
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeoutId);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
   }
-
-  return saveVerifiedQuestionToFirestore(data.drill);
 }
 
 export async function reportVerifiedQuestionIssue(params: {

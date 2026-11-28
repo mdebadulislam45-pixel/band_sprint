@@ -1,5 +1,9 @@
 import { MistakeItem } from '../types';
 import {
+  classifyMistakeRootCause,
+  DistractorRootCauseId
+} from './distractorRootCause';
+import {
   pushMistakeToDailySprint,
   removeVaultMistakeFromDailySprint,
   syncUnresolvedVaultToDailySprint
@@ -31,13 +35,14 @@ function sanitizeMistakeItem(raw: any, index: number): MistakeItem | null {
   const nextReviewAt = typeof raw.nextReviewAt === 'number' && !isNaN(raw.nextReviewAt) ? raw.nextReviewAt : parsedTimestamp;
   const lastReviewedAt = typeof raw.lastReviewedAt === 'number' && !isNaN(raw.lastReviewedAt) ? raw.lastReviewedAt : undefined;
 
-  return {
+  const baseItem: MistakeItem = {
     id: typeof raw.id === 'string' && raw.id ? raw.id : `m_${Date.now()}_${index}`,
     timestamp: parsedTimestamp,
     module: rawModule as MistakeItem['module'],
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'IELTS Review Item',
     prompt: typeof raw.prompt === 'string' ? raw.prompt.trim() : undefined,
     questionType: typeof raw.questionType === 'string' ? raw.questionType.trim() : undefined,
+    rootCauseTag: typeof raw.rootCauseTag === 'string' ? (raw.rootCauseTag as DistractorRootCauseId) : undefined,
     userAnswer: rawUserAnswer,
     userWrongAnswer: typeof raw.userWrongAnswer === 'string' ? raw.userWrongAnswer : rawUserAnswer,
     correctAnswer: typeof raw.correctAnswer === 'string' && raw.correctAnswer.trim() ? raw.correctAnswer.trim() : (raw.correctAnswer != null ? String(raw.correctAnswer) : 'Correct Form Required'),
@@ -53,6 +58,8 @@ function sanitizeMistakeItem(raw: any, index: number): MistakeItem | null {
     nextReviewAt,
     lastReviewedAt
   };
+  baseItem.rootCauseTag = classifyMistakeRootCause(baseItem);
+  return baseItem;
 }
 
 export function getMistakes(): MistakeItem[] {
@@ -331,7 +338,27 @@ export function toggleMastery(id: string): void {
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: toggledItem }));
+      if ((toggledItem as MistakeItem).mastered) {
+        window.dispatchEvent(new CustomEvent('bandsprint_vault_mastered', { detail: toggledItem }));
+      }
     }
+  }
+}
+
+export function updateMistakeRootCause(id: string, tag: DistractorRootCauseId): void {
+  if (!id) return;
+  const current = getMistakes();
+  let updatedItem: MistakeItem | null = null;
+  const next = current.map((m) => {
+    if (m.id === id) {
+      updatedItem = { ...m, rootCauseTag: tag };
+      return updatedItem;
+    }
+    return m;
+  });
+  saveMistakes(next);
+  if (updatedItem && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('bandsprint_mistake_upserted', { detail: updatedItem }));
   }
 }
 

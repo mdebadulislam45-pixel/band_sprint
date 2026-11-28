@@ -21,6 +21,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { DailyMasteryExamQuestion } from '../../data/dailyBanglaSprintData';
 import { PomodoroDailySprintHub } from '../daily/PomodoroDailySprintHub';
 import { SpeakingShadowingDrill } from '../daily/SpeakingShadowingDrill';
+import { SmartSprintIntelligenceOverlay } from '../daily/SmartSprintIntelligenceOverlay';
 import { DailySprintMissionHub } from '../home/DailySprintMissionHub';
 import { audioManager } from '../../services/AudioManager';
 import {
@@ -37,16 +38,27 @@ import {
   getRotatedDailySprintPools,
   resolveSmartExamQuestionById
 } from '../../utils/smartSprintEngine';
+import {
+  ADAPTIVE_DIFFICULTY_UPDATED_EVENT,
+  computeSmartSprintIntelligence,
+  DifficultyModePreference,
+  loadDifficultyPreference
+} from '../../utils/adaptiveLearningPath';
+import { getStreakState } from '../../services/streakService';
 import { speakBanglaCue, speakEnglishTerm } from '../../utils/banglaSpeech';
 import { getMistakes, recordSM2Review } from '../../utils/vaultStorage';
 import {
-  isDailyReminderDueNow,
+  formatDaysSummary,
+  formatNextReminderLabel,
+  formatTime12Hour,
   loadStreakReminderSettings,
   requestStreakNotificationPermission,
   saveStreakReminderSettings,
-  StreakReminderSettings,
-  triggerStreakReminderNotification
+  sendTestStreakReminderNotification,
+  STREAK_REMINDER_UPDATED_EVENT,
+  StreakReminderSettings
 } from '../../utils/streakReminderService';
+import { DailyReminderSettingsPanel } from '../reminders/DailyReminderSettingsPanel';
 import { SPRING_SNAPPY, EASE_EDITORIAL } from '../common/MotionPrimitives';
 import { UserProfile } from '../../types';
 
@@ -74,51 +86,68 @@ export const DailySprintPage: React.FC<DailySprintPageProps> = ({
   const [reminderSettings, setReminderSettings] = useState<StreakReminderSettings>(() =>
     loadStreakReminderSettings()
   );
-  const [showDueReminderBanner, setShowDueReminderBanner] = useState<boolean>(false);
+  const [showReminderDrawer, setShowReminderDrawer] = useState<boolean>(false);
+  const [difficultyPref, setDifficultyPref] = useState<DifficultyModePreference>(() =>
+    loadDifficultyPreference()
+  );
+  const [streakState, setStreakState] = useState(() => getStreakState());
+  const [vaultVersion, setVaultVersion] = useState<number>(0);
+  const [isIntelligenceOpen, setIsIntelligenceOpen] = useState<boolean>(false);
 
   useEffect(() => {
     // Hydrate any unresolved Mistake Vault entries into the Smart Review Queue on load
     const synced = syncUnresolvedVaultToDailySprint(getMistakes());
     setSprintState(synced);
 
-    const syncState = () => setSprintState(loadDailySprintProgress());
+    const syncState = () => {
+      setSprintState(loadDailySprintProgress());
+      setStreakState(getStreakState());
+      setDifficultyPref(loadDifficultyPreference());
+      setReminderSettings(loadStreakReminderSettings());
+      setVaultVersion((v) => v + 1);
+    };
     window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, syncState);
     window.addEventListener('vault_updated', syncState);
     window.addEventListener('bandsprint_cloud_sync_updated', syncState);
     window.addEventListener('bandsprint_mastery_exam_completed', syncState);
+    window.addEventListener('bandsprint_streak_updated', syncState);
+    window.addEventListener(ADAPTIVE_DIFFICULTY_UPDATED_EVENT, syncState);
+    window.addEventListener(STREAK_REMINDER_UPDATED_EVENT, syncState);
     return () => {
       window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, syncState);
       window.removeEventListener('vault_updated', syncState);
       window.removeEventListener('bandsprint_cloud_sync_updated', syncState);
       window.removeEventListener('bandsprint_mastery_exam_completed', syncState);
+      window.removeEventListener('bandsprint_streak_updated', syncState);
+      window.removeEventListener(ADAPTIVE_DIFFICULTY_UPDATED_EVENT, syncState);
+      window.removeEventListener(STREAK_REMINDER_UPDATED_EVENT, syncState);
     };
   }, []);
-
-  useEffect(() => {
-    if (isDailyReminderDueNow(reminderSettings, sprintState.pomodoroFocusMinutesLogged)) {
-      const todayKey = getTodayDateKey();
-      const updated = saveStreakReminderSettings({
-        ...reminderSettings,
-        lastTriggeredDate: todayKey
-      });
-      setReminderSettings(updated);
-      setShowDueReminderBanner(true);
-      triggerStreakReminderNotification(
-        sprintState.reviewQueueIds.filter((id) => isReviewItemDueToday(sprintState.reviewSchedule[id])).length
-      );
-    }
-  }, [reminderSettings, sprintState.pomodoroFocusMinutesLogged, sprintState.reviewQueueIds, sprintState.reviewSchedule]);
 
   const isCloudSignedIn = Boolean(user && user.id && user.id !== 'default_candidate');
 
   const smartBrief = useMemo(
     () => computeSmartSprintBrief(user, sprintState),
-    [sprintState, user]
+    [sprintState, user, vaultVersion]
+  );
+
+  const sprintIntelligence = useMemo(
+    () =>
+      computeSmartSprintIntelligence(sprintState, {
+        user,
+        streakState,
+        difficultyPreference: difficultyPref
+      }),
+    [difficultyPref, sprintState, streakState, user, vaultVersion]
   );
 
   const pools = useMemo(
-    () => getRotatedDailySprintPools(sprintState.quotaTier, getTodayDateKey(), cycleOffset),
-    [cycleOffset, sprintState.quotaTier]
+    () =>
+      getRotatedDailySprintPools(sprintState.quotaTier, getTodayDateKey(), cycleOffset, {
+        difficultyTier: sprintIntelligence.activeDifficulty,
+        reviewSchedule: sprintState.reviewSchedule
+      }),
+    [cycleOffset, sprintIntelligence.activeDifficulty, sprintState.quotaTier, sprintState.reviewSchedule, vaultVersion]
   );
 
   const quotaCounts = useMemo(() => {
@@ -195,24 +224,49 @@ export const DailySprintPage: React.FC<DailySprintPageProps> = ({
     const nextEnabled = !reminderSettings.enabled;
     if (nextEnabled) {
       const perm = await requestStreakNotificationPermission();
-      const saved = saveStreakReminderSettings({ ...reminderSettings, enabled: true });
+      const saved = saveStreakReminderSettings({
+        ...reminderSettings,
+        enabled: true,
+        snoozeUntil: null
+      });
       setReminderSettings(saved);
       onShowToast(
         perm === 'granted'
-          ? `Daily streak reminder active for ${saved.reminderTime}.`
-          : `In-app streak reminder saved for ${saved.reminderTime} (browser alerts muted or unsupported).`
+          ? `Recurring daily reminder active at ${formatTime12Hour(saved.reminderTime)} (${formatDaysSummary(saved.daysOfWeek)}).`
+          : `In-app streak reminder saved for ${formatTime12Hour(saved.reminderTime)} (browser alerts ${perm}).`
       );
     } else {
-      const saved = saveStreakReminderSettings({ ...reminderSettings, enabled: false });
+      const saved = saveStreakReminderSettings({
+        ...reminderSettings,
+        enabled: false,
+        snoozeUntil: null
+      });
       setReminderSettings(saved);
-      setShowDueReminderBanner(false);
       onShowToast('Daily streak reminder paused.');
     }
   };
 
   const handleReminderTimeChange = (nextTime: string) => {
-    const saved = saveStreakReminderSettings({ ...reminderSettings, reminderTime: nextTime });
+    const saved = saveStreakReminderSettings({
+      ...reminderSettings,
+      reminderTime: nextTime,
+      lastTriggeredDate: '',
+      snoozeUntil: null
+    });
     setReminderSettings(saved);
+  };
+
+  const handleQuickTestReminder = async () => {
+    audioManager.playUiClick('check');
+    const res = await sendTestStreakReminderNotification({
+      targetBand: user?.progress?.targetBand,
+      onNavigate
+    });
+    onShowToast(
+      res.browserDelivered
+        ? 'Test browser notification sent!'
+        : `Preview alert: "${res.payload.title}" — ${res.payload.body}`
+    );
   };
 
   const studioTabs: Array<{
@@ -358,14 +412,28 @@ export const DailySprintPage: React.FC<DailySprintPageProps> = ({
             )}
             <span className="font-semibold">Daily Streak Reminder</span>
             <span aria-hidden="true" className="text-white/30">·</span>
-            <span className="text-[#EEF3F1]/70">
+            <span className="text-[#EEF3F1]/80 font-mono tabular-nums">
               {reminderSettings.enabled
-                ? `Scheduled daily at ${reminderSettings.reminderTime}`
-                : 'Protect your IELTS streak with an opt-in daily nudge'}
+                ? `${formatDaysSummary(reminderSettings.daysOfWeek)} · ${formatNextReminderLabel(reminderSettings)}`
+                : 'Protect your IELTS streak with a recurring daily alert'}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              data-testid="daily-sprint-intelligence-trigger"
+              onClick={() => {
+                audioManager.playUiClick('soft');
+                setIsIntelligenceOpen(true);
+              }}
+              className="min-h-[36px] px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+            >
+              <Brain className="w-3.5 h-3.5 text-[#F4A62A]" />
+              <span>
+                Velocity {sprintIntelligence.velocityScore} · {sprintIntelligence.difficultyLabel}
+              </span>
+            </button>
             <input
               type="time"
               value={reminderSettings.reminderTime}
@@ -385,26 +453,31 @@ export const DailySprintPage: React.FC<DailySprintPageProps> = ({
             >
               {reminderSettings.enabled ? 'Reminder On' : 'Enable Reminder'}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowReminderDrawer((v) => !v)}
+              className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition cursor-pointer"
+            >
+              {showReminderDrawer ? 'Hide Schedule' : 'Schedule'}
+            </button>
+            <button
+              type="button"
+              onClick={handleQuickTestReminder}
+              className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[#F4A62A] text-xs font-semibold transition cursor-pointer"
+            >
+              Test
+            </button>
           </div>
         </div>
       </section>
 
-      {showDueReminderBanner && (
-        <div
-          role="status"
-          className="rounded-2xl bg-[#FEF6E8] dark:bg-amber-950/30 border border-[#F4A62A]/50 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-[#66410B] dark:text-amber-200"
-        >
-          <span>
-            <strong>Streak Nudge:</strong> Knock out one 15m Pomodoro focus block or clear your {dueQueueItems.length} due recall items today!
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowDueReminderBanner(false)}
-            className="px-2.5 py-1 rounded-lg bg-white/70 dark:bg-black/30 text-xs font-bold cursor-pointer"
-          >
-            Dismiss
-          </button>
-        </div>
+      {showReminderDrawer && (
+        <DailyReminderSettingsPanel
+          compact
+          onShowToast={onShowToast}
+          onNavigate={onNavigate}
+          targetBand={user?.progress?.targetBand}
+        />
       )}
 
       {/* =====================================================================
@@ -796,6 +869,16 @@ export const DailySprintPage: React.FC<DailySprintPageProps> = ({
           )}
         </motion.div>
       </AnimatePresence>
+      <SmartSprintIntelligenceOverlay
+        isOpen={isIntelligenceOpen}
+        onClose={() => setIsIntelligenceOpen(false)}
+        intelligence={sprintIntelligence}
+        adaptivePath={pools.adaptivePath}
+        topVocabItems={pools.vocabulary}
+        topGrammarRules={pools.grammar}
+        onDifficultyApplied={(pref) => setDifficultyPref(pref)}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 };

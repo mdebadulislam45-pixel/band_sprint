@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Volume2, VolumeX } from 'lucide-react';
 import type { UserProfile } from '../types';
 import type {
@@ -23,6 +24,20 @@ import {
   computeDaysInactive,
   getGlobalBarnabyAnalyzing,
 } from '../utils/getBarnabyState';
+import {
+  BARNABY_AUTO_DISAPPEAR_MS,
+  BARNABY_ENCOURAGING_PROMPTS,
+  BARNABY_INACTIVITY_ENCOURAGE_MS,
+  BARNABY_MOOD_APPEAR_DWELL_MS,
+  evaluateDailyGoalProgress,
+  resolveBarnabyMoodMachine,
+} from '../utils/barnabyMoodMachine';
+import {
+  DAILY_SPRINT_SAVED_EVENT,
+  DAILY_SPRINT_SYNCED_EVENT,
+  loadDailySprintProgress,
+} from '../utils/dailySprintProgressStore';
+import { LEARNING_PATH_UPDATED_EVENT } from './learn/InteractiveLearningPath';
 import { getBarnabyScreenContext } from '../services/barnabyBrain';
 import { loadDiagnosticResult } from '../services/diagnosticResultStore';
 import { aggregateExamHistory, validateOptionalHalfBand } from '../utils/historyAggregation';
@@ -64,25 +79,6 @@ type AutonomousPhase =
   | 'walking_back'
   | 'bored'
   | 'sleeping';
-
-const DEV_MOOD_LABELS: Record<BarnabyFelineBehavior, string> = {
-  walking: '🚶 walking',
-  patrol: '🚶 walking',
-  'paw-licking': '🐾 grooming',
-  grooming: '🐾 grooming',
-  energetic: '✨ energetic',
-  bored: '😑 bored',
-  sleeping: '😴 sleeping',
-  thinking: '💭 thinking',
-  hovering: '💭 thinking',
-  speaking: '💬 speaking',
-};
-
-const IS_PREVIEW_OR_DEV =
-  typeof window !== 'undefined' &&
-  (Boolean(import.meta.env?.DEV) ||
-    window.location.hostname.includes('ais-dev-') ||
-    window.location.hostname === 'localhost');
 
 // Timed Listening, Speaking & full CD-IELTS Mock rooms (globalExamActive) strictly unmount Barnaby
 const TIMED_EXAM_PATHS = new Set(['/practice/listening', '/practice/speaking']);
@@ -168,7 +164,24 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
   const spinTimerRef = useRef<number | null>(null);
   const prevAutonomousPhaseRef = useRef<AutonomousPhase>(autonomousPhase);
 
+  const prefersReducedMotion = useReducedMotion();
+  const [userInactiveMs, setUserInactiveMs] = useState(0);
+  const [companionIdleMs, setCompanionIdleMs] = useState(0);
+  const [isHoveredOnBarnaby, setIsHoveredOnBarnaby] = useState(false);
+  const [encouragementWindowActive, setEncouragementWindowActive] = useState(false);
+  const [dailyGoalEval, setDailyGoalEval] = useState(() =>
+    evaluateDailyGoalProgress(
+      loadDailySprintProgress(),
+      getCompletedMissionsToday(getStreakState()).length
+    )
+  );
+
   const lastInteractionTsRef = useRef(Date.now());
+  const lastBarnabyActiveTsRef = useRef(Date.now());
+  const prevDailyGoalMetRef = useRef(dailyGoalEval.isDailyGoalMet);
+  const encouragementNotifiedRef = useRef(false);
+  const encouragementPromptIdxRef = useRef(0);
+  const encouragementHideTimerRef = useRef<number | null>(null);
   const celebrationTimerRef = useRef<number | null>(null);
   const energeticTimerRef = useRef<number | null>(null);
   const purrTimerRef = useRef<number | null>(null);
@@ -201,14 +214,23 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     }
   }, []);
 
+  const touchBarnabyPresence = useCallback(() => {
+    lastBarnabyActiveTsRef.current = Date.now();
+    setCompanionIdleMs(0);
+  }, []);
+
   const registerActivity = useCallback(() => {
     lastInteractionTsRef.current = Date.now();
+    encouragementNotifiedRef.current = false;
+    setUserInactiveMs(0);
+    setEncouragementWindowActive(false);
+    touchBarnabyPresence();
     setIsDeepSleeping(false);
     setIsWritingTypingSleep(false);
     setAutonomousPhase((prev) =>
       prev === 'bored' || prev === 'sleeping' ? 'settling' : prev
     );
-  }, []);
+  }, [touchBarnabyPresence]);
 
   const triggerLandingSquash = useCallback(() => {
     setIsLandingToIdle(true);
@@ -371,12 +393,19 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
 
   resetToCornerRef.current = resetToSafeCorner;
 
-  // Hovering wakes Barnaby gently from bored state
+  // Hovering wakes Barnaby gently and pauses auto-disappear timer
   const handleHoverWake = useCallback(() => {
+    setIsHoveredOnBarnaby(true);
+    touchBarnabyPresence();
     if (autonomousPhase === 'bored') {
       registerActivity();
     }
-  }, [autonomousPhase, registerActivity]);
+  }, [autonomousPhase, registerActivity, touchBarnabyPresence]);
+
+  const handleHoverLeave = useCallback(() => {
+    setIsHoveredOnBarnaby(false);
+    touchBarnabyPresence();
+  }, [touchBarnabyPresence]);
 
   // Tactile petting gesture back-and-forth
   const handlePettingPointerMove = useCallback(
@@ -499,11 +528,8 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     const onCelebrate = (e: Event) => {
       const detail = (e as CustomEvent<{ reason?: string; durationMs?: number }>).detail;
       const dur = detail?.durationMs ?? BARNABY_CELEBRATION_DURATION_MS;
-      setIsCelebrating(true);
-      triggerEnergeticBurst(dur);
-      showMicroBubble(
-        detail?.reason ? `${detail.reason}! 🎉` : 'Target milestone reached! 🏆',
-        MICRO_BUBBLE_DURATION_MS
+      triggerCelebrationSpinAndStars(
+        detail?.reason ? `${detail.reason}!` : 'Target milestone reached!'
       );
       if (celebrationTimerRef.current !== null) window.clearTimeout(celebrationTimerRef.current);
       celebrationTimerRef.current = window.setTimeout(() => {
@@ -512,9 +538,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       }, dur);
     };
     const onDiagnosticSaved = () => {
-      setIsCelebrating(true);
-      triggerEnergeticBurst(BARNABY_CELEBRATION_DURATION_MS);
-      showMicroBubble('Baseline calibrated! Your personalized plan is live 🎯', 4000);
+      triggerCelebrationSpinAndStars('Baseline calibrated! Your personalized plan is live.');
       if (celebrationTimerRef.current !== null) window.clearTimeout(celebrationTimerRef.current);
       celebrationTimerRef.current = window.setTimeout(() => {
         setIsCelebrating(false);
@@ -528,7 +552,36 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       window.removeEventListener('bandsprint_diagnostic_saved', onDiagnosticSaved);
       if (celebrationTimerRef.current !== null) window.clearTimeout(celebrationTimerRef.current);
     };
-  }, [showMicroBubble, triggerEnergeticBurst]);
+  }, [triggerCelebrationSpinAndStars]);
+
+  // Daily Goal Transition Monitor -> Triggers joyful 'happy' celebratory spin when today's goal is met
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncDailyGoal = () => {
+      const nextEval = evaluateDailyGoalProgress(
+        loadDailySprintProgress(),
+        getCompletedMissionsToday(getStreakState()).length
+      );
+      setDailyGoalEval(nextEval);
+      if (!prevDailyGoalMetRef.current && nextEval.isDailyGoalMet) {
+        triggerCelebrationSpinAndStars(`Daily goal met! ${nextEval.metSummary}`);
+      }
+      prevDailyGoalMetRef.current = nextEval.isDailyGoalMet;
+    };
+
+    window.addEventListener(DAILY_SPRINT_SAVED_EVENT, syncDailyGoal);
+    window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, syncDailyGoal);
+    window.addEventListener('bandsprint_tasks_updated', syncDailyGoal);
+    window.addEventListener('bandsprint_streak_updated', syncDailyGoal);
+    window.addEventListener(LEARNING_PATH_UPDATED_EVENT, syncDailyGoal);
+    return () => {
+      window.removeEventListener(DAILY_SPRINT_SAVED_EVENT, syncDailyGoal);
+      window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, syncDailyGoal);
+      window.removeEventListener('bandsprint_tasks_updated', syncDailyGoal);
+      window.removeEventListener('bandsprint_streak_updated', syncDailyGoal);
+      window.removeEventListener(LEARNING_PATH_UPDATED_EVENT, syncDailyGoal);
+    };
+  }, [triggerCelebrationSpinAndStars]);
 
   // Circadian greeting on initial mount
   const circadianGreetedRef = useRef(false);
@@ -581,12 +634,19 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     registerActivity();
   }, [normalizedPath, registerActivity]);
 
-  // Inactivity & Writing Task 1/2 typing sleep monitor
+  // Inactivity (5-minute 'encouraging' trigger), auto-disappear dwell clock & Writing typing sleep monitor
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const onWindowActivity = () => {
       lastInteractionTsRef.current = Date.now();
+      encouragementNotifiedRef.current = false;
+      setUserInactiveMs(0);
+      setEncouragementWindowActive(false);
+      if (encouragementHideTimerRef.current !== null) {
+        window.clearTimeout(encouragementHideTimerRef.current);
+        encouragementHideTimerRef.current = null;
+      }
       if (isDeepSleeping) {
         setIsDeepSleeping(false);
         setAutonomousPhase('settling');
@@ -623,9 +683,44 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     window.addEventListener('scroll', onWindowActivity, { passive: true });
 
     const idleCheckTimer = window.setInterval(() => {
+      const now = Date.now();
+      const idleMs = now - lastInteractionTsRef.current;
+      const compIdleMs = now - lastBarnabyActiveTsRef.current;
+
+      setUserInactiveMs(idleMs);
+      setCompanionIdleMs(compIdleMs);
+
       if (isDragging || isDrawerOpen || isMinimized || isCelebrating || isEnergetic) return;
-      const idleMs = Date.now() - lastInteractionTsRef.current;
-      if (idleMs >= DEEP_SLEEP_IDLE_MS && !isDeepSleeping) {
+
+      // 5+ minutes of user inactivity -> wake Barnaby into 'encouraging' idle mood!
+      if (idleMs >= BARNABY_INACTIVITY_ENCOURAGE_MS && !encouragementNotifiedRef.current) {
+        encouragementNotifiedRef.current = true;
+        setIsDeepSleeping(false);
+        setAutonomousPhase('settling');
+        setEncouragementWindowActive(true);
+        lastBarnabyActiveTsRef.current = now;
+        setCompanionIdleMs(0);
+
+        const prompt =
+          BARNABY_ENCOURAGING_PROMPTS[
+            encouragementPromptIdxRef.current % BARNABY_ENCOURAGING_PROMPTS.length
+          ];
+        encouragementPromptIdxRef.current += 1;
+        showMicroBubble(prompt, 6200);
+
+        if (encouragementHideTimerRef.current !== null) {
+          window.clearTimeout(encouragementHideTimerRef.current);
+        }
+        encouragementHideTimerRef.current = window.setTimeout(() => {
+          setEncouragementWindowActive(false);
+          lastBarnabyActiveTsRef.current = Date.now() - BARNABY_AUTO_DISAPPEAR_MS;
+          setCompanionIdleMs(BARNABY_AUTO_DISAPPEAR_MS);
+          encouragementHideTimerRef.current = null;
+        }, BARNABY_MOOD_APPEAR_DWELL_MS);
+        return;
+      }
+
+      if (idleMs >= DEEP_SLEEP_IDLE_MS && idleMs < BARNABY_INACTIVITY_ENCOURAGE_MS && !isDeepSleeping) {
         setIsDeepSleeping(true);
       }
     }, 1000);
@@ -649,6 +744,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     isEnergetic,
     isMinimized,
     normalizedPath,
+    showMicroBubble,
   ]);
 
   // Visible Autonomous 7-Activity Feline State Machine Loop:
@@ -741,41 +837,52 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       };
     }
 
-    // Active directional walking along safe bottom ledge strictly below or to the right of Daily Command Center stat cards
+    // Active directional walking strictly within the empty right-hand viewport gutter outside content cards/text
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const isMobile = vw < 768;
     const effWidth = isMobile ? 76 : 96;
     const effHeight = isMobile ? 76 : 96;
-    const rightInset = isMobile ? 12 : 24;
-    const bottomInset = isMobile ? 68 : 24;
+    const rightInset = isMobile ? 12 : 16;
+    const bottomInset = isMobile ? 76 : 16;
     const baseAnchorX = vw - effWidth - rightInset + dragOffset.dx;
     const barnabyTopY = vh - bottomInset - effHeight + dragOffset.dy;
+    const barnabyBottomY = barnabyTopY + effHeight;
 
-    let minLeftX = 12;
-    // Keep patrol strictly below or to the right of the Daily Command Center stat cards so Current Est. / Exam Day stay uncovered
-    const heroEl =
-      typeof document !== 'undefined'
-        ? document.querySelector<HTMLElement>('[data-testid="daily-command-center-hero"]')
-        : null;
-    if (heroEl) {
-      const heroRect = heroEl.getBoundingClientRect();
-      // If Barnaby's vertical band overlaps the hero card (within 14px margin), keep him strictly to the right of the card
-      if (barnabyTopY < heroRect.bottom + 14 && barnabyTopY + effHeight > heroRect.top - 8) {
-        minLeftX = Math.max(minLeftX, Math.ceil(heroRect.right + 12));
-      }
+    let minLeftX = 16;
+    // Measure active content containers & cards so patrol NEVER overlaps card copy or buttons
+    if (typeof document !== 'undefined') {
+      const protectedNodes = document.querySelectorAll<HTMLElement>(
+        '[data-testid="daily-command-center-hero"], main .max-w-6xl, main .max-w-5xl, main .max-w-4xl, main .max-w-3xl, main section, main article'
+      );
+      protectedNodes.forEach((node) => {
+        const rect = node.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const overlapsVertically =
+          barnabyTopY < rect.bottom + 16 && barnabyBottomY > rect.top - 16;
+        if (overlapsVertically) {
+          minLeftX = Math.max(minLeftX, Math.ceil(rect.right + 16));
+        }
+      });
     }
 
-    const maxRightX = vw - effWidth - 12;
-    const minRelDx = Math.min(0, minLeftX - baseAnchorX);
+    const maxRightX = vw - effWidth - rightInset;
+    const safeMinLeftX = Math.min(maxRightX, minLeftX);
+    const minRelDx = Math.min(0, safeMinLeftX - baseAnchorX);
     const maxRelDx = Math.min(0, maxRightX - baseAnchorX);
-    const availableSpan = Math.max(0, maxRelDx - minRelDx);
+    const availableSpan =
+      baseAnchorX >= minLeftX ? Math.max(0, maxRelDx - minRelDx) : 0;
 
     const startDx = patrolDxRef.current;
     let targetDx = 0;
 
     if (autonomousPhase === 'walking_out') {
-      if (availableSpan < 48) {
+      // Never patrol horizontally on mobile or whenever there is no clear empty gutter outside content cards
+      if (isMobile || availableSpan < 64) {
+        if (patrolDxRef.current !== 0) {
+          patrolDxRef.current = 0;
+          setPatrolDx(0);
+        }
         setAutonomousPhase('paw_licking');
         return;
       }
@@ -844,6 +951,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     analyzingState.isAnalyzing,
     autonomousPhase,
     dragOffset.dx,
+    dragOffset.dy,
     isCelebrating,
     isDeepSleeping,
     isDragging,
@@ -854,7 +962,25 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     isSelectionThinking,
     isSpeakingCue,
     isWritingTypingSleep,
+    normalizedPath,
   ]);
+
+  // Snap patrol back to the clean viewport dock on route change or viewport resize
+  useEffect(() => {
+    patrolDxRef.current = 0;
+    setPatrolDx(0);
+    setAutonomousPhase('settling');
+
+    const handleViewportResize = () => {
+      if (patrolDxRef.current !== 0) {
+        patrolDxRef.current = 0;
+        setPatrolDx(0);
+        setAutonomousPhase('settling');
+      }
+    };
+    window.addEventListener('resize', handleViewportResize, { passive: true });
+    return () => window.removeEventListener('resize', handleViewportResize);
+  }, [normalizedPath]);
 
   // Monitor the `phase` of Barnaby's walking stride and emit a small `div` (puff of dust)
   // with the `animate-barnaby-particle` class at the current `pawX` and `pawY` coordinates
@@ -1122,7 +1248,7 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     };
   }, [registerActivity, showMicroBubble, triggerCelebrationSpinAndStars, triggerEnergeticBurst]);
 
-  // Ambient study tips while awake
+  // Ambient study tips only while Barnaby is actively visible & awake
   const isSleepActive =
     isDeepSleeping || isWritingTypingSleep || autonomousPhase === 'sleeping';
   const isBoredActive = !isSleepActive && autonomousPhase === 'bored';
@@ -1132,17 +1258,16 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       typeof window === 'undefined' ||
       isMinimized ||
       isSleepActive ||
-      isBoredActive
+      isBoredActive ||
+      companionIdleMs >= BARNABY_AUTO_DISAPPEAR_MS
     ) {
       return;
     }
-    const prefersReducedMotion =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReducedMotion) return;
 
     const timer = window.setInterval(() => {
       if (isSleepActive || isDrawerOpen || isBoredActive) return;
+      if (Date.now() - lastBarnabyActiveTsRef.current >= BARNABY_AUTO_DISAPPEAR_MS) return;
       setTipIndex((prev) => {
         const next = (prev + 1) % AMBIENT_TIPS.length;
         showMicroBubble(AMBIENT_TIPS[next], MICRO_BUBBLE_DURATION_MS);
@@ -1150,7 +1275,15 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       });
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [isBoredActive, isDrawerOpen, isMinimized, isSleepActive, showMicroBubble]);
+  }, [
+    companionIdleMs,
+    isBoredActive,
+    isDrawerOpen,
+    isMinimized,
+    isSleepActive,
+    prefersReducedMotion,
+    showMicroBubble,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1164,6 +1297,9 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       }
       if (selectionThinkingTimerRef.current !== null) {
         window.clearTimeout(selectionThinkingTimerRef.current);
+      }
+      if (encouragementHideTimerRef.current !== null) {
+        window.clearTimeout(encouragementHideTimerRef.current);
       }
       if (phaseTimerRef.current !== null) window.clearTimeout(phaseTimerRef.current);
       if (walkRafRef.current !== null) cancelAnimationFrame(walkRafRef.current);
@@ -1212,25 +1348,50 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
     topWeakness,
   });
 
-  // Resolve active 7-activity feline behavior
-  const activeFelineBehavior: BarnabyFelineBehavior = isCelebrating || isEnergetic || isPurring
-    ? 'energetic'
-    : isSpeakingCue || isExternalSpeaking
-    ? 'speaking'
-    : isDrawerOpen || analyzingState.isAnalyzing || isSelectionThinking
-    ? 'thinking'
-    : isSleepActive
-    ? 'sleeping'
-    : isBoredActive
-    ? 'bored'
-    : autonomousPhase === 'walking_out' || autonomousPhase === 'walking_back'
-    ? 'walking'
-    : autonomousPhase === 'paw_licking'
-    ? 'paw-licking'
-    : 'thinking';
+  const moodResolution = resolveBarnabyMoodMachine({
+    dailyGoalMet: dailyGoalEval.isDailyGoalMet || allDailyTasksCompleted,
+    isCelebrating: isCelebrating || isCelebratingSpin,
+    userInactiveMs,
+    companionIdleMs,
+    isUserEngagedWithBarnaby:
+      isHoveredOnBarnaby ||
+      isDragging ||
+      isDrawerOpen ||
+      isSpeakingCue ||
+      isExternalSpeaking,
+    isAnalyzingOrFocused: analyzingState.isAnalyzing || isSelectionThinking,
+    isManuallyMinimized: isMinimized,
+    encouragementWindowActive,
+  });
+
+  // Resolve active feline behavior layered with the Mood State Machine
+  const activeFelineBehavior: BarnabyFelineBehavior =
+    moodResolution.mood === 'happy' && moodResolution.shouldSpin
+      ? 'energetic'
+      : moodResolution.mood === 'encouraging'
+      ? 'hovering'
+      : isCelebrating || isEnergetic || isPurring
+      ? 'energetic'
+      : isSpeakingCue || isExternalSpeaking
+      ? 'speaking'
+      : isDrawerOpen || analyzingState.isAnalyzing || isSelectionThinking
+      ? 'thinking'
+      : isSleepActive
+      ? 'sleeping'
+      : isBoredActive
+      ? 'bored'
+      : autonomousPhase === 'walking_out' || autonomousPhase === 'walking_back'
+      ? 'walking'
+      : autonomousPhase === 'paw_licking'
+      ? 'paw-licking'
+      : 'thinking';
 
   const expression: BarnabyExpression =
-    activeFelineBehavior === 'sleeping'
+    moodResolution.mood === 'happy' && moodResolution.shouldSpin
+      ? 'celebrating'
+      : moodResolution.mood === 'encouraging'
+      ? 'encouraging'
+      : activeFelineBehavior === 'sleeping'
       ? 'sleepy'
       : activeFelineBehavior === 'energetic'
       ? 'excited'
@@ -1243,7 +1404,11 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       : baseExpression;
 
   const animationState: BarnabyAnimationState =
-    activeFelineBehavior === 'sleeping'
+    moodResolution.mood === 'happy' && moodResolution.shouldSpin
+      ? 'celebratory'
+      : moodResolution.mood === 'encouraging'
+      ? 'idle'
+      : activeFelineBehavior === 'sleeping'
       ? 'sleeping'
       : activeFelineBehavior === 'energetic'
       ? 'energetic'
@@ -1258,7 +1423,11 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
       : 'thinking';
 
   const moodState: BarnabyMoodState =
-    activeFelineBehavior === 'energetic'
+    moodResolution.mood === 'happy'
+      ? 'celebratory'
+      : moodResolution.mood === 'encouraging'
+      ? 'encouraging'
+      : activeFelineBehavior === 'energetic'
       ? 'celebratory'
       : activeFelineBehavior === 'sleeping'
       ? 'sleepy'
@@ -1273,8 +1442,9 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
 
   // Compute safe horizontal render offset combining manual drag + smooth bottom-ledge patrol (zero snapping)
   const combinedDx = Math.round(dragOffset.dx + patrolDx);
-  const devMoodLabel = DEV_MOOD_LABELS[activeFelineBehavior] || '💭 thinking';
-  const pinMoodPillRight = dockSide === 'left' || patrolDx < -110;
+  const shouldPlayHappySpin = !prefersReducedMotion && (moodResolution.shouldSpin || isCelebratingSpin);
+  const shouldPlayEncouragingIdle =
+    !prefersReducedMotion && !shouldPlayHappySpin && moodResolution.shouldEncourageIdle;
 
   return (
     <>
@@ -1282,13 +1452,15 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
         <div
           data-testid="floating-barnaby-docked"
           data-barnaby-mode={mode}
+          data-barnaby-mood-machine={moodResolution.mood}
           data-barnaby-dock-side={dockSide}
-          className="fixed right-3 bottom-[68px] md:right-6 md:bottom-6 z-30 select-none"
+          className="fixed right-3 bottom-[76px] md:right-4 md:bottom-4 z-30 select-none"
         >
           <button
             type="button"
             data-testid="floating-barnaby-crest-badge"
             onClick={() => {
+              touchBarnabyPresence();
               if (visibility === 'minimal_badge') {
                 handleSingleTap();
               } else {
@@ -1311,195 +1483,240 @@ export const FloatingBarnaby: React.FC<FloatingBarnabyProps> = ({
           </button>
         </div>
       ) : (
-        <>
-          {/* Strictly viewport-clamped frosted micro-bubble with clean vertical clearance (bottom-[162px]) */}
-          <div
-            data-testid="floating-barnaby-micro-bubble"
-            aria-live="polite"
-            className={`pointer-events-none fixed right-3 bottom-[162px] md:right-6 md:bottom-[144px] max-w-[calc(100vw-24px)] z-30 transition-all duration-300 ease-out ${
-              microBubbleText && !isDragging
-                ? 'opacity-100 translate-y-0 scale-100'
-                : 'opacity-0 translate-y-1.5 scale-95'
-            }`}
-          >
-            {microBubbleText && (
-              <div className="backdrop-blur-md bg-white/92 dark:bg-slate-900/92 text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-medium px-3 py-1.5 rounded-2xl shadow-md border border-[#134E41]/15 max-w-full sm:max-w-xs flex items-center gap-1.5 pointer-events-auto">
-                {(isSpeakingCue || isExternalSpeaking) && (
-                  <span
-                    aria-hidden="true"
-                    title="Speaking IELTS study cue"
-                    className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-ping shrink-0"
-                  />
+        <AnimatePresence mode="wait">
+          {moodResolution.isVisible ? (
+            <motion.div
+              key="floating-barnaby-active"
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.84, y: 14 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.72, y: 18 }}
+              transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {/* Strictly viewport-clamped frosted micro-bubble above the corner dock */}
+              <div
+                data-testid="floating-barnaby-micro-bubble"
+                aria-live="polite"
+                className={`pointer-events-none fixed right-3 bottom-[164px] md:right-4 md:bottom-[128px] max-w-[calc(100vw-24px)] z-30 transition-all duration-300 ease-out ${
+                  microBubbleText && !isDragging
+                    ? 'opacity-100 translate-y-0 scale-100'
+                    : 'opacity-0 translate-y-1.5 scale-95'
+                }`}
+              >
+                {microBubbleText && (
+                  <div className="backdrop-blur-md bg-white/92 dark:bg-slate-900/92 text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-medium px-3 py-1.5 rounded-2xl shadow-md border border-[#134E41]/15 max-w-full sm:max-w-xs flex items-center gap-1.5 pointer-events-auto">
+                    <span className="leading-snug break-words">{microBubbleText}</span>
+                    <button
+                      type="button"
+                      data-no-drag="true"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        touchBarnabyPresence();
+                        handleToggleSpeakCue();
+                      }}
+                      aria-label={isSpeakingCue ? 'Stop Barnaby voice' : 'Listen to Barnaby'}
+                      title={isSpeakingCue ? 'Stop Barnaby voice' : 'Tap to hear Barnaby'}
+                      className={`p-1 rounded-full transition-colors cursor-pointer shrink-0 ${
+                        isSpeakingCue
+                          ? 'bg-[#134E41]/15 text-[#134E41] dark:bg-[#10B981]/25 dark:text-[#6EE7B7]'
+                          : 'text-[#566664] hover:text-[#134E41] dark:hover:text-[#F59E0B]'
+                      }`}
+                    >
+                      {isSpeakingCue ? (
+                        <VolumeX className="w-3.5 h-3.5" />
+                      ) : (
+                        <Volume2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
                 )}
-                <span className="leading-snug break-words">{microBubbleText}</span>
+              </div>
+
+              {/* Safe-zone bottom ledge strictly below green hero card stat row */}
+              <div
+                data-testid="floating-barnaby-root"
+                data-barnaby-mode={mode}
+                data-barnaby-mood-machine={moodResolution.mood}
+                data-barnaby-auto-hidden="false"
+                data-barnaby-mood-state={moodState}
+                data-barnaby-animation-state={animationState}
+                data-barnaby-behavior={activeFelineBehavior}
+                data-barnaby-facing={facingDirection}
+                data-barnaby-expression={expression}
+                data-barnaby-dragging={isDragging ? 'true' : 'false'}
+                data-barnaby-dock-side={dockSide}
+                onPointerEnter={handleHoverWake}
+                onPointerLeave={handleHoverLeave}
+                onPointerDown={handlers.onPointerDown}
+                onPointerMove={handlers.onPointerMove}
+                onPointerUp={handlers.onPointerUp}
+                onPointerCancel={handlers.onPointerCancel}
+                style={
+                  {
+                    transform: `translate3d(${combinedDx}px, ${dragOffset.dy}px, 0)`,
+                    touchAction: 'none',
+                    '--barnaby-stride-cycle': `${(
+                      (Math.PI * 2) /
+                      (BARNABY_STRIDE_BASE_OMEGA * Math.max(0.55, walkSpeedFactor))
+                    ).toFixed(2)}s`,
+                  } as React.CSSProperties
+                }
+                className="fixed right-3 bottom-[76px] md:right-4 md:bottom-4 z-30 select-none group"
+              >
+                <motion.div
+                  ref={characterBoxRef}
+                  role="button"
+                  tabIndex={0}
+                  data-testid="floating-barnaby-character"
+                  data-barnaby-landing={isLandingToIdle ? 'true' : 'false'}
+                  data-barnaby-celebrating-spin={shouldPlayHappySpin ? 'true' : 'false'}
+                  data-barnaby-encouraging-idle={shouldPlayEncouragingIdle ? 'true' : 'false'}
+                  onPointerMove={handlePettingPointerMove}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSingleTap();
+                    }
+                  }}
+                  animate={
+                    shouldPlayHappySpin
+                      ? {
+                          rotate: [0, -14, 360],
+                          y: [0, -16, 0],
+                          scale: [1, 1.12, 1],
+                        }
+                      : shouldPlayEncouragingIdle
+                      ? {
+                          rotate: [0, -5, 5, -3, 0],
+                          y: [0, -5, 0],
+                          scale: [1, 1.03, 1],
+                        }
+                      : isLandingToIdle
+                      ? {
+                          y: 2.5,
+                          scaleX: 1.07,
+                          scaleY: 0.91,
+                          rotate: 0,
+                        }
+                      : {
+                          y: 0,
+                          scaleX: 1,
+                          scaleY: 1,
+                          scale: 1,
+                          rotate: 0,
+                        }
+                  }
+                  transition={
+                    shouldPlayHappySpin
+                      ? { duration: 0.78, ease: [0.22, 1, 0.36, 1] }
+                      : shouldPlayEncouragingIdle
+                      ? { duration: 2.8, repeat: Infinity, ease: 'easeInOut' }
+                      : { duration: 0.24, ease: [0.22, 1, 0.36, 1] }
+                  }
+                  aria-label="Barnaby AI Companion. Tap to ask, double-tap for gold star burst, drag to move, or long-press to dock."
+                  title="Tap to ask · Double-tap for gold star burst · Drag to move · Long-press to dock"
+                  className={`relative w-[76px] h-[76px] sm:w-24 sm:h-24 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F59E0B]/70 rounded-2xl ${
+                    isLandingToIdle ? 'animate-barnaby-land' : ''
+                  } ${
+                    isDragging
+                      ? 'cursor-grabbing'
+                      : isSleepActive
+                      ? 'cursor-pointer'
+                      : 'cursor-grab'
+                  }`}
+                >
+                  <BarnabyRig
+                    expression={expression}
+                    mode={mode}
+                    felineBehavior={activeFelineBehavior}
+                    animationState={animationState}
+                    moodState={moodState}
+                    locomotion={activeFelineBehavior === 'walking' ? 'walk' : 'stand'}
+                    walkSpeedFactor={walkSpeedFactor}
+                    facingDirection={facingDirection}
+                    spokenText={microBubbleText}
+                    speakSignal={speakCueSignal}
+                    stopSpeakSignal={stopCueSignal}
+                    enableVoiceCues={false}
+                    onSpeakingChange={setIsSpeakingCue}
+                    isSpeaking={isSpeakingCue || isExternalSpeaking}
+                    interactive
+                    dragVelocity={dragVelocity}
+                    isDragging={isDragging}
+                    hopSignal={hopSignal}
+                    affectionSignal={affectionSignal}
+                    isAffectionate={isEnergetic || moodResolution.mood === 'happy'}
+                    isSleeping={isSleepActive && moodResolution.mood !== 'encouraging'}
+                    isPurring={isPurring}
+                    showCelestialStars
+                    gazeRotationDeg={isSleepActive ? 0 : gazeRotationDeg}
+                    gazeOffset={isSleepActive ? { x: 0, y: 0 } : gazeOffset}
+                    testId="floating-barnaby-rig"
+                    className="relative w-full h-full"
+                    canvasClassName="w-[76px] h-[76px] sm:w-24 sm:h-24 pointer-events-none select-none"
+                  />
+                  <BarnabyPawDustEmitter
+                    isWalking={activeFelineBehavior === 'walking'}
+                    facingDirection={facingDirection}
+                    walkSpeedFactor={walkSpeedFactor}
+                    hopSignal={hopSignal + affectionSignal}
+                    isDragging={isDragging}
+                  />
+                </motion.div>
+
+                {/* Subtle Hover-Only Edge-Dock Action */}
                 <button
                   type="button"
                   data-no-drag="true"
+                  data-testid="floating-barnaby-dock-action"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleToggleSpeakCue();
+                    toggleMinimized(true);
                   }}
-                  aria-label={isSpeakingCue ? 'Stop Barnaby voice' : 'Listen to Barnaby'}
-                  title={isSpeakingCue ? 'Stop Barnaby voice' : 'Tap to hear Barnaby'}
-                  className={`p-1 rounded-full transition-colors cursor-pointer shrink-0 ${
-                    isSpeakingCue
-                      ? 'bg-[#134E41]/15 text-[#134E41] dark:bg-[#10B981]/25 dark:text-[#6EE7B7]'
-                      : 'text-[#566664] hover:text-[#134E41] dark:hover:text-[#F59E0B]'
-                  }`}
+                  aria-label="Dock Barnaby to screen edge"
+                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-200 mx-auto -mt-1 flex items-center justify-center px-2 py-0.5 rounded-full backdrop-blur-md bg-white/85 dark:bg-slate-900/85 border border-[#134E41]/15 text-[10px] font-semibold text-[#566664] dark:text-slate-300 hover:text-[#134E41] dark:hover:text-[#F59E0B] shadow-xs cursor-pointer"
                 >
-                  {isSpeakingCue ? (
-                    <VolumeX className="w-3.5 h-3.5" />
-                  ) : (
-                    <Volume2 className="w-3.5 h-3.5" />
-                  )}
+                  Dock
                 </button>
               </div>
-            )}
-          </div>
-
-          {/* Safe-zone bottom ledge strictly below green hero card stat row (fixed right-3 bottom-[68px] md:right-6 md:bottom-6 z-30) */}
-          <div
-            data-testid="floating-barnaby-root"
-            data-barnaby-mode={mode}
-            data-barnaby-mood-state={moodState}
-            data-barnaby-animation-state={animationState}
-            data-barnaby-behavior={activeFelineBehavior}
-            data-barnaby-facing={facingDirection}
-            data-barnaby-expression={expression}
-            data-barnaby-dragging={isDragging ? 'true' : 'false'}
-            data-barnaby-dock-side={dockSide}
-            onPointerEnter={handleHoverWake}
-            onPointerDown={handlers.onPointerDown}
-            onPointerMove={handlers.onPointerMove}
-            onPointerUp={handlers.onPointerUp}
-            onPointerCancel={handlers.onPointerCancel}
-            style={
-              {
-                transform: `translate3d(${combinedDx}px, ${dragOffset.dy}px, 0)`,
-                touchAction: 'none',
-                '--barnaby-stride-cycle': `${(
-                  (Math.PI * 2) /
-                  (BARNABY_STRIDE_BASE_OMEGA * Math.max(0.55, walkSpeedFactor))
-                ).toFixed(2)}s`,
-              } as React.CSSProperties
-            }
-            className="fixed right-3 bottom-[68px] md:right-6 md:bottom-6 z-30 select-none group"
-          >
-            <div
-              ref={characterBoxRef}
-              role="button"
-              tabIndex={0}
-              data-testid="floating-barnaby-character"
-              data-barnaby-landing={isLandingToIdle ? 'true' : 'false'}
-              data-barnaby-celebrating-spin={isCelebratingSpin ? 'true' : 'false'}
-              onPointerMove={handlePettingPointerMove}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  handleSingleTap();
-                }
-              }}
-              style={
-                isCelebratingSpin
-                  ? {
-                      transform: 'translate3d(0, -10px, 0) rotate(360deg) scale(1.06)',
-                      transition: 'transform 0.72s cubic-bezier(0.22, 1, 0.36, 1)',
-                    }
-                  : isLandingToIdle
-                  ? {
-                      transform: 'translate3d(0, 2.5px, 0) scaleX(1.07) scaleY(0.91)',
-                      transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                    }
-                  : {
-                      transform: 'translate3d(0, 0, 0) scaleX(1) scaleY(1)',
-                      transition: 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)',
-                    }
-              }
-              aria-label="Barnaby AI Companion. Tap to ask, double-tap for gold star burst, drag to move, or long-press to dock."
-              title="Tap to ask · Double-tap for gold star burst · Drag to move · Long-press to dock"
-              className={`relative w-[76px] h-[76px] sm:w-24 sm:h-24 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F59E0B]/70 rounded-2xl ${
-                isLandingToIdle ? 'animate-barnaby-land' : ''
-              } ${
-                isDragging
-                  ? 'cursor-grabbing'
-                  : isSleepActive
-                  ? 'cursor-pointer'
-                  : 'cursor-grab'
-              }`}
+            </motion.div>
+          ) : (
+            /* Quiet low-opacity edge summon crest after Barnaby automatically disappears */
+            <motion.div
+              key="floating-barnaby-auto-hidden"
+              data-testid="floating-barnaby-auto-hidden"
+              data-barnaby-mood-machine="auto_hidden"
+              data-barnaby-auto-hidden="true"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.25 }}
+              className="fixed right-3 bottom-[76px] md:right-4 md:bottom-4 z-30 select-none"
             >
-              <BarnabyRig
-                expression={expression}
-                mode={mode}
-                felineBehavior={activeFelineBehavior}
-                animationState={animationState}
-                moodState={moodState}
-                locomotion={activeFelineBehavior === 'walking' ? 'walk' : 'stand'}
-                walkSpeedFactor={walkSpeedFactor}
-                facingDirection={facingDirection}
-                spokenText={microBubbleText}
-                speakSignal={speakCueSignal}
-                stopSpeakSignal={stopCueSignal}
-                enableVoiceCues={false}
-                onSpeakingChange={setIsSpeakingCue}
-                isSpeaking={isSpeakingCue || isExternalSpeaking}
-                interactive
-                dragVelocity={dragVelocity}
-                isDragging={isDragging}
-                hopSignal={hopSignal}
-                affectionSignal={affectionSignal}
-                isAffectionate={isEnergetic}
-                isSleeping={isSleepActive}
-                isPurring={isPurring}
-                showCelestialStars
-                gazeRotationDeg={isSleepActive ? 0 : gazeRotationDeg}
-                gazeOffset={isSleepActive ? { x: 0, y: 0 } : gazeOffset}
-                testId="floating-barnaby-rig"
-                className="relative w-full h-full"
-                canvasClassName="w-[76px] h-[76px] sm:w-24 sm:h-24 pointer-events-none select-none"
-              />
-              <BarnabyPawDustEmitter
-                isWalking={activeFelineBehavior === 'walking'}
-                facingDirection={facingDirection}
-                walkSpeedFactor={walkSpeedFactor}
-                hopSignal={hopSignal + affectionSignal}
-                isDragging={isDragging}
-              />
-            </div>
-
-            {/* Compact Dev / Preview Mood Pill for Instant State Verification */}
-            {IS_PREVIEW_OR_DEV && (
-              <span
-                data-testid="floating-barnaby-dev-pill"
-                aria-hidden="true"
-                className={`pointer-events-none select-none absolute bottom-1.5 ${
-                  pinMoodPillRight ? 'left-full ml-1.5' : 'right-full mr-1.5'
-                } px-2 py-0.5 rounded-full backdrop-blur-md bg-white/90 dark:bg-slate-900/90 text-[#134E41] dark:text-[#6EE7B7] border border-[#134E41]/15 shadow-xs text-[10px] font-semibold leading-none whitespace-nowrap`}
+              <button
+                type="button"
+                data-testid="floating-barnaby-summon-btn"
+                onClick={() => {
+                  touchBarnabyPresence();
+                  setAutonomousPhase('settling');
+                  showMicroBubble('Back whenever you need a Band 8 strategy check.', 3200);
+                }}
+                aria-label="Summon Barnaby study companion"
+                title="Barnaby is resting out of the way · Tap to summon"
+                className="w-9 h-9 rounded-full bg-white/70 dark:bg-[#11201E]/70 border border-[#D3DDDA] dark:border-[#1F8A70]/35 opacity-35 hover:opacity-100 focus-visible:opacity-100 backdrop-blur-md flex items-center justify-center transition-all duration-200 hover:scale-105 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F4A62A]"
               >
-                {devMoodLabel}
-              </span>
-            )}
-
-            {/* Subtle Hover-Only Edge-Dock Action */}
-            <button
-              type="button"
-              data-no-drag="true"
-              data-testid="floating-barnaby-dock-action"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleMinimized(true);
-              }}
-              aria-label="Dock Barnaby to screen edge"
-              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-200 mx-auto -mt-1 flex items-center justify-center px-2 py-0.5 rounded-full backdrop-blur-md bg-white/85 dark:bg-slate-900/85 border border-[#134E41]/15 text-[10px] font-semibold text-[#566664] dark:text-slate-300 hover:text-[#134E41] dark:hover:text-[#F59E0B] shadow-xs cursor-pointer"
-            >
-              Dock
-            </button>
-          </div>
-        </>
+                <BarnabyCrest size={19} variant="inline" animated={false} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       )}
 
       <BarnabyTutorDrawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          touchBarnabyPresence();
+        }}
         onNavigate={onNavigate}
         userName={userName}
         currentEstimate={currentEstimate}

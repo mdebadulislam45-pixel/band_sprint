@@ -6,6 +6,7 @@
 
 import { IELTSQuestion } from '../services/QuestionEngine';
 import { EXPANDED_LISTENING_QUESTIONS } from './listeningQuestionBank';
+import { EXTRA_COMPREHENSIVE_QUESTIONS } from './extraComprehensiveQuestions';
 
 export const COMPREHENSIVE_QUESTION_BANK: IELTSQuestion[] = [
   // =========================================================================
@@ -2163,6 +2164,7 @@ function generateAdditionalQuestions(): IELTSQuestion[] {
 export const ALL_INITIAL_QUESTIONS: IELTSQuestion[] = [
   ...COMPREHENSIVE_QUESTION_BANK,
   ...generateAdditionalQuestions(),
-  ...EXPANDED_LISTENING_QUESTIONS
+  ...EXPANDED_LISTENING_QUESTIONS,
+  ...EXTRA_COMPREHENSIVE_QUESTIONS
 ];
 

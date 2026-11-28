@@ -27,6 +27,7 @@ import {
   CheckCheck,
   AlertCircle
 } from 'lucide-react';
+import { sanitizeSvgMarkup } from '../../utils/sanitizeSvg';
 
 export interface AdminDraftSummaryItem {
   id: string;
@@ -965,7 +966,9 @@ export const AdminDraftReviewPanel: React.FC<AdminDraftReviewPanelProps> = ({ on
                     {selectedDetail.content.task1.chartSvg && (
                       <div
                         className="p-3 bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto flex justify-center"
-                        dangerouslySetInnerHTML={{ __html: selectedDetail.content.task1.chartSvg }}
+                        dangerouslySetInnerHTML={{
+                          __html: sanitizeSvgMarkup(selectedDetail.content.task1.chartSvg)
+                        }}
                       />
                     )}
 

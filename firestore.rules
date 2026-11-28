@@ -34,7 +34,15 @@ service cloud.firestore {
     }
 
     function isValidStateId(stateId) {
-      return stateId in ['diagnostic', 'examSetup', 'spellingProgress', 'dailySprintProgress'];
+      return stateId in [
+        'diagnostic',
+        'examSetup',
+        'spellingProgress',
+        'dailySprintProgress',
+        'adaptivePreferences',
+        'activeLabDrafts',
+        'achievements'
+      ];
     }
 
     function isBoundedStringList(val, maxItems) {
@@ -172,6 +180,34 @@ service cloud.firestore {
             && (!('reviewQueueIds' in payload) || isBoundedStringList(payload.reviewQueueIds, 60))
             && (!('reviewSchedule' in payload) || (payload.reviewSchedule is map && payload.reviewSchedule.keys().size() <= 60))
             && (!('lastExamSummary' in payload) || payload.lastExamSummary == null || (payload.lastExamSummary is map && payload.lastExamSummary.keys().size() <= 8)))
+          || (kind == 'adaptivePreferences'
+            && payload.keys().hasOnly([
+              'difficultyPreference', 'reminderEnabled', 'reminderTime',
+              'listeningAccent', 'strictExamListening', 'updatedAt'
+            ])
+            && (!('difficultyPreference' in payload) || payload.difficultyPreference in ['auto', 'recovery', 'balanced', 'stretch'])
+            && (!('reminderEnabled' in payload) || payload.reminderEnabled is bool)
+            && (!('reminderTime' in payload) || (payload.reminderTime is string && payload.reminderTime.size() <= 8))
+            && (!('listeningAccent' in payload) || payload.listeningAccent in ['uk', 'au', 'us', 'mixed'])
+            && (!('strictExamListening' in payload) || payload.strictExamListening is bool)
+            && (!('updatedAt' in payload) || (payload.updatedAt is number && payload.updatedAt >= 0)))
+          || (kind == 'activeLabDrafts'
+            && payload.keys().hasOnly([
+              'activeModule', 'writingTask1PromptId', 'writingTask1Draft',
+              'writingTask2Draft', 'readingPassageId', 'listeningSection', 'updatedAt'
+            ])
+            && (!('activeModule' in payload) || payload.activeModule in ['', 'writing', 'reading', 'listening', 'speaking'])
+            && (!('writingTask1PromptId' in payload) || (payload.writingTask1PromptId is string && payload.writingTask1PromptId.size() <= 64))
+            && (!('writingTask1Draft' in payload) || (payload.writingTask1Draft is string && payload.writingTask1Draft.size() <= 6000))
+            && (!('writingTask2Draft' in payload) || (payload.writingTask2Draft is string && payload.writingTask2Draft.size() <= 6000))
+            && (!('readingPassageId' in payload) || (payload.readingPassageId is string && payload.readingPassageId.size() <= 128))
+            && (!('listeningSection' in payload) || (payload.listeningSection is number && payload.listeningSection >= 1 && payload.listeningSection <= 4))
+            && (!('updatedAt' in payload) || (payload.updatedAt is number && payload.updatedAt >= 0)))
+          || (kind == 'achievements'
+            && payload.keys().hasOnly(['unlockedAtById', 'pinnedBadgeIds', 'updatedAt'])
+            && (!('unlockedAtById' in payload) || (payload.unlockedAtById is map && payload.unlockedAtById.keys().size() <= 40))
+            && (!('pinnedBadgeIds' in payload) || isBoundedStringList(payload.pinnedBadgeIds, 3))
+            && (!('updatedAt' in payload) || (payload.updatedAt is number && payload.updatedAt >= 0)))
         );
     }
 

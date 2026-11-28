@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  ArrowLeft,
   Search,
   BookOpen,
   Camera,
@@ -103,7 +102,7 @@ const TOPIC_PRESETS = [
   'Behavioural Psychology'
 ];
 
-export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack, onShowToast }) => {
+export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack: _onBack, onShowToast }) => {
   const [activeViewTab, setActiveViewTab] = useState<'bank' | 'factory' | 'private-pdf' | 'submissions'>('bank');
 
   // Shared Verified Bank & No-Repeat State
@@ -139,7 +138,9 @@ export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack, onSh
   const [genTargetBand, setGenTargetBand] = useState<number>(7.5);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationStage, setGenerationStage] = useState<string>('');
+  const [genElapsedSec, setGenElapsedSec] = useState<number>(0);
   const [genError, setGenError] = useState<string | null>(null);
+  const genAbortRef = useRef<AbortController | null>(null);
 
   // Submissions history
   const [submissions, setSubmissions] = useState<UserSubmission[]>(() => {
@@ -177,6 +178,7 @@ export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack, onSh
   useEffect(() => {
     return () => {
       stopSpeech();
+      genAbortRef.current?.abort();
     };
   }, []);
 
@@ -185,25 +187,40 @@ export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack, onSh
     setGenType(QUESTION_TYPES_BY_MODULE[mod][0]);
   };
 
+  const handleCancelGeneration = () => {
+    genAbortRef.current?.abort();
+  };
+
   const handleGenerateFreshDrill = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isGenerating) return;
     setGenError(null);
     setIsGenerating(true);
+    setGenElapsedSec(0);
     setGenerationStage('Pass 1 of 2: Drafting original Cambridge 15–21 blueprint drill...');
 
+    const controller = new AbortController();
+    genAbortRef.current = controller;
+
+    const elapsedInterval = window.setInterval(() => {
+      setGenElapsedSec((sec) => sec + 1);
+    }, 1000);
+
     const stageTimer = window.setTimeout(() => {
-      setGenerationStage('Pass 2 of 2: Independent Blind Examiner solving & verifying every answer...');
-    }, 3200);
+      setGenerationStage('Pass 2 of 2: Independent Blind Examiner verifying every answer...');
+    }, 4500);
 
     try {
-      const savedDrill = await generateVerifiedDrillViaApi({
-        module: genModule,
-        examTrack: genTrack,
-        questionType: genType,
-        topic: genTopic.trim() || 'Global Innovation',
-        targetBand: genTargetBand
-      });
+      const savedDrill = await generateVerifiedDrillViaApi(
+        {
+          module: genModule,
+          examTrack: genTrack,
+          questionType: genType,
+          topic: genTopic.trim() || 'Global Innovation',
+          targetBand: genTargetBand
+        },
+        controller.signal
+      );
       setCloudDrills((prev) => [savedDrill, ...prev.filter((d) => d.id !== savedDrill.id)]);
       soundManager.playSuccess();
       onShowToast(
@@ -213,11 +230,18 @@ export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack, onSh
       );
       setActiveVerifiedDrill(savedDrill);
     } catch (err: any) {
-      setGenError(err?.message || 'Could not generate a verified drill right now. Please try again.');
+      if (err?.message === 'Drill generation cancelled.') {
+        onShowToast('Drill generation cancelled.');
+      } else {
+        setGenError(err?.message || 'Could not generate a verified drill right now. Please try again.');
+      }
     } finally {
+      window.clearInterval(elapsedInterval);
       window.clearTimeout(stageTimer);
+      genAbortRef.current = null;
       setIsGenerating(false);
       setGenerationStage('');
+      setGenElapsedSec(0);
     }
   };
 
@@ -413,27 +437,6 @@ export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack, onSh
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-[44px] px-3.5 py-2 rounded-xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1E3330] hover:border-[#0F4C45] text-[#0E1F1E] dark:text-[#EEF3F1] text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Practice</span>
-        </button>
-
-        <div className="text-right">
-          <div className="text-xs font-bold text-[#0E1F1E] dark:text-[#EEF3F1] font-mono">
-            3-LAYER QUESTION ENGINE
-          </div>
-          <div className="text-[11px] text-[#566664] dark:text-[#96B0AC]">
-            Verified Bank · 2-Pass AI Factory · Private PDF Exam Room
-          </div>
-        </div>
-      </div>
-
       {/* Editorial Pine Hero Banner */}
       <div className="bg-[#0F4C45] dark:bg-[#0D3833] text-white p-6 sm:p-7 rounded-2xl border border-[#1F8A70]/35 shadow-sm flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="space-y-1.5">
@@ -1195,29 +1198,57 @@ export const QuestionBankPage: React.FC<QuestionBankPageProps> = ({ onBack, onSh
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#D3DDDA] dark:border-[#1E3330]">
-                <div className="text-xs text-[#566664] dark:text-[#96B0AC]">
-                  {isGenerating
-                    ? generationStage
-                    : 'Includes verbatim evidence quotes, EN + বাংলা trap breakdowns, and auto-saves to your shared bank.'}
+              <div className="space-y-3 pt-2 border-t border-[#D3DDDA] dark:border-[#1E3330]">
+                {isGenerating && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-[#0F4C45] dark:text-[#7CD4C4]">
+                      <span>{generationStage}</span>
+                      <span className="tabular-nums">{genElapsedSec}s elapsed</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-[#EEF3F1] dark:bg-[#0B1716] overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[#0F4C45] dark:bg-[#F4A62A] transition-all duration-700"
+                        style={{ width: `${Math.min(92, 18 + genElapsedSec * 6)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-[#566664] dark:text-[#96B0AC]">
+                    {isGenerating
+                      ? 'Auto-opens in the split-screen exam room as soon as verification completes.'
+                      : 'Includes verbatim evidence quotes, EN + বাংলা trap breakdowns, and auto-saves to your shared bank.'}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isGenerating && (
+                      <button
+                        type="button"
+                        onClick={handleCancelGeneration}
+                        className="min-h-[48px] px-4 py-2.5 rounded-xl border border-[#D3DDDA] dark:border-[#1E3330] bg-white dark:bg-[#0B1716] text-[#566664] dark:text-[#96B0AC] hover:text-rose-600 text-xs font-semibold cursor-pointer transition"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isGenerating}
+                      className="min-h-[48px] px-5 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0D3833] text-white text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer transition disabled:opacity-60"
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Generating ({genElapsedSec}s)...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-[#F4A62A]" />
+                          <span>Generate &amp; Blind-Verify Drill</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="submit"
-                  disabled={isGenerating}
-                  className="min-h-[48px] px-5 py-2.5 rounded-xl bg-[#0F4C45] hover:bg-[#0D3833] text-white text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer transition disabled:opacity-60"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Running 2-Pass Verification...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 text-[#F4A62A]" />
-                      <span>Generate &amp; Blind-Verify Drill</span>
-                    </>
-                  )}
-                </button>
               </div>
             </form>
           </div>

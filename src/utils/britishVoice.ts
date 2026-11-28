@@ -3,6 +3,10 @@ import { audioManager } from '../services/AudioManager';
 import {
   selectBestDeviceMaleVoice,
   getPreferredVoiceGender,
+  getPreferredAccent,
+  getPreferredStudioSpeakerId,
+  resolveSpeakerForAccentAndGender,
+  OfficialIELTSAccent,
   BritishRegionalAccent,
   resolveRegionalExaminerSpeaker
 } from '../config/voiceConfig';
@@ -39,8 +43,9 @@ export function stopSpeech(): void {
 }
 
 /**
- * Speaks a single text passage using the studio-mastered British MP3 stream.
- * Respects explicit `options.gender`, `options.speakerId`, `options.accent`, `options.regionalAccent`, and `options.deliveryProfile`.
+ * Speaks a single text passage using the studio-mastered multi-accent neural MP3 stream.
+ * Respects explicit `options.speakerId`, `options.accent`, `options.regionalAccent`, and `options.gender`,
+ * falling back seamlessly to the candidate's Profile Accent & Professional Studio Voice preference.
  */
 export function speakBritish(text: string, options: SpeakOptions = {}): void {
   const cleanText = text.replace(/[\u0980-\u09FF]+/g, '').trim();
@@ -49,26 +54,26 @@ export function speakBritish(text: string, options: SpeakOptions = {}): void {
     return;
   }
 
-  const speakerDef = options.speakerId ? IELTS_SPEAKERS[options.speakerId] : undefined;
-  const resolvedGender: 'male' | 'female' =
-    options.gender ||
-    speakerDef?.gender ||
-    (options.speakerId === 'speaker_05' ||
-    options.speakerId === 'speaker_02' ||
-    options.speakerId === 'speaker_07' ||
-    options.speakerId === 'speaker_10' ||
-    options.speakerId === 'speaker_12' ||
-    options.speakerId === 'speaker_14' ||
-    options.speakerId === 'speaker_16' ||
-    options.speakerId === 'speaker_uk_northern_f' ||
-    options.speakerId === 'speaker_uk_scottish_f'
-      ? 'female'
-      : options.speakerId
-      ? 'male'
-      : getPreferredVoiceGender());
+  const preferredAccent = getPreferredAccent();
+  const preferredStudioSpeaker = getPreferredStudioSpeakerId();
 
-  let targetSpeakerId =
-    options.speakerId || (resolvedGender === 'female' ? 'speaker_05' : 'speaker_04');
+  let targetSpeakerId = options.speakerId;
+  if (!targetSpeakerId) {
+    if (options.accent && ['British', 'Australian', 'American', 'Canadian', 'New Zealand', 'Irish'].includes(options.accent)) {
+      targetSpeakerId = resolveSpeakerForAccentAndGender(
+        options.accent as OfficialIELTSAccent,
+        options.gender || getPreferredVoiceGender()
+      );
+    } else if (options.gender) {
+      targetSpeakerId = resolveSpeakerForAccentAndGender(preferredAccent, options.gender);
+    } else {
+      targetSpeakerId = preferredStudioSpeaker;
+    }
+  }
+
+  const speakerDef = targetSpeakerId ? IELTS_SPEAKERS[targetSpeakerId] : undefined;
+  const resolvedGender: 'male' | 'female' =
+    options.gender || speakerDef?.gender || getPreferredVoiceGender();
 
   if (options.regionalAccent) {
     const regional = resolveRegionalExaminerSpeaker(resolvedGender, options.regionalAccent);
@@ -91,7 +96,7 @@ export function speakBritish(text: string, options: SpeakOptions = {}): void {
     .speakText(cleanText, targetSpeakerId, {
       rate: options.rate,
       gender: resolvedGender,
-      accent: options.accent || options.regionalAccent,
+      accent: options.accent || options.regionalAccent || speakerDef?.accent || preferredAccent,
       deliveryProfile: inferredProfile,
       onStart: options.onStart,
       onEnd: options.onEnd,
@@ -133,8 +138,9 @@ export function speakDialogue(
         ? 'male'
         : 'female');
 
+    const preferredAccent = getPreferredAccent();
     const resolvedSpeakerId =
-      line.speakerId || (inferredGender === 'female' ? 'speaker_05' : 'speaker_04');
+      line.speakerId || resolveSpeakerForAccentAndGender(preferredAccent, inferredGender);
 
     return {
       speakerId: resolvedSpeakerId,

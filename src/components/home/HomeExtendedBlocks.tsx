@@ -30,6 +30,7 @@ import {
   DAILY_SPRINT_SYNCED_EVENT,
   loadDailySprintProgress
 } from '../../utils/dailySprintProgressStore';
+import { WeeklyReadinessDigestCard } from './WeeklyReadinessDigestCard';
 
 interface HomeExtendedBlocksProps {
   section?: 'all' | 'skills' | 'sidebar';
@@ -55,22 +56,36 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
   const [pomodoroMinutesToday, setPomodoroMinutesToday] = useState<number>(
     () => loadDailySprintProgress().pomodoroFocusMinutesLogged
   );
+  const [mistakeCount, setMistakeCount] = useState<number>(() => {
+    try {
+      return getMistakes().filter((m) => !m.mastered).length;
+    } catch {
+      return 0;
+    }
+  });
 
   useEffect(() => {
     const refreshStreak = () => {
       setStreakState(getStreakState());
       setPomodoroMinutesToday(loadDailySprintProgress().pomodoroFocusMinutesLogged);
+      try {
+        setMistakeCount(getMistakes().filter((m) => !m.mastered).length);
+      } catch {
+        // ignore storage errors
+      }
     };
     window.addEventListener('bandsprint_streak_updated', refreshStreak);
     window.addEventListener('bandsprint_tasks_updated', refreshStreak);
     window.addEventListener(DAILY_SPRINT_SYNCED_EVENT, refreshStreak);
     window.addEventListener('bandsprint_cloud_sync_updated', refreshStreak);
+    window.addEventListener('vault_updated', refreshStreak);
     window.addEventListener('storage', refreshStreak);
     return () => {
       window.removeEventListener('bandsprint_streak_updated', refreshStreak);
       window.removeEventListener('bandsprint_tasks_updated', refreshStreak);
       window.removeEventListener(DAILY_SPRINT_SYNCED_EVENT, refreshStreak);
       window.removeEventListener('bandsprint_cloud_sync_updated', refreshStreak);
+      window.removeEventListener('vault_updated', refreshStreak);
       window.removeEventListener('storage', refreshStreak);
     };
   }, []);
@@ -195,15 +210,6 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
   }, [examHistory, pomodoroMinutesToday, streakState]);
 
   const goalPercent = Math.min(100, Math.round((todayMinutesStudied / dailyGoalMinutes) * 100));
-
-  // Unmastered mistakes count
-  const mistakeCount = useMemo(() => {
-    try {
-      return getMistakes().filter((m) => !m.mastered).length;
-    } catch {
-      return 0;
-    }
-  }, []);
 
   // Word of the Day (lazy loaded so Home bundle stays lean)
   const [wordOfTheDay, setWordOfTheDay] = useState<{
@@ -370,6 +376,14 @@ export const HomeExtendedBlocks: React.FC<HomeExtendedBlocksProps> = ({
 
   const renderSidebarSection = () => (
     <>
+      {/* 0. WEEKLY READINESS DIGEST (4-Skill Band Trajectory & Vault Resolution) */}
+      <WeeklyReadinessDigestCard
+        user={user}
+        diagnostic={diagnostic}
+        targetBand={targetBand}
+        onNavigate={onNavigate}
+      />
+
       {/* 1. UNIFIED WEEKLY CONSISTENCY, STREAK & DAILY GOAL */}
       <section className="p-5 rounded-2xl bg-white dark:bg-[#11201E] border border-[#D3DDDA] dark:border-[#1F8A70]/30 space-y-4">
         <div className="flex items-center justify-between gap-2">

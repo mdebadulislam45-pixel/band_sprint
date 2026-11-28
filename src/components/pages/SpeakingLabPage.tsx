@@ -34,6 +34,7 @@ import { CueScratchpad } from '../CueScratchpad';
 import { ShadowingPractice } from '../speaking/ShadowingPractice';
 import { SpeakingTranscriptHighlighter } from '../speaking/SpeakingTranscriptHighlighter';
 import { LiveAvatarSpeakingPartner } from '../speaking/LiveAvatarSpeakingPartner';
+import { Part23StressTestStudio } from '../speaking/Part23StressTestStudio';
 import { soundManager } from '../../utils/audioEffects';
 import { speakBritish, stopSpeech } from '../../utils/britishVoice';
 import {
@@ -186,7 +187,7 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
   onShowToast,
   onNavigateToVault
 }) => {
-  const [activeTab, setActiveTab] = useState<'interview' | 'avatar_partner' | 'cuecard' | 'shadowing' | 'feedback' | 'ai_pilots'>('interview');
+  const [activeTab, setActiveTab] = useState<'interview' | 'stress_test' | 'avatar_partner' | 'cuecard' | 'shadowing' | 'feedback' | 'ai_pilots'>('interview');
   const [examinerGender, setExaminerGender] = useState<'male' | 'female'>(() =>
     getPreferredVoiceGender()
   );
@@ -593,6 +594,22 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
           <button
             type="button"
             onClick={() => {
+              setActiveTab('stress_test');
+              soundManager.playBeep(640, 0.04);
+            }}
+            className={`min-h-[36px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
+              activeTab === 'stress_test'
+                ? 'bg-[#0F4C45] text-white'
+                : 'text-[#566664] dark:text-[#96B0AC] hover:text-[#0E1F1E] dark:hover:text-[#EEF3F1]'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-[#F4A62A]" />
+            <span>Part 2/3 Stress-Test</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
               setActiveTab('avatar_partner');
               soundManager.playBeep(620, 0.04);
             }}
@@ -784,6 +801,8 @@ export const SpeakingLabPage: React.FC<SpeakingLabPageProps> = ({
           customMockSet={activePilotSet}
           onClearCustomMockSet={() => setActivePilotSet(null)}
         />
+      ) : activeTab === 'stress_test' ? (
+        <Part23StressTestStudio onShowToast={onShowToast} />
       ) : activeTab === 'ai_pilots' ? (
         <div className="space-y-6 animate-fade-in">
           <CandidateAiPilotPanel

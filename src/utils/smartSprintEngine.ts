@@ -28,7 +28,15 @@ import {
   getTodayDateKey,
   isReviewItemDueToday
 } from './dailySprintProgressStore';
-import { UserProfile } from '../types';
+import { UserProfile, MistakeItem } from '../types';
+import {
+  AdaptiveDifficultyTier,
+  AdaptivePathSummary,
+  buildVaultFrequencyProfile,
+  loadDifficultyPreference,
+  prioritizeDailyGrammar,
+  prioritizeDailyVocabulary
+} from './adaptiveLearningPath';
 
 export type SmartSprintTabId = 'vocabulary' | 'idioms' | 'phrases' | 'spelling' | 'grammar';
 
@@ -55,6 +63,7 @@ export interface DailySprintRotatedPools {
   spelling: DailySprintSpellingItem[];
   grammar: DailySprintGrammarRule[];
   speakingCards: DailySpeakingConfidenceCard[];
+  adaptivePath: AdaptivePathSummary;
 }
 
 // =============================================================================
@@ -269,7 +278,12 @@ function rotateSlice<T>(items: T[], count: number, offsetSteps: number): T[] {
 export function getRotatedDailySprintPools(
   quotaTier: SprintQuotaTier,
   dateKey: string = getTodayDateKey(),
-  manualCycleOffset: number = 0
+  manualCycleOffset: number = 0,
+  adaptiveOptions?: {
+    difficultyTier?: AdaptiveDifficultyTier;
+    mistakes?: MistakeItem[];
+    reviewSchedule?: DailySprintProgressState['reviewSchedule'];
+  }
 ): DailySprintRotatedPools {
   const vocabCount = quotaTier === 'standard' ? 20 : 10;
   const idiomCount = quotaTier === 'standard' ? 10 : 5;
@@ -287,17 +301,62 @@ export function getRotatedDailySprintPools(
   const spellingPool = getFullSpellingPool();
   const grammarPool = getFullGrammarPool();
 
+  const pref = loadDifficultyPreference();
+  const activeDifficulty: AdaptiveDifficultyTier =
+    adaptiveOptions?.difficultyTier ?? (pref === 'auto' ? 'balanced' : pref);
+
+  const baselineVocab = rotateSlice(vocabPool, vocabCount, stepIndex * 10);
+  const baselineGrammar = rotateSlice(grammarPool, grammarCount, stepIndex * 2);
+
+  const prioritizedVocab = prioritizeDailyVocabulary(
+    vocabPool,
+    baselineVocab,
+    vocabCount,
+    activeDifficulty,
+    adaptiveOptions?.mistakes,
+    adaptiveOptions?.reviewSchedule
+  );
+
+  const prioritizedGrammar = prioritizeDailyGrammar(
+    grammarPool,
+    baselineGrammar,
+    grammarCount,
+    activeDifficulty,
+    adaptiveOptions?.mistakes,
+    adaptiveOptions?.reviewSchedule
+  );
+
+  const vaultProfile = buildVaultFrequencyProfile(
+    adaptiveOptions?.mistakes,
+    adaptiveOptions?.reviewSchedule
+  );
+
+  const adaptivePath: AdaptivePathSummary = {
+    difficultyTier: activeDifficulty,
+    prioritizedVocabIds: prioritizedVocab.prioritizedIds,
+    prioritizedGrammarIds: prioritizedGrammar.prioritizedIds,
+    priorityByItemId: {
+      ...prioritizedVocab.priorityReasons,
+      ...prioritizedGrammar.priorityReasons
+    },
+    topErrorClusters: vaultProfile.clusters.slice(0, 5),
+    totalVaultMistakesAnalyzed: vaultProfile.totalAnalyzed
+  };
+
   return {
     cycleLabel:
       manualCycleOffset > 0
         ? `Bonus Rotation #${manualCycleOffset + 1}`
+        : prioritizedVocab.prioritizedIds.length > 0 || prioritizedGrammar.prioritizedIds.length > 0
+        ? `Adaptive Vault Path · ${dateKey}`
         : `Daily Adaptive Set · ${dateKey}`,
-    vocabulary: rotateSlice(vocabPool, vocabCount, stepIndex * 10),
+    vocabulary: prioritizedVocab.items,
     idioms: rotateSlice(idiomPool, idiomCount, stepIndex * 5),
     phrases: rotateSlice(phrasePool, phraseCount, stepIndex * 5),
     spelling: rotateSlice(spellingPool, spellingCount, stepIndex * 20),
-    grammar: rotateSlice(grammarPool, grammarCount, stepIndex * 2),
-    speakingCards: rotateSlice(DAILY_SPEAKING_CONFIDENCE_CARDS, DAILY_SPEAKING_CONFIDENCE_CARDS.length, stepIndex)
+    grammar: prioritizedGrammar.items,
+    speakingCards: rotateSlice(DAILY_SPEAKING_CONFIDENCE_CARDS, DAILY_SPEAKING_CONFIDENCE_CARDS.length, stepIndex),
+    adaptivePath
   };
 }
 

@@ -1,6 +1,17 @@
+import { getStoredSessionToken } from './authService';
+
 export interface DIDConfigResponse {
   configured: boolean;
   provider: string;
+}
+
+function buildAuthJsonHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getStoredSessionToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 export interface DIDStreamInitData {
@@ -61,7 +72,7 @@ export class DIDStreamService {
       // 1. Initialize stream session from backend proxy
       const res = await fetch('/api/did/streams', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAuthJsonHeaders(),
         body: JSON.stringify({ gender })
       });
 
@@ -95,7 +106,7 @@ export class DIDStreamService {
         if (event.candidate && this.streamId && this.sessionId) {
           fetch(`/api/did/streams/${encodeURIComponent(this.streamId)}/ice`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAuthJsonHeaders(),
             body: JSON.stringify({
               candidate: event.candidate,
               sessionId: this.sessionId
@@ -124,7 +135,7 @@ export class DIDStreamService {
       // 7. Submit answer to D-ID via backend
       const answerRes = await fetch(`/api/did/streams/${encodeURIComponent(this.streamId)}/sdp`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAuthJsonHeaders(),
         body: JSON.stringify({
           answer,
           sessionId: this.sessionId
@@ -155,7 +166,7 @@ export class DIDStreamService {
     try {
       const res = await fetch(`/api/did/streams/${encodeURIComponent(this.streamId)}/talk`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAuthJsonHeaders(),
         body: JSON.stringify({
           text,
           voiceId: voiceId || 'en-GB-SoniaNeural',
@@ -186,7 +197,7 @@ export class DIDStreamService {
 
       fetch(`/api/did/streams/${encodeURIComponent(sid)}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAuthJsonHeaders(),
         body: JSON.stringify({ sessionId: sessId })
       }).catch(() => {});
     }

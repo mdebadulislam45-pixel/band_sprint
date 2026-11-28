@@ -52,6 +52,12 @@ import { ContactSupportModal } from '../commercial/ContactSupportModal';
 import { getBarnabyVisibility, setBarnabyVisibility } from '../../utils/barnabyStateEngine';
 import type { BarnabyVisibilitySetting } from '../../types/barnaby';
 import { BarnabyCrest } from '../common/BarnabyCrest';
+import {
+  BandSprintAchievementsPanel,
+  PinnedBadgesStrip
+} from '../profile/BandSprintAchievementsPanel';
+import { AccentAndVoiceStudioPanel } from '../profile/AccentAndVoiceStudioPanel';
+import { DailyReminderSettingsPanel } from '../reminders/DailyReminderSettingsPanel';
 
 interface ProfilePageProps {
   user?: UserProfile | null;
@@ -78,6 +84,7 @@ interface ProfileHubItem {
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
   user,
+  mistakeCount = 0,
   onOpenAuthModal,
   onOpenBandModal,
   onNavigate,
@@ -258,11 +265,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       {
         id: 'settings',
         path: '/profile/settings',
-        title: 'App & Voice Settings',
+        title: 'App, Voice & Daily Reminders',
         shortName: 'Settings',
-        description: 'Examiner audio profiles, Barnaby companion visibility & theme preferences.',
+        description: 'Recurring streak reminders, examiner accents, deep elder voices & Barnaby settings.',
         icon: Settings,
-        badge: 'Voice & Companion',
+        badge: 'Voice & Alerts',
         color: 'bg-[#F59E0B]/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
       },
       {
@@ -301,6 +308,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <p className="text-xs sm:text-sm text-[#EEF3F1]/80 leading-relaxed">
               {safeEmail} · Target Band {safeTargetBand.toFixed(1)}
             </p>
+            <PinnedBadgesStrip user={effectiveUser} mistakeCount={mistakeCount} />
           </div>
 
           {user && user.id !== 'guest_candidate' && (
@@ -314,6 +322,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </button>
           )}
         </section>
+
+        {/* BandSprint Achievements & Unlockable Badges */}
+        <BandSprintAchievementsPanel
+          user={effectiveUser}
+          mistakeCount={mistakeCount}
+          onShowToast={onShowToast}
+          onNavigate={onNavigate}
+        />
+
+        {/* Recurring Daily BandSprint Browser Notifications */}
+        <DailyReminderSettingsPanel
+          onShowToast={onShowToast}
+          onNavigate={onNavigate}
+          targetBand={safeTargetBand}
+        />
+
+        {/* Multi-Accent & Professional Studio Audio + Offline PWA Study Pack */}
+        <AccentAndVoiceStudioPanel onShowToast={onShowToast} />
 
         {/* Grid of Clean BandSprint Hub Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -419,72 +445,33 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
         {subpage === 'settings' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-xl bg-[#0F4C45]/10 dark:bg-[#1F8A70]/20 text-[#0F4C45] dark:text-[#F4A62A] flex items-center justify-center font-bold">
                   <Settings className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">AI IELTS Examiner Voice & Settings</h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Configure native British English pronunciation for speaking & listening</p>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">Examiner Accent, Studio Audio &amp; Companion Settings</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Choose from all 6 IELTS accents, 17 studio neural voices, offline audio packs, and Barnaby visibility</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsAccentModalOpen(true)}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-[#0F4C45] hover:bg-[#0B3833] text-white font-bold text-xs transition inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Globe className="w-3.5 h-3.5 text-[#F4A62A]" />
+                <span>Full Accent Audition</span>
+              </button>
             </div>
 
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Examiner Voice Profile
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div
-                  onClick={() => handleSelectVoiceGender('female')}
-                  className={`p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
-                    voiceGender === 'female'
-                      ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 text-blue-950 dark:text-blue-200 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'
-                  }`}
-                >
-                  <div>
-                    <div className="font-bold text-sm">Dr. Clara Sterling (Female)</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Formal Received Pronunciation</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleTestVoice('female');
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-50 transition"
-                  >
-                    {activeVoicePlaying === 'female' ? 'Stop' : 'Test'}
-                  </button>
-                </div>
+            <DailyReminderSettingsPanel
+              onShowToast={onShowToast}
+              onNavigate={onNavigate}
+              targetBand={safeTargetBand}
+            />
 
-                <div
-                  onClick={() => handleSelectVoiceGender('male')}
-                  className={`p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
-                    voiceGender === 'male'
-                      ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 text-blue-950 dark:text-blue-200 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'
-                  }`}
-                >
-                  <div>
-                    <div className="font-bold text-sm">Arthur Davies (Male)</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Authoritative Examiner Cadence</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleTestVoice('male');
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-50 transition"
-                  >
-                    {activeVoicePlaying === 'male' ? 'Stop' : 'Test'}
-                  </button>
-                </div>
-              </div>
-            </div>
+            <AccentAndVoiceStudioPanel onShowToast={onShowToast} />
 
             {/* Barnaby Companion Visibility Setting */}
             <div className="pt-5 border-t border-slate-100 dark:border-slate-800 space-y-3" data-testid="barnaby-visibility-settings">
@@ -645,6 +632,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         isOpen={showAboutModal}
         onClose={() => setShowAboutModal(false)}
         onNavigateToPractice={() => onNavigate('/practice')}
+      />
+
+      <AccentAuditionModal
+        isOpen={isAccentModalOpen}
+        onClose={() => setIsAccentModalOpen(false)}
+        onShowToast={onShowToast}
       />
     </div>
   );

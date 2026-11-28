@@ -23,7 +23,10 @@
  */
 
 import {
+  getPreferredAccent,
+  getPreferredStudioSpeakerId,
   getPreferredVoiceGender,
+  resolveSpeakerForAccentAndGender,
   setPreferredVoiceGender as setConfigVoiceGender,
   selectBestDeviceMaleVoice,
   selectBestDeviceFemaleVoice,
@@ -296,6 +299,106 @@ export const IELTS_SPEAKERS: Record<string, SpeakerDefinition> = {
     geminiVoiceName: 'Aoede',
     defaultRate: 0.96,
     defaultPitch: 1.0
+  },
+  speaker_17: {
+    id: 'speaker_17',
+    name: 'Oliver Vance (UK Broadcast Academic)',
+    role: 'BBC-Style British Broadcast Academic & Part 4 Narrator',
+    accent: 'British Received Pronunciation (en-GB)',
+    gender: 'male',
+    geminiVoiceName: 'Orus',
+    defaultRate: 0.98,
+    defaultPitch: 1.0
+  },
+  speaker_18: {
+    id: 'speaker_18',
+    name: 'Dr. Eleanor Vance (UK Oxbridge Fellow)',
+    role: 'Oxbridge Tutorial Fellow & Seminar Moderator',
+    accent: 'British Received Pronunciation (en-GB)',
+    gender: 'female',
+    geminiVoiceName: 'Kore',
+    defaultRate: 0.98,
+    defaultPitch: 1.0
+  },
+  speaker_19: {
+    id: 'speaker_19',
+    name: 'Prof. Guy Holloway (US Ivy League)',
+    role: 'American Senior Professor & Part 4 Lecturer',
+    accent: 'American English (en-US)',
+    gender: 'male',
+    geminiVoiceName: 'Fenrir',
+    defaultRate: 0.98,
+    defaultPitch: 1.0
+  },
+  speaker_20: {
+    id: 'speaker_20',
+    name: 'Aria Bennett (US Academic Moderator)',
+    role: 'North American Studio Interviewer & Assessor',
+    accent: 'American English (en-US)',
+    gender: 'female',
+    geminiVoiceName: 'Aoede',
+    defaultRate: 0.99,
+    defaultPitch: 1.0
+  },
+  speaker_21: {
+    id: 'speaker_21',
+    name: 'Dr. Freya Callaghan (AU Melbourne)',
+    role: 'Australian University Lecturer & Environmental Coordinator',
+    accent: 'Australian English (en-AU)',
+    gender: 'female',
+    geminiVoiceName: 'Kore',
+    defaultRate: 0.98,
+    defaultPitch: 1.0
+  },
+  speaker_22: {
+    id: 'speaker_22',
+    name: 'Andrew Mercer (US Studio Narrator)',
+    role: 'North American Broadcast & Listening Section Narrator',
+    accent: 'American English (en-US)',
+    gender: 'male',
+    geminiVoiceName: 'Charon',
+    defaultRate: 0.98,
+    defaultPitch: 1.0
+  },
+  speaker_23: {
+    id: 'speaker_23',
+    name: 'Grandpa Reginald Whitmore (UK Deep Elder)',
+    role: 'Deep British Elder & Emeritus IELTS Chair',
+    accent: 'British Received Pronunciation (en-GB)',
+    gender: 'male',
+    geminiVoiceName: 'Charon',
+    defaultRate: 0.92,
+    defaultPitch: 0.85
+  },
+  speaker_24: {
+    id: 'speaker_24',
+    name: 'Grandpa Roger Holloway (US Deep Elder)',
+    role: 'Deep American Elder & Retired University Dean',
+    accent: 'American English (en-US)',
+    gender: 'male',
+    geminiVoiceName: 'Fenrir',
+    defaultRate: 0.92,
+    defaultPitch: 0.86
+  },
+  speaker_25: {
+    id: 'speaker_25',
+    name: 'Uncle Graham Reid (AU Deep Elder)',
+    role: 'Deep Australian Elder Historian',
+    accent: 'Australian English (en-AU)',
+    gender: 'male',
+    geminiVoiceName: 'Fenrir',
+    defaultRate: 0.93,
+    defaultPitch: 0.86
+  },
+  speaker_26: {
+    id: 'speaker_26',
+    name: 'Grandpa Seamus Doyle (Irish Deep Elder)',
+    role: 'Deep Irish Elder Storyteller',
+    accent: 'Irish English (en-IE)',
+    gender: 'male',
+    geminiVoiceName: 'Orus',
+    defaultRate: 0.93,
+    defaultPitch: 0.86
   }
 };
 
@@ -1139,7 +1242,12 @@ class AudioService {
    * Unified `speak(text, options)` method used by AudioManager, ShadowingPractice, etc.
    */
   public speak(text: string, options?: SpeakOptions): Promise<void> {
-    const speakerId = options?.speakerId || (options?.gender === 'female' ? 'speaker_05' : 'speaker_04');
+    const preferredSpeaker = getPreferredStudioSpeakerId();
+    const speakerId =
+      options?.speakerId ||
+      (options?.gender
+        ? resolveSpeakerForAccentAndGender(getPreferredAccent(), options.gender)
+        : preferredSpeaker);
     return this.speakText(text, speakerId, options);
   }
 

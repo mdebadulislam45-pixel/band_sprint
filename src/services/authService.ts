@@ -742,11 +742,13 @@ export async function validateCurrentServerSession(): Promise<AuthResult> {
   }
 
   try {
-    const res = await fetch('/api/auth/me', {
+    const res = await fetch('/api/auth/session', {
       headers: { Authorization: `Bearer ${token}` }
     });
 
-    if (!res.ok) {
+    const data = res.ok ? await res.json().catch(() => null) : null;
+
+    if (!res.ok || !data?.authenticated || !data?.user) {
       // If server session expired or server restarted, attempt token refresh via Firebase Auth if available
       if (auth.currentUser) {
         try {
@@ -775,7 +777,6 @@ export async function validateCurrentServerSession(): Promise<AuthResult> {
       return { success: false, error: 'Session expired or invalidated' };
     }
 
-    const data = await res.json();
     if (data.subscription && typeof localStorage !== 'undefined') {
       localStorage.setItem(ACTIVE_SUBSCRIPTION_KEY, JSON.stringify(data.subscription));
     }

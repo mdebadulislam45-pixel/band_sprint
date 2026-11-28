@@ -45,6 +45,8 @@ import { AcademicCollocationFinder } from '../home/AcademicCollocationFinder';
 import { PracticeHeatmap } from '../home/PracticeHeatmap';
 import { AITutorWidget } from '../home/AITutorWidget';
 import { SmartRecommendationBanner } from '../home/SmartRecommendationBanner';
+import { DailyBandTrendChart } from '../progress/DailyBandTrendChart';
+import { ExamReadinessCurveCard } from '../progress/ExamReadinessCurveCard';
 
 interface ProgressItem {
   id: string;
@@ -404,6 +406,22 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
 
         {activeTab === 'readiness' && (
           <div className="space-y-5 animate-fade-in">
+            <DailyBandTrendChart
+              examHistory={examHistory}
+              diagnostic={diagnostic}
+              targetBand={targetBand}
+              onNavigate={onNavigate}
+            />
+
+            <ExamReadinessCurveCard
+              examDate={user?.progress?.examDate || diagnostic?.examDate || null}
+              currentBand={overallBand}
+              targetBand={targetBand}
+              streakDays={streakDays}
+              onNavigate={onNavigate}
+              onOpenBandModal={onOpenBandModal}
+            />
+
             <SmartRecommendationBanner
               onNavigate={onNavigate}
               onShowToast={onShowToast}
